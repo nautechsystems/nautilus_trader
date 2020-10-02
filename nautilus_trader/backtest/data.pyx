@@ -302,10 +302,10 @@ cdef class BacktestDataEngine(DataEngine):
 
         cdef QuoteTick tick = QuoteTick(
             self._symbol_index[symbol_indexer],
-            Price(values[0], price_precision),
-            Price(values[1], price_precision),
-            Quantity(values[2], size_precision),
-            Quantity(values[3], size_precision),
+            Price.from_float_c(values[0], price_precision),
+            Price.from_float_c(values[1], price_precision),
+            Quantity.from_float_c(values[2], size_precision),
+            Quantity.from_float_c(values[3], size_precision),
             self._timestamps[self._index])
 
         self._index += 1

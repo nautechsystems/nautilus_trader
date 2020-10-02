@@ -23,7 +23,8 @@ from nautilus_trader.common.market cimport CommissionModel
 from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -60,7 +61,8 @@ cdef class SimulatedMarket:
 
     cdef readonly Venue venue
     cdef readonly OMSType oms_type
-    cdef readonly ExecutionEngine exec_engine
+    cdef readonly ExecutionCache exec_cache
+    cdef readonly ExecutionClient exec_client
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly int day_number
@@ -100,6 +102,7 @@ cdef class SimulatedMarket:
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
 
+    cpdef void register_client(self, ExecutionClient client) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cdef AccountState reset_account_event(self)

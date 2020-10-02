@@ -21,7 +21,6 @@ import pytz
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.generators import PositionIdGenerator
-from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
@@ -55,6 +54,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import ForexInstrument
+from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -90,12 +90,12 @@ class TestStubs:
             min_limit_distance_entry=0,
             min_stop_distance=0,
             min_limit_distance=0,
-            tick_size=Price(0.00001, 5),
+            tick_size=Decimal("0.00001"),
             lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal64(0),
-            rollover_interest_sell=Decimal64(0),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
             timestamp=UNIX_EPOCH,
         )
 
@@ -109,12 +109,12 @@ class TestStubs:
             min_limit_distance_entry=0,
             min_stop_distance=0,
             min_limit_distance=0,
-            tick_size=Price(0.001, 3),
+            tick_size=Decimal("0.001"),
             lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
             max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal64(0),
-            rollover_interest_sell=Decimal64(0),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
             timestamp=UNIX_EPOCH,
         )
 
@@ -165,10 +165,10 @@ class TestStubs:
     @staticmethod
     def bar_5decimal() -> Bar:
         return Bar(
-            Price(1.00002, 5),
-            Price(1.00004, 5),
-            Price(1.00001, 5),
-            Price(1.00003, 5),
+            Price("1.00002"),
+            Price("1.00004"),
+            Price("1.00001"),
+            Price("1.00003"),
             Quantity(100000),
             UNIX_EPOCH,
         )
@@ -176,10 +176,10 @@ class TestStubs:
     @staticmethod
     def bar_3decimal() -> Bar:
         return Bar(
-            Price(90.002, 3),
-            Price(90.004, 3),
-            Price(90.001, 3),
-            Price(90.003, 3),
+            Price("90.002"),
+            Price("90.004"),
+            Price("90.001"),
+            Price("90.003"),
             Quantity(100000),
             UNIX_EPOCH,
         )
@@ -188,8 +188,8 @@ class TestStubs:
     def quote_tick_3decimal(symbol) -> QuoteTick:
         return QuoteTick(
             symbol,
-            Price(90.002, 3),
-            Price(90.003, 3),
+            Price("90.002"),
+            Price("90.003"),
             Quantity(1),
             Quantity(1),
             UNIX_EPOCH,
@@ -199,8 +199,8 @@ class TestStubs:
     def quote_tick_5decimal(symbol) -> QuoteTick:
         return QuoteTick(
             symbol,
-            Price(1.00001, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00003"),
             Quantity(1),
             Quantity(1),
             UNIX_EPOCH,
@@ -210,8 +210,8 @@ class TestStubs:
     def trade_tick_5decimal(symbol) -> TradeTick:
         return TradeTick(
             symbol,
-            Price(1.00001, 5),
-            Quantity(100000, 0),
+            Price("1.00001"),
+            Quantity(100000),
             Maker.BUYER,
             MatchId("123456"),
             UNIX_EPOCH,
@@ -233,13 +233,13 @@ class TestStubs:
         return AccountState(
             account_id,
             Currency.USD,
-            Money(1000000, Currency.USD),
-            Money(1000000, Currency.USD),
-            Money(0, Currency.USD),
-            Money(0, Currency.USD),
-            Money(0, Currency.USD),
-            Decimal64(0),
-            'N',
+            Money("1000000.00", Currency.USD),
+            Money("1000000.00", Currency.USD),
+            Money("0", Currency.USD),
+            Money("0", Currency.USD),
+            Money("0", Currency.USD),
+            Decimal(),
+            "N",
             uuid4(),
             UNIX_EPOCH,
         )
@@ -259,7 +259,7 @@ class TestStubs:
         return OrderAccepted(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId('1'),
+            OrderId("1"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -283,16 +283,16 @@ class TestStubs:
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
-            commission=0.,
+            commission=0,
     ) -> OrderFilled:
         if position_id is None:
             position_id = PositionId(order.cl_ord_id.value.replace('P', 'T'))
         if fill_price is None:
-            fill_price = Price(1.00000, 5)
+            fill_price = Price("1.00000")
         if filled_qty is None:
             filled_qty = order.quantity
         if leaves_qty is None:
-            leaves_qty = Quantity(0)
+            leaves_qty = Quantity()
 
         return OrderFilled(
             TestStubs.account_id(),
@@ -317,12 +317,12 @@ class TestStubs:
     @staticmethod
     def event_order_working(order, working_price=None) -> OrderWorking:
         if working_price is None:
-            working_price = Price(1.00000, 5)
+            working_price = Price("1.00000")
 
         return OrderWorking(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId('1'),
+            OrderId("1"),
             order.symbol,
             order.side,
             order.type,
@@ -340,7 +340,7 @@ class TestStubs:
         return OrderCancelled(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId('1'),
+            OrderId("1"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -351,7 +351,7 @@ class TestStubs:
         return OrderExpired(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId('1'),
+            OrderId("1"),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -390,7 +390,7 @@ class TestStubs:
     @staticmethod
     def position(number=1, entry_price=None) -> Position:
         if entry_price is None:
-            entry_price = Price(1.00000, 5)
+            entry_price = Price("1.00000")
 
         generator = PositionIdGenerator(id_tag_trader=IdTag("001"))
 
@@ -423,7 +423,7 @@ class TestStubs:
     @staticmethod
     def position_which_is_closed(position_id, close_price=None) -> Position:
         if close_price is None:
-            close_price = Price(1.0001, 5)
+            close_price = Price("1.0001")
 
         order_factory = OrderFactory(
             id_tag_trader=IdTag("001"),
@@ -445,9 +445,9 @@ class TestStubs:
             order.symbol,
             order.side,
             order.quantity,
-            Quantity(0),
+            Quantity(),
             close_price,
-            Money(0, Currency.USD),
+            Money("0", Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,  # Stub event
             Currency.USD,  # Stub event
@@ -465,9 +465,9 @@ class TestStubs:
             order.symbol,
             OrderSide.BUY,
             order.quantity,
-            Quantity(0),
+            Quantity(),
             close_price,
-            Money(0, Currency.USD),
+            Money("0", Currency.USD),
             LiquiditySide.TAKER,
             Currency.USD,  # Stub event
             Currency.USD,  # Stub event

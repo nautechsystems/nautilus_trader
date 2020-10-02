@@ -145,9 +145,9 @@ cdef class GenericCommissionModel:
         Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
-        cdef double commission = filled_qty.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
+        cdef double commission = filled_qty * filled_price * exchange_rate * commission_rate_percent
         cdef double final_commission = max(self.minimum.as_double(), commission)
-        return Money(final_commission, currency)
+        return Money.from_float_c(max(self.minimum.as_double(), commission), 2, currency)  # TODO: Currency precision
 
     cpdef Money calculate_for_notional(
             self,
@@ -176,8 +176,8 @@ cdef class GenericCommissionModel:
         Condition.not_none(notional_value, "notional_value")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
-        cdef double value = max(self.minimum.as_double(), notional_value.as_double() * commission_rate_percent)
-        return Money(value, notional_value.currency)
+        cdef double value = max(self.minimum.as_double(), notional_value * commission_rate_percent)
+        return Money.from_float_c(value, 2, notional_value.currency)  # TODO: Currency precision
 
     cpdef double get_rate(self, Symbol symbol) except *:
         """
@@ -285,8 +285,8 @@ cdef class MakerTakerCommissionModel:
         Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
-        cdef double commission = filled_qty.as_double() * filled_price.as_double() * exchange_rate * commission_rate_percent
-        return Money(commission, currency)
+        cdef double commission = filled_qty* filled_price * exchange_rate * commission_rate_percent
+        return Money.from_float_c(commission, 2, currency)
 
     cpdef Money calculate_for_notional(
             self,
@@ -315,8 +315,8 @@ cdef class MakerTakerCommissionModel:
         Condition.not_none(notional_value, "notional_value")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
-        cdef double commission = notional_value.as_double() * commission_rate_percent
-        return Money(notional_value.as_double() * commission_rate_percent, notional_value.currency)
+        cdef double commission = notional_value * commission_rate_percent
+        return Money.from_float_c(notional_value * commission_rate_percent, 2, notional_value.currency)
 
     cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *:
         """

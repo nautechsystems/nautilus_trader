@@ -34,11 +34,12 @@ class TickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
-            Price(1.00001, 5),
+            Price("1.00000"),
+            Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         result1 = tick.extract_price(PriceType.ASK)
@@ -46,19 +47,20 @@ class TickTests(unittest.TestCase):
         result3 = tick.extract_price(PriceType.BID)
 
         # Assert
-        self.assertEqual(Price(1.00001, 5), result1)
-        self.assertEqual(Price(1.000005, 6), result2)
-        self.assertEqual(Price(1.00000, 5), result3)
+        self.assertEqual(Price("1.00001"), result1)
+        self.assertEqual(Price("1.000005"), result2)
+        self.assertEqual(Price("1.00000"), result3)
 
     def test_extract_volume_with_various_price_types_returns_expected_values(self):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
-            Price(1.00001, 5),
+            Price("1.00000"),
+            Price("1.00001"),
             Quantity(500000),
             Quantity(800000),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         result1 = tick.extract_volume(PriceType.ASK)
@@ -74,11 +76,12 @@ class TickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
-            Price(1.00001, 5),
+            Price("1.00000"),
+            Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         result = QuoteTick.py_from_serializable_string(AUDUSD_FXCM, tick.to_serializable_string())
@@ -90,11 +93,12 @@ class TickTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
+            Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
             MatchId("123456789"),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         result = TradeTick.py_from_serializable_string(AUDUSD_FXCM, tick.to_serializable_string())
@@ -106,11 +110,12 @@ class TickTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
-            Price(1.00001, 5),
+            Price("1.00000"),
+            Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         result0 = str(tick)
@@ -125,11 +130,12 @@ class TickTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
+            Price("1.00000"),
             Quantity(50000),
             Maker.BUYER,
             MatchId("123456789"),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         result0 = str(tick)

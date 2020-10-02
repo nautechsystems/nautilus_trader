@@ -391,14 +391,14 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         order2 = strategy.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         submit_order1 = SubmitOrder(
@@ -480,14 +480,14 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         order2 = strategy2.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         submit_order1 = SubmitOrder(
@@ -585,21 +585,21 @@ class ExecutionEngineTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         order2 = strategy1.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         order3 = strategy2.order_factory.stop(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5),
+            Price("1.00000"),
         )
 
         submit_order1 = SubmitOrder(

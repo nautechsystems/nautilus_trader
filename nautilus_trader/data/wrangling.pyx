@@ -214,10 +214,10 @@ cdef class TickDataWrangler:
         """
         return QuoteTick(
             self.instrument.symbol,
-            Price(values[0], self.instrument.price_precision),
-            Price(values[1], self.instrument.price_precision),
-            Quantity(values[2], self.instrument.size_precision),
-            Quantity(values[3], self.instrument.size_precision),
+            Price.from_float_c(values[0], self.instrument.price_precision),
+            Price.from_float_c(values[1], self.instrument.price_precision),
+            Quantity.from_float_c(values[2], self.instrument.size_precision),
+            Quantity.from_float_c(values[3], self.instrument.size_precision),
             timestamp,
         )
 
@@ -228,10 +228,10 @@ cdef class TickDataWrangler:
         """
         return QuoteTick(
             self.instrument.symbol,
-            Price(values[0], self.instrument.price_precision),
-            Price(values[1], self.instrument.price_precision),
-            Quantity.one(),
-            Quantity.one(),
+            Price.from_float_c(values[0], self.instrument.price_precision),
+            Price.from_float_c(values[1], self.instrument.price_precision),
+            Quantity(1),
+            Quantity(1),
             timestamp,
         )
 
@@ -326,10 +326,10 @@ cdef class BarDataWrangler:
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
-            Price(values[0], self._precision),
-            Price(values[1], self._precision),
-            Price(values[2], self._precision),
-            Price(values[3], self._precision),
-            Quantity(values[4] * self._volume_multiple),
+            Price.from_float_c(values[0], self._precision),
+            Price.from_float_c(values[1], self._precision),
+            Price.from_float_c(values[2], self._precision),
+            Price.from_float_c(values[3], self._precision),
+            Quantity.from_float_c(values[4] * self._volume_multiple, 0),
             timestamp,
         )

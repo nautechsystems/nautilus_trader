@@ -19,7 +19,6 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.core.decimal import Decimal64
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.cache import InMemoryExecutionCache
 from nautilus_trader.model.enums import Currency
@@ -29,6 +28,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -91,7 +91,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order_filled = TestStubs.event_order_filled(
             order,
             position_id=PositionId('P-1'),
-            fill_price=Price(1.00000, 5),
+            fill_price=Price("1.00000"),
         )
 
         position = Position(order_filled)
@@ -119,7 +119,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5))
+            Price("1.00000"))
 
         position_id = PositionId('P-1')
         self.database.add_order(order, position_id, self.strategy.id)
@@ -162,7 +162,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order.apply(TestStubs.event_order_accepted(order))
         self.database.update_order(order)
 
-        order.apply(TestStubs.event_order_filled(order, fill_price=Price(1.00001, 5)))
+        order.apply(TestStubs.event_order_filled(order, fill_price=Price("1.00001")))
 
         # Act
         self.database.update_order(order)
@@ -196,7 +196,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             position_id=PositionId('P-1'),
-            fill_price=Price(1.00001, 5),
+            fill_price=Price("1.00001"),
         )
 
         position = Position(order1_filled)
@@ -234,7 +234,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             position_id=PositionId('P-1'),
-            fill_price=Price(1.00001, 5),
+            fill_price=Price("1.00001"),
         )
 
         position = Position(order1_filled)
@@ -252,7 +252,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order2_filled = TestStubs.event_order_filled(
             order2,
             position_id=PositionId('P-1'),
-            fill_price=Price(1.00001, 5),
+            fill_price=Price("1.00001"),
         )
         position.apply(order2_filled)
 
@@ -278,13 +278,13 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         event = AccountState(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
             Currency.USD,
-            Money(1000000, Currency.USD),
-            Money(1000000, Currency.USD),
-            Money(0, Currency.USD),
-            Money(0, Currency.USD),
-            Money(0, Currency.USD),
-            Decimal64(0),
-            'N',
+            Money("1000000", Currency.USD),
+            Money("1000000", Currency.USD),
+            Money("0", Currency.USD),
+            Money("0", Currency.USD),
+            Money("0", Currency.USD),
+            Decimal(),
+            "N",
             uuid4(),
             UNIX_EPOCH)
 
@@ -306,8 +306,8 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             Money(0, Currency.USD),
             Money(0, Currency.USD),
             Money(0, Currency.USD),
-            Decimal64(0),
-            'N',
+            Decimal(),
+            "N",
             uuid4(),
             UNIX_EPOCH)
 
@@ -348,7 +348,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             position_id=position1_id,
-            fill_price=Price(1.00000, 5),
+            fill_price=Price("1.00000"),
         )
         position1 = Position(order1_filled)
         self.database.update_order(order1)
@@ -358,7 +358,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.0000, 5))
+            Price("1.0000"))
         position2_id = PositionId('P-2')
         self.database.add_order(order2, position2_id, self.strategy.id)
 
@@ -394,7 +394,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             position_id=position1_id,
-            fill_price=Price(1.00000, 5),
+            fill_price=Price("1.00000"),
         )
         position1 = Position(order1_filled)
         self.database.update_order(order1)
@@ -404,7 +404,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5))
+            Price("1.00000"))
 
         position2_id = PositionId('P-2')
         self.database.add_order(order2, position2_id, self.strategy.id)
@@ -446,7 +446,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
         order1_filled = TestStubs.event_order_filled(
             order1,
             position_id=position1_id,
-            fill_price=Price(1.00000, 5),
+            fill_price=Price("1.00000"),
         )
         position1 = Position(order1_filled)
         self.database.update_order(order1)
@@ -456,7 +456,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price(1.00000, 5))
+            Price("1.00000"))
 
         position2_id = PositionId('P-2')
         self.database.add_order(order2, position2_id, self.strategy.id)

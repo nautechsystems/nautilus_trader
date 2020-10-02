@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -23,6 +22,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
@@ -89,7 +89,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
     cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
-    cdef inline Decimal64 _sum_net_position(self, Symbol symbol, StrategyId strategy_id)
+    cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id)
 
     cdef void _add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
     cdef void _add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *

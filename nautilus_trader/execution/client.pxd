@@ -20,6 +20,8 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Venue
 
 
@@ -28,6 +30,7 @@ cdef class ExecutionClient:
     cdef ExecutionEngine _engine
 
     cdef readonly Venue venue
+    cdef readonly AccountId account_id
     cdef readonly int command_count
     cdef readonly int event_count
 
@@ -45,4 +48,5 @@ cdef class ExecutionClient:
 
 # --------------------------------------------------------------------------------------------------
 
+    cpdef void handle_event(self, Event event)
     cdef void _reset(self) except *

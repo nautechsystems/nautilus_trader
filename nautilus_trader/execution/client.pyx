@@ -15,11 +15,14 @@
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Venue
 
 
@@ -31,6 +34,7 @@ cdef class ExecutionClient:
     def __init__(
             self,
             Venue venue not None,
+            AccountId account_id not None,
             ExecutionEngine engine not None,
             Logger logger not None):
         """
@@ -40,15 +44,19 @@ cdef class ExecutionClient:
         ----------
         venue : Venue
             The trading venue identifier for the client.
+        account_id : AccountId
+            The account identifier for the client.
         engine : ExecutionEngine
             The execution engine to connect to the client.
         logger : Logger
             The logger for the component.
+
         """
         self._engine = engine
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
         self.venue = venue
+        self.account_id = account_id
         self.command_count = 0
         self.event_count = 0
 
@@ -91,7 +99,22 @@ cdef class ExecutionClient:
     cpdef void cancel_order(self, CancelOrder command) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
-    # -----------------------------------------------------------------------------#
+
+# --------------------------------------------------------------------------------------------------
+
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the event by sending it to the execution engine for processing.
+
+        Parameters
+        ----------
+        event : Event
+            The event to handle.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._engine.process(event)
 
     cdef void _reset(self) except *:
         # Reset the class to its initial state

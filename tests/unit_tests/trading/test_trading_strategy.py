@@ -69,13 +69,16 @@ class TradingStrategyTests(unittest.TestCase):
             bar_capacity=1000,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
+
         self.data_engine.set_use_previous_close(False)
 
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -84,7 +87,9 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.exec_db = InMemoryExecutionCache(
             trader_id=trader_id,
-            logger=self.logger)
+            logger=self.logger,
+        )
+
         self.exec_engine = ExecutionEngine(
             trader_id=trader_id,
             account_id=account_id,
@@ -92,7 +97,8 @@ class TradingStrategyTests(unittest.TestCase):
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         usdjpy = TestStubs.instrument_usdjpy()
 
@@ -100,20 +106,24 @@ class TradingStrategyTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            exec_engine=self.exec_engine,
+            exec_cache=self.exec_engine.cache,
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
             commission_model=GenericCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.exec_client = BacktestExecClient(
             market=self.market,
+            account_id=account_id,
+            engine=self.exec_engine,
             logger=self.logger)
 
         self.exec_engine.register_client(self.exec_client)
+        self.market.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.account_event())
 
         self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
@@ -233,10 +243,10 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -260,10 +270,10 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -276,10 +286,10 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_bar(self):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -299,8 +309,8 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_quote_tick(self):
         tick = QuoteTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
-            Price(1.00001, 5),
+            Price("1.00000"),
+            Price("1.00001"),
             Quantity(1),
             Quantity(1),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
@@ -316,7 +326,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_trade_tick(self):
         tick = TradeTick(
             AUDUSD_FXCM,
-            Price(1.00000, 5),
+            Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
             MatchId("123456789"),
@@ -385,10 +395,10 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         bar = Bar(
-            Price(1.00001, 5),
-            Price(1.00004, 5),
-            Price(1.00002, 5),
-            Price(1.00003, 5),
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
             Quantity(100000),
             datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
@@ -625,8 +635,8 @@ class TradingStrategyTests(unittest.TestCase):
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(90.000, 3),
-            take_profit=Price(91.000, 3))
+            stop_loss=Price("90.000"),
+            take_profit=Price("91.000"))
 
         # Act
         strategy.submit_bracket_order(bracket_order)
@@ -654,8 +664,8 @@ class TradingStrategyTests(unittest.TestCase):
 
         bracket_order = strategy.order_factory.bracket(
             entry_order,
-            stop_loss=Price(90.000, 3),
-            take_profit=Price(91.000, 3))
+            stop_loss=Price("90.000"),
+            take_profit=Price("91.000"))
 
         position_id = PositionId('P-1')
 
@@ -754,12 +764,13 @@ class TradingStrategyTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger)
 
-        bar = Bar(Price(1.00001, 5),
-                  Price(1.00004, 5),
-                  Price(1.00002, 5),
-                  Price(1.00003, 5),
-                  Quantity(100000),
-                  datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+        bar = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
 
         # Act
         strategy.handle_bar(bar_type, bar)

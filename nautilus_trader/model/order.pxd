@@ -15,7 +15,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.decimal cimport Decimal64
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
@@ -44,6 +43,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -72,7 +72,7 @@ cdef class Order:
     cdef readonly Quantity filled_qty
     cdef readonly datetime filled_timestamp
     cdef readonly Price avg_price
-    cdef readonly Decimal64 slippage
+    cdef readonly Decimal slippage
     cdef readonly UUID init_id
 
     cpdef bint equals(self, Order other) except *

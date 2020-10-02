@@ -320,11 +320,11 @@ class EMACross(TradingStrategy):
                 self._enter_short(bar, sl_buffer, spread_buffer)
 
     def _enter_long(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        price_entry = Price(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)
-        price_stop_loss = Price(bar.low.as_double() - sl_buffer, self.precision)
+        price_entry = Price.from_float(bar.high.as_double() + self.entry_buffer + spread_buffer, self.precision)
+        price_stop_loss = Price.from_float(bar.low.as_double() - sl_buffer, self.precision)
 
         risk = price_entry.as_double() - price_stop_loss.as_double()
-        price_take_profit = Price(price_entry.as_double() + risk, self.precision)
+        price_take_profit = Price.from_float(price_entry.as_double() + risk, self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -373,11 +373,11 @@ class EMACross(TradingStrategy):
         self.submit_bracket_order(bracket_order)
 
     def _enter_short(self, bar: Bar, sl_buffer: float, spread_buffer: float):
-        price_entry = Price(bar.low.as_double() - self.entry_buffer, self.precision)
-        price_stop_loss = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+        price_entry = Price.from_float(bar.low.as_double() - self.entry_buffer, self.precision)
+        price_stop_loss = Price.from_float(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
 
         risk = price_stop_loss.as_double() - price_entry.as_double()
-        price_take_profit = Price(price_entry.as_double() - risk, self.precision)
+        price_take_profit = Price.from_float(price_entry.as_double() - risk, self.precision)
 
         # Calculate exchange rate
         exchange_rate = 0.0
@@ -432,13 +432,13 @@ class EMACross(TradingStrategy):
 
             # SELL SIDE ORDERS
             if order.is_sell():
-                temp_price = Price(bar.low.as_double() - sl_buffer, self.precision)
-                if temp_price.gt(order.price):
+                temp_price = Price.from_float(bar.low.as_double() - sl_buffer, self.precision)
+                if temp_price > order.price:
                     self.modify_order(order, order.quantity, temp_price)
             # BUY SIDE ORDERS
             elif order.is_buy():
-                temp_price = Price(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
-                if temp_price.lt(order.price):
+                temp_price = Price.from_float(bar.high.as_double() + sl_buffer + spread_buffer, self.precision)
+                if temp_price < order.price:
                     self.modify_order(order, order.quantity, temp_price)
 
     def on_data(self, data):
@@ -461,8 +461,8 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders_for_symbol(self.symbol)
-        self.flatten_all_positions_for_symbol(self.symbol)
+        self.cancel_all_orders(self.symbol)
+        self.flatten_all_positions(self.symbol)
 
     def on_reset(self):
         """

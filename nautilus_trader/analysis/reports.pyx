@@ -158,7 +158,7 @@ cdef class ReportProvider:
             "type": order_type_to_string(order.type),
             "quantity": order.quantity,
             "avg_price": "None" if order.avg_price is None
-            else order.avg_price.as_double(),
+            else order.avg_price,
             "slippage": order.slippage.as_double(),
             "timestamp": order.last_event().timestamp,
         }
