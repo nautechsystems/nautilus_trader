@@ -66,6 +66,7 @@ cdef class TradingStrategy:
 
     cpdef bint equals(self, TradingStrategy other) except *
     cpdef ComponentState state(self)
+    cpdef str state_as_string(self)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
