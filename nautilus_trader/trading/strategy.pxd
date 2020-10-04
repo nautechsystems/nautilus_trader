@@ -31,7 +31,6 @@ from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -47,19 +46,14 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class TradingStrategy:
+    cdef readonly StrategyId id
+    cdef readonly TraderId trader_id
     cdef readonly Clock clock
     cdef readonly UUIDFactory uuid_factory
     cdef readonly LoggerAdapter log
-
-    cdef readonly StrategyId id
-    cdef readonly TraderId trader_id
-
     # cdef readonly DataCacheReadOnly data
     cdef readonly ExecutionCacheReadOnly execution
     cdef readonly OrderFactory order_factory
-
-    cdef bint _is_flatten_on_reject
-    cdef bint _is_reraise_exceptions
 
     cdef list _indicators
     cdef dict _indicators_for_quotes
@@ -183,4 +177,3 @@ cdef class TradingStrategy:
     cpdef void cancel_all_orders(self, Symbol symbol) except *
     cpdef void flatten_position(self, Position position) except *
     cpdef void flatten_all_positions(self, Symbol symbol) except *
-    cdef void _flatten_on_reject(self, OrderRejected event) except *
