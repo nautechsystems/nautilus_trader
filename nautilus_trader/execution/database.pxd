@@ -35,6 +35,8 @@ cdef class ExecutionDatabase:
     cpdef void flush(self) except *
     cpdef dict load_accounts(self)
     cpdef dict load_orders(self)
+    cpdef set load_stop_loss_ids(self)
+    cpdef set load_take_profit_ids(self)
     cpdef dict load_positions(self)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
@@ -44,6 +46,8 @@ cdef class ExecutionDatabase:
 
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
 
@@ -51,11 +55,6 @@ cdef class ExecutionDatabase:
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
-
-    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *
-    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *
-    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *
-    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *
 
 
 cdef class BypassExecutionDatabase(ExecutionDatabase):

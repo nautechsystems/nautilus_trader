@@ -54,6 +54,8 @@ cdef str _WORKING = 'Working'
 cdef str _COMPLETED = 'Completed'
 cdef str _OPEN = 'Open'
 cdef str _CLOSED = 'Closed'
+cdef str _SL = 'SL'
+cdef str _TP = 'TP'
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -120,6 +122,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_index_positions          = f"{self.key_trader}:{_INDEX}:{_POSITIONS}"             # SET   # noqa
         self.key_index_positions_open     = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}"     # SET   # noqa
         self.key_index_positions_closed   = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}"   # SET   # noqa
+        self.key_index_stop_loss_ids      = f"{self.key_trader}:{_INDEX}:{_SL}"                    # SET   # noqa
+        self.key_index_take_profit_ids    = f"{self.key_trader}:{_INDEX}:{_TP}"                    # SET   # noqa
 
         # Serializers
         self._command_serializer = command_serializer
@@ -133,18 +137,20 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cpdef void flush(self) except *:
         """
         Flush the database which clears all data.
+
         """
-        self._log.debug("Flushing cache....")
+        self._log.debug("Flushing database....")
         self._redis.flushdb()
-        self._log.info("Flushed cache.")
+        self._log.info("Flushed database.")
 
     cpdef dict load_accounts(self):
         """
-        Clear the current accounts cache and load accounts from the cache.
+        Load all accounts from the execution database.
 
         Returns
         -------
         Dict[AccountId, Account]
+
         """
         cdef dict accounts = {}
 
@@ -166,7 +172,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef dict load_orders(self):
         """
-        Clear the current order cache and load orders from the cache.
+        Load all orders from the execution database.
+
+        Returns
+        -------
+        Dict[ClientOrderId, Order]
+
         """
         cdef dict orders = {}
 
@@ -186,9 +197,30 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return orders
 
+    cpdef set load_stop_loss_ids(self):
+        """
+        Load all registered stop-loss identifiers from the execution database.
+
+        """
+        cdef set stop_loss_id_members = self._redis.smembers(self.key_index_stop_loss_ids)
+        return {ClientOrderId(cl_ord_id.decode(_UTF8)) for cl_ord_id in stop_loss_id_members}
+
+    cpdef set load_take_profit_ids(self):
+        """
+        Load all registered take-profit identifiers from the execution database.
+
+        """
+        cdef set take_profit_id_members = self._redis.smembers(self.key_index_take_profit_ids)
+        return {ClientOrderId(cl_ord_id.decode(_UTF8)) for cl_ord_id in take_profit_id_members}
+
     cpdef dict load_positions(self):
         """
-        Clear the current order cache and load orders from the cache.
+        Load all positions from the execution database.
+
+        Returns
+        -------
+        Dict[PositionId, Position]
+
         """
         cdef dict positions = {}
 
@@ -214,7 +246,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         Parameters
         ----------
-        :param account_id: The account identifier to load.
+        account_id : AccountId
+            The account identifier to load.
 
         Returns
         -------
@@ -307,7 +340,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cpdef dict load_strategy(self, StrategyId strategy_id):
         """
-        Load the state for the given strategy from the execution cache.
+        Load the state for the given strategy.
 
         Parameters
         ----------
@@ -347,11 +380,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         account : Account
             The account to add.
 
-        Raises
-        ------
-        ValueError
-            If account_id is already contained in the cached_accounts.
-
         """
         Condition.not_none(account, "account")
 
@@ -379,17 +407,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             The position identifier to index for the order.
         strategy_id : StrategyId
             The strategy identifier to index for the order.
-
-        Raises
-        ------
-        ValueError
-            If order.id is already contained in the cached_orders.
-        ValueError
-            If order.id is already contained in the index_orders.
-        ValueError
-            If order.id is already contained in the index_order_position.
-        ValueError
-            If order.id is already contained in the index_order_strategy.
 
         """
         Condition.not_none(order, "order")
@@ -429,6 +446,34 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         #     self._log.error(f"The {order.cl_ord_id} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
 
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        Register the given client order identifier as a stop-loss.
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The identifier to register.
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        self._redis.sadd(self.key_index_stop_loss_ids, cl_ord_id.value)
+
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        Register the given order to be managed as a take-profit.
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The identifier to register.
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        self._redis.sadd(self.key_index_take_profit_ids, cl_ord_id.value)
+
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """
         Index the given position identifier with the other given identifiers.
@@ -464,16 +509,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         position : Position
             The position to add.
         strategy_id : StrategyId
-            The strategy_id to associate with the position.
-
-        Raises
-        ------
-        ValueError
-            If position.id is already contained in the cached_positions.
-        ValueError
-            If position.id is already contained in the index_positions.
-        ValueError
-            If position.id is already contained in the index_positions_open.
+            The strategy identifier to associate with the position.
 
         """
         Condition.not_none(position, "position")
@@ -594,70 +630,3 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
         self._log.debug(f"Updated Position(id={position.id.value}).")
-
-    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Register the given order to be managed as a stop-loss.
-
-        If cancel_on_sl_reject management flag is set to True then associated
-        position will be flattened if this order is rejected.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The stop-loss order to register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered stop-loss orders.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        # TODO: Implement
-        self._log.debug(f"Registered SL order {cl_ord_id}")
-
-    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Register the given order to be managed as a take-profit.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The take-profit order to register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered take_profit orders.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        # TODO: Implement
-        self._log.debug(f"Registered TP order {cl_ord_id}")
-
-    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        TBD.
-
-        Parameters
-        ----------
-        cl_ord_id
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        # TODO: Implement
-
-    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        TBD.
-
-        Parameters
-        ----------
-        cl_ord_id
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        # TODO: Implement

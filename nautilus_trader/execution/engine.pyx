@@ -92,10 +92,10 @@ cdef class ExecutionEngine:
         Raises
         ------
         ValueError
-            If trader_id is not equal to the cache.trader_id.
+            If trader_id is not equal to the database.trader_id.
 
         """
-        Condition.equal(trader_id, database.trader_id, "trader_id", "cache.trader_id")
+        Condition.equal(trader_id, database.trader_id, "trader_id", "database.trader_id")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
@@ -358,13 +358,10 @@ cdef class ExecutionEngine:
         # Cache all orders
         self.cache.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
         self.cache.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
+        self.cache.add_stop_loss_id(command.bracket_order.stop_loss.cl_ord_id)
         if command.bracket_order.has_take_profit:
             self.cache.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
-
-        # Register stop-loss and take-profits
-        self.cache.register_stop_loss(command.bracket_order.stop_loss)
-        if command.bracket_order.has_take_profit:
-            self.cache.register_take_profit(command.bracket_order.take_profit)
+            self.cache.add_take_profit_id(command.bracket_order.take_profit.cl_ord_id)
 
         # Submit bracket order
         client.submit_bracket_order(command)
