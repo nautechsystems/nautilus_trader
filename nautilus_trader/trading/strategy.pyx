@@ -64,12 +64,7 @@ cdef class TradingStrategy:
     The base class for all trading strategies.
     """
 
-    def __init__(
-            self,
-            str order_id_tag not None,
-            bint flatten_on_reject=True,
-            bint reraise_exceptions=True,
-    ):
+    def __init__(self, str order_id_tag not None):
         """
         Initialize a new instance of the TradingStrategy class.
 
@@ -77,10 +72,6 @@ cdef class TradingStrategy:
         ----------
         order_id_tag : str
             The order_id tag for the strategy (must be unique at trader level).
-        flatten_on_reject : bool
-            If open positions should be flattened on a child orders rejection.
-        reraise_exceptions : bool
-            If exceptions raised in handling methods should be re-raised.
 
         Raises
         ------
@@ -98,18 +89,14 @@ cdef class TradingStrategy:
         self.clock = None          # Initialized when registered with a trader
         self.uuid_factory = None   # Initialized when registered with a trader
         self.log = None            # Initialized when registered with a trader
-        self.order_factory = None  # Initialized when registered with a trader
-        # self.data = None
+        # self.data = None         # Initialized when registered with the data engine
         self.execution = None      # Initialized when registered with the execution engine
+        self.order_factory = None  # Initialized when registered with a trader
 
         # Private components
         self._data_engine = None   # Initialized when registered with the data engine
         self._exec_engine = None   # Initialized when registered with the execution engine
         self._fsm = create_component_fsm()
-
-        # Management flags
-        self._is_flatten_on_reject = flatten_on_reject
-        self._is_reraise_exceptions = reraise_exceptions
 
         # Indicators
         self._indicators = []              # type: [Indicator]
@@ -503,8 +490,7 @@ cdef class TradingStrategy:
                 self.on_quote_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -561,8 +547,7 @@ cdef class TradingStrategy:
                 self.on_trade_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -622,8 +607,7 @@ cdef class TradingStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -670,8 +654,7 @@ cdef class TradingStrategy:
                 self.on_data(data)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     cpdef void handle_event(self, Event event) except *:
         """
@@ -687,8 +670,6 @@ cdef class TradingStrategy:
 
         if isinstance(event, OrderRejected):
             self.log.warning(f"{RECV}{EVT} {event}.")
-            if self._is_flatten_on_reject:
-                self._flatten_on_reject(event)
         elif isinstance(event, OrderCancelReject):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
@@ -699,8 +680,7 @@ cdef class TradingStrategy:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
 # -- DATA METHODS ----------------------------------------------------------------------------------
 
@@ -1733,26 +1713,4 @@ cdef class TradingStrategy:
 
         cdef Position position
         for position in positions_open:
-            self.flatten_position(position)
-
-    cdef void _flatten_on_reject(self, OrderRejected event) except *:
-        # Find position_id for order
-        cdef PositionId position_id = self.execution.position_id(event.cl_ord_id)
-        if position_id is None:
-            self.log.error(f"Cannot flatten on reject "
-                           f"(did not find PositionId for {event.cl_ord_id.to_string(with_class=True)}).")
-            return
-
-        cdef Position position = self.execution.position(position_id)
-        if position is None:
-            self.log.error(f"Cannot flatten on reject "
-                           f"(did not find Position for {position_id.to_string(with_class=True)}).")
-            return
-
-        # Flatten if open position
-        # TODO: Stop-loss id has already been discarded at this stage
-        if self.execution.is_position_open(position_id):
-            self.log.warning(f"Rejected {event.cl_ord_id.to_string(with_class=True)} "
-                             f"was a registered child order, "
-                             f"now flattening {position_id.to_string(with_class=True)}.")
             self.flatten_position(position)

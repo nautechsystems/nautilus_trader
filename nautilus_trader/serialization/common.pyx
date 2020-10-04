@@ -26,8 +26,15 @@ cpdef str convert_price_to_string(Price price):
     """
     Return the converted string from the given price, can return a 'None' string..
 
-    :param price: The price to convert.
-    :return str.
+    Parameters
+    ----------
+    price : Price
+        The price to convert.
+
+    Returns
+    -------
+    str
+
     """
     return NONE if price is None else price.to_string()
 
@@ -36,8 +43,15 @@ cpdef str convert_datetime_to_string(datetime time):
     """
     Return the converted ISO8601 string from the given datetime, can return a 'None' string.
 
-    :param time: The datetime to convert
-    :return str.
+    Parameters
+    ----------
+    time : datetime
+        The datetime to convert
+
+    Returns
+    -------
+    str
+
     """
     return NONE if time is None else format_iso8601(time)
 
@@ -46,8 +60,15 @@ cpdef Price convert_string_to_price(str price_string):
     """
     Return the converted price (or None) from the given price string.
 
-    :param price_string: The price string to convert.
-    :return Price or None.
+    Parameters
+    ----------
+    price_string : str
+        The price string to convert.
+
+    Returns
+    -------
+    Price or None
+
     """
     Condition.valid_string(price_string, "price_string")  # string often 'None'
 
@@ -58,8 +79,15 @@ cpdef datetime convert_string_to_datetime(str time_string):
     """
     Return the converted datetime (or None) from the given time string.
 
-    :param time_string: The time string to convert.
-    :return datetime or None.
+    Parameters
+    ----------
+    time_string : str
+        The time string to convert.
+
+    Returns
+    -------
+    datetime or None
+
     """
     Condition.valid_string(time_string, "time_string")  # string often 'None'
 
