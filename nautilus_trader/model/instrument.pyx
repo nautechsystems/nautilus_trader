@@ -16,9 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
@@ -33,7 +32,7 @@ cdef class Instrument:
     def __init__(
             self,
             Symbol symbol not None,
-            Currency quote_currency,
+            Currency quote_currency not None,
             SecurityType security_type,
             int price_precision,
             int size_precision,
@@ -76,7 +75,6 @@ cdef class Instrument:
             The timestamp the instrument was created/updated at.
 
         """
-        Condition.not_equal(quote_currency, Currency.UNDEFINED, 'quote_currency', 'UNDEFINED')
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
@@ -224,7 +222,7 @@ cdef class ForexInstrument(Instrument):
         """
         super().__init__(
             symbol,
-            currency_from_string(symbol.code[-3:]),
+            Currency.from_string_c(symbol.code[-3:]),
             SecurityType.FOREX,
             price_precision,
             size_precision,
@@ -237,7 +235,7 @@ cdef class ForexInstrument(Instrument):
             timestamp,
         )
 
-        self.base_currency = currency_from_string(symbol.code[:3])
+        self.base_currency = Currency.from_string_c(symbol.code[:3])
         self.min_stop_distance_entry = min_stop_distance_entry
         self.min_stop_distance = min_stop_distance
         self.min_limit_distance_entry = min_limit_distance_entry

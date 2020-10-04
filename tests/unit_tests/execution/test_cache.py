@@ -22,7 +22,7 @@ from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -121,7 +121,8 @@ class ExecutionCacheTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         position_id = PositionId('P-1')
         self.cache.add_order(order, position_id, self.strategy.id)
@@ -279,16 +280,17 @@ class ExecutionCacheTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
-            Currency.USD,
-            Money("1000000", Currency.USD),
-            Money("1000000", Currency.USD),
-            Money("0", Currency.USD),
-            Money("0", Currency.USD),
-            Money("0", Currency.USD),
+            Currency.USD(),
+            Money(1000000, Currency.USD()),
+            Money(1000000, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
             Decimal(),
             "N",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         account = Account(event)
 
@@ -302,16 +304,17 @@ class ExecutionCacheTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
-            Currency.USD,
-            Money(1000000, Currency.USD),
-            Money(1000000, Currency.USD),
-            Money(0, Currency.USD),
-            Money(0, Currency.USD),
-            Money(0, Currency.USD),
+            Currency.USD(),
+            Money(1000000, Currency.USD()),
+            Money(1000000, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
             Decimal(),
             "N",
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         account = Account(event)
         self.cache.add_account(account)
@@ -337,7 +340,8 @@ class ExecutionCacheTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
         position1_id = PositionId('P-1')
         self.cache.add_order(order1, position1_id, self.strategy.id)
 
@@ -360,7 +364,8 @@ class ExecutionCacheTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.0000"))
+            Price("1.0000"),
+        )
         position2_id = PositionId('P-2')
         self.cache.add_order(order2, position2_id, self.strategy.id)
 
@@ -406,7 +411,8 @@ class ExecutionCacheTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         position2_id = PositionId('P-2')
         self.cache.add_order(order2, position2_id, self.strategy.id)
@@ -458,7 +464,8 @@ class ExecutionCacheTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         position2_id = PositionId('P-2')
         self.cache.add_order(order2, position2_id, self.strategy.id)

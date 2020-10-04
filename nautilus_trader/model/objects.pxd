@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.quicktions cimport Fraction
 
 
@@ -49,7 +49,6 @@ cdef class Price(Fraction):
 
 
 cdef class Money(Fraction):
-    cdef readonly int precision
     cdef readonly Currency currency
 
     cdef inline Money add(self, Money other)
@@ -58,8 +57,6 @@ cdef class Money(Fraction):
     @staticmethod
     cdef Money zero(Currency currency)
 
-    @staticmethod
-    cdef inline Money from_float_c(double value, int precision, Currency currency)
     cpdef double as_double(self)
     cpdef str to_string(self)
     cpdef str to_string_formatted(self)

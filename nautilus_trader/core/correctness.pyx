@@ -46,7 +46,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If condition predicate is False.
+            If predicate is False.
 
         """
         if predicate:
@@ -75,7 +75,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-            If condition predicate is True.
+            If predicate is True.
 
         """
         if not predicate:

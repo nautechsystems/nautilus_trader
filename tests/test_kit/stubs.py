@@ -25,9 +25,9 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
@@ -232,12 +232,12 @@ class TestStubs:
 
         return AccountState(
             account_id,
-            Currency.USD,
-            Money("1000000.00", Currency.USD),
-            Money("1000000.00", Currency.USD),
-            Money("0", Currency.USD),
-            Money("0", Currency.USD),
-            Money("0", Currency.USD),
+            Currency.USD(),
+            Money(1000000.00, Currency.USD()),
+            Money(1000000.00, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
             Decimal(),
             "N",
             uuid4(),
@@ -309,10 +309,10 @@ class TestStubs:
             filled_qty,
             leaves_qty,
             order.price if fill_price is None else fill_price,
-            Money(commission, Currency.USD),
+            Money(commission, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.USD,  # Stub event
-            Currency.USD,  # Stub event
+            Currency.USD(),  # Stub event
+            Currency.USD(),  # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -453,10 +453,10 @@ class TestStubs:
             order.quantity,
             Quantity(),
             close_price,
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.USD,  # Stub event
-            Currency.USD,  # Stub event
+            Currency.USD(),  # Stub event
+            Currency.USD(),  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),
@@ -474,10 +474,10 @@ class TestStubs:
             order.quantity,
             Quantity(),
             close_price,
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.USD,  # Stub event
-            Currency.USD,  # Stub event
+            Currency.USD(),  # Stub event
+            Currency.USD(),  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),

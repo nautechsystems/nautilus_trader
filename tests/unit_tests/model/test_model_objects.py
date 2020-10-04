@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -221,7 +221,7 @@ class ObjectTests(unittest.TestCase):
     def test_money_from_string_with_no_decimal(self):
         # Arrange
         # Act
-        money = Money.from_float(1, 2, Currency.USD)
+        money = Money(1, Currency.USD())
 
         # Assert
         self.assertEqual(1.0, money.as_double())
@@ -230,9 +230,9 @@ class ObjectTests(unittest.TestCase):
     def test_money_initialized_with_valid_inputs(self):
         # Arrange
         # Act
-        result1 = Money("1.00", Currency.USD)
-        result2 = Money("1000.0", Currency.USD)
-        result3 = Money("2", Currency.USD)
+        result1 = Money("1.00", Currency.USD())
+        result2 = Money(1000.0, Currency.USD())
+        result3 = Money(2, Currency.USD())
 
         # Assert
         self.assertEqual(1.00, result1.as_double())
@@ -242,8 +242,8 @@ class ObjectTests(unittest.TestCase):
     def test_money_initialized_with_many_decimals(self):
         # Arrange
         # Act
-        result1 = Money.from_float(1000.333, 2, Currency.USD)
-        result2 = Money.from_float(5005.556666, 2, Currency.USD)
+        result1 = Money(1000.333, Currency.USD())
+        result2 = Money(5005.556666, Currency.USD())
 
         # Assert
         self.assertEqual("1,000.33 USD", result1.to_string_formatted())
@@ -251,9 +251,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_str(self):
         # Arrange
-        money0 = Money.from_float(0, 2, Currency.USD)
-        money1 = Money.from_float(1, 2, Currency.USD)
-        money2 = Money.from_float(1000000, 2, Currency.USD)
+        money0 = Money(0, Currency.USD())
+        money1 = Money(1, Currency.USD())
+        money2 = Money(1000000, Currency.USD())
 
         # Act
         # Assert
@@ -264,7 +264,7 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_repr(self):
         # Arrange
-        money = Money("1.00", Currency.USD)
+        money = Money("1.00", Currency.USD())
 
         # Act
         result = repr(money)
@@ -275,10 +275,10 @@ class ObjectTests(unittest.TestCase):
     def test_money_equality(self):
         # Arrange
         # Act
-        money1 = Money("1.00", Currency.USD)
-        money2 = Money("1.00", Currency.USD)
-        money3 = Money("2.00", Currency.USD)
-        money4 = Money("1.01", Currency.USD)
+        money1 = Money(1.00, Currency.USD())
+        money2 = Money(1.00, Currency.USD())
+        money3 = Money("2.00", Currency.USD())
+        money4 = Money("1.01", Currency.USD())
 
         # Assert
         self.assertEqual(money1, money2)
@@ -287,9 +287,9 @@ class ObjectTests(unittest.TestCase):
 
     def test_money_equality_operators(self):
         # Arrange
-        money1 = Money("0.50", Currency.USD)
-        money2 = Money("1.00", Currency.USD)
-        money3 = Money("1.50", Currency.USD)
+        money1 = Money("0.50", Currency.USD())
+        money2 = Money(1.00, Currency.USD())
+        money3 = Money("1.50", Currency.USD())
 
         # Act
         # Assert

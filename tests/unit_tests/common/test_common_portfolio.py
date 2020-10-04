@@ -20,7 +20,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
@@ -53,8 +53,8 @@ class PortfolioTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(self.clock.utc_now().date(), self.portfolio.date_now)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
         self.assertEqual(set(), self.portfolio.symbols_open())
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual(set(), self.portfolio.symbols_all())
@@ -82,8 +82,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({position.id: position}, self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
         self.assertEqual({position.id: position}, self.portfolio.positions_all())
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
 
     def test_reset_portfolio(self):
         # Arrange
@@ -102,8 +102,8 @@ class PortfolioTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(self.clock.utc_now().date(), self.portfolio.date_now)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
         self.assertEqual(set(), self.portfolio.symbols_open())
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual(set(), self.portfolio.symbols_all())
@@ -144,8 +144,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(
             {position1.id: position1, position2.id: position2},
             self.portfolio.positions_all())
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
 
     def test_modifying_position_updates_portfolio(self):
         # Arrange
@@ -176,8 +176,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({position.id: position}, self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
         self.assertEqual({position.id: position}, self.portfolio.positions_all())
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
 
     def test_closing_position_updates_portfolio(self):
         # Arrange

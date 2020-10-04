@@ -20,8 +20,8 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
@@ -49,7 +49,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
             exec_db_flush=False,
             frozen_account=False,
             starting_capital=1000000,
-            account_currency=Currency.USD,
+            account_currency=Currency.USD(),
             short_term_interest_csv_path='default',
             bypass_logging=False,
             level_console=LogLevel.DEBUG,

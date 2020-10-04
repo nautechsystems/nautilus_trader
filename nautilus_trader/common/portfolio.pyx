@@ -16,7 +16,7 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -59,7 +59,7 @@ cdef class Portfolio:
         self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
         self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
 
-        self.base_currency = Currency.USD  # Default
+        self.base_currency = Currency.USD()  # Default
         self.daily_pnl_realized = Money(0, self.base_currency)
         self.total_pnl_realized = Money(0, self.base_currency)
         self.date_now = self._clock.utc_now().date()
@@ -108,7 +108,7 @@ cdef class Portfolio:
 
         self._positions_open.clear()
         self._positions_closed.clear()
-        self.base_currency = Currency.USD  # Default
+        self.base_currency = Currency.USD()  # Default
         self.daily_pnl_realized = Money(0, self.base_currency)
         self.total_pnl_realized = Money(0, self.base_currency)
         self.date_now = self._clock.utc_now().date()

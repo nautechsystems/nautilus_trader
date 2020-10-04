@@ -18,7 +18,7 @@ from cpython.datetime cimport date
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified

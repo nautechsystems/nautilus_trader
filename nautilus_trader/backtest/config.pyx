@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.objects cimport Money
 
 
@@ -32,7 +32,7 @@ cdef class BacktestConfig:
             bint frozen_account=False,
             generate_position_ids=True,
             int starting_capital=1000000,
-            Currency account_currency=Currency.USD,
+            Currency account_currency not None=Currency.USD(),
             str short_term_interest_csv_path not None="default",
             bint bypass_logging=False,
             int level_console=LogLevel.INFO,
