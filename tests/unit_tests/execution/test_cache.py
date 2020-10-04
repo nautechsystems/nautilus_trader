@@ -430,7 +430,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertEqual(0, self.database.orders_total_count())
         self.assertEqual(0, self.database.positions_total_count())
 
-    def test_flush(self):
+    def test_flush_db(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -473,7 +473,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Act
         self.database.reset()
-        self.database.flush()
+        self.database.flush_db()
 
         # Assert
         # Does not raise exception

@@ -122,7 +122,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         pass
         # TODO: Implement
 
-    cpdef dict load_strategy(self, TradingStrategy strategy):
+    cpdef void load_strategy(self, TradingStrategy strategy):
         """
         Load the state dictionary for the given strategy from the execution cache.
 
@@ -134,8 +134,14 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Condition.not_none(strategy, "strategy")
 
-        self._log.info(f"Loading {strategy.id} (in-memory cache does nothing).")
-        # Do nothing in memory
+        cdef dict state = self._database.load_strategy(strategy.id)
+
+        if state:
+            strategy.load(state)
+            for key, value in state.items():
+                self._log.debug(f"Loading {strategy.id.to_string(with_class=True)}) state (key='{key}', value={value})...")
+        else:
+            self._log.info(f"No previous state found for {strategy.id.to_string(with_class=True)}")
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -549,7 +555,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             del self._index_strategy_positions[strategy.id]
 
         # Persist
-        self._database.delete_strategy(strategy)
+        self._database.delete_strategy(strategy.id)
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
     cpdef void check_residuals(self) except *:

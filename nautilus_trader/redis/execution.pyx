@@ -178,8 +178,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef ClientOrderId order_id
         cdef Order order
         for key_bytes in order_keys:
-            order_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
-            order = self.load_order(order_id)
+            cl_ord_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            order = self.load_order(cl_ord_id)
 
             if order:
                 orders[order.cl_ord_id] = order
@@ -305,53 +305,38 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         return position
 
-    cpdef dict load_strategy(self, TradingStrategy strategy):
+    cpdef dict load_strategy(self, StrategyId strategy_id):
         """
         Load the state for the given strategy from the execution cache.
 
         Parameters
         ----------
-        strategy : TradingStrategy
-            The strategy to load.
+        strategy_id : StrategyId
+            The identifier of the strategy state dictionary to load.
 
         """
-        Condition.not_none(strategy, "strategy")
+        Condition.not_none(strategy_id, "strategy_id")
 
-        cdef dict state = self._redis.hgetall(name=self.key_strategies + strategy.id.value + ":State")
+        return self._redis.hgetall(name=self.key_strategies + strategy_id.value + ":State")
 
-        if not state:
-            self._log.info(f"No previous state found for Strategy(id={strategy.id.value}).")
-            return state
-
-        for key, value in state.items():
-            self._log.debug(f"Loading Strategy(id={strategy.id.value}) state (key='{key}', value={value})...")
-
-        self._log.info(f"Loaded Strategy(id={strategy.id.value}) state.")
-        return state
-
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+    cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         """
         Delete the given strategy from the execution cache.
         Logs error if strategy not found in the cache.
 
         Parameters
         ----------
-        strategy : TradingStrategy
-            The strategy to deregister.
-
-        Raises
-        ------
-        ValueError
-            If strategy is not contained in the strategies.
+        strategy_id : StrategyId
+            The identifier of the strategy state dictionary to delete.
 
         """
-        Condition.not_none(strategy, "strategy")
+        Condition.not_none(strategy_id, "strategy_id")
 
         pipe = self._redis.pipeline()
-        pipe.delete(self.key_strategies + strategy.id.value)
+        pipe.delete(self.key_strategies + strategy_id.value)
         pipe.execute()
 
-        self._log.info(f"Deleted Strategy(id={strategy.id.value}).")
+        self._log.info(f"Deleted {strategy_id.to_string(with_class=True)}.")
 
     cpdef void add_account(self, Account account) except *:
         """

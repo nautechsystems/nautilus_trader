@@ -20,7 +20,6 @@ from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
@@ -385,9 +384,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Act
         result = self.database.load_orders()
 
-        print(result)
         # Assert
-        self.assertEqual({order.cl_ord_id, order}, result)
+        self.assertEqual({order.cl_ord_id: order}, result)
 
     def test_load_positions_cache_when_no_positions(self):
         # Arrange
@@ -395,7 +393,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.load_positions()
 
         # Assert
-        self.assertEqual([], self.database.positions())
+        self.assertEqual({}, self.database.load_positions())
 
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
@@ -403,7 +401,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         position_id = PositionId('P-1')
         self.database.add_order(order1, position_id, self.strategy.id)
@@ -417,111 +416,19 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.add_position(position, self.strategy.id)
 
         # Act
-        self.database.load_positions()
+        result = self.database.load_positions()
 
         # Assert
-        self.assertEqual([position], self.database.positions())
+        self.assertEqual({position.id: position}, result)
 
     def test_can_delete_strategy(self):
         # Arrange
         # Act
-        self.database.delete_strategy(self.strategy)
+        self.database.delete_strategy(self.strategy.id)
+        result = self.database.load_strategy(self.strategy.id)
 
         # Assert
-        self.assertTrue(self.strategy.id not in self.database.strategy_ids())
-
-    def test_can_check_residuals(self):
-        # Arrange
-        order1 = self.strategy.order_factory.stop(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"))
-
-        position1_id = PositionId('P-1')
-        self.database.add_order(order1, position1_id, self.strategy.id)
-
-        order1.apply(TestStubs.event_order_submitted(order1))
-        order1.apply(TestStubs.event_order_accepted(order1))
-        order1.apply(TestStubs.event_order_working(order1))
-
-        filled = TestStubs.event_order_filled(order1, position_id=position1_id, fill_price=Price("1.00001"))
-
-        order1.apply(filled)
-
-        position1 = Position(filled)
-        self.database.update_order(order1)
-        self.database.add_position(position1, self.strategy.id)
-
-        order2 = self.strategy.order_factory.stop(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"))
-
-        position2_id = PositionId('P-2')
-        self.database.add_order(order2, position2_id, self.strategy.id)
-
-        order2.apply(TestStubs.event_order_submitted(order2))
-        order2.apply(TestStubs.event_order_accepted(order2))
-        order2.apply(TestStubs.event_order_working(order2))
-
-        self.database.update_order(order2)
-
-        # Act
-        self.database.check_residuals()
-
-        # Does not raise exception
-
-    def test_can_reset(self):
-        # Arrange
-        order1 = self.strategy.order_factory.market(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-        position1_id = PositionId('P-1')
-        self.database.add_order(order1, position1_id, self.strategy.id)
-
-        order1.apply(TestStubs.event_order_submitted(order1))
-        self.database.update_order(order1)
-
-        order1.apply(TestStubs.event_order_accepted(order1))
-        self.database.update_order(order1)
-
-        filled = TestStubs.event_order_filled(order1, position_id=position1_id, fill_price=Price("1.00001"))
-
-        order1.apply(filled)
-
-        position1 = Position(filled)
-        self.database.update_order(order1)
-        self.database.add_position(position1, self.strategy.id)
-
-        order2 = self.strategy.order_factory.stop(
-            AUDUSD_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-            Price("1.00000"))
-
-        position2_id = PositionId('P-2')
-        self.database.add_order(order2, position2_id, self.strategy.id)
-
-        order2.apply(TestStubs.event_order_submitted(order2))
-        self.database.update_order(order2)
-
-        order2.apply(TestStubs.event_order_accepted(order2))
-        self.database.update_order(order2)
-
-        order2.apply(TestStubs.event_order_working(order2))
-        self.database.update_order(order2)
-
-        self.database.update_order(order2)
-
-        # Act
-        self.database.reset()
-
-        # Assert
-        self.assertEqual(0, len(self.database.orders()))
-        self.assertEqual(0, len(self.database.positions()))
+        self.assertEqual({}, result)
 
     def test_can_flush(self):
         # Arrange
@@ -553,70 +460,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order2)
 
         # Act
-        self.database.reset()
         self.database.flush()
 
         # Assert
         # Does not raise exception
-
-    def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
-        # Arrange
-        # Act
-        result = self.database.strategy_ids()
-
-        # Assert
-        self.assertEqual(set(), result)
-
-    def test_get_strategy_ids_with_id_returns_correct_set(self):
-        # Arrange
-        self.database.update_strategy(self.strategy)
-
-        # Act
-        result = self.database.strategy_ids()
-
-        # Assert
-        self.assertEqual({self.strategy.id}, result)
-
-    def test_position_exists_when_no_position_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.database.position_exists(PositionId("P-123456")))
-
-    def test_position_exists_for_order_when_no_position_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.database.position_exists_for_order(ClientOrderId("O-123456")))
-
-    def test_position_indexed_for_order_when_no_indexing_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.database.position_indexed_for_order(ClientOrderId("O-123456")))
-
-    def test_order_exists_when_no_order_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.database.order_exists(ClientOrderId("O-123456")))
-
-    def test_get_order_when_no_order_returns_none(self):
-        # Arrange
-        position_id = PositionId("P-123456")
-
-        # Act
-        result = self.database.position(position_id)
-
-        # Assert
-        self.assertIsNone(result)
-
-    def test_get_position_when_no_position_returns_none(self):
-        # Arrange
-        order_id = ClientOrderId("O-201908080101-000-001")
-
-        # Act
-        result = self.database.order(order_id)
-
-        # Assert
-        self.assertIsNone(result)

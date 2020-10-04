@@ -68,7 +68,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
-    cpdef dict load_strategy(self, TradingStrategy strategy)
+    cpdef void load_strategy(self, TradingStrategy strategy)
     cpdef void delete_strategy(self, TradingStrategy strategy) except *
 
     cpdef void add_account(self, Account account) except *

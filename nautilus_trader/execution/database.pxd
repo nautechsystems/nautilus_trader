@@ -39,8 +39,8 @@ cdef class ExecutionDatabase:
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
-    cpdef dict load_strategy(self, TradingStrategy strategy)
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *
+    cpdef dict load_strategy(self, StrategyId strategy_id)
+    cpdef void delete_strategy(self, StrategyId strategy_id) except *
 
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
