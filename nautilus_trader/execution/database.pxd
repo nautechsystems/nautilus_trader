@@ -12,3 +12,51 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.common.account cimport Account
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.strategy cimport TradingStrategy
+
+
+cdef class ExecutionDatabase:
+    cdef LoggerAdapter _log
+
+    cdef readonly TraderId trader_id
+
+# -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void flush(self) except *
+    cpdef dict load_accounts(self)
+    cpdef dict load_orders(self)
+    cpdef dict load_positions(self)
+    cpdef Account load_account(self, AccountId account_id)
+    cpdef Order load_order(self, ClientOrderId order_id)
+    cpdef Position load_position(self, PositionId position_id)
+    cpdef dict load_strategy(self, TradingStrategy strategy)
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *
+
+    cpdef void add_account(self, Account account) except *
+    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *
+
+    cpdef void update_account(self, Account account) except *
+    cpdef void update_order(self, Order order) except *
+    cpdef void update_position(self, Position position) except *
+    cpdef void update_strategy(self, TradingStrategy strategy) except *
+
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *
+    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *
+    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *
+
+
+cdef class BypassExecutionDatabase(ExecutionDatabase):
+    pass

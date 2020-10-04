@@ -59,6 +59,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal
@@ -504,6 +505,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID] = event.position_id.value
+            package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_qty.to_string()
@@ -662,12 +664,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
             )
         elif event_type == OrderFilled.__name__:
             commission_currency = currency_from_string(unpacked[COMMISSION_CURRENCY].decode(UTF8))
+            # TODO: Optimize
+            strategy_id_pieces = unpacked[STRATEGY_ID].decode(UTF8).split('-')
+            strategy_id = StrategyId(strategy_id_pieces[0], strategy_id_pieces[1])
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
                 PositionId(unpacked[POSITION_ID].decode(UTF8)),
+                strategy_id,
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),

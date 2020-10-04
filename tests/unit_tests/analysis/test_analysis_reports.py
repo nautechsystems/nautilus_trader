@@ -22,6 +22,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Decimal
@@ -100,7 +101,8 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(1500000),
-            Price("0.80010"))
+            Price("0.80010"),
+        )
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
@@ -110,7 +112,8 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(1500000),
-            Price("0.80000"))
+            Price("0.80000"),
+        )
 
         submitted2 = TestStubs.event_order_submitted(order2)
         accepted2 = TestStubs.event_order_accepted(order2)
@@ -120,7 +123,7 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(accepted2)
         order2.apply(working2)
 
-        filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price("0.80011"))
+        filled = TestStubs.event_order_filled(order1, PositionId("P-1"), StrategyId("S", "1"), Price("0.80011"))
 
         order1.apply(filled)
 

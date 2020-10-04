@@ -54,8 +54,12 @@ cdef class StrategyId(Identifier):
     cdef readonly IdTag tag
 
     @staticmethod
-    cdef StrategyId from_string(str value)
+    cdef StrategyId null()
+    cdef bint is_null(self)
+    cdef bint not_null(self)
 
+    @staticmethod
+    cdef StrategyId from_string(str value)
 
 cdef class AccountId(Identifier):
     cdef readonly str issuer

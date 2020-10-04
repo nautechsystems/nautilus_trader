@@ -24,6 +24,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -45,6 +46,7 @@ cdef class Position:
     cdef readonly PositionId id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId from_order
+    cdef readonly StrategyId strategy_id
 
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol

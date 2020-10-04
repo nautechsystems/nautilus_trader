@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
@@ -62,7 +63,7 @@ cdef class ExecutionEngine:
             self,
             TraderId trader_id not None,
             AccountId account_id not None,
-            ExecutionCache database not None,  # refactor
+            ExecutionDatabase database not None,  # refactor
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -77,8 +78,8 @@ cdef class ExecutionEngine:
             The trader identifier for the engine.
         account_id : AccountId
             The account identifier for the engine.
-        database : ExecutionCache
-            The execution cache for the engine.
+        database : ExecutionDatabase
+            The execution database adapter for the engines cache layer.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -105,14 +106,9 @@ cdef class ExecutionEngine:
 
         self.trader_id = trader_id
         self.account_id = account_id
-        self.cache = database
+        self.cache = ExecutionCache(database, logger)
         self.account = self.cache.get_account(account_id)
         self.portfolio = portfolio
-
-        # Set symbol position counts
-        symbol_counts = self.cache.get_symbol_position_counts()
-        for symbol, count in symbol_counts.items():
-            self._pos_id_generator.set_count(symbol, count)
 
         self.command_count = 0
         self.event_count = 0
@@ -146,10 +142,10 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(exec_client, "exec_client")
-        Condition.not_in(exec_client.venue, self._exec_clients, "exec_client.venue", "_exec_clients")
+        Condition.is_in(exec_client.venue, self._exec_clients, "exec_client.venue", "_exec_clients")
 
-        self._exec_clients[exec_client.venue] = exec_client
-        self._log.info(f"Registered execution client for the {exec_client.venue} venue.")
+        del self._exec_clients[exec_client.venue]
+        self._log.info(f"De-registered execution client for the {exec_client.venue} venue.")
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -200,7 +196,7 @@ cdef class ExecutionEngine:
 
         Returns
         -------
-        List[StrategyId]
+        Set[StrategyId]
 
         """
         return set(self._exec_clients.keys())
@@ -217,6 +213,32 @@ cdef class ExecutionEngine:
         return set(self._registered_strategies.keys())
 
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void load_cache(self) except *:
+        """
+        Load the cache up from the execution database.
+
+        """
+        self.cache.cache_accounts()
+        self.cache.cache_orders()
+        self.cache.cache_positions()
+        self.cache.build_index()
+
+    cpdef void integrity_check(self) except *:
+        """
+        Check integrity of data within the execution cache and database.
+
+        """
+        self.cache.integrity_check()
+
+    cpdef void flush_db(self) except *:
+        """
+        Flush the execution database which permanently removes all persisted data.
+
+        WARNING: Permanent data loss.
+
+        """
+        self.cache.flush_db()
 
     cpdef void execute(self, Command command) except *:
         """
@@ -256,6 +278,8 @@ cdef class ExecutionEngine:
         """
         Reset the execution engine by clearing all stateful values.
         """
+        for client in self._exec_clients.values():
+            client.reset()
         self.cache.reset()
         self._pos_id_generator.reset()
 
@@ -496,12 +520,12 @@ cdef class ExecutionEngine:
         if position_id.is_null():  # No position yet
             # Generate identifier
             position_id = self._pos_id_generator.generate(fill.symbol)
-            fill = fill.clone(new_position_id=position_id)
+            fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
 
             # Create new position
             self._open_position(fill, strategy_id)
         else:  # Position exists
-            fill = fill.clone(new_position_id=position_id)
+            fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
             self._update_position(fill, strategy_id)
 
     cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:

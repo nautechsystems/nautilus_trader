@@ -162,6 +162,7 @@ cdef class Order:
         self.cl_ord_id = event.cl_ord_id
         self.id = None                    # Can be None (OrderId)
         self.position_id = None           # Can be None
+        self.strategy_id = None           # Can be None
         self.account_id = None            # Can be None
         self.execution_id = None          # Can be None
         self.symbol = event.symbol
@@ -544,8 +545,10 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
+        # TODO: Why is format_iso8601 returning '.000Z' here?
+        cdef str expire_time_str = format_iso8601(expire_time) if not None else str(None)
         options['Price'] = str(price)
-        options['ExpireTime'] = format_iso8601(expire_time) if not None else str(None)
+        options['ExpireTime'] = str(None) if expire_time_str == '.000Z' else expire_time_str
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
@@ -587,6 +590,7 @@ cdef class PassiveOrder(Order):
     cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
+        self.strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
@@ -721,6 +725,7 @@ cdef class MarketOrder(Order):
     cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
+        self.strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.filled_qty = event.filled_qty

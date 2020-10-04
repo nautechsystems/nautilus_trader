@@ -42,7 +42,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
-from nautilus_trader.execution.cache cimport InMemoryExecutionCache
+from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.currency cimport currency_to_string
@@ -145,26 +145,28 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Building engine...")
 
+        # Setup execution database
         if config.exec_db_type == "in-memory":
-            self.exec_cache = InMemoryExecutionCache(
+            exec_db = BypassExecutionDatabase(
+                trader_id=self.trader_id,
+                logger=self.logger)
+        elif config.exec_db_type == "redis":
+            exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self.test_logger,
-            )
-        elif config.exec_db_type == "redis":
-            self.exec_cache = RedisExecutionDatabase(
-                trader_id=self.trader_id,
                 host="localhost",
                 port=6379,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
-                logger=self.test_logger,
             )
         else:
             raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
                              f"(can be either \"in-memory\" or \"redis\")")
-        if self.config.exec_db_flush:
-            self.exec_cache.flush()
 
+        if self.config.exec_db_flush:
+            exec_db.flush()
+
+        # Setup execution cache
         self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
         self.data_engine = BacktestDataEngine(
             data=data,
@@ -185,12 +187,14 @@ cdef class BacktestEngine:
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
-            database=self.exec_cache,
+            database=exec_db,
             portfolio=self.portfolio,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
+
+        self.exec_engine.load_cache()
 
         self.market = SimulatedMarket(
             venue=venue,
@@ -385,9 +389,8 @@ cdef class BacktestEngine:
 
         self.iteration = 0
         self.data_engine.reset()
-        self.exec_cache.reset()
         if self.config.exec_db_flush:
-            self.exec_cache.flush()
+            self.exec_engine.flush_db()
         self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()

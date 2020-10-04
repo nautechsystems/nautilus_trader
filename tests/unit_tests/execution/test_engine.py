@@ -21,7 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.execution.cache import InMemoryExecutionCache
+from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
@@ -65,17 +65,18 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        self.exec_db = InMemoryExecutionCache(trader_id=self.trader_id, logger=self.logger)
+        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
             trader_id=self.trader_id,
             account_id=self.account_id,
-            database=self.exec_db,
+            database=database,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
+        self.exec_db = self.exec_engine.cache  # TODO: Rename to exec_cache
         self.exec_engine.process(TestStubs.account_event())
 
         self.venue = Venue("FXCM")

@@ -58,6 +58,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -972,6 +973,7 @@ cdef class SimulatedMarket:
             order.id,
             self._generate_execution_id(),
             position_id,
+            StrategyId.null(),
             order.symbol,
             order.side,
             order.quantity,

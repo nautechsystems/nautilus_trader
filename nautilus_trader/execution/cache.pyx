@@ -18,12 +18,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
@@ -35,22 +35,26 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     Provides a cache for the execution engine.
     """
 
-    def __init__(self, TraderId trader_id not None, Logger logger not None):
+    def __init__(
+            self,
+            ExecutionDatabase database not None,
+            Logger logger not None):
         """
         Initialize a new instance of the ExecutionCache class.
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader identifier for the cache.
+        database : ExecutionDatabase
+            The execution database adapter.
         logger : Logger
             The logger for the cache.
 
         """
         super().__init__()
 
-        self.trader_id = trader_id
+        self.trader_id = database.trader_id
         self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._database = database
 
         # Cached objects
         self._cached_accounts = {}            # type: {AccountId, Account}
@@ -75,115 +79,177 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_strategies = set()        # type: {StrategyId}
 
         # Registered identifiers
-        self._stop_loss_ids = set()        # type: {ClientOrderId}
-        self._take_profit_ids = set()      # type: {ClientOrderId}
+        self._stop_loss_ids = set()           # type: {ClientOrderId}
+        self._take_profit_ids = set()         # type: {ClientOrderId}
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void load_accounts(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+    cpdef void cache_accounts(self) except *:
+        """
+        Clear the current accounts cache and load accounts from the cache.
+        """
+        self._log.info(f"Loading persisted accounts.")
 
-    cpdef void load_orders(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        self._cached_accounts = self._database.load_accounts()
+        self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
 
-    cpdef void load_positions(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+    cpdef void cache_orders(self) except *:
+        """
+        Clear the current order cache and load orders from the cache.
+        """
+        self._log.info(f"Loading persisted orders.")
 
-    cpdef void load_index(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        self._cached_orders = self._database.load_orders()
+        self._log.info(f"Cached {len(self._cached_orders)} order(s).")
+
+    cpdef void cache_positions(self) except *:
+        """
+        Clear the current order cache and load orders from the cache.
+        """
+        self._log.info(f"Loading positions cache.")
+
+        self._cached_positions = self._database.load_positions()
+        self._log.info(f"Cached {len(self._cached_positions)} position(s).")
+
+    cpdef void build_index(self) except *:
+        """
+        Clear the current index cache and load indexes from the cache.
+        """
+        self._log.info(f"Loading persisted indexes.")
+        # TODO: Implement
 
     cpdef void integrity_check(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        pass
+        # TODO: Implement
+
+    cpdef dict load_strategy(self, TradingStrategy strategy):
+        """
+        Load the state dictionary for the given strategy from the execution cache.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to load.
+
+        """
+        Condition.not_none(strategy, "strategy")
+
+        self._log.info(f"Loading {strategy.id} (in-memory cache does nothing).")
+        # Do nothing in memory
 
     cpdef Account load_account(self, AccountId account_id):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Load the account associated with the given account_id (if found).
+
+        Parameters
+        ----------
+        :param account_id: The account identifier to load.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(account_id, "account_id")
+
+        return self._cached_accounts.get(account_id)
 
     cpdef Order load_order(self, ClientOrderId cl_ord_id):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Load the order associated with the given identifier (if found).
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to load.
+
+        Returns
+        -------
+        Order or None
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return self._cached_orders.get(cl_ord_id)
 
     cpdef Position load_position(self, PositionId position_id):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Load the position associated with the given identifier (if found).
 
-    cpdef void load_strategy(self, TradingStrategy strategy) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to load.
 
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        Returns
+        -------
+        Position or None
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        return self._cached_positions.get(position_id)
 
     cpdef void add_account(self, Account account) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Add the given account to the execution cache.
+
+        Parameters
+        ----------
+        account : Account
+            The account to add.
+
+        Raises
+        ------
+        ValueError
+            If account_id is already contained in the cached_accounts.
+
+        """
+        Condition.not_none(account, "account")
+        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
+
+        self._cached_accounts[account.id] = account
+
+        self._log.debug(f"Added Account(id={account.id.value}).")
+
+        # Update database
+        self._database.add_account(account)
 
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Add the given order to the execution cache indexed with the given
+        identifiers.
 
-    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        Parameters
+        ----------
+        order : Order
+            The order to add.
+        position_id : PositionId
+            The position identifier to index for the order.
+        strategy_id : StrategyId
+            The strategy identifier to index for the order.
 
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        Raises
+        ------
+        ValueError
+            If order.id is already contained in the cached_orders.
+        ValueError
+            If order.id is already contained in the index_orders.
+        ValueError
+            If order.id is already contained in the index_order_position.
+        ValueError
+            If order.id is already contained in the index_order_strategy.
 
-    cpdef void update_account(self, Account event) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Condition.not_none(order, "order")
+        Condition.not_none(position_id, "position_id")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.cl_ord_id", "cached_orders")
+        Condition.not_in(order.cl_ord_id, self._index_orders, "order.cl_ord_id", "index_orders")
+        Condition.not_in(order.cl_ord_id, self._index_order_position, "order.cl_ord_id", "index_order_position")
+        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
 
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void update_order(self, Order order) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void update_position(self, Position position) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void register_stop_loss(self, PassiveOrder order) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void register_take_profit(self, PassiveOrder order) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void check_residuals(self) except *:
-        # Check for any residual active orders and log warnings if any are found
-        for order in self.orders_working():
-            self._log.warning(f"Residual {order}")
-
-        for position in self.positions_open():
-            self._log.warning(f"Residual {position}")
-
-    cpdef void reset(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void flush(self) except *:
-        raise NotImplementedError(f"method must be implemented in the subclass")
-
-    cdef void _add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+        self._cached_orders[order.cl_ord_id] = order
         self._index_orders.add(order.cl_ord_id)
         self._index_order_strategy[order.cl_ord_id] = strategy_id
 
@@ -205,9 +271,29 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         if position_id.is_null():
             return  # Do not index the NULL id
 
-        self._add_position_id(position_id, order.cl_ord_id, strategy_id)
+        self.add_position_id(position_id, order.cl_ord_id, strategy_id)
 
-    cdef void _add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        # Update database
+        self._database.add_order(order, position_id, strategy_id)  # Logs
+
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        """
+        Index the given position identifier with the other given identifiers.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position identifier to index.
+        cl_ord_id : ClientOrderId
+            The client order identifier to index.
+        strategy_id : StrategyId
+            The strategy identifier to index.
+
+        """
+        Condition.not_none(position_id, "position_id")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_none(strategy_id, "strategy_id")
+
         # Index: ClientOrderId -> PositionId
         if cl_ord_id not in self._index_order_position:
             self._index_order_position[cl_ord_id] = position_id
@@ -238,10 +324,40 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
                         f"cl_ord_id={cl_ord_id}, "
                         f"strategy_id={strategy_id}).")
 
-    cdef void _add_position(self, Position position, StrategyId strategy_id) except *:
+        # Update database
+        self._database.add_position_id(position_id, cl_ord_id, strategy_id)
+
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+        """
+        Add the given position associated with the given strategy identifier.
+
+        Parameters
+        ----------
+        position : Position
+            The position to add.
+        strategy_id : StrategyId
+            The strategy_id to associate with the position.
+
+        Raises
+        ------
+        ValueError
+            If position.id is already contained in the cached_positions.
+        ValueError
+            If position.id is already contained in the index_positions.
+        ValueError
+            If position.id is already contained in the index_positions_open.
+
+        """
+        Condition.not_none(position, "position")
+        Condition.not_none(strategy_id, "strategy_id")
+        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
+        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+
+        self._cached_positions[position.id] = position
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
-        self._add_position_id(position.id, position.from_order, strategy_id)
+        self.add_position_id(position.id, position.from_order, strategy_id)
 
         # Index: Symbol -> Set[PositionId]
         if position.symbol not in self._index_symbol_positions:
@@ -251,7 +367,114 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         self._log.debug(f"Added Position(id={position.id.value}, strategy_id={strategy_id}).")
 
-    cdef void _update_order(self, Order order) except *:
+        # Update database
+        self._database.add_position(position, strategy_id)
+
+    cpdef void register_stop_loss(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a stop-loss.
+
+        If cancel_on_sl_reject management flag is set to True then associated
+        position will be flattened if this order is rejected.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The stop-loss order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered stop-loss orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
+
+        self._stop_loss_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered SL order {order}")
+
+        # Update database
+        self._database.add_stop_loss_id(order.cl_ord_id)
+
+    cpdef void register_take_profit(self, PassiveOrder order) except *:
+        """
+        Register the given order to be managed as a take-profit.
+
+        Parameters
+        ----------
+        order : PassiveOrder
+            The take-profit order to register.
+
+        Raises
+        ------
+        ValueError
+            If order.id already contained within the registered take_profit orders.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
+
+        self._take_profit_ids.add(order.cl_ord_id)
+        self._log.debug(f"Registered TP order {order}")
+
+        # Update database
+        self._database.add_take_profit_id(order.cl_ord_id)
+
+    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._stop_loss_ids.discard(cl_ord_id)
+
+        # Update database
+        self._database.delete_stop_loss_id(cl_ord_id)
+
+    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        TBD.
+
+        Parameters
+        ----------
+        cl_ord_id
+
+
+        """
+        self._take_profit_ids.discard(cl_ord_id)
+
+        # Update database
+        self._database.delete_take_profit_id(cl_ord_id)
+
+    cpdef void update_account(self, Account account) except *:
+        """
+        Update the given account in the execution cache.
+
+        Parameters
+        ----------
+        account : The account to update (from last event).
+
+        """
+        # Persist
+        self._database.update_account(account)
+
+    cpdef void update_order(self, Order order) except *:
+        """
+        Update the given order in the execution cache.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update (from last event).
+
+        """
+        Condition.not_none(order, "order")
+
         if order.is_working():
             self._index_orders_working.add(order.cl_ord_id)
             self._index_orders_completed.discard(order.cl_ord_id)
@@ -259,16 +482,86 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             self._index_orders_completed.add(order.cl_ord_id)
             self._index_orders_working.discard(order.cl_ord_id)
 
-    cdef void _update_position(self, Position position) except *:
+        # Persist
+        self._database.update_order(order)
+
+    cpdef void update_position(self, Position position) except *:
+        """
+        Update the given position in the execution cache.
+
+        Parameters
+        ----------
+        position : Position
+            The position to update (from last event).
+
+        """
+        Condition.not_none(position, "position")
+
         if position.is_closed():
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
-    cdef void _update_strategy(self, TradingStrategy strategy) except *:
-        self._index_strategies.add(strategy.id)
+        # Persist
+        self._database.update_position(position)
 
-    cdef void _reset(self) except *:
-        # Reset the class to its initial state
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        """
+        Update the given strategy state in the execution cache.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to update.
+        """
+        Condition.not_none(strategy, "strategy")
+
+        self._index_strategies.add(strategy.id)
+        self._log.info(f"Saving {strategy.id} (in-memory cache does nothing).")
+
+        # Persist
+        self._database.update_strategy(strategy)
+
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+        """
+        Delete the given strategy from the execution cache.
+        Logs error if strategy not found in the cache.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy to deregister.
+
+        Raises
+        ------
+        ValueError
+            If strategy is not contained in the strategies.
+
+        """
+        Condition.not_none(strategy, "strategy")
+        Condition.is_in(strategy.id, self._index_strategies, "strategy.id", "strategies")
+
+        self._index_strategies.discard(strategy.id)
+
+        if strategy.id in self._index_strategy_orders:
+            del self._index_strategy_orders[strategy.id]
+
+        if strategy.id in self._index_strategy_positions:
+            del self._index_strategy_positions[strategy.id]
+
+        # Persist
+        self._database.delete_strategy(strategy)
+        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
+
+    cpdef void check_residuals(self) except *:
+        # Check for any residual active orders and log warnings if any are found
+        for order in self.orders_working():
+            self._log.warning(f"Residual {order}")
+
+        for position in self.positions_open():
+            self._log.warning(f"Residual {position}")
+
+    cpdef void reset(self) except *:
+        # Reset the execution cache by clearing all stateful values
         self._log.debug(f"Resetting...")
 
         self._cached_accounts.clear()
@@ -295,6 +588,17 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._take_profit_ids.clear()
 
         self._log.info(f"Reset.")
+
+    cpdef void flush_db(self) except *:
+        """
+        Flush the execution database which permanently removes all persisted data.
+
+        WARNING: Permanent data loss.
+
+        """
+        self._log.info("Flushing execution database...")
+        self._database.flush()
+        self._log.info("Execution database flushed.")
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
@@ -1174,398 +1478,3 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         Condition.not_none(position_id, "position_id")
 
         return self._index_position_strategy.get(position_id)
-
-
-cdef class InMemoryExecutionCache(ExecutionCache):
-    """
-    Provides an in-memory execution cache.
-    """
-
-    def __init__(self, TraderId trader_id not None, Logger logger not None):
-        """
-        Initialize a new instance of the InMemoryExecutionCache class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader_id for the cache.
-        logger : Logger
-            The logger for the cache.
-
-        """
-        super().__init__(trader_id, logger)
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void load_accounts(self) except *:
-        """
-        Clear the current accounts cache and load accounts from the cache.
-        """
-        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
-        # Do nothing in memory
-
-    cpdef void load_orders(self) except *:
-        """
-        Clear the current order cache and load orders from the cache.
-        """
-        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
-        # Do nothing in memory
-
-    cpdef void load_positions(self) except *:
-        """
-        Clear the current order cache and load orders from the cache.
-        """
-        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
-        # Do nothing in memory
-
-    cpdef void load_index(self) except *:
-        """
-        Clear the current index cache and load indexes from the cache.
-        """
-        self._log.info(f"Loading accounts cache (in-memory cache does nothing).")
-        # Do nothing in memory
-
-    cpdef void integrity_check(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void load_strategy(self, TradingStrategy strategy) except *:
-        """
-        Load the state for the given strategy from the execution cache.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to load.
-
-        """
-        Condition.not_none(strategy, "strategy")
-
-        self._log.info(f"Loading {strategy.id} (in-memory cache does nothing).")
-        # Do nothing in memory
-
-    cpdef Account load_account(self, AccountId account_id):
-        """
-        Load the account associated with the given account_id (if found).
-
-        Parameters
-        ----------
-        :param account_id: The account identifier to load.
-
-        Returns
-        -------
-        Account or None
-
-        """
-        Condition.not_none(account_id, "account_id")
-
-        return self._cached_accounts.get(account_id)
-
-    cpdef Order load_order(self, ClientOrderId cl_ord_id):
-        """
-        Load the order associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier to load.
-
-        Returns
-        -------
-        Order or None
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return self._cached_orders.get(cl_ord_id)
-
-    cpdef Position load_position(self, PositionId position_id):
-        """
-        Load the position associated with the given identifier (if found).
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier to load.
-
-        Returns
-        -------
-        Position or None
-
-        """
-        Condition.not_none(position_id, "position_id")
-
-        return self._cached_positions.get(position_id)
-
-    cpdef void add_account(self, Account account) except *:
-        """
-        Add the given account to the execution cache.
-
-        Parameters
-        ----------
-        account : Account
-            The account to add.
-
-        Raises
-        ------
-        ValueError
-            If account_id is already contained in the cached_accounts.
-
-        """
-        Condition.not_none(account, "account")
-        Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
-
-        self._cached_accounts[account.id] = account
-
-        self._log.debug(f"Added Account(id={account.id.value}).")
-
-    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
-        """
-        Add the given order to the execution cache indexed with the given
-        identifiers.
-
-        Parameters
-        ----------
-        order : Order
-            The order to add.
-        position_id : PositionId
-            The position identifier to index for the order.
-        strategy_id : StrategyId
-            The strategy identifier to index for the order.
-
-        Raises
-        ------
-        ValueError
-            If order.id is already contained in the cached_orders.
-        ValueError
-            If order.id is already contained in the index_orders.
-        ValueError
-            If order.id is already contained in the index_order_position.
-        ValueError
-            If order.id is already contained in the index_order_strategy.
-
-        """
-        Condition.not_none(order, "order")
-        Condition.not_none(position_id, "position_id")
-        Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_in(order.cl_ord_id, self._cached_orders, "order.cl_ord_id", "cached_orders")
-        Condition.not_in(order.cl_ord_id, self._index_orders, "order.cl_ord_id", "index_orders")
-        Condition.not_in(order.cl_ord_id, self._index_order_position, "order.cl_ord_id", "index_order_position")
-        Condition.not_in(order.cl_ord_id, self._index_order_strategy, "order.cl_ord_id", "index_order_strategy")
-
-        self._cached_orders[order.cl_ord_id] = order
-        self._add_order(order, position_id, strategy_id)  # Logs
-
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
-        """
-        Index the given position identifier with the other given identifiers.
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier to index.
-        cl_ord_id : ClientOrderId
-            The client order identifier to index.
-        strategy_id : StrategyId
-            The strategy identifier to index.
-
-        """
-        Condition.not_none(position_id, "position_id")
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(strategy_id, "strategy_id")
-
-        self._add_position_id(position_id, cl_ord_id, strategy_id)
-
-    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
-        """
-        Add the given position associated with the given strategy identifier.
-
-        Parameters
-        ----------
-        position : Position
-            The position to add.
-        strategy_id : StrategyId
-            The strategy_id to associate with the position.
-
-        Raises
-        ------
-        ValueError
-            If position.id is already contained in the cached_positions.
-        ValueError
-            If position.id is already contained in the index_positions.
-        ValueError
-            If position.id is already contained in the index_positions_open.
-
-        """
-        Condition.not_none(position, "position")
-        Condition.not_none(strategy_id, "strategy_id")
-        Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
-        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
-
-        self._cached_positions[position.id] = position
-        self._add_position(position, strategy_id)  # Logs
-
-    cpdef void register_stop_loss(self, PassiveOrder order) except *:
-        """
-        Register the given order to be managed as a stop-loss.
-
-        If cancel_on_sl_reject management flag is set to True then associated
-        position will be flattened if this order is rejected.
-
-        Parameters
-        ----------
-        order : PassiveOrder
-            The stop-loss order to register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered stop-loss orders.
-
-        """
-        Condition.not_none(order, "order")
-        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
-
-        self._stop_loss_ids.add(order.cl_ord_id)
-        self._log.debug(f"Registered SL order {order}")
-
-    cpdef void register_take_profit(self, PassiveOrder order) except *:
-        """
-        Register the given order to be managed as a take-profit.
-
-        Parameters
-        ----------
-        order : PassiveOrder
-            The take-profit order to register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered take_profit orders.
-
-        """
-        Condition.not_none(order, "order")
-        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
-
-        self._take_profit_ids.add(order.cl_ord_id)
-        self._log.debug(f"Registered TP order {order}")
-
-    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        TBD.
-
-        Parameters
-        ----------
-        cl_ord_id
-
-
-        """
-        self._stop_loss_ids.discard(cl_ord_id)
-
-    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        TBD.
-
-        Parameters
-        ----------
-        cl_ord_id
-
-
-        """
-        self._take_profit_ids.discard(cl_ord_id)
-
-    cpdef void update_account(self, Account account) except *:
-        """
-        Update the given account in the execution cache.
-
-        Parameters
-        ----------
-        account : The account to update (from last event).
-
-        """
-        # Do nothing in memory
-        pass
-
-    cpdef void update_order(self, Order order) except *:
-        """
-        Update the given order in the execution cache.
-
-        Parameters
-        ----------
-        order : Order
-            The order to update (from last event).
-
-        """
-        Condition.not_none(order, "order")
-
-        self._update_order(order)
-
-    cpdef void update_position(self, Position position) except *:
-        """
-        Update the given position in the execution cache.
-
-        Parameters
-        ----------
-        position : Position
-            The position to update (from last event).
-
-        """
-        Condition.not_none(position, "position")
-
-        self._update_position(position)
-
-    cpdef void add_strategy(self, TradingStrategy strategy) except *:
-        """
-        Update the given strategy state in the execution cache.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to update.
-        """
-        Condition.not_none(strategy, "strategy")
-
-        self._index_strategies.add(strategy.id)
-        self._log.info(f"Saving {strategy.id} (in-memory cache does nothing).")
-
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
-        """
-        Delete the given strategy from the execution cache.
-        Logs error if strategy not found in the cache.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to deregister.
-
-        Raises
-        ------
-        ValueError
-            If strategy is not contained in the strategies.
-
-        """
-        Condition.not_none(strategy, "strategy")
-        Condition.is_in(strategy.id, self._index_strategies, "strategy.id", "strategies")
-
-        self._index_strategies.discard(strategy.id)
-
-        if strategy.id in self._index_strategy_orders:
-            del self._index_strategy_orders[strategy.id]
-
-        if strategy.id in self._index_strategy_positions:
-            del self._index_strategy_positions[strategy.id]
-
-        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
-
-    cpdef void reset(self) except *:
-        # Reset the execution cache by clearing all stateful values
-        self._log.debug(f"Resetting...")
-
-        self._reset()
-
-    cpdef void flush(self) except *:
-        """
-        Flush the cache which clears all data.
-        """
-        self._log.info("Flushing cache (in-memory cache does nothing).")

@@ -32,6 +32,7 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -63,7 +64,12 @@ class PositionTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        fill = TestStubs.event_order_filled(order, PositionId("P-123456"), Price("1.00001"))
+        fill = TestStubs.event_order_filled(
+            order,
+            PositionId("P-123456"),
+            StrategyId("S", "001"),
+            Price("1.00001"),
+        )
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -111,7 +117,12 @@ class PositionTests(unittest.TestCase):
             OrderSide.SELL,
             Quantity(100000))
 
-        fill = TestStubs.event_order_filled(order, PositionId("P-123456"), Price("1.00001"))
+        fill = TestStubs.event_order_filled(
+            order,
+            PositionId("P-123456"),
+            StrategyId("S", "001"),
+            Price("1.00001"),
+        )
 
         last = QuoteTick(
             AUDUSD_FXCM,
@@ -158,6 +169,7 @@ class PositionTests(unittest.TestCase):
         fill = TestStubs.event_order_filled(
             order,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
             filled_qty=Quantity(50000),
             leaves_qty=Quantity(50000),
@@ -169,7 +181,8 @@ class PositionTests(unittest.TestCase):
             Price("1.00048"),
             Quantity(1),
             Quantity(1),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         position = Position(fill)
 
@@ -204,6 +217,7 @@ class PositionTests(unittest.TestCase):
         fill1 = TestStubs.event_order_filled(
             order,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
             filled_qty=Quantity(50000),
             leaves_qty=Quantity(50000),
@@ -212,6 +226,7 @@ class PositionTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
             filled_qty=Quantity(100000),
             leaves_qty=Quantity(),
@@ -259,6 +274,7 @@ class PositionTests(unittest.TestCase):
         fill1 = TestStubs.event_order_filled(
             order,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
         )
 
@@ -270,6 +286,7 @@ class PositionTests(unittest.TestCase):
             OrderId("2"),
             ExecutionId("E2"),
             PositionId("T123456"),
+            StrategyId("S", "001"),
             order.symbol,
             OrderSide.SELL,
             order.quantity,
@@ -339,6 +356,7 @@ class PositionTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order2,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
             filled_qty=Quantity(50000),
             leaves_qty=Quantity(50000),
@@ -347,6 +365,7 @@ class PositionTests(unittest.TestCase):
         fill3 = TestStubs.event_order_filled(
             order2,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
             filled_qty=Quantity(100000),
             leaves_qty=Quantity(50000),
@@ -406,6 +425,7 @@ class PositionTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order2,
             position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00000"),
         )
 
@@ -469,9 +489,9 @@ class PositionTests(unittest.TestCase):
             Quantity(200000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1, PositionId("P-123456"))
-        fill2 = TestStubs.event_order_filled(order2, PositionId("P-123456"), fill_price=Price("1.00001"))
-        fill3 = TestStubs.event_order_filled(order3, PositionId("P-123456"), fill_price=Price("1.00010"))
+        fill1 = TestStubs.event_order_filled(order1, PositionId("P-123456"), StrategyId("S", "001"))
+        fill2 = TestStubs.event_order_filled(order2, PositionId("P-123456"), StrategyId("S", "001"), fill_price=Price("1.00001"))
+        fill3 = TestStubs.event_order_filled(order3, PositionId("P-123456"), StrategyId("S", "001"), fill_price=Price("1.00010"))
 
         last = QuoteTick(
             AUDUSD_FXCM,
