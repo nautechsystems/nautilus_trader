@@ -38,7 +38,6 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef str _UTF8 = 'utf-8'
-
 cdef str _INDEX = 'Index'
 cdef str _TRADER = 'Trader'
 cdef str _CONFIG = 'Config'
@@ -54,8 +53,6 @@ cdef str _WORKING = 'Working'
 cdef str _COMPLETED = 'Completed'
 cdef str _OPEN = 'Open'
 cdef str _CLOSED = 'Closed'
-cdef str _SL = 'SL'
-cdef str _TP = 'TP'
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -122,8 +119,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         self.key_index_positions          = f"{self.key_trader}:{_INDEX}:{_POSITIONS}"             # SET   # noqa
         self.key_index_positions_open     = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}"     # SET   # noqa
         self.key_index_positions_closed   = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}"   # SET   # noqa
-        self.key_index_stop_loss_ids      = f"{self.key_trader}:{_INDEX}:{_SL}"                    # SET   # noqa
-        self.key_index_take_profit_ids    = f"{self.key_trader}:{_INDEX}:{_TP}"                    # SET   # noqa
 
         # Serializers
         self._command_serializer = command_serializer
@@ -196,22 +191,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
                 orders[order.cl_ord_id] = order
 
         return orders
-
-    cpdef set load_stop_loss_ids(self):
-        """
-        Load all registered stop-loss identifiers from the execution database.
-
-        """
-        cdef set stop_loss_id_members = self._redis.smembers(self.key_index_stop_loss_ids)
-        return {ClientOrderId(cl_ord_id.decode(_UTF8)) for cl_ord_id in stop_loss_id_members}
-
-    cpdef set load_take_profit_ids(self):
-        """
-        Load all registered take-profit identifiers from the execution database.
-
-        """
-        cdef set take_profit_id_members = self._redis.smembers(self.key_index_take_profit_ids)
-        return {ClientOrderId(cl_ord_id.decode(_UTF8)) for cl_ord_id in take_profit_id_members}
 
     cpdef dict load_positions(self):
         """
@@ -445,34 +424,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
         #     self._log.error(f"The {order.cl_ord_id} already existed in index_strategy_orders.")
         # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
-
-    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Register the given client order identifier as a stop-loss.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The identifier to register.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        self._redis.sadd(self.key_index_stop_loss_ids, cl_ord_id.value)
-
-    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Register the given order to be managed as a take-profit.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The identifier to register.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        self._redis.sadd(self.key_index_take_profit_ids, cl_ord_id.value)
 
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """

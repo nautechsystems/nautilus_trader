@@ -72,8 +72,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_orders = set()            # type: {ClientOrderId}
         self._index_orders_working = set()    # type: {ClientOrderId}
         self._index_orders_completed = set()  # type: {ClientOrderId}
-        self._index_stop_loss_ids = set()     # type: {ClientOrderId}
-        self._index_take_profit_ids = set()   # type: {ClientOrderId}
         self._index_positions = set()         # type: {PositionId}
         self._index_positions_open = set()    # type: {PositionId}
         self._index_positions_closed = set()  # type: {PositionId}
@@ -124,7 +122,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
-        self._build_indexes_from_registered_order_ids()
 
         self._log.info(f"Indexes built.")
 
@@ -198,28 +195,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
             # 7- Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
-
-    cdef void _build_indexes_from_registered_order_ids(self) except *:
-        cdef ClientOrderId cl_ord_id
-        # Build _index_stop_loss_ids -> {ClientOrderId}
-        for cl_ord_id in self._database.load_stop_loss_ids():
-            order = self._cached_orders.get(cl_ord_id)
-            if order is None:
-                self._log.error(f"Cannot index stop-loss, "
-                                f"cannot find order for {cl_ord_id.to_string(with_class=True)}.")
-                continue
-            if order.is_working():
-                self._index_stop_loss_ids.add(cl_ord_id)
-
-        # Build _index_take_profit_ids -> {ClientOrderId}
-        for cl_ord_id in self._database.load_take_profit_ids():
-            order = self._cached_orders.get(cl_ord_id)
-            if order is None:
-                self._log.error(f"Cannot index take-profit, "
-                                f"cannot find order for {cl_ord_id.to_string(with_class=True)}.")
-                continue
-            if order.is_working():
-                self._index_take_profit_ids.add(cl_ord_id)
 
     cpdef void integrity_check(self) except *:
         pass
@@ -479,85 +454,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         # Update database
         self._database.add_position(position, strategy_id)
 
-    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Register the given order identifier as a stop-loss.
-
-        If cancel_on_sl_reject management flag is set to True then associated
-        position will be flattened if this order is rejected.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The stop-loss client order identifier.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered stop-loss orders.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_in(cl_ord_id, self._index_stop_loss_ids, "cl_ord_id", "_index_stop_loss_ids")
-
-        self._index_stop_loss_ids.add(cl_ord_id)
-        self._log.debug(f"Registered SL {cl_ord_id.to_string(with_class=True)}")
-
-        # Update database
-        self._database.add_stop_loss_id(cl_ord_id)
-
-    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Register the given order identifier as a take-profit.
-
-        Parameters
-        ----------
-        cl_ord_id : PassiveOrder
-            The take-profit client order identifier register.
-
-        Raises
-        ------
-        ValueError
-            If order.id already contained within the registered take_profit orders.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_in(cl_ord_id, self._index_take_profit_ids, "cl_ord_id", "_index_take_profit_ids")
-
-        self._index_take_profit_ids.add(cl_ord_id)
-        self._log.debug(f"Registered TP {cl_ord_id.to_string(with_class=True)}")
-
-        # Update database
-        self._database.add_take_profit_id(cl_ord_id)
-
-    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Discard the given client order identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The identifier to discard.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        self._index_stop_loss_ids.discard(cl_ord_id)
-
-    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Discard the given client order identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The identifier to discard.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        self._index_take_profit_ids.discard(cl_ord_id)
-
     cpdef void update_account(self, Account account) except *:
         """
         Update the given account in the execution cache.
@@ -704,8 +600,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_orders.clear()
         self._index_orders_working.clear()
         self._index_orders_completed.clear()
-        self._index_stop_loss_ids.clear()
-        self._index_take_profit_ids.clear()
         self._index_positions.clear()
         self._index_positions_open.clear()
         self._index_positions_closed.clear()
@@ -859,72 +753,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
                 query = query.intersection(self._index_strategy_positions.get(strategy_id, set()))
 
         return query
-
-    cpdef set stop_loss_ids(self, StrategyId strategy_id=None):
-        """
-        Return all working stop-loss orders associated with this strategy.
-
-        Parameters
-        ----------
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[OrderId]
-
-        """
-        return self._index_stop_loss_ids.copy()
-
-    cpdef set take_profit_ids(self, StrategyId strategy_id=None):
-        """
-        Return all working take-profit orders associated with this strategy.
-
-        Parameters
-        ----------
-        strategy_id : StrategyId, optional
-            The strategy identifier query filter.
-
-        Returns
-        -------
-        Set[OrderId]
-
-        """
-        return self._index_take_profit_ids.copy()
-
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *:
-        """
-        Return a value indicating whether the order with the given identifier is
-        a registered stop-loss.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return cl_ord_id in self._index_stop_loss_ids
-
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *:
-        """
-        Return a value indicating whether the order with the given identifier is
-        a registered take-profit.
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-        Returns
-        -------
-        bool
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return cl_ord_id in self._index_take_profit_ids
 
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """

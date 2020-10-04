@@ -46,8 +46,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cdef set _index_orders
     cdef set _index_orders_working
     cdef set _index_orders_completed
-    cdef set _index_stop_loss_ids
-    cdef set _index_take_profit_ids
     cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed
@@ -61,7 +59,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void build_index(self) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *
-    cdef void _build_indexes_from_registered_order_ids(self) except *
     cpdef void integrity_check(self) except *
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
@@ -71,8 +68,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *
-    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *
-    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *
 
@@ -81,8 +76,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void update_position(self, Position position) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
 
-    cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *
-    cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef void flush_db(self) except *
