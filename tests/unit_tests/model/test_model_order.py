@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -555,6 +556,7 @@ class OrderTests(unittest.TestCase):
         filled = TestStubs.event_order_filled(
             order,
             PositionId("P-123456"),
+            StrategyId("S", "001"),
             Price("1.00001"))
 
         order.apply(submitted)
@@ -588,6 +590,7 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
+            StrategyId("S", "NULL"),
             order.symbol,
             order.side,
             order.quantity,
@@ -636,6 +639,7 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
+            StrategyId("S", "NULL"),
             order.symbol,
             order.side,
             Quantity(50000),

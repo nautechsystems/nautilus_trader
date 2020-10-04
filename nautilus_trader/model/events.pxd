@@ -131,6 +131,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly OrderId order_id
     cdef readonly ExecutionId execution_id
     cdef readonly PositionId position_id
+    cdef readonly StrategyId strategy_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_qty
@@ -143,7 +144,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly datetime execution_time
     cdef readonly bint is_partial_fill
 
-    cdef OrderFilled clone(self, PositionId new_position_id)
+    cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id)
 
 
 cdef class PositionEvent(Event):

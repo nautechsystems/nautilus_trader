@@ -31,7 +31,7 @@ from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.cache import InMemoryExecutionCache
+from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import ComponentState
@@ -85,7 +85,7 @@ class TradingStrategyTests(unittest.TestCase):
         trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
 
-        self.exec_db = InMemoryExecutionCache(
+        self.exec_db = BypassExecutionDatabase(
             trader_id=trader_id,
             logger=self.logger,
         )
@@ -642,10 +642,10 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        self.assertTrue(self.exec_db.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
-        self.assertTrue(self.exec_db.is_take_profit(bracket_order.take_profit.cl_ord_id))
-        self.assertTrue(bracket_order.stop_loss.cl_ord_id in self.exec_db.stop_loss_ids())
-        self.assertTrue(bracket_order.take_profit.cl_ord_id in self.exec_db.take_profit_ids())
+        self.assertTrue(self.exec_engine.cache.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
+        self.assertTrue(self.exec_engine.cache.is_take_profit(bracket_order.take_profit.cl_ord_id))
+        self.assertTrue(bracket_order.stop_loss.cl_ord_id in self.exec_engine.cache.stop_loss_ids())
+        self.assertTrue(bracket_order.take_profit.cl_ord_id in self.exec_engine.cache.take_profit_ids())
 
     def test_completed_sl_tp_are_removed(self):
         # Arrange

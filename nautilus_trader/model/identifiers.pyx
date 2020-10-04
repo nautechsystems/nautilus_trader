@@ -257,6 +257,8 @@ cdef class TraderId(Identifier):
         return TraderId.from_string(value)
 
 
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId('S', 'NULL')
+
 cdef class StrategyId(Identifier):
     """
     Represents a valid strategy identifier. The name and tag combination
@@ -289,6 +291,54 @@ cdef class StrategyId(Identifier):
 
         self.name = name
         self.tag = IdTag(tag)
+
+    @staticmethod
+    cdef StrategyId null():
+        """
+        Returns a strategy identifier with a `NULL` value.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return _NULL_STRATEGY_ID
+
+    @staticmethod
+    def py_null() -> StrategyId:
+        """
+        Returns a strategy identifier with a `NULL` value.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return _NULL_STRATEGY_ID
+
+    cdef bint is_null(self):
+        """
+        Return a value indicating whether this strategy identifier is equal to
+        the null identifier 'NULL'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.equals(_NULL_STRATEGY_ID)
+
+    cdef bint not_null(self):
+        """
+        Return a value indicating whether this strategy identifier is not equal
+        to the null identifier 'NULL'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return not self.equals(_NULL_STRATEGY_ID)
 
     @staticmethod
     cdef StrategyId from_string(str value):

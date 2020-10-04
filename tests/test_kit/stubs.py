@@ -280,13 +280,16 @@ class TestStubs:
     def event_order_filled(
             order,
             position_id=None,
+            strategy_id=None,
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
             commission=0,
     ) -> OrderFilled:
         if position_id is None:
-            position_id = PositionId(order.cl_ord_id.value.replace('P', 'T'))
+            position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))
+        if strategy_id is None:
+            strategy_id = StrategyId("S", "NULL")
         if fill_price is None:
             fill_price = Price("1.00000")
         if filled_qty is None:
@@ -298,8 +301,9 @@ class TestStubs:
             TestStubs.account_id(),
             order.cl_ord_id,
             OrderId("1"),
-            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
+            ExecutionId(order.cl_ord_id.value.replace("O", "E")),
             position_id,
+            strategy_id,
             order.symbol,
             order.side,
             filled_qty,
@@ -422,6 +426,7 @@ class TestStubs:
 
     @staticmethod
     def position_which_is_closed(position_id, close_price=None) -> Position:
+
         if close_price is None:
             close_price = Price("1.0001")
 
@@ -442,6 +447,7 @@ class TestStubs:
             OrderId("1"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
             position_id,
+            StrategyId("S", "1"),
             order.symbol,
             order.side,
             order.quantity,
@@ -462,6 +468,7 @@ class TestStubs:
             OrderId("2"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
             position_id,
+            StrategyId("S", "1"),
             order.symbol,
             OrderSide.BUY,
             order.quantity,

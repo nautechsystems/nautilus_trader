@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
@@ -62,6 +63,7 @@ cdef class Order:
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
     cdef readonly PositionId position_id
+    cdef readonly StrategyId strategy_id
 
     cdef readonly Symbol symbol
     cdef readonly OrderSide side

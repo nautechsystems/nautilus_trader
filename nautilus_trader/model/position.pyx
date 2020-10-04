@@ -50,9 +50,13 @@ cdef class Position:
         self._relative_quantity = 0.0               # Initialized in _update()
         self._qty_precision = event.filled_qty.precision
 
+        # Identifiers
         self.id = event.position_id
         self.account_id = event.account_id
         self.from_order = event.cl_ord_id
+        self.strategy_id = event.strategy_id
+
+        # Properties
         self.symbol = event.symbol
         self.entry = event.order_side
         self.side = PositionSide.UNDEFINED    # Initialized in _update()

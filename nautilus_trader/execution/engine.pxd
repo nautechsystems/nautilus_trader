@@ -72,6 +72,9 @@ cdef class ExecutionEngine:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void load_cache(self) except *
+    cpdef void integrity_check(self) except *
+    cpdef void flush_db(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *

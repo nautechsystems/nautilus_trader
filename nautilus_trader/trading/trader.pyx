@@ -225,7 +225,7 @@ cdef class Trader:
         Save all strategy states to the execution cache.
         """
         for strategy in self.strategies:
-            self._exec_engine.cache.add_strategy(strategy)
+            self._exec_engine.cache.update_strategy(strategy)
 
     cpdef void load(self) except *:
         """

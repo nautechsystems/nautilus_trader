@@ -20,7 +20,8 @@ from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.execution.cache import InMemoryExecutionCache
+from nautilus_trader.execution.cache import ExecutionCache
+from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
@@ -41,7 +42,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 
 
-class InMemoryExecutionDatabaseTests(unittest.TestCase):
+class ExecutionCacheTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -59,7 +60,8 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.database = InMemoryExecutionCache(trader_id=self.trader_id, logger=logger)
+        exec_db = BypassExecutionDatabase(trader_id=self.trader_id, logger=logger)
+        self.database = ExecutionCache(database=exec_db, logger=logger)  # TODO: Rename to self.cache
 
     def test_add_order(self):
         # Arrange
@@ -322,7 +324,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_delete_strategy(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
+        self.database.update_strategy(self.strategy)
 
         # Act
         self.database.delete_strategy(self.strategy)
@@ -486,7 +488,7 @@ class InMemoryExecutionDatabaseTests(unittest.TestCase):
 
     def test_get_strategy_ids_with_id_returns_correct_set(self):
         # Arrange
-        self.database.add_strategy(self.strategy)
+        self.database.update_strategy(self.strategy)
 
         # Act
         result = self.database.strategy_ids()

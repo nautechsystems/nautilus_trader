@@ -12,3 +12,205 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.common.logging cimport Logger
+
+
+cdef class ExecutionDatabase:
+    """
+    The base class for all execution databases.
+
+    """
+
+    def __init__(self, TraderId trader_id not None, Logger logger not None):
+        """
+        Initialize a new instance of the ExecutionDatabase class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier to associate with the database.
+        logger : Logger
+            The logger for the database.
+
+        """
+        self.trader_id = trader_id
+        self._log = LoggerAdapter(self.__class__.__name__, logger)
+
+    cpdef void flush(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef dict load_accounts(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef dict load_orders(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef dict load_positions(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Account load_account(self, AccountId account_id):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Position load_position(self, PositionId position_id):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef dict load_strategy(self, TradingStrategy strategy):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_account(self, Account account) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void update_account(self, Account event) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void update_order(self, Order order) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void update_position(self, Position position) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class BypassExecutionDatabase(ExecutionDatabase):
+
+    def __init__(self, TraderId trader_id not None, Logger logger not None):
+        """
+        Initialize a new instance of the BypassExecutionDatabase class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier to associate with the database.
+        logger : Logger
+            The logger for the database.
+
+        """
+        super().__init__(trader_id, logger)
+
+    cpdef void flush(self) except *:
+        # Do nothing
+        pass
+
+    cpdef dict load_accounts(self):
+        return {}
+
+    cpdef dict load_orders(self):
+        return {}
+
+    cpdef dict load_positions(self):
+        return {}
+
+    cpdef Account load_account(self, AccountId account_id):
+        return None
+
+    cpdef Order load_order(self, ClientOrderId cl_ord_id):
+        return None
+
+    cpdef Position load_position(self, PositionId position_id):
+        return None
+
+    cpdef dict load_strategy(self, TradingStrategy strategy):
+        return {}
+
+    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+        # Do nothing
+        pass
+
+    cpdef void add_account(self, Account account) except *:
+        # Do nothing
+        pass
+
+    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+        # Do nothing
+        pass
+
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+        # Do nothing
+        pass
+
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        # Do nothing
+        pass
+
+    cpdef void update_account(self, Account event) except *:
+        # Do nothing
+        pass
+
+    cpdef void update_order(self, Order order) except *:
+        # Do nothing
+        pass
+
+    cpdef void update_position(self, Position position) except *:
+        # Do nothing
+        pass
+
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        # Do nothing
+        pass
+
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        # Do nothing
+        pass
+
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        # Do nothing
+        pass
+
+    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        # Do nothing
+        pass
+
+    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        # Do nothing
+        pass

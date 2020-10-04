@@ -931,6 +931,7 @@ cdef class OrderFilled(OrderEvent):
             OrderId order_id not None,
             ExecutionId execution_id not None,
             PositionId position_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity filled_qty not None,
@@ -959,6 +960,8 @@ cdef class OrderFilled(OrderEvent):
             The execution identifier.
         position_id : PositionId
             The broker/exchange position identifier.
+        strategy_id : StrategyId
+            The strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -996,6 +999,7 @@ cdef class OrderFilled(OrderEvent):
         self.order_id = order_id
         self.execution_id = execution_id
         self.position_id = position_id
+        self.strategy_id = strategy_id
         self.symbol = symbol
         self.order_side = order_side
         self.filled_qty = filled_qty
@@ -1009,31 +1013,38 @@ cdef class OrderFilled(OrderEvent):
         self.is_partial_fill = self.leaves_qty > 0
         self.is_completion_trigger = not self.is_partial_fill
 
-    cdef OrderFilled clone(self, PositionId new_position_id):
+    cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id):
         """
         Clone this event with the position identifier changed to that given.
         The original position_id must be null, otherwise an exception is raised.
 
         Parameters
         ----------
-        new_position_id : PositionId
-            The new position identifier to set.
+        position_id : PositionId, optional
+            The position identifier to set.
+        strategy_id : StrategyId, optional
+            The strategy identifier to set.
 
         Raises
         ------
         ValueError
-            If position_id is not null.
+            If position_id is not null and self.position_id does not match.
+        ValueError
+            If strategy_id is not null and self.strategy_id does not match.
 
         """
-        Condition.not_none(new_position_id, "new_position_id")
-        Condition.true(self.position_id.is_null(), "original position_id is null")
+        if self.position_id.not_null():
+            Condition.equal(position_id, self.position_id, "position_id", "self.position_id")
+        if self.strategy_id.not_null():
+            Condition.equal(strategy_id, self.strategy_id, "strategy_id", "self.strategy_id")
 
         return OrderFilled(
             self.account_id,
             self.cl_ord_id,
             self.order_id,
             self.execution_id,
-            new_position_id,  # Replacement identifier
+            position_id,  # Set identifier
+            strategy_id,  # Set identifier
             self.symbol,
             self.order_side,
             self.filled_qty,
