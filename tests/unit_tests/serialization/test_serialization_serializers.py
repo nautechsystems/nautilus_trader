@@ -24,7 +24,7 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -636,10 +636,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price("1.00000"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.MAKER,
-            Currency.AUD,
-            Currency.USD,
+            Currency.AUD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -666,10 +666,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             Quantity(),
             Price("1.00000"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.AUD,
-            Currency.USD,
+            Currency.AUD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,

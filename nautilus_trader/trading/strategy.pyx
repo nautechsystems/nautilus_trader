@@ -36,13 +36,13 @@ from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderRejected
@@ -79,10 +79,10 @@ cdef class TradingStrategy:
         Raises
         ------
         ValueError
-            If tag is not a valid string.
+            If order_id_tag is not a valid string.
 
         """
-        Condition.valid_string(order_id_tag, "tag")
+        Condition.valid_string(order_id_tag, "order_id_tag")
 
         # Identifiers
         self.id = StrategyId(self.__class__.__name__, order_id_tag)

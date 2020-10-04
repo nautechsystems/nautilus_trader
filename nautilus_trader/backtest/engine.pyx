@@ -45,7 +45,6 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -435,7 +434,6 @@ cdef class BacktestEngine:
         if self.market.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
-            currency = currency_to_string(self.config.account_currency)
             self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string_formatted()}")
         self.log.info("=================================================================")
 

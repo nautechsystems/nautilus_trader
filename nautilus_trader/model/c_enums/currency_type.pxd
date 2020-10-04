@@ -13,4 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency cimport Currency
+
+cpdef enum CurrencyType:
+    UNDEFINED = 0,
+    CRYPTO = 1,
+    FIAT = 2,
+
+
+cdef inline str currency_type_to_string(int value):
+    if value == 1:
+        return 'CRYPTO'
+    elif value == 2:
+        return 'FIAT'
+    else:
+        return 'UNDEFINED'
+
+
+cdef inline CurrencyType currency_type_from_string(str value):
+    if value == 'CRYPTO':
+        return CurrencyType.CRYPTO
+    elif value == 'FIAT':
+        return CurrencyType.FIAT
+    else:
+        return CurrencyType.UNDEFINED

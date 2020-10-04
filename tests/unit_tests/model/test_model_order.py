@@ -19,7 +19,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -596,10 +596,10 @@ class OrderTests(unittest.TestCase):
             order.quantity,
             Quantity(),
             Price("1.00001"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.MAKER,
-            Currency.USD,
-            Currency.USD,
+            Currency.USD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -645,10 +645,10 @@ class OrderTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price("0.999999"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.MAKER,
-            Currency.USD,
-            Currency.USD,
+            Currency.USD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)

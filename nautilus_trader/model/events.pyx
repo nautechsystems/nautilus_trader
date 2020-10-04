@@ -19,8 +19,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -29,6 +27,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -48,7 +47,7 @@ cdef class AccountState(Event):
     def __init__(
             self,
             AccountId account_id not None,
-            Currency currency,
+            Currency currency not None,
             Money cash_balance not None,
             Money cash_start_day not None,
             Money cash_activity_day not None,
@@ -97,7 +96,6 @@ cdef class AccountState(Event):
             If margin_call_status is not a valid string.
 
         """
-        Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
         Condition.not_negative(margin_ratio, "margin_ratio")
         Condition.valid_string(margin_call_status, "margin_call_status")
         super().__init__(event_id, event_timestamp)
@@ -939,8 +937,8 @@ cdef class OrderFilled(OrderEvent):
             Price avg_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
-            Currency base_currency,
-            Currency quote_currency,
+            Currency base_currency not None,
+            Currency quote_currency not None,
             datetime execution_time not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -988,7 +986,6 @@ cdef class OrderFilled(OrderEvent):
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
         super().__init__(
             cl_ord_id,
             event_id,
@@ -1238,7 +1235,6 @@ cdef class PositionModified(PositionEvent):
         str
 
         """
-        cdef str currency = currency_to_string(self.position.quote_currency)
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
@@ -1246,7 +1242,7 @@ cdef class PositionModified(PositionEvent):
                 f"avg_open={self.position.avg_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl} {currency}, "
+                f"realized_pnl={self.position.realized_pnl} {self.position.quote_currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -1303,7 +1299,6 @@ cdef class PositionClosed(PositionEvent):
         str
 
         """
-        cdef str currency = currency_to_string(self.position.quote_currency)
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
@@ -1314,4 +1309,4 @@ cdef class PositionClosed(PositionEvent):
                 f"avg_close={self.position.avg_close_price}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl} {currency})")
+                f"realized_pnl={self.position.realized_pnl} {self.position.quote_currency})")

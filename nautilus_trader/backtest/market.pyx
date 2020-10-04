@@ -28,7 +28,6 @@ from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
-from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -44,6 +43,7 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -469,7 +469,7 @@ cdef class SimulatedMarket:
             raise ValueError(f"Cannot calculate the pnl of a "
                              f"{position_side_to_string(side)} side")
 
-        return Money.from_float_c(difference * quantity.as_double() * exchange_rate, 2, self.account_currency)
+        return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
@@ -514,7 +514,7 @@ cdef class SimulatedMarket:
         elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
             rollover_cumulative = rollover_cumulative * 3.0
 
-        cdef Money rollover_final = Money.from_float_c(rollover_cumulative, 2, self.account_currency)
+        cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
         self.total_rollover = self.total_rollover.add(rollover_final)
 
         cdef AccountState account_event

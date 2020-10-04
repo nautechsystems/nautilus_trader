@@ -22,13 +22,11 @@ from nautilus_trader import PACKAGE_ROOT
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport basis_points_as_percentage
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_from_string
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -98,7 +96,7 @@ cdef class GenericCommissionModel:
         if rates is None:
             rates = {}
         if minimum is None:
-            minimum = Money(0, Currency.USD)
+            minimum = Money(0, Currency.USD())
         Condition.dict_types(rates, Symbol, float, "rates")
         Condition.not_negative(default_rate_bp, "default_rate_bp")
         super().__init__()
@@ -147,7 +145,7 @@ cdef class GenericCommissionModel:
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
         cdef double commission = filled_qty * filled_price * exchange_rate * commission_rate_percent
         cdef double final_commission = max(self.minimum.as_double(), commission)
-        return Money.from_float_c(max(self.minimum.as_double(), commission), 2, currency)  # TODO: Currency precision
+        return Money(max(self.minimum.as_double(), commission), currency)
 
     cpdef Money calculate_for_notional(
             self,
@@ -177,7 +175,7 @@ cdef class GenericCommissionModel:
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
         cdef double value = max(self.minimum.as_double(), notional_value * commission_rate_percent)
-        return Money.from_float_c(value, 2, notional_value.currency)  # TODO: Currency precision
+        return Money(value, notional_value.currency)
 
     cpdef double get_rate(self, Symbol symbol) except *:
         """
@@ -285,8 +283,8 @@ cdef class MakerTakerCommissionModel:
         Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
-        cdef double commission = filled_qty* filled_price * exchange_rate * commission_rate_percent
-        return Money.from_float_c(commission, 2, currency)
+        cdef double commission = filled_qty * filled_price * exchange_rate * commission_rate_percent
+        return Money(commission, currency)
 
     cpdef Money calculate_for_notional(
             self,
@@ -316,7 +314,7 @@ cdef class MakerTakerCommissionModel:
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
         cdef double commission = notional_value * commission_rate_percent
-        return Money.from_float_c(notional_value * commission_rate_percent, 2, notional_value.currency)
+        return Money(notional_value * commission_rate_percent, notional_value.currency)
 
     cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *:
         """
@@ -443,9 +441,9 @@ cdef class ExchangeRateCalculator:
                 if ccy_pair[0] in exchange_rates[ccy_pair[1]]:
                     exchange_rates[ccy_pair[0]][ccy_pair[1]] = 1.0 / exchange_rates[ccy_pair[1]][ccy_pair[0]]
 
-        cdef str lhs_str = currency_to_string(from_currency)
-        cdef str rhs_str = currency_to_string(to_currency)
-        cdef double exchange_rate
+        cdef str symbol
+        cdef str lhs_str = from_currency.code
+        cdef str rhs_str = to_currency.code
         try:
             return exchange_rates[lhs_str][rhs_str]
         except KeyError:
@@ -503,20 +501,20 @@ cdef class RolloverInterestCalculator:
 
         csv_rate_data = pd.read_csv(short_term_interest_csv_path)
         self._rate_data = {
-            Currency.AUD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
-            Currency.CAD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CAN'],
-            Currency.CHF: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHE'],
-            Currency.EUR: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'EA19'],
-            Currency.USD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'USA'],
-            Currency.JPY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN'],
-            Currency.NZD: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NZL'],
-            Currency.GBP: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'GBR'],
-            Currency.RUB: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'RUS'],
-            Currency.NOK: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NOR'],
-            Currency.CNY: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
-            Currency.CNH: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
-            Currency.MXN: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'MEX'],
-            Currency.ZAR: csv_rate_data.loc[csv_rate_data['LOCATION'] == 'ZAF'],
+            'AUD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
+            'CAD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CAN'],
+            'CHF': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHE'],
+            'EUR': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'EA19'],
+            'USD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'USA'],
+            'JPY': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN'],
+            'NZD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NZL'],
+            'GBP': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'GBR'],
+            'RUB': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'RUS'],
+            'NOK': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NOR'],
+            'CNY': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
+            'CNH': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
+            'MXN': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'MEX'],
+            'ZAR': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'ZAF'],
         }
 
     cpdef object get_rate_data(self):
@@ -556,9 +554,8 @@ cdef class RolloverInterestCalculator:
         Condition.not_none(date, "timestamp")
         Condition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
 
-        cdef Currency base_currency = currency_from_string(symbol.code[:3])
-        cdef Currency quote_currency = currency_from_string(symbol.code[-3:])
-
+        cdef str base_currency = symbol.code[:3]
+        cdef str quote_currency = symbol.code[-3:]
         cdef str time_monthly = f"{date.year}-{str(date.month).zfill(2)}"
         cdef str time_quarter = f"{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}"
 

@@ -31,6 +31,7 @@ from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
@@ -518,7 +519,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         filled_price = strategy.object_storer.get_store()[3].avg_price.as_double()
         commission = strategy.object_storer.get_store()[3].commission.as_double()
-        commission = Money.from_float(-commission * filled_price, 2, 392)
+        commission = Money(-commission * filled_price, Currency.USD())
         position = self.exec_engine.cache.positions_open()[0]
         self.assertEqual(position.realized_pnl, commission)
 

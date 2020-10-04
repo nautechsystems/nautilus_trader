@@ -17,8 +17,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport precision_from_string
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.quicktions cimport Fraction
 
 
@@ -353,37 +352,27 @@ cdef class Money(Fraction):
 
     Attributes
     ----------
-    precision : int
-        The decimal precision of the money.
     currency : Currency
-        The currency denomination of the money.
+        The currency of the money.
 
     """
 
-    def __init__(self, value, Currency currency):
+    def __init__(self, value, Currency currency not None):
         """
         Initialize a new instance of the Money class.
 
         Parameters
         ----------
-        value : integer, string, decimal.Decimal or Fraction.
+        value : integer, float, string, decimal.Decimal or Fraction.
             The value of the money.
         currency : Currency
             The currency of the money.
 
-        Raises
-        ------
-        ValueError
-            If currency is UNDEFINED.
-
         """
-        Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
+        if not isinstance(value, float):
+            value = float(value)
+        super().__init__(f"{value:.{currency.precision}f}")
 
-        if isinstance(value, float):
-            raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
-        super().__init__(value)
-
-        self.precision = precision_from_string(str(value))
         self.currency = currency
 
     def __str__(self) -> str:
@@ -407,7 +396,7 @@ cdef class Money(Fraction):
         str
 
         """
-        return (f"<{self.__class__.__name__}({self}, currency={currency_to_string(self.currency)}) "
+        return (f"<{self.__class__.__name__}({self}, currency={self.currency}) "
                 f"object at {id(self)}>")
 
     cdef inline Money add(self, Money other):
@@ -418,37 +407,7 @@ cdef class Money(Fraction):
 
     @staticmethod
     cdef Money zero(Currency currency):
-        return Money("0", currency)
-
-    @staticmethod
-    def from_float(value: float, precision: int, currency: Currency) -> Money:
-        """
-        Return money from the given parameters.
-
-        Parameters
-        ----------
-        value : double
-            The amount of money.
-        precision : int, optional.
-            The decimal precision of the money.
-        currency : Currency
-            The currency of the money.
-
-        Raises
-        ------
-        ValueError
-            If precision is negative (< 0).
-
-        """
-        Condition.type(precision, int, "precision")
-
-        return Money.from_float_c(value, int(precision), currency)
-
-    @staticmethod
-    cdef inline Money from_float_c(double value, int precision, Currency currency):
-        Condition.not_negative_int(precision, "precision")
-
-        return Money(format(value, f'.{precision}f'), currency)
+        return Money(0, currency)
 
     cpdef double as_double(self):
         return self._numerator / self._denominator
@@ -462,7 +421,7 @@ cdef class Money(Fraction):
         str
 
         """
-        return format(self.as_double(), f'.{self.precision}f')
+        return format(self.as_double(), f'.{self.currency.precision}f')
 
     cpdef str to_string_formatted(self):
         """
@@ -473,4 +432,4 @@ cdef class Money(Fraction):
         str
 
         """
-        return f"{self.as_double():,.{self.precision}f} {currency_to_string(self.currency)}"
+        return f"{self.as_double():,.{self.currency.precision}f} {self.currency}"
