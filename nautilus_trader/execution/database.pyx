@@ -65,11 +65,11 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict load_strategy(self, TradingStrategy strategy):
+    cpdef dict load_strategy(self, StrategyId strategy_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+    cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -160,10 +160,10 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
     cpdef Position load_position(self, PositionId position_id):
         return None
 
-    cpdef dict load_strategy(self, TradingStrategy strategy):
+    cpdef dict load_strategy(self, StrategyId strategy_id):
         return {}
 
-    cpdef void delete_strategy(self, TradingStrategy strategy) except *:
+    cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         # Do nothing
         pass
 
