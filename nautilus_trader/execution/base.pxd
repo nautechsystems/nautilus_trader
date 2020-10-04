@@ -34,10 +34,6 @@ cdef class ExecutionCacheReadOnly:
     cpdef bint is_completely_flat(self) except *
 
     # -- Identifier queries ----------------------------------------------------
-    cpdef set stop_loss_ids(self, StrategyId strategy_id=*)
-    cpdef set take_profit_ids(self, StrategyId strategy_id=*)
-    cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *
-    cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *
     cpdef set order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
