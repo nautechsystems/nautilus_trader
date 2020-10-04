@@ -618,35 +618,6 @@ class TradingStrategyTests(unittest.TestCase):
     #     self.assertTrue(order1.cl_ord_id in strategy.orders_completed())
     #     self.assertTrue(order2.cl_ord_id in strategy.orders_completed())
 
-    def test_register_stop_loss_and_take_profit_orders(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        entry_order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        bracket_order = strategy.order_factory.bracket(
-            entry_order,
-            stop_loss=Price("90.000"),
-            take_profit=Price("91.000"))
-
-        # Act
-        strategy.submit_bracket_order(bracket_order)
-
-        # Assert
-        self.assertTrue(self.exec_engine.cache.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
-        self.assertTrue(self.exec_engine.cache.is_take_profit(bracket_order.take_profit.cl_ord_id))
-        self.assertTrue(bracket_order.stop_loss.cl_ord_id in self.exec_engine.cache.stop_loss_ids())
-        self.assertTrue(bracket_order.take_profit.cl_ord_id in self.exec_engine.cache.take_profit_ids())
-
     def test_completed_sl_tp_are_removed(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")

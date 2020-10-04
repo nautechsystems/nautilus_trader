@@ -358,10 +358,8 @@ cdef class ExecutionEngine:
         # Cache all orders
         self.cache.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
         self.cache.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
-        self.cache.add_stop_loss_id(command.bracket_order.stop_loss.cl_ord_id)
         if command.bracket_order.has_take_profit:
             self.cache.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
-            self.cache.add_take_profit_id(command.bracket_order.take_profit.cl_ord_id)
 
         # Submit bracket order
         client.submit_bracket_order(command)
@@ -481,11 +479,6 @@ cdef class ExecutionEngine:
             self._log.exception(ex)
 
         self.cache.update_order(order)
-
-        # Remove order from registered orders if completed
-        if event.is_completion_trigger:
-            self.cache.discard_stop_loss_id(event.cl_ord_id)
-            self.cache.discard_take_profit_id(event.cl_ord_id)
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)

@@ -38,8 +38,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef readonly str key_index_positions           # SET
     cdef readonly str key_index_positions_open      # SET
     cdef readonly str key_index_positions_closed    # SET
-    cdef readonly str key_index_stop_loss_ids       # SET
-    cdef readonly str key_index_take_profit_ids     # SET
 
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer

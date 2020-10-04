@@ -35,8 +35,6 @@ cdef class ExecutionDatabase:
     cpdef void flush(self) except *
     cpdef dict load_accounts(self)
     cpdef dict load_orders(self)
-    cpdef set load_stop_loss_ids(self)
-    cpdef set load_take_profit_ids(self)
     cpdef dict load_positions(self)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)

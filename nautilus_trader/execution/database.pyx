@@ -49,14 +49,6 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef set load_stop_loss_ids(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef set load_take_profit_ids(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef dict load_positions(self):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -151,12 +143,6 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
 
     cpdef dict load_orders(self):
         return {}
-
-    cpdef set load_stop_loss_ids(self):
-        return set()
-
-    cpdef set load_take_profit_ids(self):
-        return set()
 
     cpdef dict load_positions(self):
         return {}
