@@ -69,7 +69,7 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.order cimport StopOrder
+from nautilus_trader.model.order cimport StopMarketOrder
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
@@ -244,8 +244,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 hidden=unpacked[HIDDEN].decode(UTF8) == str(True),
             )
 
-        if order_type == OrderType.STOP:
-            return StopOrder(
+        if order_type == OrderType.STOP_MARKET:
+            return StopMarketOrder(
                 cl_ord_id=cl_ord_id,
                 symbol=symbol,
                 order_side=order_side,

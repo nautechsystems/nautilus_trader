@@ -115,9 +115,9 @@ cdef class MarketOrder(Order):
     cdef MarketOrder create(OrderInitialized event)
 
 
-cdef class StopOrder(PassiveOrder):
+cdef class StopMarketOrder(PassiveOrder):
     @staticmethod
-    cdef StopOrder create(OrderInitialized event)
+    cdef StopMarketOrder create(OrderInitialized event)
 
 
 cdef class LimitOrder(PassiveOrder):
@@ -131,7 +131,7 @@ cdef class LimitOrder(PassiveOrder):
 cdef class BracketOrder:
     cdef readonly BracketOrderId id
     cdef readonly Order entry
-    cdef readonly StopOrder stop_loss
+    cdef readonly StopMarketOrder stop_loss
     cdef readonly PassiveOrder take_profit
     cdef readonly bint has_take_profit
     cdef readonly datetime timestamp

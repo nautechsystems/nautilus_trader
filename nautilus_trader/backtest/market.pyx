@@ -339,7 +339,7 @@ cdef class SimulatedMarket:
 
             # Check for order fill
             if order.side == OrderSide.BUY:
-                if order.type == OrderType.STOP:
+                if order.type == OrderType.STOP_MARKET:
                     if tick.ask >= order.price or self._is_marginal_buy_stop_fill(order.price, tick):
                         del self._working_orders[order.cl_ord_id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -365,7 +365,7 @@ cdef class SimulatedMarket:
                         )
                         continue  # Continue loop to next order
             elif order.side == OrderSide.SELL:
-                if order.type == OrderType.STOP:
+                if order.type == OrderType.STOP_MARKET:
                     if tick.bid <= order.price or self._is_marginal_sell_stop_fill(order.price, tick):
                         del self._working_orders[order.cl_ord_id]  # Remove order from working orders
                         if self.fill_model.is_slipped():
@@ -638,7 +638,7 @@ cdef class SimulatedMarket:
 
         # Check order price is valid and reject or fill
         if order.side == OrderSide.BUY:
-            if order.type == OrderType.STOP:
+            if order.type == OrderType.STOP_MARKET:
                 if order.price < current_market.ask + self._min_stops[order.symbol]:
                     self._reject_order(order, f"BUY STOP order price of {order.price} is too "
                                               f"far from the market, ask={current_market.ask}")
@@ -654,7 +654,7 @@ cdef class SimulatedMarket:
                         self._fill_order(order, current_market.ask, LiquiditySide.TAKER)
                     return  # Filled
         elif order.side == OrderSide.SELL:
-            if order.type == OrderType.STOP:
+            if order.type == OrderType.STOP_MARKET:
                 if order.price > current_market.bid - self._min_stops[order.symbol]:
 
                     self._reject_order(order, f"SELL STOP order price of {order.price} is too "

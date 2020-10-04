@@ -868,13 +868,10 @@ cdef class LimitOrder(PassiveOrder):
         )
 
 
-cdef class StopOrder(PassiveOrder):
+cdef class StopMarketOrder(PassiveOrder):
     """
-    A stop order is an order to buy or sell a security when its price moves past
-    a particular point, ensuring a higher probability of achieving a
-    predetermined entry or exit point. The order can be used to both limit a
-    traders loss or take a profit. Once the price crosses the predefined
-    entry/exit point, the stop order becomes a market order.
+    Represents a stop market order. Once the price crosses the predefined
+    trigger price, the stop order becomes a market order.
     """
     def __init__(
             self,
@@ -889,7 +886,7 @@ cdef class StopOrder(PassiveOrder):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the StopOrder class.
+        Initialize a new instance of the StopMarketOrder class.
 
         Parameters
         ----------
@@ -928,7 +925,7 @@ cdef class StopOrder(PassiveOrder):
             cl_ord_id,
             symbol,
             order_side,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             quantity,
             price,
             time_in_force,
@@ -939,7 +936,7 @@ cdef class StopOrder(PassiveOrder):
         )
 
     @staticmethod
-    cdef StopOrder create(OrderInitialized event):
+    cdef StopMarketOrder create(OrderInitialized event):
         """
         Return a stop order from the given initialized event.
 
@@ -961,7 +958,7 @@ cdef class StopOrder(PassiveOrder):
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
         cdef Price price = Price(price_string)
 
-        return StopOrder(
+        return StopMarketOrder(
             cl_ord_id=event.cl_ord_id,
             symbol=event.symbol,
             order_side=event.order_side,
@@ -987,7 +984,7 @@ cdef class BracketOrder:
     def __init__(
             self,
             Order entry not None,
-            StopOrder stop_loss not None,
+            StopMarketOrder stop_loss not None,
             LimitOrder take_profit=None,
     ):
         """
@@ -997,7 +994,7 @@ cdef class BracketOrder:
         ----------
         entry : Order
             The entry 'parent' order.
-        stop_loss : StopOrder
+        stop_loss : StopMarketOrder
             The stop-loss (SL) 'child' order.
         take_profit : LimitOrder, optional
             The take-profit (TP) 'child' order.

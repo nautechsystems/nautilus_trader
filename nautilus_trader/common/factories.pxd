@@ -27,7 +27,7 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport StopOrder
+from nautilus_trader.model.order cimport StopMarketOrder
 
 
 cdef class OrderFactory:
@@ -59,7 +59,7 @@ cdef class OrderFactory:
         bint hidden=*,
     )
 
-    cpdef StopOrder stop(
+    cpdef StopMarketOrder stop(
         self,
         Symbol symbol,
         OrderSide order_side,
