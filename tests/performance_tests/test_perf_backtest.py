@@ -97,11 +97,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategies = [EMACross(
             symbol=usdjpy.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
-            risk_bp=10,
             fast_ema=10,
-            slow_ema=20,
-            atr_period=20,
-            sl_atr_multiple=2.0)]
+            slow_ema=20)]
 
         config = BacktestConfig(
             exec_db_type="in-memory",
@@ -140,11 +137,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategies = [EMACross(
             symbol=usdjpy.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
-            risk_bp=10,
             fast_ema=10,
-            slow_ema=20,
-            atr_period=20,
-            sl_atr_multiple=2.0)]
+            slow_ema=20)]
 
         config = BacktestConfig(
             exec_db_type="in-memory",
@@ -161,8 +155,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             fill_model=None,
         )
 
-        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
-        stop = datetime(2013, 3, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+        stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
         stats_file = "perf_stats_backtest_run_ema.prof"
         cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
@@ -269,3 +263,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 54565207 function calls (54177522 primitive calls) in 26.206 seconds (improve average spread calculation)
         # 53865728 function calls (53478043 primitive calls) in 25.729 seconds (not index twice to dicts in handle methods)
         # -----------------------------------------------------------------------------------------------------------------------------------------
+
+        # 05/10/20 Change to simple EMA Cross - 1 month.
+        # 9502337 function calls (9417247 primitive calls) in 10.532 seconds (benchmark)
