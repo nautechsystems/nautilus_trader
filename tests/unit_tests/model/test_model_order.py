@@ -41,7 +41,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
-from nautilus_trader.model.order import StopOrder
+from nautilus_trader.model.order import StopMarketOrder
 from nautilus_trader.model.order import flatten_side
 from nautilus_trader.model.order import opposite_side
 from tests.test_kit.stubs import TestStubs
@@ -118,7 +118,7 @@ class OrderTests(unittest.TestCase):
         # Act
         self.assertRaises(
             ValueError,
-            StopOrder,
+            StopMarketOrder,
             ClientOrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -289,7 +289,7 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(OrderType.STOP, order.type)
+        self.assertEqual(OrderType.STOP_MARKET, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state())
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed())

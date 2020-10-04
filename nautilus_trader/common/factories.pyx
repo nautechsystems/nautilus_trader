@@ -29,6 +29,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.order cimport StopMarketOrder
 
 
 cdef class OrderFactory:
@@ -216,7 +217,7 @@ cdef class OrderFactory:
             post_only=post_only,
             hidden=hidden)
 
-    cpdef StopOrder stop(
+    cpdef StopMarketOrder stop(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -247,7 +248,7 @@ cdef class OrderFactory:
 
         Returns
         -------
-        StopOrder
+        StopMarketOrder
 
         Raises
         ------
@@ -259,7 +260,7 @@ cdef class OrderFactory:
             If time_in_force is GTD and expire_time is None.
 
         """
-        return StopOrder(
+        return StopMarketOrder(
             self._id_generator.generate(),
             symbol,
             order_side,

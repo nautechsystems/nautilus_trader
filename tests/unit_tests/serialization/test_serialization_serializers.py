@@ -52,7 +52,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import LimitOrder
-from nautilus_trader.model.order import StopOrder
+from nautilus_trader.model.order import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
@@ -189,7 +189,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_stop_orders_with_expire_time(self):
         # Arrange
-        order = StopOrder(
+        order = StopMarketOrder(
             ClientOrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.BUY,
@@ -396,7 +396,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
@@ -505,7 +505,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("B-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             Quantity(100000),
             Price("1.50000"),
             TimeInForce.DAY,
@@ -530,7 +530,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("B-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             Quantity(100000),
             Price("1.50000"),
             TimeInForce.DAY,
