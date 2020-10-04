@@ -33,6 +33,9 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
+from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
@@ -123,8 +126,20 @@ cdef class TradingStrategy:
     cpdef ComponentState state(self):
         """
         Return the trading strategies state.
+
         """
-        return self._fsm.state
+        return component_state_from_string(self.state_as_string())
+
+    cpdef str state_as_string(self):
+        """
+        Return the trading strategies state as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return component_state_to_string(self._fsm.state)
 
     def __eq__(self, TradingStrategy other) -> bool:
         """
@@ -1303,7 +1318,7 @@ cdef class TradingStrategy:
         Calls on_start().
         """
         try:
-            self._fsm.trigger('START')
+            self._fsm.trigger(ComponentTrigger.START)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
@@ -1326,7 +1341,7 @@ cdef class TradingStrategy:
             self.stop()
             return
 
-        self._fsm.trigger('RUNNING')
+        self._fsm.trigger(ComponentTrigger.RUNNING)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
@@ -1336,7 +1351,7 @@ cdef class TradingStrategy:
         Calls on_stop().
         """
         try:
-            self._fsm.trigger('STOP')
+            self._fsm.trigger(ComponentTrigger.STOP)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
@@ -1356,7 +1371,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self._fsm.trigger('STOPPED')
+        self._fsm.trigger(ComponentTrigger.STOPPED)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void resume(self) except *:
@@ -1366,7 +1381,7 @@ cdef class TradingStrategy:
         Calls on_resume().
         """
         try:
-            self._fsm.trigger('RESUME')
+            self._fsm.trigger(ComponentTrigger.RESUME)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
@@ -1381,7 +1396,7 @@ cdef class TradingStrategy:
             self.stop()
             return
 
-        self._fsm.trigger('RUNNING')
+        self._fsm.trigger(ComponentTrigger.RUNNING)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void reset(self) except *:
@@ -1392,7 +1407,7 @@ cdef class TradingStrategy:
         All stateful values are reset to their initial value.
         """
         try:
-            self._fsm.trigger('RESET')
+            self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
@@ -1412,7 +1427,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self._fsm.trigger('RESET')
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
@@ -1420,7 +1435,7 @@ cdef class TradingStrategy:
         Dispose of the trading strategy.
         """
         try:
-            self._fsm.trigger('DISPOSE')
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
@@ -1432,7 +1447,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self._fsm.trigger('DISPOSED')
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef dict save(self):

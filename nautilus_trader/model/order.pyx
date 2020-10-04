@@ -29,6 +29,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_state cimport order_state_from_string
 from nautilus_trader.model.c_enums.order_state cimport order_state_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
@@ -54,7 +55,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-# Order states which determine if the order is completed
+# States which represent a 'completed' order
 cdef set _COMPLETED_STATES = {
     OrderState.INVALID,
     OrderState.DENIED,
@@ -65,30 +66,29 @@ cdef set _COMPLETED_STATES = {
 }
 
 
-cdef str OrderPartiallyFilled = "OrderPartiallyFilled"
-
+# State being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
-    (OrderState.INITIALIZED, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.INITIALIZED, OrderInvalid.__name__): OrderState.INVALID,
-    (OrderState.INITIALIZED, OrderDenied.__name__): OrderState.DENIED,
-    (OrderState.INITIALIZED, OrderSubmitted.__name__): OrderState.SUBMITTED,
-    (OrderState.SUBMITTED, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.SUBMITTED, OrderRejected.__name__): OrderState.REJECTED,
-    (OrderState.SUBMITTED, OrderAccepted.__name__): OrderState.ACCEPTED,
-    (OrderState.SUBMITTED, OrderWorking.__name__): OrderState.WORKING,
-    (OrderState.REJECTED, OrderRejected.__name__): OrderState.REJECTED,
-    (OrderState.ACCEPTED, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.ACCEPTED, OrderWorking.__name__): OrderState.WORKING,
-    (OrderState.ACCEPTED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
-    (OrderState.ACCEPTED, OrderFilled.__name__): OrderState.FILLED,
-    (OrderState.WORKING, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.WORKING, OrderModified.__name__): OrderState.WORKING,
-    (OrderState.WORKING, OrderExpired.__name__): OrderState.EXPIRED,
-    (OrderState.WORKING, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
-    (OrderState.WORKING, OrderFilled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderFilled.__name__): OrderState.FILLED,
+    (OrderState.INITIALIZED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.INITIALIZED, OrderState.INVALID): OrderState.INVALID,
+    (OrderState.INITIALIZED, OrderState.DENIED): OrderState.DENIED,
+    (OrderState.INITIALIZED, OrderState.SUBMITTED): OrderState.SUBMITTED,
+    (OrderState.SUBMITTED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.SUBMITTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
+    (OrderState.SUBMITTED, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.REJECTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.ACCEPTED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.ACCEPTED, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.WORKING, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.WORKING, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.WORKING, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.WORKING, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.WORKING, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
 
 
@@ -156,6 +156,7 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
+            trigger_parser=order_state_to_string,  # order_state_to_string correct here
             state_parser=order_state_to_string,
         )
 
@@ -204,7 +205,7 @@ cdef class Order:
         OrderState
 
         """
-        return self._fsm.state
+        return order_state_from_string(self.state_as_string())
 
     cpdef Event last_event(self):
         """
@@ -414,34 +415,41 @@ cdef class Order:
         # Update events
         self._events.append(event)
 
-        cdef str state_trigger = event.__class__.__name__
-
-        # Handle event
+        # Handle event - FSM (raises InvalidStateTrigger if trigger invalid)
         if isinstance(event, OrderInvalid):
+            self._fsm.trigger(OrderState.INVALID)
             self._invalid(event)
         elif isinstance(event, OrderDenied):
+            self._fsm.trigger(OrderState.DENIED)
             self._denied(event)
         elif isinstance(event, OrderSubmitted):
+            self._fsm.trigger(OrderState.SUBMITTED)
             self._submitted(event)
         elif isinstance(event, OrderRejected):
+            self._fsm.trigger(OrderState.REJECTED)
             self._rejected(event)
         elif isinstance(event, OrderAccepted):
+            self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderWorking):
+            self._fsm.trigger(OrderState.WORKING)
             self._working(event)
         elif isinstance(event, OrderCancelled):
+            self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
         elif isinstance(event, OrderExpired):
+            self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
         elif isinstance(event, OrderModified):
+            self._fsm.trigger(OrderState.WORKING)
             self._modified(event)
         elif isinstance(event, OrderFilled):
-            self._filled(event)
             if event.is_partial_fill:
-                state_trigger = OrderPartiallyFilled
-
-        # Update FSM (raises InvalidStateTrigger if trigger invalid)
-        self._fsm.trigger(state_trigger)
+                self._fsm.trigger(OrderState.PARTIALLY_FILLED)
+                self._filled(event)
+            else:
+                self._fsm.trigger(OrderState.FILLED)
+                self._filled(event)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else

@@ -142,7 +142,7 @@ class TraderTests(unittest.TestCase):
         self.assertEqual(ComponentState.INITIALIZED, self.trader.state())
         self.assertEqual(2, len(self.trader.strategy_states()))
 
-    def test_get_strategy_status(self):
+    def test_get_strategy_states(self):
         # Arrange
         # Act
         status = self.trader.strategy_states()
