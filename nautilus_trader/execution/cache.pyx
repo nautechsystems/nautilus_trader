@@ -26,13 +26,13 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionCache(ExecutionCacheReadOnly):
     """
     Provides a cache for the execution engine.
+
     """
 
     def __init__(
@@ -52,7 +52,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         super().__init__()
 
-        self.trader_id = database.trader_id
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._database = database
 
@@ -73,50 +72,154 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_orders = set()            # type: {ClientOrderId}
         self._index_orders_working = set()    # type: {ClientOrderId}
         self._index_orders_completed = set()  # type: {ClientOrderId}
+        self._index_stop_loss_ids = set()     # type: {ClientOrderId}
+        self._index_take_profit_ids = set()   # type: {ClientOrderId}
         self._index_positions = set()         # type: {PositionId}
         self._index_positions_open = set()    # type: {PositionId}
         self._index_positions_closed = set()  # type: {PositionId}
         self._index_strategies = set()        # type: {StrategyId}
 
-        # Registered identifiers
-        self._stop_loss_ids = set()           # type: {ClientOrderId}
-        self._take_profit_ids = set()         # type: {ClientOrderId}
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void cache_accounts(self) except *:
         """
-        Clear the current accounts cache and load accounts from the cache.
+        Clear the current accounts cache and load accounts from the execution
+        database.
+
         """
-        self._log.info(f"Loading persisted accounts.")
+        self._log.info(f"Loading accounts to cache...")
 
         self._cached_accounts = self._database.load_accounts()
         self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
 
     cpdef void cache_orders(self) except *:
         """
-        Clear the current order cache and load orders from the cache.
+        Clear the current orders cache and load orders from the execution
+        database.
+
         """
-        self._log.info(f"Loading persisted orders.")
+        self._log.info(f"Loading orders to cache...")
 
         self._cached_orders = self._database.load_orders()
         self._log.info(f"Cached {len(self._cached_orders)} order(s).")
 
     cpdef void cache_positions(self) except *:
         """
-        Clear the current order cache and load orders from the cache.
+        Clear the current positions cache and load positions from the execution
+        database.
+
         """
-        self._log.info(f"Loading positions cache.")
+        self._log.info(f"Loading positions to cache...")
 
         self._cached_positions = self._database.load_positions()
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
 
     cpdef void build_index(self) except *:
         """
-        Clear the current index cache and load indexes from the cache.
+        Clear the current cache index and re-build.
+
         """
-        self._log.info(f"Loading persisted indexes.")
-        # TODO: Implement
+        self._clear_indexes()
+        self._log.info(f"Building indexes...")
+
+        self._build_indexes_from_orders()
+        self._build_indexes_from_positions()
+        self._build_indexes_from_registered_order_ids()
+
+        self._log.info(f"Indexes built.")
+
+    cdef void _build_indexes_from_orders(self) except *:
+        cdef ClientOrderId cl_ord_id
+        cdef Order order
+        for cl_ord_id, order in self._cached_orders.items():
+            # 1- Build _index_order_position -> {ClientOrderId, PositionId}
+            if order.position_id is not None:
+                self._index_order_position[cl_ord_id] = order.position_id
+
+            # 2- Build _index_order_strategy -> {ClientOrderId, StrategyId}
+            if order.strategy_id is not None:
+                self._index_order_strategy[cl_ord_id] = order.strategy_id
+
+            # 3- Build _index_symbol_orders -> {Symbol, {ClientOrderId}}
+            if order.symbol not in self._index_symbol_orders:
+                self._index_symbol_orders[order.symbol] = set()
+            self._index_symbol_orders[order.symbol].add(cl_ord_id)
+
+            # 4- Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
+            if order.strategy_id not in self._index_strategy_orders:
+                self._index_strategy_orders[order.strategy_id] = set()
+            self._index_strategy_orders[order.strategy_id].add(cl_ord_id)
+
+            # 5- Build _index_orders -> {ClientOrderId}
+            self._index_orders.add(cl_ord_id)
+
+            # 6- Build _index_orders_working -> {ClientOrderId}
+            if order.is_working():
+                self._index_orders_working.add(cl_ord_id)
+            # 7- Build _index_orders_completed -> {ClientOrderId}
+            elif order.is_completed():
+                self._index_orders_completed.add(cl_ord_id)
+
+            # 8- Build _index_strategies -> {StrategyId}
+            self._index_strategies.add(order.strategy_id)
+
+    cdef void _build_indexes_from_positions(self) except *:
+        cdef PositionId position_id
+        cdef Position position
+        for position_id, position in self._cached_positions.items():
+            # 1- Build _index_position_strategy -> {PositionId, StrategyId}
+            if position_id.strategy_id is not None:
+                self._index_position_strategy[position_id] = position.strategy_id
+
+            # 2- Build _index_position_orders -> {PositionId, {ClientOrderId}}
+            if position_id not in self._index_position_orders:
+                self._index_position_orders[position_id] = set()
+            self._index_position_orders[position_id].add(position.cl_ord_id)
+
+            # 3- Build _index_symbol_positions -> {Symbol, {PositionId}}
+            if position.symbol not in self._index_symbol_positions:
+                self._index_symbol_positions[position_id] = set()
+            self._index_symbol_positions[position.symbol].add(position_id)
+
+            # 4- Build _index_strategy_positions -> {StrategyId, {PositionId}}
+            if position.strategy_id not in self._index_strategy_positions:
+                self._index_strategy_positions[position.strategy_id] = set()
+            self._index_strategy_positions[position.strategy_id].add(position.strategy_id)
+
+            # 5- Build _index_positions -> {PositionId}
+            self._index_positions.add(position_id)
+
+            # 6- Build _index_positions_open -> {PositionId}
+            if position.is_open():
+                self._index_positions_open.add(position_id)
+            # 6- Build _index_positions_closed -> {PositionId}
+            elif position.is_closed():
+                self._index_positions_closed.add(position_id)
+
+            # 7- Build _index_strategies -> {StrategyId}
+            self._index_strategies.add(position.strategy_id)
+
+    cdef void _build_indexes_from_registered_order_ids(self) except *:
+        cdef ClientOrderId cl_ord_id
+        # Build _index_stop_loss_ids -> {ClientOrderId}
+        for cl_ord_id in self._database.load_stop_loss_ids():
+            order = self._cached_orders.get(cl_ord_id)
+            if order is None:
+                self._log.error(f"Cannot index stop-loss, "
+                                f"cannot find order for {cl_ord_id.to_string(with_class=True)}.")
+                continue
+            if order.is_working():
+                self._index_stop_loss_ids.add(cl_ord_id)
+
+        # Build _index_take_profit_ids -> {ClientOrderId}
+        for cl_ord_id in self._database.load_take_profit_ids():
+            order = self._cached_orders.get(cl_ord_id)
+            if order is None:
+                self._log.error(f"Cannot index take-profit, "
+                                f"cannot find order for {cl_ord_id.to_string(with_class=True)}.")
+                continue
+            if order.is_working():
+                self._index_take_profit_ids.add(cl_ord_id)
 
     cpdef void integrity_check(self) except *:
         pass
@@ -376,17 +479,17 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         # Update database
         self._database.add_position(position, strategy_id)
 
-    cpdef void register_stop_loss(self, PassiveOrder order) except *:
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
         """
-        Register the given order to be managed as a stop-loss.
+        Register the given order identifier as a stop-loss.
 
         If cancel_on_sl_reject management flag is set to True then associated
         position will be flattened if this order is rejected.
 
         Parameters
         ----------
-        order : PassiveOrder
-            The stop-loss order to register.
+        cl_ord_id : ClientOrderId
+            The stop-loss client order identifier.
 
         Raises
         ------
@@ -394,23 +497,23 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             If order.id already contained within the registered stop-loss orders.
 
         """
-        Condition.not_none(order, "order")
-        Condition.not_in(order.cl_ord_id, self._stop_loss_ids, "order.id", "_stop_loss_ids")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_in(cl_ord_id, self._index_stop_loss_ids, "cl_ord_id", "_index_stop_loss_ids")
 
-        self._stop_loss_ids.add(order.cl_ord_id)
-        self._log.debug(f"Registered SL order {order}")
+        self._index_stop_loss_ids.add(cl_ord_id)
+        self._log.debug(f"Registered SL {cl_ord_id.to_string(with_class=True)}")
 
         # Update database
-        self._database.add_stop_loss_id(order.cl_ord_id)
+        self._database.add_stop_loss_id(cl_ord_id)
 
-    cpdef void register_take_profit(self, PassiveOrder order) except *:
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
         """
-        Register the given order to be managed as a take-profit.
+        Register the given order identifier as a take-profit.
 
         Parameters
         ----------
-        order : PassiveOrder
-            The take-profit order to register.
+        cl_ord_id : PassiveOrder
+            The take-profit client order identifier register.
 
         Raises
         ------
@@ -418,44 +521,42 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             If order.id already contained within the registered take_profit orders.
 
         """
-        Condition.not_none(order, "order")
-        Condition.not_in(order.cl_ord_id, self._take_profit_ids, "order.cl_ord_id", "_take_profit_ids")
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+        Condition.not_in(cl_ord_id, self._index_take_profit_ids, "cl_ord_id", "_index_take_profit_ids")
 
-        self._take_profit_ids.add(order.cl_ord_id)
-        self._log.debug(f"Registered TP order {order}")
+        self._index_take_profit_ids.add(cl_ord_id)
+        self._log.debug(f"Registered TP {cl_ord_id.to_string(with_class=True)}")
 
         # Update database
-        self._database.add_take_profit_id(order.cl_ord_id)
+        self._database.add_take_profit_id(cl_ord_id)
 
     cpdef void discard_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
         """
-        TBD.
+        Discard the given client order identifier.
 
         Parameters
         ----------
-        cl_ord_id
-
+        cl_ord_id : ClientOrderId
+            The identifier to discard.
 
         """
-        self._stop_loss_ids.discard(cl_ord_id)
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        # Update database
-        self._database.delete_stop_loss_id(cl_ord_id)
+        self._index_stop_loss_ids.discard(cl_ord_id)
 
     cpdef void discard_take_profit_id(self, ClientOrderId cl_ord_id) except *:
         """
-        TBD.
+        Discard the given client order identifier.
 
         Parameters
         ----------
-        cl_ord_id
-
+        cl_ord_id : ClientOrderId
+            The identifier to discard.
 
         """
-        self._take_profit_ids.discard(cl_ord_id)
+        Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        # Update database
-        self._database.delete_take_profit_id(cl_ord_id)
+        self._index_take_profit_ids.discard(cl_ord_id)
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -466,7 +567,9 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         account : The account to update (from last event).
 
         """
-        # Persist
+        Condition.not_none(account, "account")
+
+        # Update database
         self._database.update_account(account)
 
     cpdef void update_order(self, Order order) except *:
@@ -488,7 +591,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             self._index_orders_completed.add(order.cl_ord_id)
             self._index_orders_working.discard(order.cl_ord_id)
 
-        # Persist
+        # Update database
         self._database.update_order(order)
 
     cpdef void update_position(self, Position position) except *:
@@ -507,7 +610,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
-        # Persist
+        # Update database
         self._database.update_position(position)
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
@@ -524,7 +627,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._index_strategies.add(strategy.id)
         self._log.info(f"Saving {strategy.id} (in-memory cache does nothing).")
 
-        # Persist
+        # Update database
         self._database.update_strategy(strategy)
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
@@ -554,7 +657,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         if strategy.id in self._index_strategy_positions:
             del self._index_strategy_positions[strategy.id]
 
-        # Persist
+        # Update database
         self._database.delete_strategy(strategy.id)
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
@@ -573,25 +676,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
-
-        self._index_order_position.clear()
-        self._index_order_strategy.clear()
-        self._index_position_strategy.clear()
-        self._index_position_orders.clear()
-        self._index_symbol_orders.clear()
-        self._index_symbol_positions.clear()
-        self._index_strategy_orders.clear()
-        self._index_strategy_positions.clear()
-        self._index_orders.clear()
-        self._index_orders_working.clear()
-        self._index_orders_completed.clear()
-        self._index_positions.clear()
-        self._index_positions_open.clear()
-        self._index_positions_closed.clear()
-        self._index_strategies.clear()
-
-        self._stop_loss_ids.clear()
-        self._take_profit_ids.clear()
+        self._clear_indexes()
 
         self._log.info(f"Reset.")
 
@@ -605,6 +690,27 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._log.info("Flushing execution database...")
         self._database.flush()
         self._log.info("Execution database flushed.")
+
+    cdef void _clear_indexes(self) except *:
+        self._log.info(f"Clearing indexes...")
+        self._index_order_position.clear()
+        self._index_order_strategy.clear()
+        self._index_position_strategy.clear()
+        self._index_position_orders.clear()
+        self._index_symbol_orders.clear()
+        self._index_symbol_positions.clear()
+        self._index_strategy_orders.clear()
+        self._index_strategy_positions.clear()
+        self._index_orders.clear()
+        self._index_orders_working.clear()
+        self._index_orders_completed.clear()
+        self._index_stop_loss_ids.clear()
+        self._index_take_profit_ids.clear()
+        self._index_positions.clear()
+        self._index_positions_open.clear()
+        self._index_positions_closed.clear()
+        self._index_strategies.clear()
+        self._log.info(f"Indexes cleared.")
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
@@ -768,7 +874,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         Set[OrderId]
 
         """
-        return self._stop_loss_ids.copy()
+        return self._index_stop_loss_ids.copy()
 
     cpdef set take_profit_ids(self, StrategyId strategy_id=None):
         """
@@ -784,7 +890,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         Set[OrderId]
 
         """
-        return self._take_profit_ids.copy()
+        return self._index_take_profit_ids.copy()
 
     cpdef bint is_stop_loss(self, ClientOrderId cl_ord_id) except *:
         """
@@ -802,7 +908,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        return cl_ord_id in self._stop_loss_ids
+        return cl_ord_id in self._index_stop_loss_ids
 
     cpdef bint is_take_profit(self, ClientOrderId cl_ord_id) except *:
         """
@@ -818,7 +924,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        return cl_ord_id in self._take_profit_ids
+        return cl_ord_id in self._index_take_profit_ids
 
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """

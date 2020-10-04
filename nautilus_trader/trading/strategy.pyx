@@ -103,8 +103,8 @@ cdef class TradingStrategy:
         self.execution = None      # Initialized when registered with the execution engine
 
         # Private components
-        self._data_engine = None  # Initialized when registered with the data engine
-        self._exec_engine = None  # Initialized when registered with the execution engine
+        self._data_engine = None   # Initialized when registered with the data engine
+        self._exec_engine = None   # Initialized when registered with the execution engine
         self._fsm = create_component_fsm()
 
         # Management flags
@@ -1515,8 +1515,7 @@ cdef class TradingStrategy:
         order : Order
             The order to submit.
         position_id : PositionId, optional
-            The position identifier to submit the order against. Only required
-            if the execution engine is configured for OMS.HEDGING.
+            The position identifier to submit the order against.
 
         """
         Condition.not_none(order, "order")
@@ -1751,6 +1750,7 @@ cdef class TradingStrategy:
             return
 
         # Flatten if open position
+        # TODO: Stop-loss id has already been discarded at this stage
         if self.execution.is_position_open(position_id):
             self.log.warning(f"Rejected {event.cl_ord_id.to_string(with_class=True)} "
                              f"was a registered child order, "

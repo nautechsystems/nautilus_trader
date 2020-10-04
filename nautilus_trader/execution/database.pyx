@@ -49,6 +49,14 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef set load_stop_loss_ids(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef set load_take_profit_ids(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef dict load_positions(self):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -81,6 +89,14 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -105,24 +121,12 @@ cdef class ExecutionDatabase:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
 
 cdef class BypassExecutionDatabase(ExecutionDatabase):
+    """
+    Provides a bypass execution database which does nothing.
+
+    """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
@@ -139,7 +143,7 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
     cpdef void flush(self) except *:
-        # Do nothing
+        # NO-OP
         pass
 
     cpdef dict load_accounts(self):
@@ -147,6 +151,12 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
 
     cpdef dict load_orders(self):
         return {}
+
+    cpdef set load_stop_loss_ids(self):
+        return set()
+
+    cpdef set load_take_profit_ids(self):
+        return set()
 
     cpdef dict load_positions(self):
         return {}
@@ -164,53 +174,45 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
         return {}
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
-        # Do nothing
+        # NO-OP
         pass
 
     cpdef void add_account(self, Account account) except *:
-        # Do nothing
+        # NO-OP
         pass
 
     cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
-        # Do nothing
-        pass
-
-    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
-        # Do nothing
-        pass
-
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
-        # Do nothing
-        pass
-
-    cpdef void update_account(self, Account event) except *:
-        # Do nothing
-        pass
-
-    cpdef void update_order(self, Order order) except *:
-        # Do nothing
-        pass
-
-    cpdef void update_position(self, Position position) except *:
-        # Do nothing
-        pass
-
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
-        # Do nothing
+        # NO-OP
         pass
 
     cpdef void add_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        # Do nothing
+        # NO-OP
         pass
 
     cpdef void add_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        # Do nothing
+        # NO-OP
         pass
 
-    cpdef void delete_stop_loss_id(self, ClientOrderId cl_ord_id) except *:
-        # Do nothing
+    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+        # NO-OP
         pass
 
-    cpdef void delete_take_profit_id(self, ClientOrderId cl_ord_id) except *:
-        # Do nothing
+    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
+        # NO-OP
+        pass
+
+    cpdef void update_account(self, Account event) except *:
+        # NO-OP
+        pass
+
+    cpdef void update_order(self, Order order) except *:
+        # NO-OP
+        pass
+
+    cpdef void update_position(self, Position position) except *:
+        # NO-OP
+        pass
+
+    cpdef void update_strategy(self, TradingStrategy strategy) except *:
+        # NO-OP
         pass
