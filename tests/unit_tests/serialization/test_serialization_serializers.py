@@ -123,6 +123,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
@@ -168,6 +169,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         order = LimitOrder(
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -191,6 +193,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -220,6 +223,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
@@ -394,6 +398,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.SELL,
             OrderType.STOP_MARKET,

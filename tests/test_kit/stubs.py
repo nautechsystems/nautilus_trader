@@ -366,7 +366,6 @@ class TestStubs:
         return PositionOpened(
             position,
             position.last_event(),
-            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -376,7 +375,6 @@ class TestStubs:
         return PositionModified(
             position,
             position.last_event(),
-            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -386,7 +384,6 @@ class TestStubs:
         return PositionClosed(
             position,
             position.last_event(),
-            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -402,6 +399,7 @@ class TestStubs:
             generator.generate(TestStubs.symbol_audusd_fxcm())
 
         order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=LiveClock(),
@@ -431,6 +429,7 @@ class TestStubs:
             close_price = Price("1.0001")
 
         order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
         )

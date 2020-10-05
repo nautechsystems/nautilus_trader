@@ -307,7 +307,6 @@ cdef class ExecutionEngine:
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
         cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -323,14 +322,13 @@ cdef class ExecutionEngine:
             return  # Invalid command
 
         # Cache order
-        self.cache.add_order(command.order, command.position_id, command.strategy_id)
+        self.cache.add_order(command.order, command.position_id)
 
         # Submit order
         client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -356,17 +354,16 @@ cdef class ExecutionEngine:
             return  # Invalid command
 
         # Cache all orders
-        self.cache.add_order(command.bracket_order.entry, PositionId.null(), command.strategy_id)
-        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null(), command.strategy_id)
+        self.cache.add_order(command.bracket_order.entry, PositionId.null())
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null())
         if command.bracket_order.has_take_profit:
-            self.cache.add_order(command.bracket_order.take_profit, PositionId.null(), command.strategy_id)
+            self.cache.add_order(command.bracket_order.take_profit, PositionId.null())
 
         # Submit bracket order
         client.submit_bracket_order(command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -382,14 +379,13 @@ cdef class ExecutionEngine:
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         cdef ExecutionClient client = self._exec_clients.get(command.venue)
-
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
             return
 
         # Validate command
-        if not self.cache.is_order_working(command.cl_ord_id):
+        if self.cache.is_order_completed(command.cl_ord_id):
             self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
                               f"(already completed).")
             return  # Invalid command
@@ -400,7 +396,6 @@ cdef class ExecutionEngine:
         # For now we pull out the account issuer string (which should match the venue ID
         # TODO: Venue instantiation is a temporary hack
         cdef ExecutionClient client = self._exec_clients.get(Venue(command.account_id.issuer))
-
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.account_id.issuer} not registered).")
@@ -437,10 +432,7 @@ cdef class ExecutionEngine:
         self.event_count += 1
 
         if isinstance(event, OrderEvent):
-            if isinstance(event, OrderCancelReject):
-                self._handle_order_cancel_reject(event)
-            else:
-                self._handle_order_event(event)
+            self._handle_order_event(event)
         elif isinstance(event, PositionEvent):
             self._handle_position_event(event)
         elif isinstance(event, AccountState):
@@ -448,21 +440,36 @@ cdef class ExecutionEngine:
         else:
             self._log.error(f"Cannot handle event ({event} is unrecognized).")
 
-    cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
-        if not strategy_id:
-            self._log.error(f"Cannot process event {event}, "
-                            f"{strategy_id.to_string(with_class=True)} "
-                            f"not found.")
-            return  # Cannot process event further
+    cdef inline void _handle_account_event(self, AccountState event) except *:
+        cdef Account account = self.cache.get_account(event.account_id)
+        if account is None:
+            account = Account(event)
+            if self.account_id.equals(account.id):
+                self.account = account
+                self.cache.add_account(self.account)
+                self.portfolio.set_base_currency(event.currency)
+                return
+        elif account.id == event.account_id:
+            account.apply(event)
+            self.cache.update_account(account)
+            return
 
-        self._send_to_strategy(event, strategy_id)
+        self._log.warning(f"Cannot process event {event}, "
+                          f"event {event.account_id.to_string(with_class=True)} "
+                          f"does not match traders {self.account_id.to_string(with_class=True)}.")
 
-    cdef void _handle_order_event(self, OrderEvent event) except *:
+    cdef inline void _handle_position_event(self, PositionEvent event) except *:
+        self.portfolio.update(event)
+        self._send_to_strategy(event, event.position.strategy_id)
+
+    cdef inline void _handle_order_event(self, OrderEvent event) except *:
         if isinstance(event, OrderRejected):
             self._log.warning(f"{RECV}{EVT} {event}.")
         elif isinstance(event, OrderCancelReject):
             self._log.warning(f"{RECV}{EVT} {event}.")
+            if isinstance(event, OrderCancelReject):
+                self._handle_order_cancel_reject(event)
+                return  # Sent to strategy
         else:
             self._log.info(f"{RECV}{EVT} {event}.")
 
@@ -486,7 +493,17 @@ cdef class ExecutionEngine:
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
-    cdef void _handle_order_fill(self, OrderFilled fill) except *:
+    cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
+        if not strategy_id:
+            self._log.error(f"Cannot process event {event}, "
+                            f"{strategy_id.to_string(with_class=True)} "
+                            f"not found.")
+            return  # Cannot process event further
+
+        self._send_to_strategy(event, strategy_id)
+
+    cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
         cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
         # --- position_id could be None here (position not opened yet) ---
@@ -502,37 +519,47 @@ cdef class ExecutionEngine:
             return  # Cannot process event further
 
         if fill.position_id is None:  # Exchange not assigning position_ids
-            self._fill_pos_id_none(position_id, fill, strategy_id)
+            self._fill_system_assigned_ids(position_id, fill, strategy_id)
         else:
-            self._fill_pos_id(position_id, fill, strategy_id)
+            self._fill_exchange_assigned_ids(position_id, fill, strategy_id)
 
-    cdef void _fill_pos_id_none(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:
+    cdef inline void _fill_system_assigned_ids(
+            self,
+            PositionId position_id,
+            OrderFilled fill,
+            StrategyId strategy_id,
+    ) except *:
         if position_id.is_null():  # No position yet
             # Generate identifier
             position_id = self._pos_id_generator.generate(fill.symbol)
             fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
 
             # Create new position
-            self._open_position(fill, strategy_id)
+            self._open_position(fill)
         else:  # Position exists
             fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
-            self._update_position(fill, strategy_id)
+            self._update_position(fill)
 
-    cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *:
+    cdef inline void _fill_exchange_assigned_ids(
+            self,
+            PositionId position_id,
+            OrderFilled fill,
+            StrategyId strategy_id,
+    ) except *:
+        fill = fill.clone(position_id=fill.position_id, strategy_id=strategy_id)
         if position_id is None:  # No position
-            self._open_position(fill, strategy_id)
+            self._open_position(fill)
         else:
-            self._update_position(fill, strategy_id)
+            self._update_position(fill)
 
-    cdef void _open_position(self, OrderFilled fill, StrategyId strategy_id) except *:
+    cdef inline void _open_position(self, OrderFilled fill) except *:
         cdef Position position = Position(fill)
-        self.cache.add_position(position, strategy_id)
-        # self.cache.index_position_id(position_id, fill.cl_ord_id, strategy_id)
+        self.cache.add_position(position)
 
-        self._send_to_strategy(fill, strategy_id)
-        self.process(self._pos_opened_event(position, fill, strategy_id))
+        self._send_to_strategy(fill, fill.strategy_id)
+        self.process(self._pos_opened_event(position, fill))
 
-    cdef void _update_position(self, OrderFilled fill, StrategyId strategy_id) except *:
+    cdef inline void _update_position(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)
 
         if position is None:
@@ -546,85 +573,45 @@ cdef class ExecutionEngine:
 
         cdef PositionEvent position_event
         if position.is_closed():
-            position_event = self._pos_closed_event(position, fill, strategy_id)
+            position_event = self._pos_closed_event(position, fill)
         else:
-            position_event = self._pos_modified_event(position, fill, strategy_id)
+            position_event = self._pos_modified_event(position, fill)
 
-        self._send_to_strategy(fill, strategy_id)
+        self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
 
-    cdef void _handle_position_event(self, PositionEvent event) except *:
-        self.portfolio.update(event)
-        self._send_to_strategy(event, event.strategy_id)
-
-    cdef void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self.cache.get_account(event.account_id)
-        if account is None:
-            account = Account(event)
-            if self.account_id.equals(account.id):
-                self.account = account
-                self.cache.add_account(self.account)
-                self.portfolio.set_base_currency(event.currency)
-                return
-        elif account.id == event.account_id:
-            account.apply(event)
-            self.cache.update_account(account)
-            return
-
-        self._log.warning(f"Cannot process event {event}, "
-                          f"event {event.account_id.to_string(with_class=True)} "
-                          f"does not match traders {self.account_id.to_string(with_class=True)}.")
-
-    cdef PositionOpened _pos_opened_event(
-            self,
-            Position position,
-            OrderFilled event,
-            StrategyId strategy_id,
-    ):
+    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled event):
         return PositionOpened(
             position,
             event,
-            strategy_id,
             self._uuid_factory.generate(),
             event.timestamp,
         )
 
-    cdef PositionModified _pos_modified_event(
-            self,
-            Position position,
-            OrderFilled event,
-            StrategyId strategy_id,
-    ):
+    cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled event):
         return PositionModified(
             position,
             event,
-            strategy_id,
             self._uuid_factory.generate(),
             event.timestamp,
         )
 
-    cdef PositionClosed _pos_closed_event(
-            self,
-            Position position,
-            OrderFilled event,
-            StrategyId strategy_id,
-    ):
+    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled event):
         return PositionClosed(
             position,
             event,
-            strategy_id,
             self._uuid_factory.generate(),
             event.timestamp,
         )
 
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
+    cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
             self._log.error(f"Cannot send event {event} to strategy, "
                             f"{strategy_id.to_string(with_class=True)} not found.")
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._registered_strategies.get(strategy_id)
-        if strategy_id is None:
+        if strategy is None:
             self._log.error(f"Cannot send event {event} to strategy, "
                             f"{strategy_id.to_string(with_class=True)} not registered.")
             return

@@ -57,6 +57,7 @@ class OrderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock(),
@@ -90,6 +91,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(),
@@ -105,6 +107,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100),
@@ -120,6 +123,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             StopMarketOrder,
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -380,7 +384,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
 

@@ -59,11 +59,11 @@ cdef class Order:
     cdef FiniteStateMachine _fsm
 
     cdef readonly ClientOrderId cl_ord_id
+    cdef readonly StrategyId strategy_id
     cdef readonly OrderId id
     cdef readonly AccountId account_id
     cdef readonly ExecutionId execution_id
     cdef readonly PositionId position_id
-    cdef readonly StrategyId strategy_id
 
     cdef readonly Symbol symbol
     cdef readonly OrderSide side

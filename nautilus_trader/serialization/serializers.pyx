@@ -57,6 +57,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal
@@ -213,6 +214,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         cdef dict package = {
             ID: order.cl_ord_id.value,
+            STRATEGY_ID: order.strategy_id.value,
             SYMBOL: order.symbol.value,
             ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
@@ -259,6 +261,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID].decode(UTF8))
+        cdef StrategyId strategy_id = StrategyId.from_string(unpacked[STRATEGY_ID].decode(UTF8))
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
         cdef OrderSide order_side = order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
         cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
@@ -270,6 +273,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if order_type == OrderType.MARKET:
             return MarketOrder(
                 cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -281,6 +285,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if order_type == OrderType.LIMIT:
             return LimitOrder(
                 cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -296,6 +301,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if order_type == OrderType.STOP_MARKET:
             return StopMarketOrder(
                 cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -524,6 +530,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[MARGIN_CALL_STATUS] = event.margin_call_status
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
@@ -656,6 +663,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderInitialized.__name__:
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),

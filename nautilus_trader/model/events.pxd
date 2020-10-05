@@ -53,6 +53,7 @@ cdef class OrderEvent(Event):
 
 
 cdef class OrderInitialized(OrderEvent):
+    cdef readonly StrategyId strategy_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
@@ -150,7 +151,6 @@ cdef class OrderFilled(OrderEvent):
 cdef class PositionEvent(Event):
     cdef readonly Position position
     cdef readonly OrderFilled order_fill
-    cdef readonly StrategyId strategy_id
 
 
 cdef class PositionOpened(PositionEvent):
