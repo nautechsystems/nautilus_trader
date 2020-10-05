@@ -125,6 +125,9 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         self._log.info(f"Indexes built.")
 
+    cpdef void integrity_check(self) except *:
+        pass  # TODO
+
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId cl_ord_id
         cdef Order order
@@ -195,10 +198,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
             # 7- Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
-
-    cpdef void integrity_check(self) except *:
-        pass
-        # TODO: Implement
 
     cpdef void load_strategy(self, TradingStrategy strategy):
         """
@@ -599,25 +598,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._log.info(f"Indexes cleared.")
 
 # -- QUERIES ---------------------------------------------------------------------------------------
-
-    cpdef dict get_symbol_position_counts(self):
-        """
-        Return the indexed position count for the given symbol.
-
-        Returns
-        -------
-        Dict[Symbol, int]
-
-        """
-        cdef dict symbol_pos_counts = {}
-
-        cdef Position position
-        for position in self._cached_positions.values():
-            if position.symbol not in symbol_pos_counts:
-                symbol_pos_counts[position.symbol] = 0
-            symbol_pos_counts[position.symbol] += 1
-
-        return symbol_pos_counts
 
     cpdef Account get_account(self, AccountId account_id):
         """

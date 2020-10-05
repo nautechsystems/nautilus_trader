@@ -33,7 +33,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     """
-    Provides a process and thread safe high performance execution engine.
+    Provides a process and thread safe high-performance execution engine.
     """
 
     def __init__(

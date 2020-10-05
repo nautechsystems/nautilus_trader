@@ -26,7 +26,6 @@ from nautilus_trader.model.position cimport Position
 cdef class ExecutionCacheReadOnly:
 
     # -- General queries -------------------------------------------------------
-    cpdef dict get_symbol_position_counts(self)
     cpdef Account get_account(self, AccountId account_id)
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *

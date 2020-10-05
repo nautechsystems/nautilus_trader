@@ -48,6 +48,7 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order cimport Order
@@ -223,6 +224,7 @@ cdef class ExecutionEngine:
         self.cache.cache_orders()
         self.cache.cache_positions()
         self.cache.build_index()
+        self._set_position_symbol_counts()
 
     cpdef void integrity_check(self) except *:
         """
@@ -230,6 +232,26 @@ cdef class ExecutionEngine:
 
         """
         self.cache.integrity_check()
+
+    cpdef void _set_position_symbol_counts(self) except *:
+        # Set for the internal position identifier generator
+        cdef list positions = self.cache.positions()
+
+        cdef dict counts = {}  # type: {Symbol: int}
+        cdef Position position
+        for position in positions:
+            if position.symbol not in counts:
+                counts[position.symbol] = 0
+            counts[position.symbol] += 1
+
+        # Reset position identifier generator
+        self._pos_id_generator.reset()
+
+        cdef Symbol symbol
+        cdef int count
+        for symbol, count in counts.items():
+            self._pos_id_generator.set_count(symbol, count)
+            self._log.info(f"Set position count {symbol} to {count}")
 
     cpdef void flush_db(self) except *:
         """
