@@ -105,6 +105,7 @@ cdef class ExecutionEngine:
     cdef inline void _fill_exchange_assigned_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
     cdef inline void _open_position(self, OrderFilled event) except *
     cdef inline void _update_position(self, OrderFilled event) except *
+    cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
     cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
