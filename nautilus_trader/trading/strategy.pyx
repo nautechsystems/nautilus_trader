@@ -684,9 +684,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(event, "event")
 
-        if isinstance(event, OrderRejected):
-            self.log.warning(f"{RECV}{EVT} {event}.")
-        elif isinstance(event, OrderCancelReject):
+        if isinstance(event, (OrderRejected, OrderCancelReject)):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
@@ -718,7 +716,8 @@ cdef class TradingStrategy:
             from_datetime=None,
             to_datetime=None,
             limit=self._data_engine.tick_capacity,
-            callback=self.handle_quote_ticks)
+            callback=self.handle_quote_ticks,
+        )
 
     cpdef void request_trade_ticks(self, Symbol symbol) except *:
         """
