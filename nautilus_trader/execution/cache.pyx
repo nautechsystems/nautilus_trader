@@ -378,14 +378,14 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         if cl_ord_id not in self._index_order_position:
             self._index_order_position[cl_ord_id] = position_id
         else:
-            if not position_id.equals(self._index_order_position[cl_ord_id]):
+            if not position_id == self._index_order_position[cl_ord_id]:
                 self._log.error(f"Order indexing invalid for {position_id}.")
 
         # Index: PositionId -> StrategyId
         if position_id not in self._index_position_strategy:
             self._index_position_strategy[position_id] = strategy_id
         else:
-            if not strategy_id.equals(self._index_position_strategy[position_id]):
+            if not strategy_id == self._index_position_strategy[position_id]:
                 self._log.error(f"Strategy indexing invalid for {position_id}.")
 
         # Index: PositionId -> Set[ClientOrderId]

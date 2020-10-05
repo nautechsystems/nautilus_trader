@@ -150,24 +150,6 @@ cdef class BarSpecification:
         """
         return price_type_to_string(self.price_type)
 
-    cpdef bint equals(self, BarSpecification other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.step == other.step \
-            and self.aggregation == other.aggregation \
-            and self.price_type == other.price_type
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -193,7 +175,9 @@ cdef class BarSpecification:
         bool
 
         """
-        return self.equals(other)
+        return self.step == other.step \
+               and self.aggregation == other.aggregation \
+               and self.price_type == other.price_type
 
     def __ne__(self, BarSpecification other) -> bool:
         """
@@ -209,7 +193,7 @@ cdef class BarSpecification:
         bool
 
         """
-        return not self.equals(other)
+        return not self == other
 
     def __hash__(self) -> int:
         """
@@ -361,22 +345,6 @@ cdef class BarType:
         """
         return self.spec.price_type_string()
 
-    cpdef bint equals(self, BarType other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.symbol.equals(other.symbol) and self.spec.equals(other.spec)
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -402,7 +370,7 @@ cdef class BarType:
         bool
 
         """
-        return self.equals(other)
+        return self.symbol == other.symbol and self.spec == other.spec
 
     def __ne__(self, BarType other) -> bool:
         """
@@ -418,7 +386,7 @@ cdef class BarType:
         bool
 
         """
-        return not self.equals(other)
+        return not self == other
 
     def __hash__(self) -> int:
         """
@@ -560,27 +528,6 @@ cdef class Bar:
         """
         return Bar.from_serializable_string(value)
 
-    cpdef bint equals(self, Bar other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.open == other.open \
-            and self.high == other.high \
-            and self.low == other.low \
-            and self.close == other.close \
-            and self.volume == other.volume \
-            and self.timestamp == other.timestamp
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -627,7 +574,12 @@ cdef class Bar:
         bool
 
         """
-        return self.equals(other)
+        return self.open == other.open \
+               and self.high == other.high \
+               and self.low == other.low \
+               and self.close == other.close \
+               and self.volume == other.volume \
+               and self.timestamp == other.timestamp
 
     def __ne__(self, Bar other) -> bool:
         """
@@ -643,7 +595,7 @@ cdef class Bar:
         bool
 
         """
-        return not self.equals(other)
+        return not self == other
 
     def __hash__(self) -> int:
         """"

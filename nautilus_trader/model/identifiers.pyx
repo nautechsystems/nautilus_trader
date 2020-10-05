@@ -326,7 +326,7 @@ cdef class StrategyId(Identifier):
         bool
 
         """
-        return self.equals(_NULL_STRATEGY_ID)
+        return self.value == _NULL_STRATEGY_ID.value
 
     cdef bint not_null(self):
         """
@@ -338,7 +338,7 @@ cdef class StrategyId(Identifier):
         bool
 
         """
-        return not self.equals(_NULL_STRATEGY_ID)
+        return self.value != _NULL_STRATEGY_ID.value
 
     @staticmethod
     cdef StrategyId from_string(str value):
@@ -636,7 +636,7 @@ cdef class PositionId(Identifier):
         bool
 
         """
-        return self.equals(_NULL_POSITION_ID)
+        return self.value == _NULL_POSITION_ID.value
 
     cdef bint not_null(self):
         """
@@ -648,7 +648,7 @@ cdef class PositionId(Identifier):
         bool
 
         """
-        return not self.equals(_NULL_POSITION_ID)
+        return self.value != _NULL_POSITION_ID.value
 
 
 cdef class ExecutionId(Identifier):

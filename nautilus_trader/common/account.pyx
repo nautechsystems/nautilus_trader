@@ -83,7 +83,7 @@ cdef class Account:
         """
         Condition.not_none(other, "other")
 
-        return not self.__eq__(other)
+        return self.id != other.id
 
     def __hash__(self) -> int:
         """

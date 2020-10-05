@@ -71,7 +71,7 @@ cdef class Handler:
         bool
 
         """
-        return not self.handle != other.handle
+        return PyObject_Repr(self.handle) != PyObject_Repr(other.handle)
 
     def __hash__(self) -> int:
         """

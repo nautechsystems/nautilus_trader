@@ -330,7 +330,7 @@ cdef class SimulatedMarket:
         cdef Order order
         cdef Instrument instrument
         for order in self._working_orders.copy().values():  # Copies list to avoid resize during loop
-            if not order.symbol.equals(tick.symbol):
+            if not order.symbol == tick.symbol:
                 continue  # Order is for a different symbol
             if not order.is_working():
                 continue  # Orders state has changed since the loop commenced
@@ -1028,7 +1028,7 @@ cdef class SimulatedMarket:
             # Reject any latent bracket child orders
             for bracket_order_id, child_orders in self._child_orders.items():
                 for order in child_orders:
-                    if oco_order.equals(order) and order.state() != OrderState.WORKING:
+                    if oco_order == order and order.state() != OrderState.WORKING:
                         self._reject_oco_order(order, order_id)
 
             # Cancel any working OCO orders

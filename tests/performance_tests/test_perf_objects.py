@@ -74,13 +74,13 @@ class ObjectPerformanceTests(unittest.TestCase):
         self.assertTrue(result < 0.2)
 
     def test_build_bar_no_checking(self):
-        result = PerformanceHarness.profile_function(ObjectTests.build_bar_no_checking, 3, 100000)
+        result = PerformanceHarness.profile_function(ObjectTests.build_bar_no_checking, 3, 10000)
         # ~146ms (146283μs) minimum of 3 runs @ 100,000 iterations each run.
         # ~534ms (534113μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 1.0)
 
     def test_build_bar_with_checking(self):
-        result = PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 3, 100000)
+        result = PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 3, 10000)
         # ~143ms (143914μs) minimum of 3 runs @ 100,000 iterations each run.
         # ~551ms (551233μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 1.0)
