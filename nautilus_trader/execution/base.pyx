@@ -26,12 +26,8 @@ cdef class ExecutionCacheReadOnly:
     """
     An abstract read-only facade for the execution cache.
     """
-    # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef dict get_symbol_position_counts(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
+    # -- General queries -------------------------------------------------------
     cpdef Account get_account(self, AccountId account_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -53,7 +49,6 @@ cdef class ExecutionCacheReadOnly:
         raise NotImplementedError("method must be implemented in the subclass")
 
     # -- Identifier queries ----------------------------------------------------
-
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

@@ -40,46 +40,44 @@ class DecimalTesting:
 
     @staticmethod
     def float_comparisons():
-        # x1 = 1.0 > 2.0
-        # x2 = 1.0 >= 2.0
-        x3 = 1.0 == 2.0  # noqa
+        1.0 == 2.0  # noqa
 
     @staticmethod
     def float_arithmetic():
-        x = 1.0 * 2.0  # noqa
+        1.0 * 2.0  # noqa
 
     @staticmethod
     def decimal_arithmetic_with_floats():
-        x0 = _DECIMAL1 + 1.0  # noqa
-        x1 = _DECIMAL1 - 1.0  # noqa
-        x2 = _DECIMAL1 * 1.0  # noqa
-        x3 = _DECIMAL1 / 1.0  # noqa
+        _DECIMAL1 + 1.0  # noqa
+        _DECIMAL1 - 1.0  # noqa
+        _DECIMAL1 * 1.0  # noqa
+        _DECIMAL1 / 1.0  # noqa
 
     @staticmethod
     def decimal_arithmetic():
-        x0 = _DECIMAL1 + _DECIMAL1  # noqa
-        x1 = _DECIMAL1 - _DECIMAL1  # noqa
-        x2 = _DECIMAL1 * _DECIMAL1  # noqa
-        x3 = _DECIMAL1 / _DECIMAL1  # noqa
+        _DECIMAL1 + _DECIMAL1  # noqa
+        _DECIMAL1 - _DECIMAL1  # noqa
+        _DECIMAL1 * _DECIMAL1  # noqa
+        _DECIMAL1 / _DECIMAL1  # noqa
 
     @staticmethod
     def builtin_decimal_arithmetic():
-        x0 = _BUILTIN_DECIMAL1 + _BUILTIN_DECIMAL1  # noqa
-        x1 = _BUILTIN_DECIMAL1 - _BUILTIN_DECIMAL1  # noqa
-        x2 = _BUILTIN_DECIMAL1 * _BUILTIN_DECIMAL1  # noqa
-        x3 = _BUILTIN_DECIMAL1 / _BUILTIN_DECIMAL1  # noqa
+        _BUILTIN_DECIMAL1 + _BUILTIN_DECIMAL1  # noqa
+        _BUILTIN_DECIMAL1 - _BUILTIN_DECIMAL1  # noqa
+        _BUILTIN_DECIMAL1 * _BUILTIN_DECIMAL1  # noqa
+        _BUILTIN_DECIMAL1 / _BUILTIN_DECIMAL1  # noqa
 
     @staticmethod
     def decimal_comparisons():
-        x1 = _DECIMAL1 > _DECIMAL2  # noqa
-        x2 = _DECIMAL1 >= _DECIMAL2  # noqa
-        x3 = _DECIMAL1 == _DECIMAL2  # noqa
+        _DECIMAL1 > _DECIMAL2  # noqa
+        _DECIMAL1 >= _DECIMAL2  # noqa
+        _DECIMAL1 == _DECIMAL2  # noqa
 
     @staticmethod
     def builtin_decimal_comparisons():
-        x1 = _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2  # noqa
-        x2 = _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2  # noqa
-        x3 = _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2  # noqa
+        _BUILTIN_DECIMAL1 > _BUILTIN_DECIMAL2  # noqa
+        _BUILTIN_DECIMAL1 >= _BUILTIN_DECIMAL2  # noqa
+        _BUILTIN_DECIMAL1 == _BUILTIN_DECIMAL2  # noqa
 
     @staticmethod
     def make_price():
