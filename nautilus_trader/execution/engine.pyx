@@ -472,7 +472,7 @@ cdef class ExecutionEngine:
         cdef Account account = self.cache.get_account(event.account_id)
         if account is None:
             account = Account(event)
-            if self.account_id.equals(account.id):
+            if self.account_id == account.id:
                 self.account = account
                 self.cache.add_account(self.account)
                 self.portfolio.set_base_currency(event.currency)

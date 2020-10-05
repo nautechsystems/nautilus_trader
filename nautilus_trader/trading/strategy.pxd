@@ -64,7 +64,6 @@ cdef class TradingStrategy:
     cdef ExecutionEngine _exec_engine
     cdef FiniteStateMachine _fsm
 
-    cpdef bint equals(self, TradingStrategy other) except *
     cpdef ComponentState state(self)
     cpdef str state_as_string(self)
 

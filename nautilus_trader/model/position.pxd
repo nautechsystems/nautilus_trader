@@ -67,7 +67,6 @@ cdef class Position:
     cdef readonly Money realized_pnl_last
     cdef readonly Money commission
 
-    cpdef bint equals(self, Position other) except *
     cpdef str to_string(self)
     cpdef str position_side_as_string(self)
     cpdef str status_string(self)

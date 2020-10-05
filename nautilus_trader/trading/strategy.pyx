@@ -107,22 +107,6 @@ cdef class TradingStrategy:
         self._indicators_for_trades = {}   # type: {Symbol, [Indicator]}
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
-    cpdef bint equals(self, TradingStrategy other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.id.equals(other.id)
-
     cpdef ComponentState state(self):
         """
         Return the trading strategies state.
@@ -155,7 +139,7 @@ cdef class TradingStrategy:
         bool
 
         """
-        return self.equals(other)
+        return self.id == other.id
 
     def __ne__(self, TradingStrategy other) -> bool:
         """
@@ -171,7 +155,7 @@ cdef class TradingStrategy:
         bool
 
         """
-        return not self.equals(other)
+        return self.id != other.id
 
     def __hash__(self) -> int:
         """
