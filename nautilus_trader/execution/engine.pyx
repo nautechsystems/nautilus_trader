@@ -27,12 +27,14 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -40,17 +42,19 @@ from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -234,9 +238,10 @@ cdef class ExecutionEngine:
         self.cache.integrity_check()
 
     cpdef void _set_position_symbol_counts(self) except *:
-        # Set for the internal position identifier generator
+        # For the internal position identifier generator
         cdef list positions = self.cache.positions()
 
+        # Count positions per symbol
         cdef dict counts = {}  # type: {Symbol: int}
         cdef Position position
         for position in positions:
@@ -247,6 +252,7 @@ cdef class ExecutionEngine:
         # Reset position identifier generator
         self._pos_id_generator.reset()
 
+        # Set counts
         cdef Symbol symbol
         cdef int count
         for symbol, count in counts.items():
@@ -485,15 +491,9 @@ cdef class ExecutionEngine:
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
-        if isinstance(event, OrderRejected):
-            self._log.warning(f"{RECV}{EVT} {event}.")
-        elif isinstance(event, OrderCancelReject):
-            self._log.warning(f"{RECV}{EVT} {event}.")
-            if isinstance(event, OrderCancelReject):
-                self._handle_order_cancel_reject(event)
-                return  # Sent to strategy
-        else:
-            self._log.info(f"{RECV}{EVT} {event}.")
+        if isinstance(event, OrderCancelReject):
+            self._handle_order_cancel_reject(event)
+            return  # Sent to strategy
 
         cdef Order order = self.cache.order(event.cl_ord_id)
         if not order:
@@ -540,7 +540,7 @@ cdef class ExecutionEngine:
                             f"{fill.position_id.to_string(with_class=True)} not found.")
             return  # Cannot process event further
 
-        if fill.position_id is None:  # Exchange not assigning position_ids
+        if fill.position_id.is_null():  # Exchange not assigning position_ids
             self._fill_system_assigned_ids(position_id, fill, strategy_id)
         else:
             self._fill_exchange_assigned_ids(position_id, fill, strategy_id)
@@ -583,12 +583,16 @@ cdef class ExecutionEngine:
 
     cdef inline void _update_position(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)
-
         if position is None:
             self._log.error(f"Cannot update position for "
                             f"{fill.position_id.to_string(with_class=True)} "
                             f"(no position found in cache).")
-            return
+            return  # Cannot process event further
+
+        # Check for flip
+        if fill.order_side != position.entry and fill.filled_qty > position.quantity:
+            self._flip_position(position, fill)
+            return  # Handled in flip
 
         position.apply(fill)
         self.cache.update_position(position)
@@ -601,6 +605,79 @@ cdef class ExecutionEngine:
 
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
+
+    cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
+        cdef Quantity difference
+        if position.side == PositionSide.LONG:
+            difference = fill.filled_qty.sub(position.quantity)
+        else:  # position.side == PositionSide.SHORT:
+            difference = position.quantity.sub(fill.filled_qty)
+
+        # Split commission between two positions
+        cdef double fill_percent1 = position.quantity.as_double() / fill.filled_qty.as_double()
+        cdef double fill_percent2 = 1. - fill_percent1
+        cdef Currency commission_currency = fill.commission.currency
+
+        # Split fill to close original position
+        cdef OrderFilled fill_split1 = OrderFilled(
+            fill.account_id,
+            fill.cl_ord_id,
+            fill.order_id,
+            fill.execution_id,
+            fill.position_id,
+            fill.strategy_id,
+            fill.symbol,
+            fill.order_side,
+            position.quantity,  # Fill original position quantity remaining
+            fill.leaves_qty,
+            fill.avg_price,
+            Money(fill.commission.as_double() * fill_percent1, commission_currency),
+            fill.liquidity_side,
+            fill.base_currency,
+            fill.quote_currency,
+            fill.execution_time,
+            fill.id,
+            fill.timestamp,
+        )
+
+        # Close original position
+        position.apply(fill_split1)
+        self.cache.update_position(position)
+
+        self._send_to_strategy(fill, fill.strategy_id)
+        self.process(self._pos_closed_event(position, fill))
+
+        # Generate position identifier for flipped position
+        cdef PositionId position_id_flip = self._pos_id_generator.generate(
+            symbol=fill.symbol,
+            flipped=True,
+        )
+
+        # Split fill to open flipped position
+        cdef OrderFilled fill_split2 = OrderFilled(
+            fill.account_id,
+            ClientOrderId(fill.cl_ord_id.value + 'F'),
+            fill.order_id,
+            fill.execution_id,
+            position_id_flip,
+            fill.strategy_id,
+            fill.symbol,
+            fill.order_side,
+            difference,  # Fill difference from original as above
+            fill.leaves_qty,
+            fill.avg_price,
+            Money(fill.commission.as_double() * fill_percent2, commission_currency),
+            fill.liquidity_side,
+            fill.base_currency,
+            fill.quote_currency,
+            fill.execution_time,
+            self._uuid_factory.generate(),  # New event identifier
+            fill.timestamp,
+        )
+
+        cdef Position position_flip = Position(fill_split2)
+        self.cache.add_position(position_flip)
+        self.process(self._pos_opened_event(position_flip, fill_split2))
 
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled event):
         return PositionOpened(
@@ -636,7 +713,7 @@ cdef class ExecutionEngine:
         if strategy is None:
             self._log.error(f"Cannot send event {event} to strategy, "
                             f"{strategy_id.to_string(with_class=True)} not registered.")
-            return
+            return  # Cannot send to strategy
 
         strategy.handle_event(event)
 

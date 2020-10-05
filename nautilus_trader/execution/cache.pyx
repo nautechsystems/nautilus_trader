@@ -137,7 +137,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
                 self._index_order_position[cl_ord_id] = order.position_id
 
             # 2- Build _index_order_strategy -> {ClientOrderId, StrategyId}
-            if order.strategy_id is not None:
+            if order.strategy_id.not_null():
                 self._index_order_strategy[cl_ord_id] = order.strategy_id
 
             # 3- Build _index_symbol_orders -> {Symbol, {ClientOrderId}}
