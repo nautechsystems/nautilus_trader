@@ -50,9 +50,13 @@ cdef class Position:
         self._relative_quantity = 0.0               # Initialized in _update()
         self._qty_precision = event.filled_qty.precision
 
+        # Identifiers
         self.id = event.position_id
         self.account_id = event.account_id
         self.from_order = event.cl_ord_id
+        self.strategy_id = event.strategy_id
+
+        # Properties
         self.symbol = event.symbol
         self.entry = event.order_side
         self.side = PositionSide.UNDEFINED    # Initialized in _update()
@@ -460,7 +464,7 @@ cdef class Position:
         cdef double new_commission
         if self.quote_currency != event.commission.currency:
             new_commission = event.commission * event.avg_price
-            self.commission = Money.from_float_c(self.commission + new_commission, 2, self.commission.currency)
+            self.commission = Money(self.commission + new_commission, self.commission.currency)
         else:
             self.commission = self.commission.add(event.commission)
 
@@ -553,4 +557,4 @@ cdef class Position:
 
     cdef Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_qty):
         cdef double value = self._calculate_points(opened_price, closed_price) * filled_qty.as_double()
-        return Money.from_float_c(value, 2, self.quote_currency)
+        return Money(value, self.quote_currency)

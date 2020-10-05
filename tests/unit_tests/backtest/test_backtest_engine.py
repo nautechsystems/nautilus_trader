@@ -50,7 +50,8 @@ class BacktestEngineTests(unittest.TestCase):
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             fill_model=FillModel(),
-            config=BacktestConfig())
+            config=BacktestConfig(),
+        )
 
     def tearDown(self):
         self.engine.dispose()
@@ -110,7 +111,8 @@ class BacktestEngineTests(unittest.TestCase):
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             fill_model=FillModel(),
-            config=BacktestConfig())
+            config=BacktestConfig(),
+        )
 
         start = datetime(2013, 1, 1, 22, 2, 0, 0)
         stop = datetime(2013, 1, 1, 22, 5, 0, 0)

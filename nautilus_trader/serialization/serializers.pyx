@@ -23,9 +23,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_from_string
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_from_string
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -42,6 +39,7 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -59,6 +57,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal
@@ -69,7 +68,7 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.order cimport StopOrder
+from nautilus_trader.model.order cimport StopMarketOrder
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
@@ -83,15 +82,22 @@ from nautilus_trader.serialization.constants cimport *
 cdef class MsgPackSerializer:
     """
     Provides a serializer for the MessagePack specification.
+
     """
     @staticmethod
     cdef bytes serialize(dict message):
         """
         Serialize the given message to MessagePack specification bytes.
 
-        :param message: The message to serialize.
+        Parameters
+        ----------
+        message : dict
+            The message to serialize.
 
-        :return bytes.
+        Returns
+        -------
+        bytes
+
         """
         Condition.not_none(message, "message")
 
@@ -102,9 +108,17 @@ cdef class MsgPackSerializer:
         """
         Deserialize the given MessagePack specification bytes to a dictionary.
 
-        :param message_bytes: The message bytes to deserialize.
-        :param raw_values: If the values should be deserialized as raw bytes.
-        :return Dict.
+        Parameters
+        ----------
+        message_bytes : bytes
+            The message bytes to deserialize.
+        raw_values : bool
+            If the values should be deserialized as raw bytes.
+
+        Returns
+        -------
+        Dict
+
         """
         Condition.not_none(message_bytes, "message_bytes")
 
@@ -119,11 +133,13 @@ cdef class MsgPackSerializer:
 cdef class MsgPackDictionarySerializer(DictionarySerializer):
     """
     Provides a serializer for dictionaries for the MsgPack specification.
+
     """
 
     def __init__(self):
         """
         Initialize a new instance of the MsgPackDictionarySerializer class.
+
         """
         super().__init__()
 
@@ -131,8 +147,15 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         """
         Serialize the given dictionary with string keys and values to bytes.
 
-        :param dictionary: The dictionary to serialize.
-        :return bytes.
+        Parameters
+        ----------
+        dictionary : dict
+            The dictionary to serialize.
+
+        Returns
+        -------
+        bytes
+
         """
         Condition.not_none(dictionary, "dictionary")
 
@@ -142,8 +165,15 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         """
         Deserialize the given bytes to a dictionary with string keys and values.
 
-        :param dictionary_bytes: The dictionary bytes to deserialize.
-        :return Dict.
+        Parameters
+        ----------
+        dictionary_bytes : bytes
+            The dictionary bytes to deserialize.
+
+        Returns
+        -------
+        dict
+
         """
         Condition.not_none(dictionary_bytes, "dictionary_bytes")
 
@@ -153,11 +183,13 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a command serializer for the MessagePack specification.
+
     """
 
     def __init__(self):
         """
         Initialize a new instance of the MsgPackOrderSerializer class.
+
         """
         super().__init__()
 
@@ -167,14 +199,22 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         Return the serialized MessagePack specification bytes from the given order.
 
-        :param order: The order to serialize.
-        :return bytes.
+        Parameters
+        ----------
+        order : Order
+            The order to serialize.
+
+        Returns
+        -------
+        bytes
+
         """
         if order is None:
             return MsgPackSerializer.serialize({})  # Null order
 
         cdef dict package = {
             ID: order.cl_ord_id.value,
+            STRATEGY_ID: order.strategy_id.value,
             SYMBOL: order.symbol.value,
             ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
             ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
@@ -198,9 +238,20 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         Return the order deserialized from the given MessagePack specification bytes.
 
-        :param order_bytes: The bytes to deserialize.
-        :return Order.
-        :raises ValueError: If the event_bytes is empty.
+        Parameters
+        ----------
+        order_bytes : bytes
+            The bytes to deserialize.
+
+        Returns
+        -------
+        Order
+
+        Raises
+        ------
+        ValueError
+            If order_bytes is empty.
+
         """
         Condition.not_empty(order_bytes, "order_bytes")
 
@@ -210,6 +261,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID].decode(UTF8))
+        cdef StrategyId strategy_id = StrategyId.from_string(unpacked[STRATEGY_ID].decode(UTF8))
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
         cdef OrderSide order_side = order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
         cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
@@ -221,6 +273,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if order_type == OrderType.MARKET:
             return MarketOrder(
                 cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -232,6 +285,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if order_type == OrderType.LIMIT:
             return LimitOrder(
                 cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -244,9 +298,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 hidden=unpacked[HIDDEN].decode(UTF8) == str(True),
             )
 
-        if order_type == OrderType.STOP:
-            return StopOrder(
+        if order_type == OrderType.STOP_MARKET:
+            return StopMarketOrder(
                 cl_ord_id=cl_ord_id,
+                strategy_id=strategy_id,
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
@@ -263,11 +318,13 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the MessagePack specification.
+
     """
 
     def __init__(self):
         """
         Initialize a new instance of the MsgPackCommandSerializer class.
+
         """
         super().__init__()
 
@@ -278,9 +335,20 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Return the serialized MessagePack specification bytes from the given command.
 
-        :param command: The command to serialize.
-        :return bytes.
-        :raises: RuntimeError: If the command cannot be serialized.
+        Parameters
+        ----------
+        command : Command
+            The command to serialize.
+
+        Returns
+        -------
+        bytes
+
+        Raises
+        ------
+        RuntimeError
+            If the command cannot be serialized.
+
         """
         Condition.not_none(command, "command")
 
@@ -329,10 +397,22 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Return the command deserialize from the given MessagePack specification command_bytes.
 
-        :param command_bytes: The command to deserialize.
-        :return Command.
-        :raises ValueError: If the command_bytes is empty.
-        :raises RuntimeError: If the command cannot be deserialized.
+        Parameters
+        ----------
+        command_bytes : bytes
+            The command to deserialize.
+
+        Returns
+        -------
+        Command
+
+        Raises
+        ------
+        ValueError
+            If command_bytes is empty.
+        RuntimeError
+            If command cannot be deserialized.
+
         """
         Condition.not_empty(command_bytes, "command_bytes")
 
@@ -398,12 +478,14 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
 cdef class MsgPackEventSerializer(EventSerializer):
     """
-    Provides an event serializer for the MessagePack specification
+    Provides an event serializer for the MessagePack specification.
+
     """
 
     def __init__(self):
         """
         Initialize a new instance of the MsgPackEventSerializer class.
+
         """
         super().__init__()
 
@@ -413,9 +495,20 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Return the MessagePack specification bytes serialized from the given event.
 
-        :param event: The event to serialize.
-        :return bytes.
-        :raises: RuntimeError: If the event cannot be serialized.
+        Parameters
+        ----------
+        event : Event
+            The event to serialize.
+
+        Returns
+        -------
+        bytes
+
+        Raises
+        ------
+        RuntimeError
+            If the event cannot be serialized.
+
         """
         Condition.not_none(event, "event")
 
@@ -427,7 +520,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
-            package[QUOTE_CURRENCY] = currency_to_string(event.currency)
+            package[QUOTE_CURRENCY] = event.currency.code,
             package[CASH_BALANCE] = event.cash_balance.to_string()
             package[CASH_START_DAY] = event.cash_start_day.to_string()
             package[CASH_ACTIVITY_DAY] = event.cash_activity_day.to_string()
@@ -437,6 +530,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[MARGIN_CALL_STATUS] = event.margin_call_status
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
@@ -504,16 +598,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[EXECUTION_ID] = event.execution_id.value
             package[POSITION_ID] = event.position_id.value
+            package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_qty.to_string()
             package[LEAVES_QUANTITY] = event.leaves_qty.to_string()
             package[AVERAGE_PRICE] = event.avg_price.to_string()
             package[COMMISSION] = event.commission.to_string()
-            package[COMMISSION_CURRENCY] = currency_to_string(event.commission.currency)
+            package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
-            package[BASE_CURRENCY] = currency_to_string(event.quote_currency)
-            package[QUOTE_CURRENCY] = currency_to_string(event.quote_currency)
+            package[BASE_CURRENCY] = event.base_currency.code
+            package[QUOTE_CURRENCY] = event.quote_currency.code
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
@@ -524,10 +619,22 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Return the event deserialized from the given MessagePack specification event_bytes.
 
-        :param event_bytes: The bytes to deserialize.
-        :return Event.
-        :raises ValueError: If the event_bytes is empty.
-        :raises RuntimeError: If the event cannot be deserialized.
+        Parameters
+        ----------
+        event_bytes
+            The bytes to deserialize.
+
+        Returns
+        -------
+        Event
+
+        Raises
+        ------
+        ValueError
+            If event_bytes is empty.
+        RuntimeError
+            If event cannot be deserialized.
+
         """
         Condition.not_empty(event_bytes, "event_bytes")
 
@@ -539,7 +646,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = currency_from_string(unpacked[QUOTE_CURRENCY].decode(UTF8))
+            currency = Currency.from_string(unpacked[QUOTE_CURRENCY].decode(UTF8))
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,
@@ -556,6 +663,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderInitialized.__name__:
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
@@ -661,13 +769,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp,
             )
         elif event_type == OrderFilled.__name__:
-            commission_currency = currency_from_string(unpacked[COMMISSION_CURRENCY].decode(UTF8))
+            commission_currency = Currency.from_string_c(unpacked[COMMISSION_CURRENCY].decode(UTF8))
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
                 PositionId(unpacked[POSITION_ID].decode(UTF8)),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
@@ -675,8 +784,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
                 liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
-                currency_from_string(unpacked[BASE_CURRENCY].decode(UTF8)),
-                currency_from_string(unpacked[QUOTE_CURRENCY].decode(UTF8)),
+                Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
+                Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,

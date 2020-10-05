@@ -23,7 +23,9 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -173,7 +175,7 @@ cdef class Trader:
         Start the trader.
         """
         try:
-            self._fsm.trigger('START')
+            self._fsm.trigger(ComponentTrigger.START)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             self.stop()  # Do not start trader in an invalid state
@@ -190,7 +192,7 @@ cdef class Trader:
         for strategy in self.strategies:
             strategy.start()
 
-        self._fsm.trigger('RUNNING')
+        self._fsm.trigger(ComponentTrigger.RUNNING)
         self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
@@ -198,20 +200,21 @@ cdef class Trader:
         Stop the trader.
         """
         try:
-            self._fsm.trigger('STOP')
+            self._fsm.trigger(ComponentTrigger.STOP)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
 
         self._log.info(f"state={self._fsm.state_as_string()}...")
 
+        cdef TradingStrategy strategy
         for strategy in self.strategies:
             if strategy.state() == ComponentState.RUNNING:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
-        self._fsm.trigger('STOPPED')
+        self._fsm.trigger(ComponentTrigger.STOPPED)
         self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void check_residuals(self) except *:
@@ -225,7 +228,7 @@ cdef class Trader:
         Save all strategy states to the execution cache.
         """
         for strategy in self.strategies:
-            self._exec_engine.cache.add_strategy(strategy)
+            self._exec_engine.cache.update_strategy(strategy)
 
     cpdef void load(self) except *:
         """
@@ -246,7 +249,7 @@ cdef class Trader:
 
         """
         try:
-            self._fsm.trigger('RESET')
+            self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
@@ -259,7 +262,7 @@ cdef class Trader:
         self.portfolio.reset()
         self.analyzer.reset()
 
-        self._fsm.trigger('RESET')
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
@@ -269,7 +272,7 @@ cdef class Trader:
         Disposes all internally held strategies.
         """
         try:
-            self._fsm.trigger('DISPOSE')
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return
@@ -279,7 +282,7 @@ cdef class Trader:
         for strategy in self.strategies:
             strategy.dispose()
 
-        self._fsm.trigger('DISPOSED')
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
         self._log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void account_inquiry(self) except *:
@@ -304,23 +307,34 @@ cdef class Trader:
         ComponentState
 
         """
-        return self._fsm.state
+        return component_state_from_string(self.state_as_string())
+
+    cpdef str state_as_string(self):
+        """
+        Return the traders state as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return component_state_to_string(self._fsm.state)
 
     cpdef dict strategy_states(self):
         """
-        Return a dictionary containing the traders strategy status.
+        Return a dictionary containing the traders strategy states.
 
         The key is the strategy_id.
-        The value is a bool which is True if the strategy is running else False.
 
         Returns
         -------
         Dict[StrategyId, bool]
 
         """
-        cdef states = {}
+        cdef dict states = {}
+        cdef TradingStrategy strategy
         for strategy in self.strategies:
-            states[strategy.id] = component_state_to_string(strategy.state())
+            states[strategy.id] = strategy.state_as_string()
 
         return states
 

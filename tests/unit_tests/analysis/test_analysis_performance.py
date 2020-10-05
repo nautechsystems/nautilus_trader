@@ -17,7 +17,7 @@ from datetime import datetime
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import Money
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -69,7 +69,7 @@ class AnalyzerTests(unittest.TestCase):
         positions = [position1, position2]
 
         # Act
-        self.analyzer.add_positions(UNIX_EPOCH, positions, Money(100000, Currency.USD))
+        self.analyzer.add_positions(UNIX_EPOCH, positions, Money(100000, Currency.USD()))
 
         # Assert
         print(self.analyzer.get_positions())

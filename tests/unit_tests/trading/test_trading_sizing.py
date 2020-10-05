@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -31,7 +31,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_single_unit_size(self):
         # Arrange
-        equity = Money(1000000, Currency.USD)
+        equity = Money(1000000, Currency.USD())
 
         # Act
         result = self.sizer.calculate(
@@ -40,14 +40,15 @@ class FixedRiskSizerTests(unittest.TestCase):
             Price("1.00100"),
             Price("1.00000"),
             exchange_rate=1.0,
-            unit_batch_size=1000)
+            unit_batch_size=1000,
+        )
 
         # Assert
         self.assertEqual(Quantity(999000), result)
 
     def test_calculate_single_unit_with_exchange_rate(self):
         # Arrange
-        equity = Money(1000000, Currency.USD)
+        equity = Money(1000000, Currency.USD())
 
         # Act
         result = self.sizer.calculate(
@@ -55,14 +56,15 @@ class FixedRiskSizerTests(unittest.TestCase):
             10,   # 0.1%
             Price("110.010"),
             Price("110.000"),
-            exchange_rate=0.01)
+            exchange_rate=0.01,
+        )
 
         # Assert
         self.assertEqual(Quantity(10000000), result)
 
     def test_calculate_single_unit_size_when_risk_too_high(self):
         # Arrange
-        equity = Money(100000, Currency.USD)
+        equity = Money(100000, Currency.USD())
 
         # Act
         result = self.sizer.calculate(
@@ -70,14 +72,15 @@ class FixedRiskSizerTests(unittest.TestCase):
             100,   # 1%
             Price("3.00000"),
             Price("1.00000"),
-            unit_batch_size=1000)
+            unit_batch_size=1000,
+        )
 
         # Assert
         self.assertEqual(Quantity(), result)
 
     def test_impose_hard_limit(self):
         # Arrange
-        equity = Money(1000000, Currency.USD)
+        equity = Money(1000000, Currency.USD())
 
         # Act
         result = self.sizer.calculate(
@@ -87,14 +90,15 @@ class FixedRiskSizerTests(unittest.TestCase):
             Price("1.00000"),
             hard_limit=500000,
             units=1,
-            unit_batch_size=1000)
+            unit_batch_size=1000,
+        )
 
         # Assert
         self.assertEqual(Quantity(500000), result)
 
     def test_calculate_multiple_unit_size(self):
         # Arrange
-        equity = Money(1000000, Currency.USD)
+        equity = Money(1000000, Currency.USD())
 
         # Act
         result = self.sizer.calculate(
@@ -103,14 +107,15 @@ class FixedRiskSizerTests(unittest.TestCase):
             Price("1.00010"),
             Price("1.00000"),
             units=3,
-            unit_batch_size=1000)
+            unit_batch_size=1000,
+        )
 
         # Assert
         self.assertEqual(Quantity(3333000), result)
 
     def test_calculate_multiple_unit_size_larger_batches(self):
         # Arrange
-        equity = Money(1000000, Currency.USD)
+        equity = Money(1000000, Currency.USD())
 
         # Act
         result = self.sizer.calculate(
@@ -119,7 +124,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             Price("1.00087"),
             Price("1.00000"),
             units=4,
-            unit_batch_size=25000)
+            unit_batch_size=25000,
+        )
 
         # Assert
         self.assertEqual(Quantity(275000), result)
@@ -127,7 +133,7 @@ class FixedRiskSizerTests(unittest.TestCase):
     def test_calculate_for_usdjpy(self):
         # Arrange
         sizer = FixedRiskSizer(TestStubs.instrument_usdjpy())
-        equity = Money(1000000, Currency.USD)
+        equity = Money(1000000, Currency.USD())
 
         # Act
         result = sizer.calculate(
@@ -137,7 +143,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             Price("107.403"),
             exchange_rate=0.0093,
             units=1,
-            unit_batch_size=1000)
+            unit_batch_size=1000,
+        )
 
         # Assert
         self.assertEqual(Quantity(358000), result)

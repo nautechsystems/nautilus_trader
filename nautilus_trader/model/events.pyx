@@ -19,8 +19,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -29,6 +27,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -48,7 +47,7 @@ cdef class AccountState(Event):
     def __init__(
             self,
             AccountId account_id not None,
-            Currency currency,
+            Currency currency not None,
             Money cash_balance not None,
             Money cash_start_day not None,
             Money cash_activity_day not None,
@@ -97,7 +96,6 @@ cdef class AccountState(Event):
             If margin_call_status is not a valid string.
 
         """
-        Condition.not_equal(currency, Currency.UNDEFINED, "currency", "UNDEFINED")
         Condition.not_negative(margin_ratio, "margin_ratio")
         Condition.valid_string(margin_call_status, "margin_call_status")
         super().__init__(event_id, event_timestamp)
@@ -199,6 +197,7 @@ cdef class OrderInitialized(OrderEvent):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             OrderType order_type,
@@ -215,6 +214,8 @@ cdef class OrderInitialized(OrderEvent):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : ClientOrderId
+            The strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -251,6 +252,8 @@ cdef class OrderInitialized(OrderEvent):
             event_timestamp,
         )
 
+        self.cl_ord_id = cl_ord_id
+        self.strategy_id = strategy_id
         self.symbol = symbol
         self.order_side = order_side
         self.order_type = order_type
@@ -931,6 +934,7 @@ cdef class OrderFilled(OrderEvent):
             OrderId order_id not None,
             ExecutionId execution_id not None,
             PositionId position_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity filled_qty not None,
@@ -938,8 +942,8 @@ cdef class OrderFilled(OrderEvent):
             Price avg_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
-            Currency base_currency,
-            Currency quote_currency,
+            Currency base_currency not None,
+            Currency quote_currency not None,
             datetime execution_time not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -959,6 +963,8 @@ cdef class OrderFilled(OrderEvent):
             The execution identifier.
         position_id : PositionId
             The broker/exchange position identifier.
+        strategy_id : StrategyId
+            The strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -985,7 +991,6 @@ cdef class OrderFilled(OrderEvent):
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-        Condition.not_equal(quote_currency, Currency.UNDEFINED, "quote_currency", "UNDEFINED")
         super().__init__(
             cl_ord_id,
             event_id,
@@ -996,6 +1001,7 @@ cdef class OrderFilled(OrderEvent):
         self.order_id = order_id
         self.execution_id = execution_id
         self.position_id = position_id
+        self.strategy_id = strategy_id
         self.symbol = symbol
         self.order_side = order_side
         self.filled_qty = filled_qty
@@ -1009,31 +1015,38 @@ cdef class OrderFilled(OrderEvent):
         self.is_partial_fill = self.leaves_qty > 0
         self.is_completion_trigger = not self.is_partial_fill
 
-    cdef OrderFilled clone(self, PositionId new_position_id):
+    cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id):
         """
         Clone this event with the position identifier changed to that given.
         The original position_id must be null, otherwise an exception is raised.
 
         Parameters
         ----------
-        new_position_id : PositionId
-            The new position identifier to set.
+        position_id : PositionId, optional
+            The position identifier to set.
+        strategy_id : StrategyId, optional
+            The strategy identifier to set.
 
         Raises
         ------
         ValueError
-            If position_id is not null.
+            If position_id is not null and self.position_id does not match.
+        ValueError
+            If strategy_id is not null and self.strategy_id does not match.
 
         """
-        Condition.not_none(new_position_id, "new_position_id")
-        Condition.true(self.position_id.is_null(), "original position_id is null")
+        if self.position_id.not_null():
+            Condition.equal(position_id, self.position_id, "position_id", "self.position_id")
+        if self.strategy_id.not_null():
+            Condition.equal(strategy_id, self.strategy_id, "strategy_id", "self.strategy_id")
 
         return OrderFilled(
             self.account_id,
             self.cl_ord_id,
             self.order_id,
             self.execution_id,
-            new_position_id,  # Replacement identifier
+            position_id,  # Set identifier
+            strategy_id,  # Set identifier
             self.symbol,
             self.order_side,
             self.filled_qty,
@@ -1062,6 +1075,7 @@ cdef class OrderFilled(OrderEvent):
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"position_id={self.position_id}, "
+                f"strategy_id={self.strategy_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
@@ -1080,7 +1094,6 @@ cdef class PositionEvent(Event):
             self,
             Position position not None,
             OrderFilled order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1093,8 +1106,6 @@ cdef class PositionEvent(Event):
             The position.
         order_fill : OrderFilled
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1104,7 +1115,6 @@ cdef class PositionEvent(Event):
         super().__init__(event_id, event_timestamp)
         self.position = position
         self.order_fill = order_fill
-        self.strategy_id = strategy_id
 
     def __repr__(self) -> str:
         """
@@ -1128,7 +1138,6 @@ cdef class PositionOpened(PositionEvent):
             self,
             Position position not None,
             OrderFilled order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1141,8 +1150,6 @@ cdef class PositionOpened(PositionEvent):
             The position.
         order_fill : OrderFilled
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1152,7 +1159,6 @@ cdef class PositionOpened(PositionEvent):
         super().__init__(
             position,
             order_fill,
-            strategy_id,
             event_id,
             event_timestamp,
         )
@@ -1169,6 +1175,7 @@ cdef class PositionOpened(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
+                f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"avg_open={round(self.position.avg_open_price, 5)}, "
                 f"{self.position.status_string()})")
@@ -1183,7 +1190,6 @@ cdef class PositionModified(PositionEvent):
             self,
             Position position not None,
             OrderFilled order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1196,8 +1202,6 @@ cdef class PositionModified(PositionEvent):
             The position.
         order_fill : OrderFilled
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1213,7 +1217,6 @@ cdef class PositionModified(PositionEvent):
         super().__init__(
             position,
             order_fill,
-            strategy_id,
             event_id,
             event_timestamp,
         )
@@ -1227,15 +1230,15 @@ cdef class PositionModified(PositionEvent):
         str
 
         """
-        cdef str currency = currency_to_string(self.position.quote_currency)
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
+                f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"avg_open={self.position.avg_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl} {currency}, "
+                f"realized_pnl={self.position.realized_pnl} {self.position.quote_currency}, "
                 f"{self.position.status_string()})")
 
 
@@ -1248,7 +1251,6 @@ cdef class PositionClosed(PositionEvent):
             self,
             Position position not None,
             OrderEvent order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1261,8 +1263,6 @@ cdef class PositionClosed(PositionEvent):
             The position.
         order_fill : OrderEvent
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1278,7 +1278,6 @@ cdef class PositionClosed(PositionEvent):
         super().__init__(
             position,
             order_fill,
-            strategy_id,
             event_id,
             event_timestamp,
         )
@@ -1292,15 +1291,15 @@ cdef class PositionClosed(PositionEvent):
         str
 
         """
-        cdef str currency = currency_to_string(self.position.quote_currency)
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
+                f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"duration={duration}, "
                 f"avg_open={self.position.avg_open_price}, "
                 f"avg_close={self.position.avg_close_price}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl} {currency})")
+                f"realized_pnl={self.position.realized_pnl} {self.position.quote_currency})")

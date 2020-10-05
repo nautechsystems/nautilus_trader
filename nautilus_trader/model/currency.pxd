@@ -13,31 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum OrderType:
-    UNDEFINED = 0,  # Invalid value
-    MARKET = 1,
-    LIMIT = 2,
-    STOP_MARKET = 3,
+from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 
 
-cdef inline str order_type_to_string(int value):
-    if value == 1:
-        return 'MARKET'
-    elif value == 2:
-        return 'LIMIT'
-    elif value == 3:
-        return 'STOP_MARKET'
-    else:
-        return 'UNDEFINED'
+cdef class Currency:
+    cdef readonly str code
+    cdef readonly int precision
+    cdef readonly CurrencyType currency_type
 
-
-cdef inline OrderType order_type_from_string(str value):
-    if value == 'MARKET':
-        return OrderType.MARKET
-    elif value == 'LIMIT':
-        return OrderType.LIMIT
-    elif value == 'STOP_MARKET':
-        return OrderType.STOP_MARKET
-    else:
-        return OrderType.UNDEFINED
+    @staticmethod
+    cdef from_string_c(str code)

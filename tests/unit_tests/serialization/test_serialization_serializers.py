@@ -24,7 +24,7 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -52,7 +52,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import LimitOrder
-from nautilus_trader.model.order import StopOrder
+from nautilus_trader.model.order import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
@@ -123,6 +123,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
@@ -168,6 +169,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Arrange
         order = LimitOrder(
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -189,8 +191,9 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_stop_orders_with_expire_time(self):
         # Arrange
-        order = StopOrder(
+        order = StopMarketOrder(
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -220,6 +223,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
@@ -394,9 +398,10 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             Quantity(100000),
             TimeInForce.DAY,
             uuid4(),
@@ -505,7 +510,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("B-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             Quantity(100000),
             Price("1.50000"),
             TimeInForce.DAY,
@@ -530,7 +535,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("B-123456"),
             AUDUSD_FXCM,
             OrderSide.SELL,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             Quantity(100000),
             Price("1.50000"),
             TimeInForce.DAY,
@@ -630,15 +635,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(50000),
             Quantity(50000),
             Price("1.00000"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.MAKER,
-            Currency.AUD,
-            Currency.USD,
+            Currency.AUD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -659,15 +665,16 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000),
             Quantity(),
             Price("1.00000"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.AUD,
-            Currency.USD,
+            Currency.AUD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,

@@ -20,8 +20,8 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
@@ -49,7 +49,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
             exec_db_flush=False,
             frozen_account=False,
             starting_capital=1000000,
-            account_currency=Currency.USD,
+            account_currency=Currency.USD(),
             short_term_interest_csv_path='default',
             bypass_logging=False,
             level_console=LogLevel.DEBUG,
@@ -97,11 +97,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
-                               risk_bp=10,
                                fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0)]
+                               slow_ema=20)]
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0)
@@ -111,18 +108,14 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(559, strategies[0].fast_ema.count)
-        # TODO: Trailing stops not being modified
-        # self.assertEqual(-5328.73, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(-1872.51, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
-                               risk_bp=10,
                                fast_ema=10,
-                               slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0)]
+                               slow_ema=20)]
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0)
         stop = datetime(2013, 1, 3, 0, 0, 0, 0)
@@ -141,19 +134,13 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
-                               risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0,
                                extra_id_tag='001'),
                       EMACross(symbol=self.usdjpy.symbol,
                                bar_spec=TestStubs.bar_spec_1min_bid(),
-                               risk_bp=10,
                                fast_ema=10,
                                slow_ema=20,
-                               atr_period=20,
-                               sl_atr_multiple=2.0,
                                extra_id_tag='002')]
 
         start = datetime(2013, 1, 2, 0, 0, 0, 0)

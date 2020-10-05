@@ -13,33 +13,46 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarSpecification
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
+# Notes for strategies written in Cython
+# --------------------------------------
+# This is example boilerplate for a Cython strategy,
+# it will not be compiled to C as it's not in a path to cythonize in setup.py.
 
-class EMACross(TradingStrategy):
+# except * in void methods allow C and Python exceptions to bubble up (otherwise they are ignored)
+
+cdef class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
 
     When the fast EMA crosses the slow EMA then enter a position in that
     direction.
     """
+    # Backing fields are necessary
+    cdef Symbol symbol
+    cdef BarType bar_type
+    cdef ExponentialMovingAverage fast_ema
+    cdef ExponentialMovingAverage slow_ema
 
     def __init__(
             self,
-            symbol: Symbol,
-            bar_spec: BarSpecification,
-            fast_ema: int=10,
-            slow_ema: int=20,
-            extra_id_tag: str='',
+            Symbol symbol,
+            BarSpecification bar_spec,
+            int fast_ema=10,
+            int slow_ema=20,
+             extra_id_tag='',
     ):
         """
         Initialize a new instance of the EMACross class.
@@ -68,7 +81,7 @@ class EMACross(TradingStrategy):
         self.fast_ema = ExponentialMovingAverage(fast_ema)
         self.slow_ema = ExponentialMovingAverage(slow_ema)
 
-    def on_start(self):
+    cpdef void on_start(self) except *:
         """Actions to be performed on strategy start."""
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
@@ -80,7 +93,19 @@ class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
 
-    def on_trade_tick(self, tick: TradeTick):
+    cpdef void on_quote_tick(self, QuoteTick tick) except *:
+        """
+        Actions to be performed when the strategy is running and receives a quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick received.
+
+        """
+        pass
+
+    cpdef void on_trade_tick(self, TradeTick tick) except *:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
 
@@ -92,19 +117,7 @@ class EMACross(TradingStrategy):
         """
         pass
 
-    def on_quote_tick(self, tick: QuoteTick):
-        """
-        Actions to be performed when the strategy is running and receives a quote tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The quote tick received.
-
-        """
-        pass
-
-    def on_bar(self, bar_type: BarType, bar: Bar):
+    cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
         """
         Actions to be performed when the strategy is running and receives a bar.
 
@@ -148,12 +161,12 @@ class EMACross(TradingStrategy):
                     self.flatten_position(positions[0])
                     self.sell(1000000)
 
-    def buy(self, quantity: int):
+    cpdef void buy(self, int quantity) except *:
         """
         Users simple buy method (example).
 
         """
-        order = self.order_factory.market(
+        cdef MarketOrder order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
             quantity=Quantity(quantity),
@@ -161,12 +174,12 @@ class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    def sell(self, quantity: int):
+    cpdef void sell(self, int quantity) except *:
         """
         Users simple sell method (example).
 
         """
-        order = self.order_factory.market(
+        cdef MarketOrder order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=Quantity(quantity),
@@ -174,7 +187,7 @@ class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    def on_data(self, data):
+    cpdef void on_data(self, object data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 
@@ -186,7 +199,7 @@ class EMACross(TradingStrategy):
         """
         pass
 
-    def on_event(self, event):
+    cpdef void on_event(self, Event event) except *:
         """
         Actions to be performed when the strategy is running and receives an event.
 
@@ -198,20 +211,22 @@ class EMACross(TradingStrategy):
         """
         pass
 
-    def on_stop(self):
+    cpdef void on_stop(self) except *:
         """
         Actions to be performed when the strategy is stopped.
+
         """
         self.cancel_all_orders(self.symbol)
         self.flatten_all_positions(self.symbol)
 
-    def on_reset(self):
+    cpdef void on_reset(self) except *:
         """
         Actions to be performed when the strategy is reset.
+
         """
         pass
 
-    def on_save(self) -> {}:
+    cpdef dict on_save(self):
         """
         Actions to be performed when the strategy is saved.
 
@@ -224,7 +239,7 @@ class EMACross(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    cpdef void on_load(self, dict state) except *:
         """
         Actions to be performed when the strategy is loaded.
 
@@ -238,7 +253,7 @@ class EMACross(TradingStrategy):
         """
         pass
 
-    def on_dispose(self):
+    cpdef void on_dispose(self) except *:
         """
         Actions to be performed when the strategy is disposed.
 

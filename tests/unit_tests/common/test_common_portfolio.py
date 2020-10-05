@@ -20,10 +20,11 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -42,6 +43,7 @@ class PortfolioTests(unittest.TestCase):
         uuid_factor = TestUUIDFactory()
         logger = TestLogger(self.clock)
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
@@ -52,8 +54,8 @@ class PortfolioTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(self.clock.utc_now().date(), self.portfolio.date_now)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
         self.assertEqual(set(), self.portfolio.symbols_open())
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual(set(), self.portfolio.symbols_all())
@@ -67,7 +69,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), Price("1.00000"))
+        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), StrategyId("S", "1"), Price("1.00000"))
         position = Position(order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -81,8 +83,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({position.id: position}, self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
         self.assertEqual({position.id: position}, self.portfolio.positions_all())
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
 
     def test_reset_portfolio(self):
         # Arrange
@@ -90,7 +92,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), Price("1.00000"))
+        order_filled = TestStubs.event_order_filled(order, PositionId("P-123456"), StrategyId("S", "1"), Price("1.00000"))
         position = Position(order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -101,8 +103,8 @@ class PortfolioTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(self.clock.utc_now().date(), self.portfolio.date_now)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
         self.assertEqual(set(), self.portfolio.symbols_open())
         self.assertEqual(set(), self.portfolio.symbols_closed())
         self.assertEqual(set(), self.portfolio.symbols_all())
@@ -120,8 +122,8 @@ class PortfolioTests(unittest.TestCase):
             GBPUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price("1.00000"))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), Price("1.00000"))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), StrategyId("S", "1"), Price("1.00000"))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), StrategyId("S", "1"), Price("1.00000"))
 
         position1 = Position(order1_filled)
         position2 = Position(order2_filled)
@@ -143,8 +145,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(
             {position1.id: position1, position2.id: position2},
             self.portfolio.positions_all())
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
 
     def test_modifying_position_updates_portfolio(self):
         # Arrange
@@ -152,7 +154,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), Price("1.00000"))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), StrategyId("S", "1"), Price("1.00000"))
         position = Position(order1_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -160,7 +162,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(50000))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), Price("1.00000"))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), StrategyId("S", "1"), Price("1.00000"))
         position.apply(order2_filled)
         position_modified = TestStubs.event_position_modified(position)
 
@@ -175,8 +177,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual({position.id: position}, self.portfolio.positions_open())
         self.assertEqual({}, self.portfolio.positions_closed())
         self.assertEqual({position.id: position}, self.portfolio.positions_all())
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.daily_pnl_realized)
-        self.assertEqual(Money(0, Currency.USD), self.portfolio.total_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.daily_pnl_realized)
+        self.assertEqual(Money(0, Currency.USD()), self.portfolio.total_pnl_realized)
 
     def test_closing_position_updates_portfolio(self):
         # Arrange
@@ -184,7 +186,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), Price("1.00000"))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-123456"), StrategyId("S", "1"), Price("1.00000"))
         position = Position(order1_filled)
         position_opened = TestStubs.event_position_opened(position)
 
@@ -192,7 +194,7 @@ class PortfolioTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), Price("1.00010"))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-123456"), StrategyId("S", "1"), Price("1.00010"))
         position.apply(order2_filled)
         position_closed = TestStubs.event_position_closed(position)
 
@@ -229,10 +231,10 @@ class PortfolioTests(unittest.TestCase):
             GBPUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), Price("1.00000"))
-        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), Price("1.00000"))
-        order3_filled = TestStubs.event_order_filled(order3, PositionId("P-3"), Price("1.00000"))
-        order4_filled = TestStubs.event_order_filled(order4, PositionId("P-3"), Price("1.00100"))
+        order1_filled = TestStubs.event_order_filled(order1, PositionId("P-1"), StrategyId("S", "1"), Price("1.00000"))
+        order2_filled = TestStubs.event_order_filled(order2, PositionId("P-2"), StrategyId("S", "1"), Price("1.00000"))
+        order3_filled = TestStubs.event_order_filled(order3, PositionId("P-3"), StrategyId("S", "1"), Price("1.00000"))
+        order4_filled = TestStubs.event_order_filled(order4, PositionId("P-3"), StrategyId("S", "1"), Price("1.00100"))
 
         position1 = Position(order1_filled)
         position2 = Position(order2_filled)
