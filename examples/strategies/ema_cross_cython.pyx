@@ -52,7 +52,7 @@ cdef class EMACross(TradingStrategy):
             BarSpecification bar_spec,
             int fast_ema=10,
             int slow_ema=20,
-             extra_id_tag='',
+            extra_id_tag='',
     ):
         """
         Initialize a new instance of the EMACross class.
