@@ -299,7 +299,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         # Update database
         self._database.add_account(account)
 
-    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+    cpdef void add_order(self, Order order, PositionId position_id) except *:
         """
         Add the given order to the execution cache indexed with the given
         identifiers.
@@ -310,8 +310,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             The order to add.
         position_id : PositionId
             The position identifier to index for the order.
-        strategy_id : StrategyId
-            The strategy identifier to index for the order.
 
         Raises
         ------
@@ -327,7 +325,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(strategy_id, "strategy_id")
         Condition.not_in(order.cl_ord_id, self._cached_orders, "order.cl_ord_id", "cached_orders")
         Condition.not_in(order.cl_ord_id, self._index_orders, "order.cl_ord_id", "index_orders")
         Condition.not_in(order.cl_ord_id, self._index_order_position, "order.cl_ord_id", "index_order_position")
@@ -335,7 +332,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         self._cached_orders[order.cl_ord_id] = order
         self._index_orders.add(order.cl_ord_id)
-        self._index_order_strategy[order.cl_ord_id] = strategy_id
+        self._index_order_strategy[order.cl_ord_id] = order.strategy_id
 
         # Index: Symbol -> Set[ClientOrderId]
         if order.symbol not in self._index_symbol_orders:
@@ -344,10 +341,10 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             self._index_symbol_orders[order.symbol].add(order.cl_ord_id)
 
         # Index: StrategyId -> Set[ClientOrderId]
-        if strategy_id not in self._index_strategy_orders:
-            self._index_strategy_orders[strategy_id] = {order.cl_ord_id}
+        if order.strategy_id not in self._index_strategy_orders:
+            self._index_strategy_orders[order.strategy_id] = {order.cl_ord_id}
         else:
-            self._index_strategy_orders[strategy_id].add(order.cl_ord_id)
+            self._index_strategy_orders[order.strategy_id].add(order.cl_ord_id)
 
         cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
         self._log.debug(f"Added Order(id={order.cl_ord_id.value}{position_id_str}).")
@@ -355,10 +352,10 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         if position_id.is_null():
             return  # Do not index the NULL id
 
-        self.add_position_id(position_id, order.cl_ord_id, strategy_id)
+        self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)
 
         # Update database
-        self._database.add_order(order, position_id, strategy_id)  # Logs
+        self._database.add_order(order, position_id)  # Logs
 
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """
@@ -408,10 +405,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
                         f"cl_ord_id={cl_ord_id}, "
                         f"strategy_id={strategy_id}).")
 
-        # Update database
-        self._database.add_position_id(position_id, cl_ord_id, strategy_id)
-
-    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+    cpdef void add_position(self, Position position) except *:
         """
         Add the given position associated with the given strategy identifier.
 
@@ -419,8 +413,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         ----------
         position : Position
             The position to add.
-        strategy_id : StrategyId
-            The strategy_id to associate with the position.
 
         Raises
         ------
@@ -433,7 +425,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         """
         Condition.not_none(position, "position")
-        Condition.not_none(strategy_id, "strategy_id")
         Condition.not_in(position.id, self._cached_positions, "position.id", "cached_positions")
         Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
         Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
@@ -441,7 +432,8 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._cached_positions[position.id] = position
         self._index_positions.add(position.id)
         self._index_positions_open.add(position.id)
-        self.add_position_id(position.id, position.from_order, strategy_id)
+
+        self.add_position_id(position.id, position.from_order, position.strategy_id)
 
         # Index: Symbol -> Set[PositionId]
         if position.symbol not in self._index_symbol_positions:
@@ -449,10 +441,10 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         else:
             self._index_symbol_positions[position.symbol].add(position.id)
 
-        self._log.debug(f"Added Position(id={position.id.value}, strategy_id={strategy_id}).")
+        self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
 
         # Update database
-        self._database.add_position(position, strategy_id)
+        self._database.add_position(position)
 
     cpdef void update_account(self, Account account) except *:
         """

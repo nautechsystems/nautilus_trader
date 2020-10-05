@@ -27,6 +27,7 @@ from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -52,6 +53,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=self.trader_id.tag,
             id_tag_strategy=IdTag("001"),
             clock=self.clock,

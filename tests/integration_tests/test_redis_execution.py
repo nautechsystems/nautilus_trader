@@ -81,16 +81,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertEqual("Trader-TESTER-000:Orders:", self.database.key_orders)
         self.assertEqual("Trader-TESTER-000:Positions:", self.database.key_positions)
         self.assertEqual("Trader-TESTER-000:Strategies:", self.database.key_strategies)
-        self.assertEqual("Trader-TESTER-000:Index:OrderPosition", self.database.key_index_order_position)
-        self.assertEqual("Trader-TESTER-000:Index:OrderStrategy", self.database.key_index_order_strategy)
-        self.assertEqual("Trader-TESTER-000:Index:PositionStrategy", self.database.key_index_position_strategy)
-        self.assertEqual("Trader-TESTER-000:Index:PositionOrders:", self.database.key_index_position_orders)
-        self.assertEqual("Trader-TESTER-000:Index:StrategyOrders:", self.database.key_index_strategy_orders)
-        self.assertEqual("Trader-TESTER-000:Index:StrategyPositions:", self.database.key_index_strategy_positions)
-        self.assertEqual("Trader-TESTER-000:Index:Orders:Working", self.database.key_index_orders_working)
-        self.assertEqual("Trader-TESTER-000:Index:Orders:Completed", self.database.key_index_orders_completed)
-        self.assertEqual("Trader-TESTER-000:Index:Positions:Open", self.database.key_index_positions_open)
-        self.assertEqual("Trader-TESTER-000:Index:Positions:Closed", self.database.key_index_positions_closed)
 
     # TODO: Investigate why str is deserializing to a list
     # def test_add_account(self):
@@ -115,7 +105,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         position_id = PositionId.py_null()
 
         # Act
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         # Assert
         self.assertEqual(order, self.database.load_order(order.cl_ord_id))
@@ -127,13 +117,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         order_filled = TestStubs.event_order_filled(order, position_id=position_id, fill_price=Price("1.00000"))
         position = Position(order_filled)
 
         # Act
-        self.database.add_position(position, self.strategy.id)
+        self.database.add_position(position)
 
         # Assert
         self.assertEqual(position, self.database.load_position(position.id))
@@ -161,7 +151,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         )
 
         position_id = PositionId('P-1')
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
@@ -175,13 +165,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, self.database.load_order(order.cl_ord_id))
-        # self.assertTrue(self.database.order_exists(order.cl_ord_id))
-        # self.assertTrue(order.cl_ord_id in self.database.order_ids())
-        # self.assertTrue(order in self.database.orders())
-        # self.assertTrue(order in self.database.orders_working(strategy_id=self.strategy.id))
-        # self.assertTrue(order in self.database.orders_working())
-        # self.assertTrue(order not in self.database.orders_completed(strategy_id=self.strategy.id))
-        # self.assertTrue(order not in self.database.orders_completed())
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -190,7 +173,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
@@ -205,12 +188,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, self.database.load_order(order.cl_ord_id))
-        # self.assertTrue(order.cl_ord_id in self.database.order_ids())
-        # self.assertTrue(order in self.database.orders())
-        # self.assertTrue(order in self.database.orders_completed(strategy_id=self.strategy.id))
-        # self.assertTrue(order in self.database.orders_completed())
-        # self.assertTrue(order not in self.database.orders_working(strategy_id=self.strategy.id))
-        # self.assertTrue(order not in self.database.orders_working())
 
     def test_update_position_for_closed_position(self):
         # Arrange
@@ -219,7 +196,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.database.add_order(order1, position_id, self.strategy.id)
+        self.database.add_order(order1, position_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
         self.database.update_order(order1)
@@ -232,13 +209,13 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Act
         position = Position(order1.last_event())
-        self.database.add_position(position, self.strategy.id)
+        self.database.add_position(position)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        self.database.add_order(order2, position_id, self.strategy.id)
+        self.database.add_order(order2, position_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         self.database.update_order(order2)
@@ -257,13 +234,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(position, self.database.load_position(position.id))
-        # self.assertTrue(position.id in self.database.position_ids())
-        # self.assertTrue(position in self.database.positions())
-        # self.assertTrue(position in self.database.positions_closed(strategy_id=self.strategy.id))
-        # self.assertTrue(position in self.database.positions_closed())
-        # self.assertTrue(position not in self.database.positions_open(strategy_id=self.strategy.id))
-        # self.assertTrue(position not in self.database.positions_open())
-        # self.assertEqual(position, self.database.position(position.id))
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
@@ -309,7 +279,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         # Act
         result = self.database.load_order(order.cl_ord_id)
@@ -334,12 +304,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         order_filled = TestStubs.event_order_filled(order, position_id=position_id, fill_price=Price("1.00000"))
         position = Position(order_filled)
 
-        self.database.add_position(position, self.strategy.id)
+        self.database.add_position(position)
 
         # Act
         result = self.database.load_position(position_id)
@@ -383,7 +353,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         )
 
         position_id = PositionId('P-1')
-        self.database.add_order(order, position_id, self.strategy.id)
+        self.database.add_order(order, position_id)
 
         # Act
         result = self.database.load_orders()
@@ -409,7 +379,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         )
 
         position_id = PositionId('P-1')
-        self.database.add_order(order1, position_id, self.strategy.id)
+        self.database.add_order(order1, position_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
@@ -417,7 +387,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_filled(order1, position_id=position_id, fill_price=Price("1.00001")))
 
         position = Position(order1.last_event())
-        self.database.add_position(position, self.strategy.id)
+        self.database.add_position(position)
 
         # Act
         result = self.database.load_positions()
@@ -441,12 +411,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position1_id = PositionId('P-1')
-        self.database.add_order(order1, position1_id, self.strategy.id)
+        self.database.add_order(order1, position1_id)
 
         filled = TestStubs.event_order_filled(order1, position_id=position1_id, fill_price=Price("1.00000"))
         position1 = Position(filled)
         self.database.update_order(order1)
-        self.database.add_position(position1, self.strategy.id)
+        self.database.add_position(position1)
 
         order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -455,7 +425,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Price("1.00000"))
 
         position2_id = PositionId('P-2')
-        self.database.add_order(order2, position2_id, self.strategy.id)
+        self.database.add_order(order2, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))

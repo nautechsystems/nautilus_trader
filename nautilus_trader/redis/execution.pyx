@@ -38,21 +38,11 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef str _UTF8 = 'utf-8'
-cdef str _INDEX = 'Index'
-cdef str _TRADER = 'Trader'
-cdef str _CONFIG = 'Config'
 cdef str _ACCOUNTS = 'Accounts'
-cdef str _ORDER = 'Order'
+cdef str _TRADER = 'Trader'
 cdef str _ORDERS = 'Orders'
-cdef str _POSITION = 'Position'
 cdef str _POSITIONS = 'Positions'
-cdef str _SYMBOL = 'Symbol'
-cdef str _STRATEGY = 'Strategy'
 cdef str _STRATEGIES = 'Strategies'
-cdef str _WORKING = 'Working'
-cdef str _COMPLETED = 'Completed'
-cdef str _OPEN = 'Open'
-cdef str _CLOSED = 'Closed'
 
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
@@ -100,25 +90,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader                   = f"{_TRADER}-{trader_id.value}"                                 # noqa
-        self.key_accounts                 = f"{self.key_trader}:{_ACCOUNTS}:"                              # noqa
-        self.key_orders                   = f"{self.key_trader}:{_ORDERS}:"                                # noqa
-        self.key_positions                = f"{self.key_trader}:{_POSITIONS}:"                             # noqa
-        self.key_strategies               = f"{self.key_trader}:{_STRATEGIES}:"                            # noqa
-        self.key_index_order_position     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_POSITION}"      # HASH  # noqa
-        self.key_index_order_strategy     = f"{self.key_trader}:{_INDEX}:{_ORDER}{_STRATEGY}"      # HASH  # noqa
-        self.key_index_position_strategy  = f"{self.key_trader}:{_INDEX}:{_POSITION}{_STRATEGY}"   # HASH  # noqa
-        self.key_index_position_orders    = f"{self.key_trader}:{_INDEX}:{_POSITION}{_ORDERS}:"    # SET   # noqa
-        self.key_index_symbol_orders      = f"{self.key_trader}:{_INDEX}:{_SYMBOL}{_ORDERS}:"      # SET   # noqa
-        self.key_index_symbol_positions   = f"{self.key_trader}:{_INDEX}:{_SYMBOL}{_POSITIONS}:"   # SET   # noqa
-        self.key_index_strategy_orders    = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_ORDERS}:"    # SET   # noqa
-        self.key_index_strategy_positions = f"{self.key_trader}:{_INDEX}:{_STRATEGY}{_POSITIONS}:" # SET   # noqa
-        self.key_index_orders             = f"{self.key_trader}:{_INDEX}:{_ORDERS}"                # SET   # noqa
-        self.key_index_orders_working     = f"{self.key_trader}:{_INDEX}:{_ORDERS}:{_WORKING}"     # SET   # noqa
-        self.key_index_orders_completed   = f"{self.key_trader}:{_INDEX}:{_ORDERS}:{_COMPLETED}"   # SET   # noqa
-        self.key_index_positions          = f"{self.key_trader}:{_INDEX}:{_POSITIONS}"             # SET   # noqa
-        self.key_index_positions_open     = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_OPEN}"     # SET   # noqa
-        self.key_index_positions_closed   = f"{self.key_trader}:{_INDEX}:{_POSITIONS}:{_CLOSED}"   # SET   # noqa
+        self.key_trader     = f"{_TRADER}-{trader_id.value}"       # noqa
+        self.key_accounts   = f"{self.key_trader}:{_ACCOUNTS}:"    # noqa
+        self.key_orders     = f"{self.key_trader}:{_ORDERS}:"      # noqa
+        self.key_positions  = f"{self.key_trader}:{_POSITIONS}:"   # noqa
+        self.key_strategies = f"{self.key_trader}:{_STRATEGIES}:"  # noqa
 
         # Serializers
         self._command_serializer = command_serializer
@@ -344,9 +320,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        pipe = self._redis.pipeline()
-        pipe.delete(self.key_strategies + strategy_id.value)
-        pipe.execute()
+        self._redis.delete(self.key_strategies + strategy_id.value)
 
         self._log.info(f"Deleted {strategy_id.to_string(with_class=True)}.")
 
@@ -368,12 +342,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
-        if reply[0] > 1:  # Reply = The length of the list after the push operation
+        if reply > 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
 
         self._log.debug(f"Added Account(id={account.id.value}).")
 
-    cpdef void add_order(self, Order order, PositionId position_id, StrategyId strategy_id) except *:
+    cpdef void add_order(self, Order order, PositionId position_id) except *:
         """
         Add the given order to the execution cache indexed with the given
         identifiers.
@@ -384,74 +358,19 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             The order to add.
         position_id : PositionId
             The position identifier to index for the order.
-        strategy_id : StrategyId
-            The strategy identifier to index for the order.
 
         """
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
-        Condition.not_none(strategy_id, "strategy_id")
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))  # 0
-        pipe.hset(name=self.key_index_order_strategy, key=order.cl_ord_id.value, value=strategy_id.value)          # 1
-        pipe.sadd(self.key_index_orders, order.cl_ord_id.value)                                                    # 2
-        pipe.sadd(self.key_index_symbol_orders + order.symbol.value, order.cl_ord_id.value)                        # 3
-        pipe.sadd(self.key_index_strategy_orders + strategy_id.value, order.cl_ord_id.value)                       # 4
-
-        if position_id.not_null():
-            pipe.hset(name=self.key_index_order_position, key=order.cl_ord_id.value, value=position_id.value)
-            pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
-            pipe.sadd(self.key_index_position_orders + position_id.value, order.cl_ord_id.value)
-            pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
-
-        cdef list reply = pipe.execute()
+        cdef bytes last_event = self._event_serializer.serialize(order.last_event())
+        cdef int reply = self._redis.rpush(self.key_orders + order.cl_ord_id.value, last_event)
 
         # Check data integrity of reply
-        # TODO: Reorganize logging
-        # if reply[0] > 1:  # Reply = The length of the list after the push operation
-        #     self._log.error(f"The {order.cl_ord_id} already existed in the orders and was appended to.")
-        # if reply[1] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-        #     self._log.error(f"The {order.cl_ord_id} already existed in index_order_position and was overwritten.")
-        # if reply[2] == 0:  # Reply = 0 if field already exists in the hash and the value was updated
-        #     self._log.error(f"The {order.cl_ord_id} already existed in index_order_strategy and was overwritten.")
-        # # reply[3] index_position_strategy does not need to be checked as there will be multiple writes for bracket orders
-        # if reply[4] == 0:  # Reply = 0 if the element was already a member of the set
-        #     self._log.error(f"The {order.cl_ord_id} already existed in index_orders.")
-        # if reply[5] == 0:  # Reply = 0 if the element was already a member of the set
-        #     self._log.error(f"The {order.cl_ord_id} already existed in index_position_orders.")
-        # if reply[6] == 0:  # Reply = 0 if the element was already a member of the set
-        #     self._log.error(f"The {order.cl_ord_id} already existed in index_strategy_orders.")
-        # reply[7] index_strategy_positions does not need to be checked as there will be multiple writes for bracket orders
+        if reply > 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The {order.cl_ord_id} already existed in the orders and was appended to.")
 
-    cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
-        """
-        Index the given position identifier with the other given identifiers.
-
-        Parameters
-        ----------
-        position_id : PositionId
-            The position identifier to index.
-        cl_ord_id : ClientOrderId
-            The client order identifier to index.
-        strategy_id : StrategyId
-            The strategy identifier to index.
-
-        """
-        Condition.not_none(position_id, "position_id")
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        Condition.not_none(strategy_id, "strategy_id")
-
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.hset(name=self.key_index_order_position, key=cl_ord_id.value, value=position_id.value)
-        pipe.hset(name=self.key_index_position_strategy, key=position_id.value, value=strategy_id.value)
-        pipe.sadd(self.key_index_position_orders + position_id.value, cl_ord_id.value)
-        pipe.sadd(self.key_index_strategy_positions + strategy_id.value, position_id.value)
-        pipe.execute()
-
-    cpdef void add_position(self, Position position, StrategyId strategy_id) except *:
+    cpdef void add_position(self, Position position) except *:
         """
         Add the given position associated with the given strategy identifier.
 
@@ -459,31 +378,16 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         ----------
         position : Position
             The position to add.
-        strategy_id : StrategyId
-            The strategy identifier to associate with the position.
 
         """
         Condition.not_none(position, "position")
-        Condition.not_none(strategy_id, "strategy_id")
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
-        pipe.sadd(self.key_index_positions, position.id.value)
-        pipe.sadd(self.key_index_positions_open, position.id.value)
-        pipe.sadd(self.key_index_symbol_positions + position.symbol.value, position.id.value)
-        cdef list reply = pipe.execute()
+        cdef bytes last_event = self._event_serializer.serialize(position.last_event())
+        cdef int reply = self._redis.rpush(self.key_positions + position.id.value, last_event)
 
         # Check data integrity of reply
-        # TODO: Reorganize logging
-        # if reply[0] > 1:  # Reply = The length of the list after the push operation
-        #     self._log.error(f"The {position.id} already existed in the index_broker_position and was overwritten.")
-        # if reply[1] == 0:  # Reply = 0 if the element was already a member of the set
-        #     self._log.error(f"The {position.id} already existed in index_positions.")
-        # if reply[2] == 0:  # Reply = 0 if the element was already a member of the set
-        #     self._log.error(f"The {position.id} already existed in index_positions.")
-        # if reply[3] == 0:  # Reply = 0 if the element was already a member of the set
-        #     self._log.error(f"The {position.id} already existed in index_positions_open.")
+        if reply > 1:  # Reply = The length of the list after the push operation
+            self._log.error(f"The {position.id} already existed in the index_broker_position and was overwritten.")
 
         self._log.debug(f"Added Position(id={position.id.value}).")
 
@@ -521,7 +425,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(account, "account")
 
-        self._redis.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event()))
+        cdef bytes serialized_event = self._event_serializer.serialize(account.last_event())
+        self._redis.rpush(self.key_accounts + account.id.value, serialized_event)
+
         self._log.debug(f"Updated Account(id={account.id}).")
 
     cpdef void update_order(self, Order order) except *:
@@ -536,19 +442,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order, "order")
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_orders + order.cl_ord_id.value, self._event_serializer.serialize(order.last_event()))
-        if order.is_working():
-            pipe.sadd(self.key_index_orders_working, order.cl_ord_id.value)
-            pipe.srem(self.key_index_orders_completed, order.cl_ord_id.value)
-        elif order.is_completed():
-            pipe.sadd(self.key_index_orders_completed, order.cl_ord_id.value)
-            pipe.srem(self.key_index_orders_working, order.cl_ord_id.value)
-        cdef list reply = pipe.execute()
+        cdef bytes serialized_event = self._event_serializer.serialize(order.last_event())
+        cdef int reply = self._redis.rpush(self.key_orders + order.cl_ord_id.value, serialized_event)
 
         # Check data integrity of reply
-        if reply[0] == 1:  # Reply = The length of the list after the push operation
+        if reply == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Order(id={order.cl_ord_id.value}) did not already exist.")
 
         self._log.debug(f"Updated Order(id={order.cl_ord_id.value}).")
@@ -565,19 +463,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self.key_positions + position.id.value, self._event_serializer.serialize(position.last_event()))
-        if position.is_closed():
-            pipe.sadd(self.key_index_positions_closed, position.id.value)
-            pipe.srem(self.key_index_positions_open, position.id.value)
-        else:
-            pipe.sadd(self.key_index_positions_open, position.id.value)
-            pipe.srem(self.key_index_positions_closed, position.id.value)
-        cdef list reply = pipe.execute()
+        cdef bytes serialized_event = self._event_serializer.serialize(position.last_event())
+        cdef int reply = self._redis.rpush(self.key_positions + position.id.value, serialized_event)
 
         # Check data integrity of reply
-        if reply[0] == 1:  # Reply = The length of the list after the push operation
+        if reply == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
         self._log.debug(f"Updated Position(id={position.id.value}).")

@@ -43,6 +43,7 @@ class PortfolioTests(unittest.TestCase):
         uuid_factor = TestUUIDFactory()
         logger = TestLogger(self.clock)
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())

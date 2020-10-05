@@ -197,6 +197,7 @@ cdef class OrderInitialized(OrderEvent):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             OrderType order_type,
@@ -213,6 +214,8 @@ cdef class OrderInitialized(OrderEvent):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : ClientOrderId
+            The strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -249,6 +252,8 @@ cdef class OrderInitialized(OrderEvent):
             event_timestamp,
         )
 
+        self.cl_ord_id = cl_ord_id
+        self.strategy_id = strategy_id
         self.symbol = symbol
         self.order_side = order_side
         self.order_type = order_type
@@ -1070,6 +1075,7 @@ cdef class OrderFilled(OrderEvent):
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"position_id={self.position_id}, "
+                f"strategy_id={self.strategy_id}, "
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
@@ -1088,7 +1094,6 @@ cdef class PositionEvent(Event):
             self,
             Position position not None,
             OrderFilled order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1101,8 +1106,6 @@ cdef class PositionEvent(Event):
             The position.
         order_fill : OrderFilled
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1112,7 +1115,6 @@ cdef class PositionEvent(Event):
         super().__init__(event_id, event_timestamp)
         self.position = position
         self.order_fill = order_fill
-        self.strategy_id = strategy_id
 
     def __repr__(self) -> str:
         """
@@ -1136,7 +1138,6 @@ cdef class PositionOpened(PositionEvent):
             self,
             Position position not None,
             OrderFilled order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1149,8 +1150,6 @@ cdef class PositionOpened(PositionEvent):
             The position.
         order_fill : OrderFilled
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1160,7 +1159,6 @@ cdef class PositionOpened(PositionEvent):
         super().__init__(
             position,
             order_fill,
-            strategy_id,
             event_id,
             event_timestamp,
         )
@@ -1177,6 +1175,7 @@ cdef class PositionOpened(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
+                f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"avg_open={round(self.position.avg_open_price, 5)}, "
                 f"{self.position.status_string()})")
@@ -1191,7 +1190,6 @@ cdef class PositionModified(PositionEvent):
             self,
             Position position not None,
             OrderFilled order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1204,8 +1202,6 @@ cdef class PositionModified(PositionEvent):
             The position.
         order_fill : OrderFilled
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1221,7 +1217,6 @@ cdef class PositionModified(PositionEvent):
         super().__init__(
             position,
             order_fill,
-            strategy_id,
             event_id,
             event_timestamp,
         )
@@ -1238,6 +1233,7 @@ cdef class PositionModified(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
+                f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"avg_open={self.position.avg_open_price}, "
                 f"realized_points={self.position.realized_points}, "
@@ -1255,7 +1251,6 @@ cdef class PositionClosed(PositionEvent):
             self,
             Position position not None,
             OrderEvent order_fill not None,
-            StrategyId strategy_id not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -1268,8 +1263,6 @@ cdef class PositionClosed(PositionEvent):
             The position.
         order_fill : OrderEvent
             The order fill event which triggered the event.
-        strategy_id : StrategyId
-            The strategy identifier associated with the position.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -1285,7 +1278,6 @@ cdef class PositionClosed(PositionEvent):
         super().__init__(
             position,
             order_fill,
-            strategy_id,
             event_id,
             event_timestamp,
         )
@@ -1303,6 +1295,7 @@ cdef class PositionClosed(PositionEvent):
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
+                f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"duration={duration}, "
                 f"avg_open={self.position.avg_open_price}, "

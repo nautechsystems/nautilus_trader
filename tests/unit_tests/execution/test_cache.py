@@ -72,7 +72,7 @@ class ExecutionCacheTests(unittest.TestCase):
         position_id = PositionId('P-1')
 
         # Act
-        self.cache.add_order(order, position_id, self.strategy.id)
+        self.cache.add_order(order, position_id)
 
         # Assert
         self.assertTrue(order.cl_ord_id in self.cache.order_ids())
@@ -88,7 +88,7 @@ class ExecutionCacheTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.cache.add_order(order, position_id, self.strategy.id)
+        self.cache.add_order(order, position_id)
 
         order_filled = TestStubs.event_order_filled(
             order,
@@ -99,7 +99,7 @@ class ExecutionCacheTests(unittest.TestCase):
         position = Position(order_filled)
 
         # Act
-        self.cache.add_position(position, self.strategy.id)
+        self.cache.add_position(position)
 
         # Assert
         self.assertTrue(self.cache.position_exists_for_order(order.cl_ord_id))
@@ -125,7 +125,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
 
         position_id = PositionId('P-1')
-        self.cache.add_order(order, position_id, self.strategy.id)
+        self.cache.add_order(order, position_id)
 
         order.apply(TestStubs.event_order_submitted(order))
         self.cache.update_order(order)
@@ -158,7 +158,7 @@ class ExecutionCacheTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.cache.add_order(order, position_id, self.strategy.id)
+        self.cache.add_order(order, position_id)
         order.apply(TestStubs.event_order_submitted(order))
         self.cache.update_order(order)
 
@@ -190,7 +190,7 @@ class ExecutionCacheTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.cache.add_order(order1, position_id, self.strategy.id)
+        self.cache.add_order(order1, position_id)
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
 
@@ -205,7 +205,7 @@ class ExecutionCacheTests(unittest.TestCase):
         position = Position(order1_filled)
 
         # Act
-        self.cache.add_position(position, self.strategy.id)
+        self.cache.add_position(position)
 
         # Assert
         self.assertTrue(self.cache.position_exists(position.id))
@@ -228,7 +228,7 @@ class ExecutionCacheTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position_id = PositionId('P-1')
-        self.cache.add_order(order1, position_id, self.strategy.id)
+        self.cache.add_order(order1, position_id)
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
 
@@ -241,7 +241,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
 
         position = Position(order1_filled)
-        self.cache.add_position(position, self.strategy.id)
+        self.cache.add_position(position)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
@@ -343,7 +343,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Quantity(100000),
         )
         position1_id = PositionId('P-1')
-        self.cache.add_order(order1, position1_id, self.strategy.id)
+        self.cache.add_order(order1, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
@@ -358,7 +358,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
         position1 = Position(order1_filled)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, self.strategy.id)
+        self.cache.add_position(position1)
 
         order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -367,7 +367,7 @@ class ExecutionCacheTests(unittest.TestCase):
             Price("1.0000"),
         )
         position2_id = PositionId('P-2')
-        self.cache.add_order(order2, position2_id, self.strategy.id)
+        self.cache.add_order(order2, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         self.cache.update_order(order2)
@@ -390,7 +390,7 @@ class ExecutionCacheTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position1_id = PositionId('P-1')
-        self.cache.add_order(order1, position1_id, self.strategy.id)
+        self.cache.add_order(order1, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
@@ -405,7 +405,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
         position1 = Position(order1_filled)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, self.strategy.id)
+        self.cache.add_position(position1)
 
         order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -415,7 +415,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
 
         position2_id = PositionId('P-2')
-        self.cache.add_order(order2, position2_id, self.strategy.id)
+        self.cache.add_order(order2, position2_id)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         self.cache.update_order(order2)
@@ -443,7 +443,7 @@ class ExecutionCacheTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity(100000))
         position1_id = PositionId('P-1')
-        self.cache.add_order(order1, position1_id, self.strategy.id)
+        self.cache.add_order(order1, position1_id)
 
         order1.apply(TestStubs.event_order_submitted(order1))
         self.cache.update_order(order1)
@@ -458,7 +458,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
         position1 = Position(order1_filled)
         self.cache.update_order(order1)
-        self.cache.add_position(position1, self.strategy.id)
+        self.cache.add_position(position1)
 
         order2 = self.strategy.order_factory.stop(
             AUDUSD_FXCM,
@@ -468,7 +468,7 @@ class ExecutionCacheTests(unittest.TestCase):
         )
 
         position2_id = PositionId('P-2')
-        self.cache.add_order(order2, position2_id, self.strategy.id)
+        self.cache.add_order(order2, position2_id)
         order2.apply(TestStubs.event_order_submitted(order2))
         self.cache.update_order(order2)
 

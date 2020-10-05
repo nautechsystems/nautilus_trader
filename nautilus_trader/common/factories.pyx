@@ -39,6 +39,7 @@ cdef class OrderFactory:
 
     def __init__(
             self,
+            StrategyId strategy_id not None,
             IdTag id_tag_trader not None,
             IdTag id_tag_strategy not None,
             Clock clock=None,
@@ -50,10 +51,12 @@ cdef class OrderFactory:
 
         Parameters
         ----------
+        strategy_id : StrategyId
+            The strategy identifier (not sent to broker/exchange).
         id_tag_trader : IdTag
-            The identifier tag for the trader.
+            The order identifier tag for the trader.
         id_tag_strategy : IdTag
-            The identifier tag for the strategy.
+            The order identifier tag for the strategy.
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory
@@ -73,13 +76,15 @@ cdef class OrderFactory:
             uuid_factory = LiveUUIDFactory()
         Condition.not_negative_int(initial_count, "initial_count")
 
+        self.strategy_id = strategy_id
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._id_generator = OrderIdGenerator(
             id_tag_trader=id_tag_trader,
             id_tag_strategy=id_tag_strategy,
             clock=clock,
-            initial_count=initial_count)
+            initial_count=initial_count,
+        )
 
     cpdef int count(self):
         """
@@ -148,6 +153,7 @@ cdef class OrderFactory:
         """
         return MarketOrder(
             self._id_generator.generate(),
+            self.strategy_id,
             symbol,
             order_side,
             quantity,
@@ -206,6 +212,7 @@ cdef class OrderFactory:
         """
         return LimitOrder(
             self._id_generator.generate(),
+            self.strategy_id,
             symbol,
             order_side,
             quantity,
@@ -262,6 +269,7 @@ cdef class OrderFactory:
         """
         return StopMarketOrder(
             self._id_generator.generate(),
+            self.strategy_id,
             symbol,
             order_side,
             quantity,

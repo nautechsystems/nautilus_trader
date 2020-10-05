@@ -161,11 +161,11 @@ cdef class Order:
         )
 
         self.cl_ord_id = event.cl_ord_id
-        self.id = None                    # Can be None (OrderId)
-        self.position_id = None           # Can be None
-        self.strategy_id = None           # Can be None
-        self.account_id = None            # Can be None
-        self.execution_id = None          # Can be None
+        self.strategy_id = event.strategy_id
+        self.id = None                # Can be None (OrderId from broker/exchange)
+        self.position_id = None       # Can be None
+        self.account_id = None        # Can be None
+        self.execution_id = None      # Can be None
         self.symbol = event.symbol
         self.side = event.order_side
         self.type = event.order_type
@@ -173,7 +173,7 @@ cdef class Order:
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
         self.filled_qty = Quantity()
-        self.filled_timestamp = None      # Can be None
+        self.filled_timestamp = None  # Can be None
         self.avg_price = None         # Can be None
         self.slippage = Decimal()
         self.init_id = event.id
@@ -491,6 +491,7 @@ cdef class PassiveOrder(Order):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             OrderType order_type,  # 'type' hides keyword
@@ -509,6 +510,8 @@ cdef class PassiveOrder(Order):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -560,6 +563,7 @@ cdef class PassiveOrder(Order):
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
+            strategy_id=strategy_id,
             symbol=symbol,
             order_side=order_side,
             order_type=order_type,
@@ -633,6 +637,7 @@ cdef class MarketOrder(Order):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -647,6 +652,8 @@ cdef class MarketOrder(Order):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -675,6 +682,7 @@ cdef class MarketOrder(Order):
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
+            strategy_id=strategy_id,
             symbol=symbol,
             order_side=order_side,
             order_type=OrderType.MARKET,
@@ -706,6 +714,7 @@ cdef class MarketOrder(Order):
 
         return MarketOrder(
             cl_ord_id=event.cl_ord_id,
+            strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -755,6 +764,7 @@ cdef class LimitOrder(PassiveOrder):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -773,6 +783,8 @@ cdef class LimitOrder(PassiveOrder):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -816,6 +828,7 @@ cdef class LimitOrder(PassiveOrder):
 
         super().__init__(
             cl_ord_id,
+            strategy_id,
             symbol,
             order_side,
             OrderType.LIMIT,
@@ -876,6 +889,7 @@ cdef class StopMarketOrder(PassiveOrder):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -892,6 +906,8 @@ cdef class StopMarketOrder(PassiveOrder):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -923,6 +939,7 @@ cdef class StopMarketOrder(PassiveOrder):
         """
         super().__init__(
             cl_ord_id,
+            strategy_id,
             symbol,
             order_side,
             OrderType.STOP_MARKET,
@@ -960,6 +977,7 @@ cdef class StopMarketOrder(PassiveOrder):
 
         return StopMarketOrder(
             cl_ord_id=event.cl_ord_id,
+            strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,

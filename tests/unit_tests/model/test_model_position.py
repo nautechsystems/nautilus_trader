@@ -51,6 +51,7 @@ class PositionTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())

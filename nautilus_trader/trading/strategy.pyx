@@ -358,6 +358,7 @@ cdef class TradingStrategy:
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.order_factory = OrderFactory(
+            strategy_id=self.id,
             id_tag_trader=self.trader_id.tag,
             id_tag_strategy=self.id.tag,
             clock=self.clock,

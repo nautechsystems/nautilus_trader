@@ -48,5 +48,5 @@ cdef class ExecutionClient:
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void handle_event(self, Event event)
+    cpdef void handle_event(self, Event event) except *
     cdef void _reset(self) except *
