@@ -29,6 +29,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_state cimport order_state_from_string
 from nautilus_trader.model.c_enums.order_state cimport order_state_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
@@ -54,7 +55,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-# Order states which determine if the order is completed
+# States which represent a 'completed' order
 cdef set _COMPLETED_STATES = {
     OrderState.INVALID,
     OrderState.DENIED,
@@ -65,30 +66,29 @@ cdef set _COMPLETED_STATES = {
 }
 
 
-cdef str OrderPartiallyFilled = "OrderPartiallyFilled"
-
+# State being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
-    (OrderState.INITIALIZED, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.INITIALIZED, OrderInvalid.__name__): OrderState.INVALID,
-    (OrderState.INITIALIZED, OrderDenied.__name__): OrderState.DENIED,
-    (OrderState.INITIALIZED, OrderSubmitted.__name__): OrderState.SUBMITTED,
-    (OrderState.SUBMITTED, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.SUBMITTED, OrderRejected.__name__): OrderState.REJECTED,
-    (OrderState.SUBMITTED, OrderAccepted.__name__): OrderState.ACCEPTED,
-    (OrderState.SUBMITTED, OrderWorking.__name__): OrderState.WORKING,
-    (OrderState.REJECTED, OrderRejected.__name__): OrderState.REJECTED,
-    (OrderState.ACCEPTED, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.ACCEPTED, OrderWorking.__name__): OrderState.WORKING,
-    (OrderState.ACCEPTED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
-    (OrderState.ACCEPTED, OrderFilled.__name__): OrderState.FILLED,
-    (OrderState.WORKING, OrderCancelled.__name__): OrderState.CANCELLED,
-    (OrderState.WORKING, OrderModified.__name__): OrderState.WORKING,
-    (OrderState.WORKING, OrderExpired.__name__): OrderState.EXPIRED,
-    (OrderState.WORKING, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
-    (OrderState.WORKING, OrderFilled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderCancelled.__name__): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderPartiallyFilled): OrderState.PARTIALLY_FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderFilled.__name__): OrderState.FILLED,
+    (OrderState.INITIALIZED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.INITIALIZED, OrderState.INVALID): OrderState.INVALID,
+    (OrderState.INITIALIZED, OrderState.DENIED): OrderState.DENIED,
+    (OrderState.INITIALIZED, OrderState.SUBMITTED): OrderState.SUBMITTED,
+    (OrderState.SUBMITTED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.SUBMITTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
+    (OrderState.SUBMITTED, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.REJECTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.ACCEPTED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.ACCEPTED, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.WORKING, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.WORKING, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.WORKING, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.WORKING, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.WORKING, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
 
 
@@ -156,14 +156,16 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
+            trigger_parser=order_state_to_string,  # order_state_to_string correct here
             state_parser=order_state_to_string,
         )
 
         self.cl_ord_id = event.cl_ord_id
-        self.id = None                    # Can be None (OrderId)
-        self.position_id = None           # Can be None
-        self.account_id = None            # Can be None
-        self.execution_id = None          # Can be None
+        self.strategy_id = event.strategy_id
+        self.id = None                # Can be None (OrderId from broker/exchange)
+        self.position_id = None       # Can be None
+        self.account_id = None        # Can be None
+        self.execution_id = None      # Can be None
         self.symbol = event.symbol
         self.side = event.order_side
         self.type = event.order_type
@@ -171,7 +173,7 @@ cdef class Order:
         self.timestamp = event.timestamp
         self.time_in_force = event.time_in_force
         self.filled_qty = Quantity()
-        self.filled_timestamp = None      # Can be None
+        self.filled_timestamp = None  # Can be None
         self.avg_price = None         # Can be None
         self.slippage = Decimal()
         self.init_id = event.id
@@ -203,7 +205,7 @@ cdef class Order:
         OrderState
 
         """
-        return self._fsm.state
+        return order_state_from_string(self.state_as_string())
 
     cpdef Event last_event(self):
         """
@@ -413,34 +415,41 @@ cdef class Order:
         # Update events
         self._events.append(event)
 
-        cdef str state_trigger = event.__class__.__name__
-
-        # Handle event
+        # Handle event - FSM (raises InvalidStateTrigger if trigger invalid)
         if isinstance(event, OrderInvalid):
+            self._fsm.trigger(OrderState.INVALID)
             self._invalid(event)
         elif isinstance(event, OrderDenied):
+            self._fsm.trigger(OrderState.DENIED)
             self._denied(event)
         elif isinstance(event, OrderSubmitted):
+            self._fsm.trigger(OrderState.SUBMITTED)
             self._submitted(event)
         elif isinstance(event, OrderRejected):
+            self._fsm.trigger(OrderState.REJECTED)
             self._rejected(event)
         elif isinstance(event, OrderAccepted):
+            self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderWorking):
+            self._fsm.trigger(OrderState.WORKING)
             self._working(event)
         elif isinstance(event, OrderCancelled):
+            self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
         elif isinstance(event, OrderExpired):
+            self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
         elif isinstance(event, OrderModified):
+            self._fsm.trigger(OrderState.WORKING)
             self._modified(event)
         elif isinstance(event, OrderFilled):
-            self._filled(event)
             if event.is_partial_fill:
-                state_trigger = OrderPartiallyFilled
-
-        # Update FSM (raises InvalidStateTrigger if trigger invalid)
-        self._fsm.trigger(state_trigger)
+                self._fsm.trigger(OrderState.PARTIALLY_FILLED)
+                self._filled(event)
+            else:
+                self._fsm.trigger(OrderState.FILLED)
+                self._filled(event)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else
@@ -482,6 +491,7 @@ cdef class PassiveOrder(Order):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             OrderType order_type,  # 'type' hides keyword
@@ -500,6 +510,8 @@ cdef class PassiveOrder(Order):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -544,11 +556,14 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
+        # TODO: Why is format_iso8601 returning '.000Z' here?
+        cdef str expire_time_str = format_iso8601(expire_time) if not None else str(None)
         options['Price'] = str(price)
-        options['ExpireTime'] = format_iso8601(expire_time) if not None else str(None)
+        options['ExpireTime'] = str(None) if expire_time_str == '.000Z' else expire_time_str
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
+            strategy_id=strategy_id,
             symbol=symbol,
             order_side=order_side,
             order_type=order_type,
@@ -587,6 +602,7 @@ cdef class PassiveOrder(Order):
     cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
+        self.strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
@@ -621,6 +637,7 @@ cdef class MarketOrder(Order):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -635,6 +652,8 @@ cdef class MarketOrder(Order):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -663,6 +682,7 @@ cdef class MarketOrder(Order):
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
+            strategy_id=strategy_id,
             symbol=symbol,
             order_side=order_side,
             order_type=OrderType.MARKET,
@@ -694,6 +714,7 @@ cdef class MarketOrder(Order):
 
         return MarketOrder(
             cl_ord_id=event.cl_ord_id,
+            strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -721,6 +742,7 @@ cdef class MarketOrder(Order):
     cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id
         self.position_id = event.position_id
+        self.strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.filled_qty = event.filled_qty
@@ -742,6 +764,7 @@ cdef class LimitOrder(PassiveOrder):
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -760,6 +783,8 @@ cdef class LimitOrder(PassiveOrder):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -803,6 +828,7 @@ cdef class LimitOrder(PassiveOrder):
 
         super().__init__(
             cl_ord_id,
+            strategy_id,
             symbol,
             order_side,
             OrderType.LIMIT,
@@ -855,17 +881,15 @@ cdef class LimitOrder(PassiveOrder):
         )
 
 
-cdef class StopOrder(PassiveOrder):
+cdef class StopMarketOrder(PassiveOrder):
     """
-    A stop order is an order to buy or sell a security when its price moves past
-    a particular point, ensuring a higher probability of achieving a
-    predetermined entry or exit point. The order can be used to both limit a
-    traders loss or take a profit. Once the price crosses the predefined
-    entry/exit point, the stop order becomes a market order.
+    Represents a stop market order. Once the price crosses the predefined
+    trigger price, the stop order becomes a market order.
     """
     def __init__(
             self,
             ClientOrderId cl_ord_id not None,
+            StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
             Quantity quantity not None,
@@ -876,12 +900,14 @@ cdef class StopOrder(PassiveOrder):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the StopOrder class.
+        Initialize a new instance of the StopMarketOrder class.
 
         Parameters
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        strategy_id : StrategyId
+            The order strategy identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (enum)
@@ -913,9 +939,10 @@ cdef class StopOrder(PassiveOrder):
         """
         super().__init__(
             cl_ord_id,
+            strategy_id,
             symbol,
             order_side,
-            OrderType.STOP,
+            OrderType.STOP_MARKET,
             quantity,
             price,
             time_in_force,
@@ -926,7 +953,7 @@ cdef class StopOrder(PassiveOrder):
         )
 
     @staticmethod
-    cdef StopOrder create(OrderInitialized event):
+    cdef StopMarketOrder create(OrderInitialized event):
         """
         Return a stop order from the given initialized event.
 
@@ -948,8 +975,9 @@ cdef class StopOrder(PassiveOrder):
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
         cdef Price price = Price(price_string)
 
-        return StopOrder(
+        return StopMarketOrder(
             cl_ord_id=event.cl_ord_id,
+            strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -974,7 +1002,7 @@ cdef class BracketOrder:
     def __init__(
             self,
             Order entry not None,
-            StopOrder stop_loss not None,
+            StopMarketOrder stop_loss not None,
             LimitOrder take_profit=None,
     ):
         """
@@ -984,7 +1012,7 @@ cdef class BracketOrder:
         ----------
         entry : Order
             The entry 'parent' order.
-        stop_loss : StopOrder
+        stop_loss : StopMarketOrder
             The stop-loss (SL) 'child' order.
         take_profit : LimitOrder, optional
             The take-profit (TP) 'child' order.

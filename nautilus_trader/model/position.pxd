@@ -16,14 +16,15 @@
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -45,6 +46,7 @@ cdef class Position:
     cdef readonly PositionId id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId from_order
+    cdef readonly StrategyId strategy_id
 
     cdef readonly datetime timestamp
     cdef readonly Symbol symbol

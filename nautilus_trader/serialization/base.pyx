@@ -22,6 +22,7 @@ from nautilus_trader.model.order cimport Order
 cdef class Serializer:
     """
     The base class for all serializers.
+
     """
     cdef inline str convert_camel_to_snake(self, str value):
         return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
@@ -41,6 +42,7 @@ cdef class Serializer:
 cdef class DictionarySerializer(Serializer):
     """
     The base class for all dictionary serializers.
+
     """
 
     def __init__(self):
@@ -61,11 +63,13 @@ cdef class DictionarySerializer(Serializer):
 cdef class InstrumentSerializer(Serializer):
     """
     The base class for all instrument serializers.
+
     """
 
     def __init__(self):
         """
         Initialize a new instance of the InstrumentSerializer class.
+
         """
         super().__init__()
 
@@ -81,11 +85,13 @@ cdef class InstrumentSerializer(Serializer):
 cdef class OrderSerializer(Serializer):
     """
     The base class for all order serializers.
+
     """
 
     def __init__(self):
         """
         Initialize a new instance of the OrderSerializer class.
+
         """
         super().__init__()
 
@@ -101,6 +107,7 @@ cdef class OrderSerializer(Serializer):
 cdef class CommandSerializer(Serializer):
     """
     The base class for all command serializers.
+
     """
 
     def __init__(self):
@@ -121,6 +128,7 @@ cdef class CommandSerializer(Serializer):
 cdef class EventSerializer(Serializer):
     """
     The base class for all event serializers.
+
     """
 
     def __init__(self):

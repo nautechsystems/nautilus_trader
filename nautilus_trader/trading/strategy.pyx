@@ -33,13 +33,16 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.currency cimport Currency
+from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
+from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderRejected
@@ -64,12 +67,7 @@ cdef class TradingStrategy:
     The base class for all trading strategies.
     """
 
-    def __init__(
-            self,
-            str order_id_tag not None,
-            bint flatten_on_reject=True,
-            bint reraise_exceptions=True,
-    ):
+    def __init__(self, str order_id_tag not None):
         """
         Initialize a new instance of the TradingStrategy class.
 
@@ -77,18 +75,14 @@ cdef class TradingStrategy:
         ----------
         order_id_tag : str
             The order_id tag for the strategy (must be unique at trader level).
-        flatten_on_reject : bool
-            If open positions should be flattened on a child orders rejection.
-        reraise_exceptions : bool
-            If exceptions raised in handling methods should be re-raised.
 
         Raises
         ------
         ValueError
-            If tag is not a valid string.
+            If order_id_tag is not a valid string.
 
         """
-        Condition.valid_string(order_id_tag, "tag")
+        Condition.valid_string(order_id_tag, "order_id_tag")
 
         # Identifiers
         self.id = StrategyId(self.__class__.__name__, order_id_tag)
@@ -98,18 +92,14 @@ cdef class TradingStrategy:
         self.clock = None          # Initialized when registered with a trader
         self.uuid_factory = None   # Initialized when registered with a trader
         self.log = None            # Initialized when registered with a trader
-        self.order_factory = None  # Initialized when registered with a trader
-        # self.data = None
+        # self.data = None         # Initialized when registered with the data engine
         self.execution = None      # Initialized when registered with the execution engine
+        self.order_factory = None  # Initialized when registered with a trader
 
         # Private components
-        self._data_engine = None  # Initialized when registered with the data engine
-        self._exec_engine = None  # Initialized when registered with the execution engine
+        self._data_engine = None   # Initialized when registered with the data engine
+        self._exec_engine = None   # Initialized when registered with the execution engine
         self._fsm = create_component_fsm()
-
-        # Management flags
-        self._is_flatten_on_reject = flatten_on_reject
-        self._is_reraise_exceptions = reraise_exceptions
 
         # Indicators
         self._indicators = []              # type: [Indicator]
@@ -136,8 +126,20 @@ cdef class TradingStrategy:
     cpdef ComponentState state(self):
         """
         Return the trading strategies state.
+
         """
-        return self._fsm.state
+        return component_state_from_string(self.state_as_string())
+
+    cpdef str state_as_string(self):
+        """
+        Return the trading strategies state as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return component_state_to_string(self._fsm.state)
 
     def __eq__(self, TradingStrategy other) -> bool:
         """
@@ -356,6 +358,7 @@ cdef class TradingStrategy:
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.order_factory = OrderFactory(
+            strategy_id=self.id,
             id_tag_trader=self.trader_id.tag,
             id_tag_strategy=self.id.tag,
             clock=self.clock,
@@ -503,8 +506,7 @@ cdef class TradingStrategy:
                 self.on_quote_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -561,8 +563,7 @@ cdef class TradingStrategy:
                 self.on_trade_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -622,8 +623,7 @@ cdef class TradingStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -670,8 +670,7 @@ cdef class TradingStrategy:
                 self.on_data(data)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
     cpdef void handle_event(self, Event event) except *:
         """
@@ -687,8 +686,6 @@ cdef class TradingStrategy:
 
         if isinstance(event, OrderRejected):
             self.log.warning(f"{RECV}{EVT} {event}.")
-            if self._is_flatten_on_reject:
-                self._flatten_on_reject(event)
         elif isinstance(event, OrderCancelReject):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
@@ -699,8 +696,7 @@ cdef class TradingStrategy:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-                if self._is_reraise_exceptions:
-                    raise ex  # Re-raise
+                self.stop()  # Halt strategy
 
 # -- DATA METHODS ----------------------------------------------------------------------------------
 
@@ -1323,7 +1319,7 @@ cdef class TradingStrategy:
         Calls on_start().
         """
         try:
-            self._fsm.trigger('START')
+            self._fsm.trigger(ComponentTrigger.START)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
@@ -1346,7 +1342,7 @@ cdef class TradingStrategy:
             self.stop()
             return
 
-        self._fsm.trigger('RUNNING')
+        self._fsm.trigger(ComponentTrigger.RUNNING)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void stop(self) except *:
@@ -1356,7 +1352,7 @@ cdef class TradingStrategy:
         Calls on_stop().
         """
         try:
-            self._fsm.trigger('STOP')
+            self._fsm.trigger(ComponentTrigger.STOP)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
@@ -1376,7 +1372,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self._fsm.trigger('STOPPED')
+        self._fsm.trigger(ComponentTrigger.STOPPED)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void resume(self) except *:
@@ -1386,7 +1382,7 @@ cdef class TradingStrategy:
         Calls on_resume().
         """
         try:
-            self._fsm.trigger('RESUME')
+            self._fsm.trigger(ComponentTrigger.RESUME)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
@@ -1401,7 +1397,7 @@ cdef class TradingStrategy:
             self.stop()
             return
 
-        self._fsm.trigger('RUNNING')
+        self._fsm.trigger(ComponentTrigger.RUNNING)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void reset(self) except *:
@@ -1412,7 +1408,7 @@ cdef class TradingStrategy:
         All stateful values are reset to their initial value.
         """
         try:
-            self._fsm.trigger('RESET')
+            self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
@@ -1432,7 +1428,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self._fsm.trigger('RESET')
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef void dispose(self) except *:
@@ -1440,7 +1436,7 @@ cdef class TradingStrategy:
         Dispose of the trading strategy.
         """
         try:
-            self._fsm.trigger('DISPOSE')
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
             return
@@ -1452,7 +1448,7 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-        self._fsm.trigger('DISPOSED')
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
         self.log.info(f"state={self._fsm.state_as_string()}.")
 
     cpdef dict save(self):
@@ -1515,8 +1511,7 @@ cdef class TradingStrategy:
         order : Order
             The order to submit.
         position_id : PositionId, optional
-            The position identifier to submit the order against. Only required
-            if the execution engine is configured for OMS.HEDGING.
+            The position identifier to submit the order against.
 
         """
         Condition.not_none(order, "order")
@@ -1734,25 +1729,4 @@ cdef class TradingStrategy:
 
         cdef Position position
         for position in positions_open:
-            self.flatten_position(position)
-
-    cdef void _flatten_on_reject(self, OrderRejected event) except *:
-        # Find position_id for order
-        cdef PositionId position_id = self.execution.position_id(event.cl_ord_id)
-        if position_id is None:
-            self.log.error(f"Cannot flatten on reject "
-                           f"(did not find PositionId for {event.cl_ord_id.to_string(with_class=True)}).")
-            return
-
-        cdef Position position = self.execution.position(position_id)
-        if position is None:
-            self.log.error(f"Cannot flatten on reject "
-                           f"(did not find Position for {position_id.to_string(with_class=True)}).")
-            return
-
-        # Flatten if open position
-        if self.execution.is_position_open(position_id):
-            self.log.warning(f"Rejected {event.cl_ord_id.to_string(with_class=True)} "
-                             f"was a registered child order, "
-                             f"now flattening {position_id.to_string(with_class=True)}.")
             self.flatten_position(position)

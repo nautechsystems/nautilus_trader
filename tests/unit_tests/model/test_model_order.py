@@ -19,7 +19,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -35,12 +35,13 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
-from nautilus_trader.model.order import StopOrder
+from nautilus_trader.model.order import StopMarketOrder
 from nautilus_trader.model.order import flatten_side
 from nautilus_trader.model.order import opposite_side
 from tests.test_kit.stubs import TestStubs
@@ -56,6 +57,7 @@ class OrderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock(),
@@ -89,6 +91,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(),
@@ -104,6 +107,7 @@ class OrderTests(unittest.TestCase):
             ValueError,
             MarketOrder,
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100),
@@ -117,8 +121,9 @@ class OrderTests(unittest.TestCase):
         # Act
         self.assertRaises(
             ValueError,
-            StopOrder,
+            StopMarketOrder,
             ClientOrderId("O-123456"),
+            StrategyId("S", "001"),
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -288,7 +293,7 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(OrderType.STOP, order.type)
+        self.assertEqual(OrderType.STOP_MARKET, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state())
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed())
@@ -379,7 +384,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
 
@@ -555,6 +561,7 @@ class OrderTests(unittest.TestCase):
         filled = TestStubs.event_order_filled(
             order,
             PositionId("P-123456"),
+            StrategyId("S", "001"),
             Price("1.00001"))
 
         order.apply(submitted)
@@ -588,15 +595,16 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
+            StrategyId("S", "NULL"),
             order.symbol,
             order.side,
             order.quantity,
             Quantity(),
             Price("1.00001"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.MAKER,
-            Currency.USD,
-            Currency.USD,
+            Currency.USD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -636,15 +644,16 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
+            StrategyId("S", "NULL"),
             order.symbol,
             order.side,
             Quantity(50000),
             Quantity(50000),
             Price("0.999999"),
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.MAKER,
-            Currency.USD,
-            Currency.USD,
+            Currency.USD(),
+            Currency.USD(),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)

@@ -55,6 +55,7 @@ cdef class Trader:
     cpdef void account_inquiry(self) except *
 
     cpdef ComponentState state(self)
+    cpdef str state_as_string(self)
     cpdef dict strategy_states(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)

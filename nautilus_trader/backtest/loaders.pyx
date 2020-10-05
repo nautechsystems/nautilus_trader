@@ -19,8 +19,6 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport Currency
-from nautilus_trader.model.c_enums.currency cimport currency_from_string
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport ForexInstrument
 from nautilus_trader.model.objects cimport Decimal
@@ -110,11 +108,11 @@ cdef class InstrumentLoader:
         Condition.not_none(symbol, "symbol")
         Condition.in_range_int(len(symbol.code), 6, 7, "len(symbol)")
 
-        cdef Currency base_currency = currency_from_string(symbol.code[:3])
-        cdef Currency quote_currency = currency_from_string(symbol.code[-3:])
+        cdef str base_currency = symbol.code[:3]
+        cdef str quote_currency = symbol.code[-3:]
 
         # Check tick precision of quote currency
-        if quote_currency == Currency.JPY:
+        if quote_currency == 'JPY':
             price_precision = 3
         else:
             price_precision = 5

@@ -36,7 +36,6 @@ from scipy.stats import skew
 
 from nautilus_trader.common.account cimport Account
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.currency cimport currency_to_string
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
@@ -54,7 +53,7 @@ cdef class PerformanceAnalyzer:
         """
         self._account_starting_capital = None
         self._account_capital = None
-        self._account_currency = Currency.UNDEFINED
+        self._account_currency = None
         self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=["cash"])
         self._transactions = pd.DataFrame(columns=["capital", "pnl"])
@@ -180,7 +179,7 @@ cdef class PerformanceAnalyzer:
         """
         self._account_starting_capital = None
         self._account_capital = None
-        self._account_currency = Currency.UNDEFINED
+        self._account_currency = None
         self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=["cash"])
         self._transactions = pd.DataFrame(columns=["capital", "pnl"])
@@ -612,19 +611,17 @@ cdef class PerformanceAnalyzer:
         List[str]
 
         """
-        cdef str currency = currency_to_string(account_currency)
-
         return [
-            f"PNL:               {round(self.total_pnl(), 2):,} {currency}",
+            f"PNL:               {round(self.total_pnl(), 2):,} {self._account_currency}",
             f"PNL %:             {round(self.total_pnl_percentage(), 2)}%",
-            f"Max Winner:        {round(self.max_winner(), 2):,} {currency}",
-            f"Avg Winner:        {round(self.avg_winner(), 2):,} {currency}",
-            f"Min Winner:        {round(self.min_winner(), 2):,} {currency}",
-            f"Min Loser:         {round(self.min_loser(), 2):,} {currency}",
-            f"Avg Loser:         {round(self.avg_loser(), 2):,} {currency}",
-            f"Max Loser:         {round(self.max_loser(), 2):,} {currency}",
+            f"Max Winner:        {round(self.max_winner(), 2):,} {self._account_currency}",
+            f"Avg Winner:        {round(self.avg_winner(), 2):,} {self._account_currency}",
+            f"Min Winner:        {round(self.min_winner(), 2):,} {self._account_currency}",
+            f"Min Loser:         {round(self.min_loser(), 2):,} {self._account_currency}",
+            f"Avg Loser:         {round(self.avg_loser(), 2):,} {self._account_currency}",
+            f"Max Loser:         {round(self.max_loser(), 2):,} {self._account_currency}",
             f"Win Rate:          {round(self.win_rate(), 2)}",
-            f"Expectancy:        {round(self.expectancy(), 2):,} {currency}",
+            f"Expectancy:        {round(self.expectancy(), 2):,} {self._account_currency}",
             f"Annual return:     {round(self.annual_return() * 100, 2)}%",
             f"Cum returns:       {round(self.cum_return() * 100, 2)}%",
             f"Max drawdown:      {round(self.max_drawdown_return() * 100, 2)}%",

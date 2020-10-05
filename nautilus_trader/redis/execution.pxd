@@ -13,36 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 
 
-cdef class RedisExecutionDatabase(ExecutionCache):
+cdef class RedisExecutionDatabase(ExecutionDatabase):
     cdef readonly str key_trader
     cdef readonly str key_accounts
     cdef readonly str key_orders
     cdef readonly str key_positions
     cdef readonly str key_strategies
-    cdef readonly str key_index_order_position      # HASH
-    cdef readonly str key_index_order_strategy      # HASH
-    cdef readonly str key_index_position_strategy   # HASH
-    cdef readonly str key_index_position_orders     # SET
-    cdef readonly str key_index_symbol_orders       # SET
-    cdef readonly str key_index_symbol_positions    # SET
-    cdef readonly str key_index_strategy_orders     # SET
-    cdef readonly str key_index_strategy_positions  # SET
-    cdef readonly str key_index_orders              # SET
-    cdef readonly str key_index_orders_working      # SET
-    cdef readonly str key_index_orders_completed    # SET
-    cdef readonly str key_index_positions           # SET
-    cdef readonly str key_index_positions_open      # SET
-    cdef readonly str key_index_positions_closed    # SET
 
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
     cdef object _redis
-
-    cdef set _decode_set_to_order_ids(self, set original)
-    cdef set _decode_set_to_position_ids(self, set original)
-    cdef set _decode_set_to_strategy_ids(self, list original)

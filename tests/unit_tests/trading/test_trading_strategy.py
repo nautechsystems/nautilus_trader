@@ -31,7 +31,7 @@ from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.execution.cache import InMemoryExecutionCache
+from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import ComponentState
@@ -85,7 +85,7 @@ class TradingStrategyTests(unittest.TestCase):
         trader_id = TraderId('TESTER', '000')
         account_id = TestStubs.account_id()
 
-        self.exec_db = InMemoryExecutionCache(
+        self.exec_db = BypassExecutionDatabase(
             trader_id=trader_id,
             logger=self.logger,
         )
@@ -120,7 +120,8 @@ class TradingStrategyTests(unittest.TestCase):
             market=self.market,
             account_id=account_id,
             engine=self.exec_engine,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.exec_engine.register_client(self.exec_client)
         self.market.register_client(self.exec_client)
@@ -133,7 +134,8 @@ class TradingStrategyTests(unittest.TestCase):
             trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.strategy.register_data_engine(self.data_engine)
         self.strategy.register_execution_engine(self.exec_engine)
@@ -248,7 +250,8 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
 
         self.data_engine.handle_bar(bar_type, bar)
 
@@ -275,7 +278,8 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
 
         self.data_engine.handle_bar(bar_type, bar)
 
@@ -291,7 +295,8 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
 
         self.data_engine.handle_bar(bar_type, bar)
 
@@ -313,7 +318,8 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
 
         self.data_engine.handle_quote_tick(tick)
 
@@ -330,7 +336,8 @@ class TradingStrategyTests(unittest.TestCase):
             Quantity(10000),
             Maker.BUYER,
             MatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc))
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
 
         self.data_engine.handle_trade_tick(tick)
 
@@ -348,7 +355,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
@@ -371,7 +379,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
@@ -391,7 +400,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         bar = Bar(
@@ -400,7 +410,8 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
 
         strategy.handle_bar(bar_type, bar)
 
@@ -421,7 +432,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         # Act
         result = strategy.registered_indicators()
@@ -436,13 +448,14 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         # Act
         self.exec_engine.register_strategy(strategy)
 
         # Assert
-        self.assertTrue(True)  # No exceptions thrown
+        self.assertIsNotNone(strategy.execution)
 
     def test_stopping_a_strategy_cancels_a_running_time_alert(self):
         # Arrange
@@ -452,7 +465,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
@@ -475,7 +489,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
@@ -618,69 +633,6 @@ class TradingStrategyTests(unittest.TestCase):
     #     self.assertTrue(order1.cl_ord_id in strategy.orders_completed())
     #     self.assertTrue(order2.cl_ord_id in strategy.orders_completed())
 
-    def test_register_stop_loss_and_take_profit_orders(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        entry_order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        bracket_order = strategy.order_factory.bracket(
-            entry_order,
-            stop_loss=Price("90.000"),
-            take_profit=Price("91.000"))
-
-        # Act
-        strategy.submit_bracket_order(bracket_order)
-
-        # Assert
-        self.assertTrue(self.exec_db.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
-        self.assertTrue(self.exec_db.is_take_profit(bracket_order.take_profit.cl_ord_id))
-        self.assertTrue(bracket_order.stop_loss.cl_ord_id in self.exec_db.stop_loss_ids())
-        self.assertTrue(bracket_order.take_profit.cl_ord_id in self.exec_db.take_profit_ids())
-
-    def test_completed_sl_tp_are_removed(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.exec_engine.register_strategy(strategy)
-
-        entry_order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000))
-
-        bracket_order = strategy.order_factory.bracket(
-            entry_order,
-            stop_loss=Price("90.000"),
-            take_profit=Price("91.000"))
-
-        position_id = PositionId('P-1')
-
-        strategy.submit_bracket_order(bracket_order, position_id)
-
-        # Act
-        strategy.flatten_all_positions(TestStubs.instrument_usdjpy().symbol)
-
-        # Assert
-        # TODO: Investigate
-        # self.assertFalse(strategy.is_stop_loss(bracket_order.stop_loss.cl_ord_id))
-        # self.assertFalse(strategy.is_take_profit(bracket_order.take_profit.cl_ord_id))
-        # self.assertFalse(bracket_order.stop_loss.cl_ord_id in strategy.stop_loss_ids())
-        # self.assertFalse(bracket_order.take_profit.cl_ord_id in strategy.take_profit_ids())
-
     # TODO: Potentially consolidating this API to ExecutionEngine
     # def test_flatten_position(self):
     #     # Arrange
@@ -762,7 +714,8 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         bar = Bar(
             Price("1.00001"),
@@ -770,7 +723,8 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc))
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
 
         # Act
         strategy.handle_bar(bar_type, bar)
@@ -817,18 +771,21 @@ class TradingStrategyTests(unittest.TestCase):
             TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         order2 = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.SELL,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         strategy.submit_order(order1)
         strategy.submit_order(order2, PositionId("B-USD/JPY-1"))  # Position identifier generated by exchange

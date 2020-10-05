@@ -20,6 +20,7 @@ from nautilus_trader.common.generators cimport OrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -27,13 +28,15 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport StopOrder
+from nautilus_trader.model.order cimport StopMarketOrder
 
 
 cdef class OrderFactory:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef OrderIdGenerator _id_generator
+
+    cdef readonly StrategyId strategy_id
 
     cpdef int count(self)
     cpdef void set_count(self, int count) except *
@@ -59,7 +62,7 @@ cdef class OrderFactory:
         bint hidden=*,
     )
 
-    cpdef StopOrder stop(
+    cpdef StopMarketOrder stop(
         self,
         Symbol symbol,
         OrderSide order_side,

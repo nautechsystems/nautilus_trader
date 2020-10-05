@@ -72,6 +72,9 @@ cdef class ExecutionEngine:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void load_cache(self) except *
+    cpdef void integrity_check(self) except *
+    cpdef void flush_db(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
@@ -91,18 +94,18 @@ cdef class ExecutionEngine:
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *
-    cdef void _handle_order_cancel_reject(self, OrderCancelReject event) except *
-    cdef void _handle_order_event(self, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFilled event) except *
+    cdef inline void _handle_account_event(self, AccountState event) except *
+    cdef inline void _handle_position_event(self, PositionEvent event) except *
 
-    cdef void _fill_pos_id_none(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
-    cdef void _fill_pos_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
-    cdef void _open_position(self, OrderFilled event, StrategyId strategy_id) except *
-    cdef void _update_position(self, OrderFilled event, StrategyId strategy_id) except *
-    cdef void _handle_position_event(self, PositionEvent event) except *
-    cdef void _handle_account_event(self, AccountState event) except *
-    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
-    cdef PositionModified _pos_modified_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
-    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill, StrategyId strategy_id)
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+    cdef inline void _handle_order_event(self, OrderEvent event) except *
+    cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
+    cdef inline void _handle_order_fill(self, OrderFilled event) except *
+    cdef inline void _fill_system_assigned_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef inline void _fill_exchange_assigned_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef inline void _open_position(self, OrderFilled event) except *
+    cdef inline void _update_position(self, OrderFilled event) except *
+    cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
+    cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
+    cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
+    cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
     cdef void _reset(self) except *

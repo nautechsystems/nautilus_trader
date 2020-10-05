@@ -20,7 +20,7 @@ from nautilus_trader.common.market import ExchangeRateCalculator
 from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.common.market import MakerTakerCommissionModel
 from nautilus_trader.common.market import RolloverInterestCalculator
-from nautilus_trader.model.enums import Currency
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Money
@@ -47,31 +47,31 @@ class GenericCommissionModelTests(unittest.TestCase):
             filled_price=Price("1.63000"),
             exchange_rate=1.00,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD,
+            currency=Currency.USD(),
         )
 
         # Assert
-        self.assertEqual(Money("32.60", Currency.USD), result)
+        self.assertEqual(Money(32.60, Currency.USD()), result)
 
     def test_calculate_returns_correct_minimum_commission(self):
         # Arrange
-        model = GenericCommissionModel(minimum=Money("2.00", Currency.USD))
+        model = GenericCommissionModel(minimum=Money(2.00, Currency.USD()))
 
         # Act
-        result = model.calculate_for_notional(GBPUSD_FXCM, Money("1000", Currency.USD), LiquiditySide.TAKER)
+        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD()), LiquiditySide.TAKER)
 
         # Assert
-        self.assertEqual(Money("2.00", Currency.USD), result)
+        self.assertEqual(Money(2.00, Currency.USD()), result)
 
     def test_calculate_returns_correct_commission_for_notional(self):
         # Arrange
         model = GenericCommissionModel()
 
         # Act
-        result = model.calculate_for_notional(GBPUSD_FXCM, Money("1000000", Currency.USD), LiquiditySide.TAKER)
+        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD()), LiquiditySide.TAKER)
 
         # Assert
-        self.assertEqual(Money("20.00", Currency.USD), result)
+        self.assertEqual(Money(20.00, Currency.USD()), result)
 
     def test_calculate_returns_correct_commission_with_exchange_rate(self):
         # Arrange
@@ -84,11 +84,11 @@ class GenericCommissionModelTests(unittest.TestCase):
             filled_price=Price("95.000"),
             exchange_rate=0.01052632,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD,
+            currency=Currency.USD(),
         )
 
         # Assert
-        self.assertEqual(Money("20.00", Currency.USD), result)
+        self.assertEqual(Money(20.00, Currency.USD()), result)
 
 
 class MakerTakerCommissionModelTests(unittest.TestCase):
@@ -104,21 +104,21 @@ class MakerTakerCommissionModelTests(unittest.TestCase):
             filled_price=Price("1.63000"),
             exchange_rate=1.00,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD,
+            currency=Currency.USD(),
         )
 
         # Assert
-        self.assertEqual(Money("1222.50", Currency.USD), result)
+        self.assertEqual(Money(1222.50, Currency.USD()), result)
 
     def test_calculate_returns_correct_commission_for_notional(self):
         # Arrange
         calculator = MakerTakerCommissionModel()
 
         # Act
-        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD), LiquiditySide.TAKER)
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD()), LiquiditySide.TAKER)
 
         # Assert
-        self.assertEqual(Money("750.00", Currency.USD), result)
+        self.assertEqual(Money(750.00, Currency.USD()), result)
 
     def test_calculate_returns_correct_commission_with_exchange_rate(self):
         # Arrange
@@ -131,11 +131,11 @@ class MakerTakerCommissionModelTests(unittest.TestCase):
             filled_price=Price("95.000"),
             exchange_rate=0.01052632,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD,
+            currency=Currency.USD(),
         )
 
         # Assert
-        self.assertEqual(Money("750.00", Currency.USD), result)
+        self.assertEqual(Money(750.00, Currency.USD()), result)
 
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
@@ -151,8 +151,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             converter.get_rate,
-            Currency.USD,
-            Currency.JPY,
+            Currency.USD(),
+            Currency.JPY(),
             PriceType.BID,
             bid_rates,
             ask_rates,
@@ -166,8 +166,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.AUD,
-            Currency.USD,
+            Currency.AUD(),
+            Currency.USD(),
             PriceType.BID,
             bid_rates,
             ask_rates,
@@ -184,11 +184,12 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.JPY,
-            Currency.USD,
+            Currency.JPY(),
+            Currency.USD(),
             PriceType.BID,
             bid_rates,
-            ask_rates)
+            ask_rates,
+        )
 
         # Assert
         self.assertEqual(0.009082652134423252, result)
@@ -206,15 +207,15 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result1 = converter.get_rate(
-            Currency.JPY,
-            Currency.AUD,
+            Currency.JPY(),
+            Currency.AUD(),
             PriceType.BID,
             bid_rates,
             ask_rates)
 
         result2 = converter.get_rate(
-            Currency.AUD,
-            Currency.JPY,
+            Currency.AUD(),
+            Currency.JPY(),
             PriceType.ASK,
             bid_rates,
             ask_rates)
@@ -231,8 +232,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.JPY,
-            Currency.USD,
+            Currency.JPY(),
+            Currency.USD(),
             PriceType.MID,
             bid_rates,
             ask_rates)
@@ -248,8 +249,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.USD,
-            Currency.JPY,
+            Currency.USD(),
+            Currency.JPY(),
             PriceType.MID,
             bid_rates,
             ask_rates)

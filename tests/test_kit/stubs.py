@@ -25,9 +25,9 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
@@ -232,12 +232,12 @@ class TestStubs:
 
         return AccountState(
             account_id,
-            Currency.USD,
-            Money("1000000.00", Currency.USD),
-            Money("1000000.00", Currency.USD),
-            Money("0", Currency.USD),
-            Money("0", Currency.USD),
-            Money("0", Currency.USD),
+            Currency.USD(),
+            Money(1000000.00, Currency.USD()),
+            Money(1000000.00, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
+            Money(0, Currency.USD()),
             Decimal(),
             "N",
             uuid4(),
@@ -280,13 +280,16 @@ class TestStubs:
     def event_order_filled(
             order,
             position_id=None,
+            strategy_id=None,
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
             commission=0,
     ) -> OrderFilled:
         if position_id is None:
-            position_id = PositionId(order.cl_ord_id.value.replace('P', 'T'))
+            position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))
+        if strategy_id is None:
+            strategy_id = StrategyId("S", "NULL")
         if fill_price is None:
             fill_price = Price("1.00000")
         if filled_qty is None:
@@ -298,17 +301,18 @@ class TestStubs:
             TestStubs.account_id(),
             order.cl_ord_id,
             OrderId("1"),
-            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
+            ExecutionId(order.cl_ord_id.value.replace("O", "E")),
             position_id,
+            strategy_id,
             order.symbol,
             order.side,
             filled_qty,
             leaves_qty,
             order.price if fill_price is None else fill_price,
-            Money(commission, Currency.USD),
+            Money(commission, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.USD,  # Stub event
-            Currency.USD,  # Stub event
+            Currency.USD(),  # Stub event
+            Currency.USD(),  # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -362,7 +366,6 @@ class TestStubs:
         return PositionOpened(
             position,
             position.last_event(),
-            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -372,7 +375,6 @@ class TestStubs:
         return PositionModified(
             position,
             position.last_event(),
-            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -382,7 +384,6 @@ class TestStubs:
         return PositionClosed(
             position,
             position.last_event(),
-            StrategyId("SCALPER", "001"),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -398,6 +399,7 @@ class TestStubs:
             generator.generate(TestStubs.symbol_audusd_fxcm())
 
         order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=LiveClock(),
@@ -422,10 +424,12 @@ class TestStubs:
 
     @staticmethod
     def position_which_is_closed(position_id, close_price=None) -> Position:
+
         if close_price is None:
             close_price = Price("1.0001")
 
         order_factory = OrderFactory(
+            strategy_id=StrategyId("S", "001"),
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
         )
@@ -442,15 +446,16 @@ class TestStubs:
             OrderId("1"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
             position_id,
+            StrategyId("S", "1"),
             order.symbol,
             order.side,
             order.quantity,
             Quantity(),
             close_price,
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.USD,  # Stub event
-            Currency.USD,  # Stub event
+            Currency.USD(),  # Stub event
+            Currency.USD(),  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),
@@ -462,15 +467,16 @@ class TestStubs:
             OrderId("2"),
             ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
             position_id,
+            StrategyId("S", "1"),
             order.symbol,
             OrderSide.BUY,
             order.quantity,
             Quantity(),
             close_price,
-            Money("0", Currency.USD),
+            Money(0, Currency.USD()),
             LiquiditySide.TAKER,
-            Currency.USD,  # Stub event
-            Currency.USD,  # Stub event
+            Currency.USD(),  # Stub event
+            Currency.USD(),  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),

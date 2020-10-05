@@ -20,10 +20,11 @@ cdef class InvalidStateTrigger(Exception):
 
 cdef class FiniteStateMachine:
     cdef dict _state_transition_table
+    cdef object _trigger_parser
     cdef object _state_parser
 
-    cdef readonly object state
+    cdef readonly int state
 
-    cpdef void trigger(self, str trigger) except *
-    cpdef void force_set(self, object state) except *
+    cpdef void trigger(self, int trigger) except *
+    cpdef void force_set(self, int state) except *
     cpdef str state_as_string(self)

@@ -16,11 +16,11 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.c_enums.currency cimport Currency
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -53,6 +53,7 @@ cdef class OrderEvent(Event):
 
 
 cdef class OrderInitialized(OrderEvent):
+    cdef readonly StrategyId strategy_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly OrderType order_type
@@ -131,6 +132,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly OrderId order_id
     cdef readonly ExecutionId execution_id
     cdef readonly PositionId position_id
+    cdef readonly StrategyId strategy_id
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_qty
@@ -143,13 +145,12 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly datetime execution_time
     cdef readonly bint is_partial_fill
 
-    cdef OrderFilled clone(self, PositionId new_position_id)
+    cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id)
 
 
 cdef class PositionEvent(Event):
     cdef readonly Position position
     cdef readonly OrderFilled order_fill
-    cdef readonly StrategyId strategy_id
 
 
 cdef class PositionOpened(PositionEvent):
