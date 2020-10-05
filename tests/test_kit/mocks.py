@@ -27,8 +27,7 @@ class ObjectStorer:
         self._store = []
 
     def get_store(self) -> list:
-        """
-        Return the list or stored objects.
+        """Return the list or stored objects.
 
         Returns
         -------
@@ -38,8 +37,7 @@ class ObjectStorer:
         return self._store
 
     def store(self, obj):
-        """
-        Store the given object.
+        """Store the given object.
 
         Parameters
         ----------
@@ -51,8 +49,7 @@ class ObjectStorer:
         self._store.append(obj)
 
     def store_2(self, obj1, obj2):
-        """
-        Store the given objects as a tuple.
+        """Store the given objects as a tuple.
 
         Parameters
         ----------

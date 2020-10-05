@@ -38,23 +38,27 @@ class ObjectTests:
 
     @staticmethod
     def build_bar_no_checking():
-        bar = Bar(Price("1.00001"),  # noqa
-                  Price("1.00004"),
-                  Price("1.00002"),
-                  Price("1.00003"),
-                  Quantity("100000"),
-                  UNIX_EPOCH,
-                  check=False)
+        Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity("100000"),
+            UNIX_EPOCH,
+            check=False,
+        )
 
     @staticmethod
     def build_bar_with_checking():
-        bar = Bar(Price("1.00001"),  # noqa
-                  Price("1.00004"),
-                  Price("1.00002"),
-                  Price("1.00003"),
-                  Quantity("100000"),
-                  UNIX_EPOCH,
-                  check=True)
+        Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity("100000"),
+            UNIX_EPOCH,
+            check=True,
+        )
 
 
 class ObjectPerformanceTests(unittest.TestCase):
