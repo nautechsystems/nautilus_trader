@@ -24,9 +24,7 @@ _MICROSECONDS_IN_SECOND = 1000000
 
 
 def get_size_of(obj):
-    """
-    Return the size of the given object in memory.
-    """
+    """Return the size of the given object in memory."""
     marked = {id(obj)}
     obj_q = [obj]
     size = 0
@@ -57,14 +55,25 @@ class PerformanceHarness:
 
     @staticmethod
     def profile_function(function, runs, iterations, print_output=True) -> float:
-        """
+        """Profile the given function.
+
         Return the minimum time in seconds taken to call the given function iteration times.
 
-        :param function: The function call to profile.
-        :param runs: The number of runs for the test.
-        :param iterations: The number of call iterations per run.
-        :param print_output: If the output should be printed to the console.
-        :return: float.
+        Parameters
+        ----------
+        function : Callable
+            The function call to profile.
+        runs : int
+            The number of runs for the test.
+        iterations : int
+            The number of call iterations per run.
+        print_output : bool
+            If the output should be printed to the console.
+
+        Returns
+        -------
+        float
+
         """
         results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
         minimum = min(results)
@@ -80,12 +89,19 @@ class PerformanceHarness:
 
     @staticmethod
     def object_size(x, print_output=True) -> int:
-        """
-        Return the object size in bytes and optionally print the message.
+        """Return the object size in bytes and optionally print the message.
 
-        :param x: The object to check.
-        :param print_output: If the output should be printed to the console.
-        :return: int.
+        Parameters
+        ----------
+        x : object
+            The object to check.
+        print_output : bool
+            If the output should be printed to the console.
+
+        Returns
+        -------
+        int
+
         """
         size = get_size_of(x)
 
