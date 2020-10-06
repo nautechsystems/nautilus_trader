@@ -165,9 +165,11 @@ class ObjectTests(unittest.TestCase):
         price1 = Price("0.500")
         price2 = Price("1.000")
         price3 = Price("1.500")
+        price4 = Price.from_float(1.2, 1)
 
         # Act
         # Assert
+        self.assertTrue(price4 == price4)
         self.assertTrue(price1 < price2)
         self.assertTrue(price1 <= price2)
         self.assertTrue(price2 <= price2)
@@ -301,44 +303,44 @@ class ObjectTests(unittest.TestCase):
         self.assertTrue(money3 > money2)
         self.assertTrue(money3 >= money3)
 
-    # def test_money_arithmetic_operators(self):
-    #     # Arrange
-    #     # Act
-    #     result1 = Money("1.00", Currency.USD) + 1.00
-    #     result2 = Money("1.00", Currency.USD)
-    #     result3 = Money("1.00", Currency.USD) + 1
-    #
-    #     result4 = Money("3.00", Currency.USD) - 1.00
-    #     result5 = Money("3.00", Currency.USD)
-    #     result6 = Money("3.00", Currency.USD) - 1
-    #
-    #     result7 = Money("1.00", Currency.USD) / 2.0
-    #     result8 = Money("1.00", Currency.USD) / 2
-    #
-    #     result9 = Money("1.00", Currency.USD) * 2.00
-    #     result10 = Money("1.00", Currency.USD) * 2
-    #
-    #     # Assert
-    #     self.assertEqual(float, type(result1))
-    #     self.assertEqual(float(2.00), result1)
-    #     self.assertEqual(Money, type(result2))
-    #     self.assertEqual(float(2.00), result2)
-    #     self.assertEqual(float, type(result3))
-    #     self.assertEqual(float(2.00), result3)
-    #
-    #     self.assertEqual(float, type(result4))
-    #     self.assertEqual(float(2.00), result4)
-    #     self.assertEqual(Money, type(result5))
-    #     self.assertEqual(Money(2.00, 2, Currency.USD), result5)
-    #     self.assertEqual(float, type(result6))
-    #     self.assertEqual(float(2.00), result6)
-    #
-    #     self.assertEqual(float, type(result7))
-    #     self.assertEqual(float(0.50), result7)
-    #     self.assertEqual(float, type(result8))
-    #     self.assertEqual(float(0.50), result8)
-    #     self.assertEqual(float, type(result9))
-    #     self.assertEqual(float(2.00), result9)
-    #
-    #     self.assertEqual(float, type(result10))
-    #     self.assertEqual(float(2), result10)
+    def test_money_arithmetic_operators(self):
+        # Arrange
+        # Act
+        result1 = Money(1.00, Currency.USD()) + 1.00
+        result2 = Money("1.00", Currency.USD())
+        # result3 = Money(1.00, Currency.USD()) + 1
+        #
+        # result4 = Money(3.00, Currency.USD()) - 1.00
+        # result5 = Money(3.00, Currency.USD())
+        # result6 = Money(3.00, Currency.USD()) - 1
+        #
+        # result7 = Money(1.00, Currency.USD()) / 2.0
+        # result8 = Money(1.00, Currency.USD()) / 2
+        #
+        # result9 = Money(1.00, Currency.USD()) * 2.00
+        # result10 = Money(1.00, Currency.USD()) * 2
+
+        # Assert
+        self.assertEqual(float, type(result1))
+        self.assertEqual(float(2.00), result1)
+        self.assertEqual(Money, type(result2))
+        # self.assertEqual(2., result2)
+        # self.assertEqual(float, type(result3))
+        # self.assertEqual(float(2.00), result3)
+        #
+        # self.assertEqual(float, type(result4))
+        # self.assertEqual(float(2.00), result4)
+        # self.assertEqual(Money, type(result5))
+        # self.assertEqual(Money(2.00, 2, Currency.USD), result5)
+        # self.assertEqual(float, type(result6))
+        # self.assertEqual(float(2.00), result6)
+        #
+        # self.assertEqual(float, type(result7))
+        # self.assertEqual(float(0.50), result7)
+        # self.assertEqual(float, type(result8))
+        # self.assertEqual(float(0.50), result8)
+        # self.assertEqual(float, type(result9))
+        # self.assertEqual(float(2.00), result9)
+        #
+        # self.assertEqual(float, type(result10))
+        # self.assertEqual(float(2), result10)

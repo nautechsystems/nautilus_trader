@@ -315,7 +315,6 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(9, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[8], OrderModified))
 
-    # TODO: Fix failing test - market not updating inside SimulatedMarket
     def test_submit_market_order_with_slippage_fill_model_slips_order(self):
         # Arrange
         fill_model = FillModel(
@@ -374,8 +373,7 @@ class SimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, strategy.object_storer.count)
         self.assertTrue(isinstance(strategy.object_storer.get_store()[3], OrderFilled))
-        # TODO: Price equality false?
-        # self.assertEqual(Price("90.004"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
+        self.assertEqual("90.004", str(self.exec_engine.cache.order(order.cl_ord_id).avg_price))
 
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange
@@ -476,8 +474,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         position = self.exec_engine.cache.positions_open()[0]
         expected_commission = position.quantity * commission_percent
-        account_id = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
-        account = self.exec_engine.cache.account(account_id)
+        account = self.exec_engine.cache.first_account(Venue('FXCM'))
 
         # Assert
         self.assertEqual(account_event1.commission.as_double(), order.filled_qty * commission_percent)

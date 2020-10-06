@@ -32,7 +32,7 @@ cdef class ExecutionCacheReadOnly:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef AccountId account_for_venue(self, Venue venue):
+    cpdef Account first_account(self, Venue venue):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

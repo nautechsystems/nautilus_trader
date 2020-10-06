@@ -635,7 +635,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         return self._cached_accounts.get(account_id)
 
-    cpdef AccountId account_for_venue(self, Venue venue):
+    cpdef Account first_account(self, Venue venue):
         """
         Return the first account for the given venue (if found).
 
@@ -651,11 +651,11 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Condition.not_none(venue, "venue")
 
-        cdef list accounts = self._index_venue_accounts.get(venue)
-        if not accounts:
+        cdef list account_ids = self._index_venue_accounts.get(venue)
+        if not account_ids:
             return None
 
-        return accounts[0]
+        return self._cached_accounts.get(account_ids[0])
 
     cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
         cdef list positions = self.positions_open(symbol, strategy_id)

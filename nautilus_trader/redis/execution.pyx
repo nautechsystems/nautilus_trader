@@ -47,7 +47,8 @@ cdef str _STRATEGIES = 'Strategies'
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
     """
-    Provides an execution cache utilizing Redis.
+    Provides an execution database backed by Redis.
+
     """
 
     def __init__(
