@@ -16,12 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.market cimport CommissionModel
-from nautilus_trader.common.market cimport ExchangeRateCalculator
-from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -51,6 +47,10 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
+from nautilus_trader.trading.commission cimport CommissionModel
 
 
 cdef class SimulatedMarket:

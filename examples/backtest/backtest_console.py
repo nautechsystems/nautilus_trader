@@ -24,13 +24,13 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.market import GenericCommissionModel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.commission import GenericCommissionModel
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 

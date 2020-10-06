@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.market cimport ExchangeRateCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -32,6 +31,7 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.constants cimport *
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
