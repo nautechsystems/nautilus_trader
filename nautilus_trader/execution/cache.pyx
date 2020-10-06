@@ -129,7 +129,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._log.info(f"Indexes built.")
 
     cpdef void integrity_check(self) except *:
-        pass  # TODO
+        pass  # TODO: Implement
 
     cdef void _build_index_venue_accounts(self) except *:
         cdef AccountId account_id
