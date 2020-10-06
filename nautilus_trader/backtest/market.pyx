@@ -215,7 +215,6 @@ cdef class SimulatedMarket:
         self.exec_client = client
 
         cdef AccountState initial_event = self._generate_account_reset_event()
-
         self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
 
@@ -422,7 +421,8 @@ cdef class SimulatedMarket:
             self.account_balance = self.account_balance.add(pnl)
             self.account_balance_activity_day = self.account_balance_activity_day.add(pnl)
 
-            # Generate event -> send to ExecutionClient
+            account_state = self._generate_account_event()
+            self.account.apply(account_state)
             self.exec_client.handle_event(self._generate_account_event())
 
     cpdef Money calculate_pnl(
@@ -496,8 +496,9 @@ cdef class SimulatedMarket:
             self.account_balance = self.account_balance.add(rollover_final)
             self.account_balance_activity_day = self.account_balance_activity_day.add(rollover_final)
 
-            # Generate event -> send to ExecutionClient
-            self.exec_client.handle_event(self._generate_account_event())
+            account_state = self._generate_account_event()
+            self.account.apply(account_state)
+            self.exec_client.handle_event(account_state)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
@@ -664,7 +665,7 @@ cdef class SimulatedMarket:
     cdef AccountState _generate_account_event(self):
         return AccountState(
             account_id=self.account.id,
-            currency=self.account.currency,
+            currency=self.account_currency,
             balance=self.account_balance,
             margin_balance=self.account_balance,    # TODO: Placeholder
             margin_available=self.account_balance,  # TODO: Placeholder

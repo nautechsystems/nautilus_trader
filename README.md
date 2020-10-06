@@ -40,15 +40,12 @@ Note that initial compilation may take several minutes due to the quantity of ex
 
 ## Features
 
-- **Fast:** C level speed and type safety provided through Cython.
-- **Reliable:** Redis backed performant state persistence for the live `ExecutionEngine`.
+- **Fast:** C level speed and type safety provided through Cython. Asynchronous networking with uvloop.
+- **Reliable:** Redis or Postgres backed performant state persistence for the live `ExecutionEngine`.
 - **Flexible:** Any FIX or REST API can be integrated into the platform, with no changes to your strategy scripts.
-- **Distributed:** Pluggable into distributed system architectures due to the efficient message passing API.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
+- **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-- **Teams Support:** Support for teams with many trader machines. Suitable for professional algorithmic traders or hedge funds.
-- **Cloud Enabled:** Flexible deployment schemas - run with data and execution services embedded on a single machine, or deploy across many machines in a networked or cloud environment.
-- **Encryption:** Built-in Curve encryption support with ZeroMQ. Run trading machines remote from co-located data and execution services.
 
 ## Values
 

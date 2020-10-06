@@ -101,9 +101,6 @@ cdef class PerformanceAnalyzer:
             self._account_currency = event.currency
             return  # No transaction to handle
 
-        # if self._account_balance == event.balance:  # TODO: Why was this here?
-        #     return  # No transaction to handle
-
         # Calculate transaction data
         cdef Money pnl = Money(event.balance - self._account_balance, self._account_currency)
         self._account_balance = event.balance
@@ -112,7 +109,7 @@ cdef class PerformanceAnalyzer:
         if event.timestamp not in self._transactions:
             self._transactions.loc[event.timestamp] = 0
 
-        self._transactions.loc[event.timestamp]["capital"] = float(self._account_balance)
+        self._transactions.loc[event.timestamp]["balance"] = float(self._account_balance)
         self._transactions.loc[event.timestamp]["pnl"] = float(pnl)
 
     cpdef void add_return(self, datetime timestamp, double value) except *:
@@ -252,9 +249,9 @@ cdef class PerformanceAnalyzer:
             return 0.0
         cdef double current = self._account_balance
         cdef double starting = self._account_starting_balance.as_double()
-        cdef double difference = float(self._account_balance - self._account_starting_balance)
+        cdef double difference = current - starting
 
-        return (self._account_balance - self._account_starting_balance / self._account_starting_balance) * 100
+        return (difference / starting) * 100
 
     cpdef double max_winner(self):
         """
