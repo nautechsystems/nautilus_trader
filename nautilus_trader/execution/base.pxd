@@ -28,7 +28,7 @@ cdef class ExecutionCacheReadOnly:
 
     # -- General queries -------------------------------------------------------
     cpdef Account account(self, AccountId account_id)
-    cpdef AccountId account_for_venue(self, Venue venue)
+    cpdef Account first_account(self, Venue venue)
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_flat(self, Symbol symbol=*, StrategyId strategy_id=*) except *

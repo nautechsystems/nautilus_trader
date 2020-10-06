@@ -13,22 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
-
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.serialization.base cimport CommandSerializer
+from nautilus_trader.serialization.base cimport EventSerializer
 
 
-__author__ = "Nautech Systems"
+cdef class RedisExecutionDatabase(ExecutionDatabase):
+    cdef readonly str key_trader
+    cdef readonly str key_accounts
+    cdef readonly str key_orders
+    cdef readonly str key_positions
+    cdef readonly str key_strategies
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 74
-_PATCH_VERSION = 2
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    cdef CommandSerializer _command_serializer
+    cdef EventSerializer _event_serializer
+    cdef object _redis

@@ -1389,8 +1389,8 @@ cdef class TradingStrategy:
             # Null object pattern
             position_id = PositionId.null()
 
-        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(order.symbol.venue)
-        if account_id is None:
+        cdef Account account = self._exec_engine.cache.first_account(order.symbol.venue)
+        if account is None:
             self.log.error(f"Cannot submit {order} "
                            f"(no account registered for {order.symbol.venue}).")
             return  # Cannot send command
@@ -1398,7 +1398,7 @@ cdef class TradingStrategy:
         cdef SubmitOrder command = SubmitOrder(
             order.symbol.venue,
             self.trader_id,
-            account_id,
+            account.id,
             self.id,
             position_id,
             order,
@@ -1426,8 +1426,8 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(bracket_order.entry.symbol.venue)
-        if account_id is None:
+        cdef Account account = self._exec_engine.cache.first_account(bracket_order.entry.symbol.venue)
+        if account is None:
             self.log.error(f"Cannot submit {bracket_order}"
                            f"(no account registered for {bracket_order.entry.symbol.venue}).")
             return  # Cannot send command
@@ -1435,7 +1435,7 @@ cdef class TradingStrategy:
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             bracket_order.entry.symbol.venue,
             self.trader_id,
-            account_id,
+            account.id,
             self.id,
             bracket_order,
             self.uuid_factory.generate(),
@@ -1489,8 +1489,8 @@ cdef class TradingStrategy:
                            "(both new_quantity and new_price were None).")
             return
 
-        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(order.symbol.venue)
-        if account_id is None:
+        cdef Account account = self._exec_engine.cache.first_account(order.symbol.venue)
+        if account.id is None:
             self.log.error(f"Cannot modify {order} "
                            f"(no account registered for {order.symbol.venue}).")
             return  # Cannot send command
@@ -1498,7 +1498,7 @@ cdef class TradingStrategy:
         cdef ModifyOrder command = ModifyOrder(
             order.symbol.venue,
             self.trader_id,
-            account_id,
+            account.id,
             order.cl_ord_id,
             quantity,
             price,
@@ -1523,8 +1523,8 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(order.symbol.venue)
-        if account_id is None:
+        cdef Account account = self._exec_engine.cache.first_account(order.symbol.venue)
+        if account is None:
             self.log.error(f"Cannot cancel {order} "
                            f"(no account registered for {order.symbol.venue}).")
             return  # Cannot send command
@@ -1532,7 +1532,7 @@ cdef class TradingStrategy:
         cdef CancelOrder command = CancelOrder(
             order.symbol.venue,
             self.trader_id,
-            account_id,
+            account.id,
             order.cl_ord_id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -1577,8 +1577,8 @@ cdef class TradingStrategy:
                              f"(the position is already closed).")
             return  # Invalid command
 
-        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(position.symbol.venue)
-        if account_id is None:
+        cdef Account account = self._exec_engine.cache.first_account(position.symbol.venue)
+        if account is None:
             self.log.error(f"Cannot flatten {position} "
                            f"(no account registered for {position.symbol.venue}).")
             return  # Cannot send command
@@ -1594,7 +1594,7 @@ cdef class TradingStrategy:
         cdef SubmitOrder submit_order = SubmitOrder(
             position.symbol.venue,
             self.trader_id,
-            account_id,
+            account.id,
             self.id,
             position.id,
             order,
