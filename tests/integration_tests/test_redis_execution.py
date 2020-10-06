@@ -56,13 +56,17 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             logger,
         )
 
+        config = {
+            'host': 'localhost',
+            'port': 6379
+        }
+
         self.database = RedisExecutionDatabase(
             trader_id=self.trader_id,
             logger=logger,
-            host="localhost",
-            port=6379,
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
+            config=config
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
@@ -82,7 +86,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertEqual("Trader-TESTER-000:Positions:", self.database.key_positions)
         self.assertEqual("Trader-TESTER-000:Strategies:", self.database.key_strategies)
 
-    # TODO: Investigate why str is deserializing to a list
+    # TODO: AccountState not finalized (no serialization yet)
     # def test_add_account(self):
     #     # Arrange
     #     event = TestStubs.account_event()
