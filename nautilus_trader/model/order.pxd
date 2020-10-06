@@ -77,7 +77,6 @@ cdef class Order:
     cdef readonly Decimal slippage
     cdef readonly UUID init_id
 
-    cpdef bint equals(self, Order other) except *
     cpdef OrderState state(self)
     cpdef Event last_event(self)
     cpdef list get_execution_ids(self)
@@ -135,5 +134,3 @@ cdef class BracketOrder:
     cdef readonly PassiveOrder take_profit
     cdef readonly bint has_take_profit
     cdef readonly datetime timestamp
-
-    cpdef bint equals(self, BracketOrder other) except *

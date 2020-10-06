@@ -37,7 +37,6 @@ cdef class Trader:
     cdef FiniteStateMachine _fsm
 
     cdef readonly TraderId id
-    cdef readonly AccountId account_id
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
     cdef readonly list strategies
@@ -52,12 +51,10 @@ cdef class Trader:
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
 
-    cpdef void account_inquiry(self) except *
-
     cpdef ComponentState state(self)
     cpdef str state_as_string(self)
     cpdef dict strategy_states(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)
     cpdef object generate_positions_report(self)
-    cpdef object generate_account_report(self)
+    cpdef object generate_account_report(self, AccountId account_id)

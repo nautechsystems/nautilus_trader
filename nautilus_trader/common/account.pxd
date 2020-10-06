@@ -17,7 +17,6 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 
 
@@ -27,18 +26,12 @@ cdef class Account:
     cdef readonly AccountId id
     cdef readonly AccountType account_type
     cdef readonly Currency currency
-    cdef readonly Money cash_balance
-    cdef readonly Money cash_start_day
-    cdef readonly Money cash_activity_day
-    cdef readonly Money margin_used_liquidation
-    cdef readonly Money margin_used_maintenance
-    cdef readonly Decimal margin_ratio
-    cdef readonly str margin_call_status
+    cdef readonly Money balance
+    cdef readonly Money margin_balance
+    cdef readonly Money margin_available
     cdef readonly free_equity
 
+    cpdef int event_count(self)
     cpdef list get_events(self)
     cpdef AccountState last_event(self)
-    cpdef int event_count(self)
     cpdef void apply(self, AccountState event) except *
-
-    cdef Money _calculate_free_equity(self)

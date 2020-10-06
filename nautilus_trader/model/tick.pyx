@@ -54,10 +54,6 @@ cdef class Tick:
         self.symbol = symbol
         self.timestamp = timestamp
 
-    cpdef bint equals(self, Tick other) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef str to_string(self):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -80,7 +76,7 @@ cdef class Tick:
         bool
 
         """
-        return self.equals(other)
+        return self.timestamp == other.timestamp
 
     def __ne__(self, Tick other) -> bool:
         """
@@ -96,7 +92,7 @@ cdef class Tick:
         bool
 
         """
-        return not self.equals(other)
+        return other.timestamp != other.timestamp
 
     def __lt__(self, Tick other) -> bool:
         """
@@ -347,27 +343,6 @@ cdef class QuoteTick(Tick):
         """
         return QuoteTick.from_serializable_string(symbol, values)
 
-    cpdef bint equals(self, Tick other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.symbol.equals(other.symbol) \
-            and self.bid == other.bid \
-            and self.ask == other.ask \
-            and self.bid_size == other.bid_size \
-            and self.ask_size == other.ask_size \
-            and self.timestamp == other.timestamp
-
     cpdef str to_string(self):
         """
         Returns a string representation of the object.
@@ -499,27 +474,6 @@ cdef class TradeTick(Tick):
 
         """
         return TradeTick.from_serializable_string(symbol, values)
-
-    cpdef bint equals(self, Tick other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.symbol == other.symbol \
-            and self.price == other.price \
-            and self.size == other.size \
-            and self.maker == other.maker \
-            and self.match_id == other.match_id \
-            and self.timestamp == other.timestamp
 
     cpdef str to_string(self):
         """

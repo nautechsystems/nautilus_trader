@@ -45,8 +45,8 @@ cdef class Position:
         self._fill_prices = {}                      # type: {ClientOrderId, Price}
         self._buy_quantities = {}                   # type: {ClientOrderId, Quantity}
         self._sell_quantities = {}                  # type: {ClientOrderId, Quantity}
-        self._buy_quantity = Quantity()        # Initialized in _update()
-        self._sell_quantity = Quantity()       # Initialized in _update()
+        self._buy_quantity = Quantity()             # Initialized in _update()
+        self._sell_quantity = Quantity()            # Initialized in _update()
         self._relative_quantity = 0.0               # Initialized in _update()
         self._qty_precision = event.filled_qty.precision
 
@@ -59,9 +59,9 @@ cdef class Position:
         # Properties
         self.symbol = event.symbol
         self.entry = event.order_side
-        self.side = PositionSide.UNDEFINED    # Initialized in _update()
-        self.quantity = Quantity()       # Initialized in _update()
-        self.peak_quantity = Quantity()  # Initialized in _update()
+        self.side = PositionSide.UNDEFINED  # Initialized in _update()
+        self.quantity = Quantity()          # Initialized in _update()
+        self.peak_quantity = Quantity()     # Initialized in _update()
         self.base_currency = event.base_currency
         self.quote_currency = event.quote_currency
         self.timestamp = event.execution_time
@@ -92,7 +92,7 @@ cdef class Position:
         bool
 
         """
-        return self.equals(other)
+        return self.id == other.id
 
     def __ne__(self, Position other) -> bool:
         """
@@ -108,7 +108,18 @@ cdef class Position:
         bool
 
         """
-        return not self.equals(other)
+        return self.id != other.id
+
+    def __hash__(self) -> int:
+        """
+        Return the hash code of this object.
+
+        Returns
+        -------
+        int
+
+        """
+        return hash(self.id.value)
 
     def __str__(self) -> str:
         """
@@ -132,22 +143,6 @@ cdef class Position:
 
         """
         return f"<{str(self)} object at {id(self)}>"
-
-    cpdef bint equals(self, Position other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.id.equals(other.id)
 
     cpdef str to_string(self):
         """

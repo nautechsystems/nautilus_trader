@@ -234,7 +234,7 @@ cdef class EMACross(TradingStrategy):
 
         Notes
         -----
-        "OrderIdCount' is a reserved key for the returned state dictionary.
+        'OrderIdCount' is a reserved key for the returned state dictionary.
 
         """
         return {}

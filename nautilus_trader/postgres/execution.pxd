@@ -13,12 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cdef class ValidString:
-    cdef readonly str value
-
-    cpdef str to_string(self, bint with_class=*)
+from nautilus_trader.execution.database cimport ExecutionDatabase
+from nautilus_trader.serialization.base cimport CommandSerializer
+from nautilus_trader.serialization.base cimport EventSerializer
 
 
-cdef class Identifier(ValidString):
-    cdef readonly str id_type
+cdef class PostgresExecutionDatabase(ExecutionDatabase):
+    cdef readonly str key_trader
+    cdef readonly str key_accounts
+    cdef readonly str key_orders
+    cdef readonly str key_positions
+    cdef readonly str key_strategies
+
+    cdef CommandSerializer _command_serializer
+    cdef EventSerializer _event_serializer
+    cdef object _postgres

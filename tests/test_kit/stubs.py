@@ -223,7 +223,7 @@ class TestStubs:
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId("0", "0", AccountType.SIMULATED)
+        return AccountId("FXCM", "000", AccountType.SIMULATED)
 
     @staticmethod
     def account_event(account_id=None) -> AccountState:
@@ -235,11 +235,7 @@ class TestStubs:
             Currency.USD(),
             Money(1000000.00, Currency.USD()),
             Money(1000000.00, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Decimal(),
-            "N",
+            Money(1000000.00, Currency.USD()),
             uuid4(),
             UNIX_EPOCH,
         )

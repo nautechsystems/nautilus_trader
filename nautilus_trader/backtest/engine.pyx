@@ -88,11 +88,6 @@ cdef class BacktestEngine:
             The optional initial fill model for the backtest engine,
             (if None then no probabilistic fills).
 
-        Raises
-        ------
-        TypeError
-            If strategies contains a type other than TradingStrategy.
-
         """
         if config is None:
             config = BacktestConfig()
@@ -184,8 +179,6 @@ cdef class BacktestEngine:
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
-            account_id=self.account_id,
             database=exec_db,
             portfolio=self.portfolio,
             clock=self.test_clock,
@@ -221,7 +214,6 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=self.trader_id,
-            account_id=self.account_id,
             strategies=strategies,
             data_engine=self.data_engine,
             exec_engine=self.exec_engine,
@@ -248,17 +240,28 @@ cdef class BacktestEngine:
     ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
-        Note: If start datetime is None will run from the start of the data.
-        Note: If stop datetime is None will run to the end of the data.
 
-        :param start: The optional start datetime (UTC) for the backtest run.
-        :param stop: The optional stop datetime (UTC) for the backtest run.
-        :param fill_model: The optional fill model change for the backtest run (if None will use previous).
-        :param strategies: The optional strategies change for the backtest run (if None will use previous).
-        :param print_log_store: If the log store should be printed at the end of the run.
-        :raises: ValueError: If the stop is >= the start datetime.
-        :raises: ValueError: If the fill_model is a type other than FillModel or None.
-        :raises: ValueError: If the strategies contains a type other than TradingStrategy.
+        If start datetime is None engine will run from the start of the data.
+        If stop datetime is None engine will run to the end of the data.
+
+        Parameters
+        ----------
+        start : datetime
+            The optional start datetime (UTC) for the backtest run.
+        stop : datetime
+            The optional stop datetime (UTC) for the backtest run.
+        fill_model : FillModel
+            The optional fill model change for the backtest run (if None will use previous).
+        strategies : list
+            The optional strategies change for the backtest run (if None will use previous).
+        print_log_store : bool
+            If the log store should be printed at the end of the run.
+
+        Raises
+        ------
+        ValueError
+            If the stop is >= the start datetime.
+
         """
         # Setup start datetime
         if start is None:
@@ -324,7 +327,7 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_engine.has_data:
             tick = self.data_engine.generate_tick()
-            self.advance_time(tick.timestamp)
+            self._advance_time(tick.timestamp)
             self.market.process_tick(tick)
             self.data_engine.process_tick(tick)
             self.iteration += 1
@@ -337,7 +340,7 @@ cdef class BacktestEngine:
         if print_log_store:
             self.print_log_store()
 
-    cpdef void advance_time(self, datetime timestamp) except *:
+    cdef void _advance_time(self, datetime timestamp) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: [TimeEventHandler]
@@ -352,13 +355,18 @@ cdef class BacktestEngine:
         """
         Return the store of log message strings for the test logger.
 
-        :return List[str].
+
+        Returns
+        -------
+        List[str]
+
         """
         return self.test_logger.get_log_store()
 
     cpdef void print_log_store(self) except *:
         """
         Print the contents of the test loggers store to the console.
+
         """
         self.log.info("")
         self.log.info("=================================================================")
@@ -377,12 +385,6 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        The following components are reset;
-
-        - DataClient
-        - ExecutionEngine
-        - ExecutionClient
-        - Trader (including all strategies)
         """
         self.log.debug(f"Resetting...")
 
@@ -401,6 +403,7 @@ cdef class BacktestEngine:
     cpdef void dispose(self) except *:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
+
         """
         self.trader.dispose()
 
@@ -462,7 +465,7 @@ cdef class BacktestEngine:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.market.account_capital.to_string_formatted(), account_starting_length)
+        account_balance_ending = pad_string(self.market.account_balance.to_string_formatted(), account_starting_length)
         commissions_total = pad_string(self.market.total_commissions.to_string_formatted(), account_starting_length)
         rollover_interest = pad_string(self.market.total_rollover.to_string_formatted(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
@@ -476,7 +479,7 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Calculating statistics...")
         self.log.info("")
-        self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.cache.positions())
+        self.analyzer.calculate_statistics(self.market.account, self.exec_engine.cache.positions())
 
-        for statistic in self.analyzer.get_performance_stats_formatted(self.exec_engine.account.currency):
+        for statistic in self.analyzer.get_performance_stats_formatted(self.market.account.currency):
             self.log.info(statistic)

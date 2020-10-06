@@ -27,7 +27,6 @@ cdef class Tick:
     cdef readonly Symbol symbol
     cdef readonly datetime timestamp
 
-    cpdef bint equals(self, Tick other) except *
     cpdef str to_string(self)
     cpdef str to_serializable_string(self)
 

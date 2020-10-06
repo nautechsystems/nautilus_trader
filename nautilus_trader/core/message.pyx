@@ -55,25 +55,6 @@ cdef class Message:
         self.id = identifier
         self.timestamp = timestamp
 
-    cpdef bint equals(self, Message other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        if self.message_type == other.message_type:
-            return self.id == other.id
-        else:
-            return False
-
     def __eq__(self, Message other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -88,7 +69,7 @@ cdef class Message:
         bool
 
         """
-        return self.equals(other)
+        return self.message_type == other.message_type and self.id == other.id
 
     def __ne__(self, Message other) -> bool:
         """
@@ -104,7 +85,7 @@ cdef class Message:
         bool
 
         """
-        return not self.equals(other)
+        return self.message_type != other.message_type or self.id != other.id
 
     def __hash__(self) -> int:
         """

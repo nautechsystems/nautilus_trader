@@ -19,24 +19,17 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Decimal
-from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -278,20 +271,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_add_account(self):
         # Arrange
-        event = AccountState(
-            AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
-            Currency.USD(),
-            Money(1000000, Currency.USD()),
-            Money(1000000, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Decimal(),
-            "N",
-            uuid4(),
-            UNIX_EPOCH,
-        )
-
+        event = TestStubs.account_event()
         account = Account(event)
 
         # Act
@@ -302,21 +282,9 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_update_account(self):
         # Arrange
-        event = AccountState(
-            AccountId.py_from_string("SIMULATED-123456-SIMULATED"),
-            Currency.USD(),
-            Money(1000000, Currency.USD()),
-            Money(1000000, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Decimal(),
-            "N",
-            uuid4(),
-            UNIX_EPOCH,
-        )
-
+        event = TestStubs.account_event()
         account = Account(event)
+
         self.cache.add_account(account)
 
         # Act

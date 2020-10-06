@@ -47,17 +47,17 @@ cdef str _STRATEGIES = 'Strategies'
 
 cdef class RedisExecutionDatabase(ExecutionDatabase):
     """
-    Provides an execution cache utilizing Redis.
+    Provides an execution database backed by Redis.
+
     """
 
     def __init__(
             self,
             TraderId trader_id not None,
             Logger logger not None,
-            str host not None,
-            int port,
             CommandSerializer command_serializer not None,
             EventSerializer event_serializer not None,
+            dict config,
     ):
         """
         Initialize a new instance of the RedisExecutionDatabase class.
@@ -68,10 +68,6 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             The trader identifier for the database.
         logger : Logger
             The logger for the database.
-        host : str
-            The redis host for the cache connection.
-        port : int
-            The redis port for the cache connection.
         command_serializer : CommandSerializer
             The command serializer for cache transactions.
         event_serializer : EventSerializer
@@ -85,6 +81,8 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             If the port is not in range [0, 65535].
 
         """
+        cdef str host = config["host"]
+        cdef int port = int(config["port"])
         Condition.valid_string(host, "host")
         Condition.in_range_int(port, 0, 65535, "port")
         super().__init__(trader_id, logger)

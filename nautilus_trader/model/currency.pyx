@@ -127,7 +127,7 @@ cdef class Currency:
         bool
 
         """
-        return not self.__eq__(other)
+        return not self == other
 
     def __hash__(self) -> int:
         """
