@@ -16,7 +16,6 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -40,6 +39,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

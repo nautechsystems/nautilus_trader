@@ -20,11 +20,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.market cimport CommissionModel
-from nautilus_trader.common.market cimport ExchangeRateCalculator
-from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
@@ -71,6 +67,10 @@ from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
+from nautilus_trader.trading.commission cimport CommissionModel
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 

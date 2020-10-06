@@ -16,16 +16,16 @@
 import datetime
 import unittest
 
-from nautilus_trader.common.market import ExchangeRateCalculator
-from nautilus_trader.common.market import GenericCommissionModel
-from nautilus_trader.common.market import MakerTakerCommissionModel
-from nautilus_trader.common.market import RolloverInterestCalculator
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.trading.calculators import ExchangeRateCalculator
+from nautilus_trader.trading.calculators import RolloverInterestCalculator
+from nautilus_trader.trading.commission import GenericCommissionModel
+from nautilus_trader.trading.commission import MakerTakerCommissionModel
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 

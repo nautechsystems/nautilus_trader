@@ -18,7 +18,6 @@ import unittest
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
@@ -29,6 +28,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
