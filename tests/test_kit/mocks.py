@@ -69,12 +69,20 @@ class MockExecutionClient(ExecutionClient):
     The client will store all received commands in a list.
     """
 
-    def __init__(self, venue, exec_engine, logger):
+    def __init__(
+            self,
+            venue,
+            account_id,
+            exec_engine,
+            logger,
+    ):
         """
         Initialize a new instance of the MockExecutionClient class.
 
         venue : Venue
             The venue for the client.
+        account_id : AccountId
+            The account_id for the client.
         exec_engine : ExecutionEngine
             The execution engine for the component.
         logger : Logger
@@ -83,7 +91,7 @@ class MockExecutionClient(ExecutionClient):
         """
         super().__init__(
             venue,
-            exec_engine.account.id,
+            account_id,
             exec_engine,
             logger,
         )

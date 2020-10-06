@@ -137,7 +137,7 @@ cdef class SimulatedMarket:
         self.generate_position_ids = generate_position_ids
         self.exec_cache = exec_cache
         self.exec_client = None  # Initialized when execution client registered
-        self._account = None     # Initialized when execution client registered
+        self.account = None      # Initialized when execution client registered
 
         self.day_number = 0
         self.rollover_time = None  # Initialized at first rollover
@@ -208,15 +208,21 @@ cdef class SimulatedMarket:
     cpdef void register_client(self, ExecutionClient client) except *:
         """
         Register the given execution client with this market.
+
         """
         Condition.not_none(client, "client")
 
         self.exec_client = client
-        self._account = Account(self.reset_account_event())
+
+        cdef AccountState initial_event = self._generate_account_reset_event()
+
+        self.account = Account(initial_event)
+        self.exec_client.handle_event(initial_event)
 
     cpdef void check_residuals(self) except *:
         """
         Check for any residual objects and log warnings if any are found.
+
         """
         for order_list in self._child_orders.values():
             for order in order_list:
@@ -249,20 +255,6 @@ cdef class SimulatedMarket:
         self._executions_count = 0
 
         self._log.info("Reset.")
-
-    cdef AccountState reset_account_event(self):
-        """
-        Resets the account.
-        """
-        return AccountState(
-            account_id=self.exec_client.account_id,
-            currency=self.account_currency,
-            balance=self.starting_capital,
-            margin_balance=self.starting_capital,
-            margin_available=self.starting_capital,
-            event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now(),
-        )
 
     cpdef datetime time_now(self):
         """
@@ -300,7 +292,7 @@ cdef class SimulatedMarket:
         if self.day_number != time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
-            self.account_balance_start_day = self._account.balance
+            self.account_balance_start_day = self.account.balance
             self.account_balance_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
 
@@ -399,7 +391,7 @@ cdef class SimulatedMarket:
         cdef Instrument instrument = self.instruments[event.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
             from_currency=instrument.quote_currency,
-            to_currency=self._account.currency,
+            to_currency=self.account.currency,
             price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates(),
@@ -483,7 +475,7 @@ cdef class SimulatedMarket:
                     timestamp)
                 exchange_rate = self.exchange_calculator.get_rate(
                     from_currency=instrument.quote_currency,
-                    to_currency=self._account.currency,
+                    to_currency=self.account.currency,
                     price_type=PriceType.MID,
                     bid_rates=self._build_current_bid_rates(),
                     ask_rates=self._build_current_ask_rates(),
@@ -658,10 +650,21 @@ cdef class SimulatedMarket:
         self._executions_count += 1
         return ExecutionId(f"E-{self._executions_count}")
 
+    cdef AccountState _generate_account_reset_event(self):
+        return AccountState(
+            account_id=self.exec_client.account_id,
+            currency=self.account_currency,
+            balance=self.starting_capital,
+            margin_balance=self.starting_capital,
+            margin_available=self.starting_capital,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now(),
+        )
+
     cdef AccountState _generate_account_event(self):
         return AccountState(
-            account_id=self._account.id,
-            currency=self._account.currency,
+            account_id=self.account.id,
+            currency=self.account.currency,
             balance=self.account_balance,
             margin_balance=self.account_balance,    # TODO: Placeholder
             margin_available=self.account_balance,  # TODO: Placeholder
@@ -684,7 +687,7 @@ cdef class SimulatedMarket:
     cdef void _submit_order(self, Order order) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
@@ -697,7 +700,7 @@ cdef class SimulatedMarket:
         # Generate event
 
         cdef OrderAccepted accepted = OrderAccepted(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             self._generate_order_id(order.symbol),
             self._clock.utc_now(),
@@ -714,7 +717,7 @@ cdef class SimulatedMarket:
 
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             self._clock.utc_now(),
             reason,
@@ -733,7 +736,7 @@ cdef class SimulatedMarket:
             str reason) except *:
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
-            self._account.id,
+            self.account.id,
             order_id,
             self._clock.utc_now(),
             response,
@@ -747,7 +750,7 @@ cdef class SimulatedMarket:
     cdef void _expire_order(self, PassiveOrder order) except *:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             order.id,
             order.expire_time,
@@ -874,7 +877,7 @@ cdef class SimulatedMarket:
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             order.id,
             order.symbol,
@@ -895,7 +898,7 @@ cdef class SimulatedMarket:
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef double exchange_rate = self.exchange_calculator.get_rate(
             from_currency=instrument.quote_currency,
-            to_currency=self._account.currency,
+            to_currency=self.account.currency,
             price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
             bid_rates=self._build_current_bid_rates(),
             ask_rates=self._build_current_ask_rates(),
@@ -934,7 +937,7 @@ cdef class SimulatedMarket:
 
         # Generate event
         cdef OrderFilled filled = OrderFilled(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             order.id,
             self._generate_execution_id(),
@@ -1012,7 +1015,7 @@ cdef class SimulatedMarket:
 
         # Generate event
         cdef OrderRejected event = OrderRejected(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             self._clock.utc_now(),
             f"OCO order rejected from {oco_order_id}",
@@ -1031,7 +1034,7 @@ cdef class SimulatedMarket:
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             order.id,
             self._clock.utc_now(),
@@ -1049,7 +1052,7 @@ cdef class SimulatedMarket:
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
-            self._account.id,
+            self.account.id,
             order.cl_ord_id,
             order.id,
             self._clock.utc_now(),

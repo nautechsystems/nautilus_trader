@@ -83,8 +83,6 @@ class TraderTests(unittest.TestCase):
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=trader_id,
-            account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=clock,
@@ -122,7 +120,6 @@ class TraderTests(unittest.TestCase):
 
         self.trader = Trader(
             trader_id=trader_id,
-            account_id=account_id,
             strategies=strategies,
             data_engine=data_engine,
             exec_engine=self.exec_engine,

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -36,7 +35,6 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -54,9 +52,7 @@ cdef class ExecutionEngine:
     cdef dict _registered_strategies
 
     cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
     cdef readonly ExecutionCache cache
-    cdef readonly Account account
     cdef readonly Portfolio portfolio
     cdef readonly int command_count
     cdef readonly int event_count

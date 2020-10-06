@@ -52,6 +52,7 @@ cdef class ExecutionClient:
             The logger for the component.
 
         """
+        # TODO: Check venue matches account_id.issuer
         self._engine = engine
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 

@@ -98,8 +98,6 @@ class SimulatedMarketTests(unittest.TestCase):
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
-            account_id=self.account_id,
             database=exec_db,
             portfolio=self.portfolio,
             clock=self.clock,
@@ -131,23 +129,6 @@ class SimulatedMarketTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.exec_client)
         self.market.register_client(self.exec_client)
-
-    def test_account_collateral_inquiry(self):
-        # Arrange
-        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        strategy.register_trader(
-            self.trader_id,
-            self.clock,
-            self.uuid_factory,
-            self.logger,
-        )
-        self.exec_engine.register_strategy(strategy)
-
-        # Act
-        strategy.account_inquiry()
-
-        # Assert
-        self.assertEqual(2, len(strategy.account().get_events()))
 
     def test_submit_market_order(self):
         # Arrange
@@ -495,12 +476,14 @@ class SimulatedMarketTests(unittest.TestCase):
 
         position = self.exec_engine.cache.positions_open()[0]
         expected_commission = position.quantity * commission_percent
+        account_id = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
+        account = self.exec_engine.cache.account(account_id)
 
         # Assert
         self.assertEqual(account_event1.commission.as_double(), order.filled_qty * commission_percent)
         self.assertEqual(account_event2.commission.as_double(), top_up_order.filled_qty * commission_percent)
         self.assertEqual(account_event3.commission.as_double(), reduce_order.filled_qty * commission_percent)
-        self.assertTrue(1000000 - expected_commission == strategy.account().balance.as_double())
+        self.assertTrue(1000000 - expected_commission == account.balance.as_double())
 
     def test_realized_pnl_contains_commission(self):
         # Arrange
@@ -509,7 +492,9 @@ class SimulatedMarketTests(unittest.TestCase):
             self.trader_id,
             self.clock,
             self.uuid_factory,
-            self.logger)
+            self.logger,
+        )
+
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -518,7 +503,8 @@ class SimulatedMarketTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         # Act
         strategy.submit_order(order)

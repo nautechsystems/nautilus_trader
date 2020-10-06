@@ -180,7 +180,7 @@ cdef class ReportProvider:
     cdef dict _account_state_to_dict(self, AccountState event):
         return {
             "timestamp": event.timestamp,
-            "cash_balance": event.cash_balance.as_double(),
+            "balance": event.balance.as_double(),
             "margin_balance": event.margin_balance.as_double(),
             "margin_available": event.margin_balance.as_double(),
         }

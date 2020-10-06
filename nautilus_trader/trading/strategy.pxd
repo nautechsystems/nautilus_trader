@@ -28,13 +28,12 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -53,6 +52,7 @@ cdef class TradingStrategy:
     cdef readonly LoggerAdapter log
     # cdef readonly DataCacheReadOnly data
     cdef readonly ExecutionCacheReadOnly execution
+    cdef readonly Portfolio portfolio
     cdef readonly OrderFactory order_factory
 
     cdef list _indicators
@@ -144,22 +144,6 @@ cdef class TradingStrategy:
     cpdef readonly list registered_indicators(self)
     cpdef readonly bint indicators_initialized(self) except *
 
-# -- MANAGEMENT METHODS ----------------------------------------------------------------------------
-
-    cpdef Account account(self)
-    cpdef Portfolio portfolio(self)
-    cpdef double get_exchange_rate(
-        self,
-        Currency from_currency,
-        Currency to_currency,
-        PriceType price_type=*,
-    )
-    cpdef double get_exchange_rate_for_account(
-        self,
-        Currency quote_currency,
-        PriceType price_type=*,
-    )
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void start(self) except *
@@ -169,7 +153,6 @@ cdef class TradingStrategy:
     cpdef void dispose(self) except *
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
-    cpdef void account_inquiry(self) except *
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *

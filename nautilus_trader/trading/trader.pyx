@@ -26,7 +26,7 @@ from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.model.commands cimport AccountInquiry
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -38,7 +38,6 @@ cdef class Trader:
     def __init__(
             self,
             TraderId trader_id not None,
-            AccountId account_id not None,
             list strategies not None,
             DataEngine data_engine not None,
             ExecutionEngine exec_engine not None,
@@ -53,8 +52,6 @@ cdef class Trader:
         ----------
         trader_id : TraderId
             The identifier for the trader.
-        account_id : AccountId
-            The account identifier for the trader.
         strategies : List[TradingStrategy]
             The initial strategies for the trader.
         data_engine : DataEngine
@@ -83,12 +80,10 @@ cdef class Trader:
 
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
-        Condition.equal(account_id, exec_engine.account_id, "account_id", "exec_engine.account_id")
 
         self._clock = clock
         self._uuid_factory = uuid_factory
         self.id = trader_id
-        self.account_id = account_id
         self._log = LoggerAdapter(f"Trader-{self.id.value}", logger)
         self._data_engine = data_engine
         self._exec_engine = exec_engine
@@ -187,8 +182,7 @@ cdef class Trader:
             self._log.error(f"Cannot start trader (no strategies loaded).")
             return
 
-        self.account_inquiry()
-
+        cdef TradingStrategy strategy
         for strategy in self.strategies:
             strategy.start()
 
@@ -285,19 +279,6 @@ cdef class Trader:
         self._fsm.trigger(ComponentTrigger.DISPOSED)
         self._log.info(f"state={self._fsm.state_as_string()}.")
 
-    cpdef void account_inquiry(self) except *:
-        """
-        Send an AccountInquiry command to the execution service.
-        """
-        cdef AccountInquiry command = AccountInquiry(
-            trader_id=self.id,
-            account_id=self.account_id,
-            command_id=self._uuid_factory.generate(),
-            command_timestamp=self._clock.utc_now(),
-        )
-
-        self._exec_engine.execute(command)
-
     cpdef ComponentState state(self):
         """
         Return the traders state.
@@ -371,7 +352,7 @@ cdef class Trader:
         """
         return self._report_provider.generate_positions_report(self._exec_engine.cache.positions())
 
-    cpdef object generate_account_report(self):
+    cpdef object generate_account_report(self, AccountId account_id):
         """
         Generate an account report.
 
@@ -380,4 +361,4 @@ cdef class Trader:
         pd.DataFrame
 
         """
-        return self._report_provider.generate_account_report(self._exec_engine.account.get_events())
+        return self._report_provider.generate_account_report(self._exec_engine.cache.account(account_id))

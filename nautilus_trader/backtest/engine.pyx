@@ -184,8 +184,6 @@ cdef class BacktestEngine:
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
-            account_id=self.account_id,
             database=exec_db,
             portfolio=self.portfolio,
             clock=self.test_clock,
@@ -221,7 +219,6 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=self.trader_id,
-            account_id=self.account_id,
             strategies=strategies,
             data_engine=self.data_engine,
             exec_engine=self.exec_engine,
@@ -377,12 +374,6 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        The following components are reset;
-
-        - DataClient
-        - ExecutionEngine
-        - ExecutionClient
-        - Trader (including all strategies)
         """
         self.log.debug(f"Resetting...")
 
@@ -476,7 +467,7 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Calculating statistics...")
         self.log.info("")
-        self.analyzer.calculate_statistics(self.exec_engine.account, self.exec_engine.cache.positions())
+        self.analyzer.calculate_statistics(self.market.account, self.exec_engine.cache.positions())
 
-        for statistic in self.analyzer.get_performance_stats_formatted(self.exec_engine.account.currency):
+        for statistic in self.analyzer.get_performance_stats_formatted(self.market.account.currency):
             self.log.info(statistic)
