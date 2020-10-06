@@ -20,7 +20,6 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -30,15 +29,11 @@ class AccountTests(unittest.TestCase):
     def test_initialize_account_with_event(self):
         # Arrange
         event = AccountState(
-            AccountId.py_from_string("FXCM-123456-SIMULATED"),
-            Currency.AUD(),
-            Money(1000000.00, Currency.AUD()),
-            Money(1000000.00, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Decimal(),
-            "N",
+            AccountId.py_from_string("BITMEX-1513111-SIMULATED"),
+            Currency.BTC(),
+            Money(10., Currency.BTC()),
+            Money(10., Currency.BTC()),
+            Money(10., Currency.BTC()),
             uuid4(),
             UNIX_EPOCH)
 
@@ -46,103 +41,10 @@ class AccountTests(unittest.TestCase):
         account = Account(event)
 
         # Assert
-        self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Currency.AUD(), account.currency)
-        self.assertEqual(Money(1000000.00, Currency.AUD()), account.free_equity)
-        self.assertEqual(Money(1000000.00, Currency.AUD()), account.cash_start_day)
-        self.assertEqual(Money(0, Currency.AUD()), account.cash_activity_day)
-        self.assertEqual(Money(0, Currency.AUD()), account.margin_used_liquidation)
-        self.assertEqual(Money(0, Currency.AUD()), account.margin_used_maintenance)
-        self.assertEqual(Decimal(), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status)
-        self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)
-
-    def test_calculate_free_equity_when_greater_than_zero(self):
-        # Arrange
-        event = AccountState(
-            AccountId.py_from_string("FXCM-123456-SIMULATED"),
-            Currency.AUD(),
-            Money(100000.00, Currency.AUD()),
-            Money(100000.00, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Money(1000, Currency.AUD()),
-            Money(2000, Currency.AUD()),
-            Decimal(),
-            "N",
-            uuid4(),
-            UNIX_EPOCH)
-
-        # Act
-        account = Account(event)
-
-        # Assert
-        self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Currency.AUD(), account.currency)
-        self.assertEqual(Money(97000, Currency.AUD()), account.free_equity)
-        self.assertEqual(Money(100000, Currency.AUD()), account.cash_start_day)
-        self.assertEqual(Money(0, Currency.AUD()), account.cash_activity_day)
-        self.assertEqual(Money(1000, Currency.AUD()), account.margin_used_liquidation)
-        self.assertEqual(Money(2000, Currency.AUD()), account.margin_used_maintenance)
-        self.assertEqual(Decimal(), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status)
-        self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)
-
-    def test_calculate_free_equity_when_zero(self):
-        # Arrange
-        event = AccountState(
-            AccountId.py_from_string("FXCM-123456-SIMULATED"),
-            Currency.AUD(),
-            Money(20000, Currency.AUD()),
-            Money(100000, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Money(20000, Currency.AUD()),
-            Decimal("0"),
-            "N",
-            uuid4(),
-            UNIX_EPOCH)
-
-        # Act
-        account = Account(event)
-
-        # Assert
-        self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Currency.AUD(), account.currency)
-        self.assertEqual(Money(0, Currency.AUD()), account.free_equity)
-        self.assertEqual(Money(100000, Currency.AUD()), account.cash_start_day)
-        self.assertEqual(Money(0, Currency.AUD()), account.cash_activity_day)
-        self.assertEqual(Money(0, Currency.AUD()), account.margin_used_liquidation)
-        self.assertEqual(Money(20000, Currency.AUD()), account.margin_used_maintenance)
-        self.assertEqual(Decimal("0"), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status)
-        self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)
-
-    def test_calculate_free_equity_when_negative(self):
-        # Arrange
-        event = AccountState(
-            AccountId.py_from_string("FXCM-123456-SIMULATED"),
-            Currency.AUD(),
-            Money(20000, Currency.AUD()),
-            Money(100000, Currency.AUD()),
-            Money(0, Currency.AUD()),
-            Money(10000, Currency.AUD()),
-            Money(20000, Currency.AUD()),
-            Decimal("0"),
-            "N",
-            uuid4(),
-            UNIX_EPOCH)
-
-        # Act
-        account = Account(event)
-
-        # Assert
-        self.assertEqual(AccountId.py_from_string("FXCM-123456-SIMULATED"), account.id)
-        self.assertEqual(Currency.AUD(), account.currency)
-        self.assertEqual(Money(0, Currency.AUD()), account.free_equity)
-        self.assertEqual(Money(100000, Currency.AUD()), account.cash_start_day)
-        self.assertEqual(Money(0, Currency.AUD()), account.cash_activity_day)
-        self.assertEqual(Money(10000, Currency.AUD()), account.margin_used_liquidation)
-        self.assertEqual(Money(20000, Currency.AUD()), account.margin_used_maintenance)
-        self.assertEqual(Decimal("0"), account.margin_ratio)
-        self.assertEqual("N", account.margin_call_status)
+        self.assertEqual(AccountId.py_from_string("BITMEX-1513111-SIMULATED"), account.id)
+        self.assertEqual(Currency.BTC(), account.currency)
+        self.assertEqual(Money(10., Currency.BTC()), account.balance)
+        self.assertEqual(Money(10., Currency.BTC()), account.free_equity)
+        self.assertEqual(Money(10., Currency.BTC()), account.margin_balance)
+        self.assertEqual(Money(10., Currency.BTC()), account.margin_available)
         self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)

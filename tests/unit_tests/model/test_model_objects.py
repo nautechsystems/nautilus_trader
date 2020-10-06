@@ -293,6 +293,8 @@ class ObjectTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertTrue(money1 == money1)
+        self.assertTrue(money1 != money2)
         self.assertTrue(money1 < money2)
         self.assertTrue(money1 <= money2)
         self.assertTrue(money2 <= money2)

@@ -462,7 +462,7 @@ cdef class BacktestEngine:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.market.account_capital.to_string_formatted(), account_starting_length)
+        account_balance_ending = pad_string(self.market.account_balance.to_string_formatted(), account_starting_length)
         commissions_total = pad_string(self.market.total_commissions.to_string_formatted(), account_starting_length)
         rollover_interest = pad_string(self.market.total_rollover.to_string_formatted(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")

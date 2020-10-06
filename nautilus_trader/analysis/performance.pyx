@@ -96,17 +96,17 @@ cdef class PerformanceAnalyzer:
 
         if self._account_capital is None:
             # Initialize account data
-            self._account_starting_capital = event.cash_balance
-            self._account_capital = event.cash_balance
+            self._account_starting_capital = event.balance
+            self._account_capital = event.balance
             self._account_currency = event.currency
             return  # No transaction to handle
 
-        if self._account_capital == event.cash_balance:
+        if self._account_capital == event.balance:
             return  # No transaction to handle
 
         # Calculate transaction data
-        cdef Money pnl = Money(event.cash_balance - self._account_capital, self._account_currency)
-        self._account_capital = event.cash_balance
+        cdef Money pnl = Money(event.balance - self._account_capital, self._account_currency)
+        self._account_capital = event.balance
 
         # Set index if it does not exist
         if event.timestamp not in self._transactions:

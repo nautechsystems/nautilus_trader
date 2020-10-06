@@ -15,7 +15,6 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.objects cimport Money
 
 
 cdef class Account:
@@ -40,14 +39,13 @@ cdef class Account:
         self.id = event.account_id
         self.account_type = self.id.account_type
         self.currency = event.currency
-        self.cash_balance = event.cash_balance
-        self.cash_start_day = event.cash_start_day
-        self.cash_activity_day = event.cash_activity_day
-        self.margin_used_liquidation = event.margin_used_liquidation
-        self.margin_used_maintenance = event.margin_used_maintenance
-        self.margin_ratio = event.margin_ratio
-        self.margin_call_status = event.margin_call_status
-        self.free_equity = self._calculate_free_equity()
+        self.balance = event.balance
+        self.margin_balance = event.margin_balance
+        self.margin_available = event.margin_available
+        self.free_equity = None
+
+        # Update account
+        self.apply(event)
 
     def __eq__(self, Account other) -> bool:
         """
@@ -119,6 +117,17 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    cpdef int event_count(self):
+        """
+        Return the count of events.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)
+
     cpdef list get_events(self):
         """
         Return the events received by the account.
@@ -141,17 +150,6 @@ cdef class Account:
         """
         return self._events[-1]
 
-    cpdef int event_count(self):
-        """
-        Return the count of events.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self._events)
-
     cpdef void apply(self, AccountState event) except *:
         """
         Applies the given account event to the account.
@@ -167,16 +165,7 @@ cdef class Account:
 
         self._events.append(event)
 
-        self.cash_balance = event.cash_balance
-        self.cash_start_day = event.cash_start_day
-        self.cash_activity_day = event.cash_activity_day
-        self.margin_used_liquidation = event.margin_used_liquidation
-        self.margin_used_maintenance = event.margin_used_maintenance
-        self.margin_ratio = event.margin_ratio
-        self.margin_call_status = event.margin_call_status
-        self.free_equity = self._calculate_free_equity()
-
-    cdef Money _calculate_free_equity(self):
-        cdef double margin = self.margin_used_maintenance.as_double() + self.margin_used_liquidation.as_double()
-        cdef double value = max((self.cash_balance.as_double() - margin), 0)
-        return Money(value, self.currency)
+        self.balance = event.balance
+        self.margin_balance = event.margin_balance
+        self.margin_available = event.margin_available
+        self.free_equity = event.balance

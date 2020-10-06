@@ -235,11 +235,7 @@ class TestStubs:
             Currency.USD(),
             Money(1000000.00, Currency.USD()),
             Money(1000000.00, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Money(0, Currency.USD()),
-            Decimal(),
-            "N",
+            Money(1000000.00, Currency.USD()),
             uuid4(),
             UNIX_EPOCH,
         )

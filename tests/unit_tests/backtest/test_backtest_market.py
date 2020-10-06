@@ -147,7 +147,7 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.account_inquiry()
 
         # Assert
-        self.assertEqual(1, len(strategy.account().get_events()))
+        self.assertEqual(2, len(strategy.account().get_events()))
 
     def test_submit_market_order(self):
         # Arrange
@@ -454,7 +454,9 @@ class SimulatedMarketTests(unittest.TestCase):
             self.trader_id,
             self.clock,
             self.uuid_factory,
-            self.logger)
+            self.logger,
+        )
+
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
         strategy.start()
@@ -463,17 +465,20 @@ class SimulatedMarketTests(unittest.TestCase):
         order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         top_up_order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         reduce_order = strategy.order_factory.market(
             USDJPY_FXCM,
             OrderSide.BUY,
-            Quantity(50000))
+            Quantity(50000),
+        )
 
         # Act
         strategy.submit_order(order)
@@ -484,17 +489,18 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.submit_order(reduce_order, position_id)
 
         commission_percent = basis_points_as_percentage(7.5)
-        self.assertEqual(strategy.object_storer.get_store()[3].commission.as_double(),
-                         order.filled_qty.as_double() * commission_percent)
-        self.assertEqual(strategy.object_storer.get_store()[7].commission.as_double(),
-                         top_up_order.filled_qty.as_double() * commission_percent)
-        self.assertEqual(strategy.object_storer.get_store()[11].commission.as_double(),
-                         reduce_order.filled_qty.as_double() * commission_percent)
+        account_event1 = strategy.object_storer.get_store()[3]
+        account_event2 = strategy.object_storer.get_store()[7]
+        account_event3 = strategy.object_storer.get_store()[11]
 
         position = self.exec_engine.cache.positions_open()[0]
-        expected_commission = position.quantity.as_double() * commission_percent
-        self.assertEqual(strategy.account().cash_start_day.as_double() - expected_commission,
-                         strategy.account().cash_balance.as_double())
+        expected_commission = position.quantity * commission_percent
+
+        # Assert
+        self.assertEqual(account_event1.commission.as_double(), order.filled_qty * commission_percent)
+        self.assertEqual(account_event2.commission.as_double(), top_up_order.filled_qty * commission_percent)
+        self.assertEqual(account_event3.commission.as_double(), reduce_order.filled_qty * commission_percent)
+        self.assertTrue(1000000 - expected_commission == strategy.account().balance.as_double())
 
     def test_realized_pnl_contains_commission(self):
         # Arrange

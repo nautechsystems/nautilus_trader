@@ -71,9 +71,9 @@ cdef class SimulatedMarket:
     cdef readonly bint frozen_account
     cdef readonly Currency account_currency
     cdef readonly Money starting_capital
-    cdef readonly Money account_capital
-    cdef readonly Money account_cash_start_day
-    cdef readonly Money account_cash_activity_day
+    cdef readonly Money account_balance
+    cdef readonly Money account_balance_start_day
+    cdef readonly Money account_balance_activity_day
     cdef readonly ExchangeRateCalculator exchange_calculator
     cdef readonly CommissionModel commission_model
     cdef readonly RolloverInterestCalculator rollover_calculator
@@ -125,6 +125,7 @@ cdef class SimulatedMarket:
     cdef PositionId _generate_position_id(self, Symbol symbol)
     cdef OrderId _generate_order_id(self, Symbol symbol)
     cdef ExecutionId _generate_execution_id(self)
+    cdef AccountState _generate_account_event(self)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)
