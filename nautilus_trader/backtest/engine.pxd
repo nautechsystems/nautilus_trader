@@ -62,7 +62,7 @@ cdef class BacktestEngine:
         list strategies=*,
         bint print_log_store=*,
     ) except *
-    cpdef void advance_time(self, datetime timestamp) except *
+    cdef void _advance_time(self, datetime timestamp) except *
     cpdef list get_log_store(self)
     cpdef void print_log_store(self) except *
     cpdef void reset(self) except *
