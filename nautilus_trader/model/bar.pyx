@@ -176,8 +176,8 @@ cdef class BarSpecification:
 
         """
         return self.step == other.step \
-               and self.aggregation == other.aggregation \
-               and self.price_type == other.price_type
+            and self.aggregation == other.aggregation \
+            and self.price_type == other.price_type
 
     def __ne__(self, BarSpecification other) -> bool:
         """
@@ -575,11 +575,11 @@ cdef class Bar:
 
         """
         return self.open == other.open \
-               and self.high == other.high \
-               and self.low == other.low \
-               and self.close == other.close \
-               and self.volume == other.volume \
-               and self.timestamp == other.timestamp
+            and self.high == other.high \
+            and self.low == other.low \
+            and self.close == other.close \
+            and self.volume == other.volume \
+            and self.timestamp == other.timestamp
 
     def __ne__(self, Bar other) -> bool:
         """

@@ -145,9 +145,9 @@ cdef class SimulatedMarket:
         self.frozen_account = config.frozen_account
         self.starting_capital = config.starting_capital
         self.account_currency = config.account_currency
-        self.account_capital = config.starting_capital
-        self.account_cash_start_day = config.starting_capital
-        self.account_cash_activity_day = Money(0, self.account_currency)
+        self.account_balance = config.starting_capital
+        self.account_balance_start_day = config.starting_capital
+        self.account_balance_activity_day = Money(0, self.account_currency)
 
         self.exchange_calculator = ExchangeRateCalculator()
         self.commission_model = commission_model
@@ -232,9 +232,9 @@ cdef class SimulatedMarket:
         self._log.debug(f"Resetting...")
 
         self.day_number = 0
-        self.account_capital = self.starting_capital
-        self.account_cash_start_day = self.account_capital
-        self.account_cash_activity_day = Money(0, self.account_currency)
+        self.account_balance = self.starting_capital
+        self.account_balance_start_day = self.account_balance
+        self.account_balance_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
 
@@ -255,17 +255,13 @@ cdef class SimulatedMarket:
         Resets the account.
         """
         return AccountState(
-            self.exec_client.account_id,
-            self.account_currency,
-            self.starting_capital,
-            self.starting_capital,
-            Money.zero(currency=self.account_currency),
-            Money.zero(currency=self.account_currency),
-            Money.zero(currency=self.account_currency),
-            Decimal(),
-            "N",
-            self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            account_id=self.exec_client.account_id,
+            currency=self.account_currency,
+            balance=self.starting_capital,
+            margin_balance=self.starting_capital,
+            margin_available=self.starting_capital,
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now(),
         )
 
     cpdef datetime time_now(self):
@@ -304,8 +300,8 @@ cdef class SimulatedMarket:
         if self.day_number != time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
-            self.account_cash_start_day = self._account.cash_balance
-            self.account_cash_activity_day = Money(0, self.account_currency)
+            self.account_balance_start_day = self._account.balance
+            self.account_balance_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
 
             rollover_local = time_now.astimezone(_TZ_US_EAST)
@@ -430,26 +426,12 @@ cdef class SimulatedMarket:
         self.total_commissions = self.total_commissions.sub(event.commission)
         pnl = pnl.sub(event.commission)
 
-        cdef AccountState account_event
         if not self.frozen_account:
-            self.account_capital = self.account_capital.add(pnl)
-            self.account_cash_activity_day = self.account_cash_activity_day.add(pnl)
+            self.account_balance = self.account_balance.add(pnl)
+            self.account_balance_activity_day = self.account_balance_activity_day.add(pnl)
 
-            account_event = AccountState(
-                self._account.id,
-                self._account.currency,
-                self.account_capital,
-                self.account_cash_start_day,
-                self.account_cash_activity_day,
-                margin_used_liquidation=Money(0, self.account_currency),
-                margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal(),
-                margin_call_status="N",
-                event_id=self._uuid_factory.generate(),
-                event_timestamp=self._clock.utc_now(),
-            )
-
-            self.exec_client.handle_event(account_event)
+            # Generate event -> send to ExecutionClient
+            self.exec_client.handle_event(self._generate_account_event())
 
     cpdef Money calculate_pnl(
             self,
@@ -457,7 +439,8 @@ cdef class SimulatedMarket:
             double open_price,
             double close_price,
             Quantity quantity,
-            double exchange_rate):
+            double exchange_rate,
+    ):
         Condition.not_none(quantity, "quantity")
 
         cdef double difference
@@ -517,48 +500,20 @@ cdef class SimulatedMarket:
         cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
         self.total_rollover = self.total_rollover.add(rollover_final)
 
-        cdef AccountState account_event
         if not self.frozen_account:
-            self.account_capital = self.account_capital.add(rollover_final)
-            self.account_cash_activity_day = self.account_cash_activity_day.add(rollover_final)
+            self.account_balance = self.account_balance.add(rollover_final)
+            self.account_balance_activity_day = self.account_balance_activity_day.add(rollover_final)
 
-            account_event = AccountState(
-                self._account.id,
-                self._account.currency,
-                self.account_capital,
-                self.account_cash_start_day,
-                self.account_cash_activity_day,
-                margin_used_liquidation=Money(0, self.account_currency),
-                margin_used_maintenance=Money(0, self.account_currency),
-                margin_ratio=Decimal(),
-                margin_call_status="N",
-                event_id=self._uuid_factory.generate(),
-                event_timestamp=self._clock.utc_now(),
-            )
-
-            self.exec_client.handle_event(account_event)
+            # Generate event -> send to ExecutionClient
+            self.exec_client.handle_event(self._generate_account_event())
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
     cpdef void handle_account_inquiry(self, AccountInquiry command) except *:
         Condition.not_none(command, "command")
 
-        # Generate event
-        cdef AccountState event = AccountState(
-            self._account.id,
-            self._account.currency,
-            self._account.cash_balance,
-            self.account_cash_start_day,
-            self.account_cash_activity_day,
-            self._account.margin_used_liquidation,
-            self._account.margin_used_maintenance,
-            self._account.margin_ratio,
-            self._account.margin_call_status,
-            self._uuid_factory.generate(),
-            self._clock.utc_now(),
-        )
-
-        self.exec_client.handle_event(event)
+        # Generate event -> send to ExecutionClient
+        self.exec_client.handle_event(self._generate_account_event())
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
@@ -702,6 +657,17 @@ cdef class SimulatedMarket:
     cdef ExecutionId _generate_execution_id(self):
         self._executions_count += 1
         return ExecutionId(f"E-{self._executions_count}")
+
+    cdef AccountState _generate_account_event(self):
+        return AccountState(
+            account_id=self._account.id,
+            currency=self._account.currency,
+            balance=self.account_balance,
+            margin_balance=self.account_balance,    # TODO: Placeholder
+            margin_available=self.account_balance,  # TODO: Placeholder
+            event_id=self._uuid_factory.generate(),
+            event_timestamp=self._clock.utc_now(),
+        )
 
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
         return current_market.ask == order_price and self.fill_model.is_stop_filled()

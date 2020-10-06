@@ -181,5 +181,6 @@ cdef class ReportProvider:
         return {
             "timestamp": event.timestamp,
             "cash_balance": event.cash_balance.as_double(),
-            "margin_used": event.margin_used_maintenance.as_double(),
+            "margin_balance": event.margin_balance.as_double(),
+            "margin_available": event.margin_balance.as_double(),
         }
