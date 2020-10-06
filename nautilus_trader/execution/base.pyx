@@ -27,15 +27,7 @@ cdef class ExecutionCacheReadOnly:
     An abstract read-only facade for the execution cache.
     """
 
-    # -- General queries -------------------------------------------------------
-    cpdef Account account(self, AccountId account_id):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Account first_account(self, Venue venue):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
+    # -- Trading queries -------------------------------------------------------
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -49,6 +41,19 @@ cdef class ExecutionCacheReadOnly:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint is_completely_flat(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    # -- Account queries -------------------------------------------------------
+    cpdef Account account(self, AccountId account_id):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Account account_for_venue(self, Venue venue):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef AccountId account_id(self, Venue venue):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

@@ -62,7 +62,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._cached_positions = {}           # type: {PositionId, Position}
 
         # Cached indexes
-        self._index_venue_accounts = {}       # type: {Venue, [AccountId]}
+        self._index_venue_account = {}        # type: {Venue, AccountId}
         self._index_order_position = {}       # type: {ClientOrderId, PositionId}
         self._index_order_strategy = {}       # type: {ClientOrderId, StrategyId}
         self._index_position_strategy = {}    # type: {PositionId, StrategyId}
@@ -137,11 +137,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        cdef Venue venue = Venue(account_id.issuer)
-        if venue not in self._index_venue_accounts:
-            self._index_venue_accounts[venue] = []
-
-        self._index_venue_accounts[venue].append(account_id)
+        self._index_venue_account[Venue(account_id.issuer)] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId cl_ord_id
@@ -597,7 +593,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cdef void _clear_indexes(self) except *:
         self._log.info(f"Clearing indexes...")
-        self._index_venue_accounts.clear()
+        self._index_venue_account.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -617,46 +613,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef Account account(self, AccountId account_id):
-        """
-        Return the account matching the given identifier (if found).
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-
-        Returns
-        -------
-        Account or None
-
-        """
-        Condition.not_none(account_id, "account_id")
-
-        return self._cached_accounts.get(account_id)
-
-    cpdef Account first_account(self, Venue venue):
-        """
-        Return the first account for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the account identifier.
-
-        Returns
-        -------
-        AccountId or None
-
-        """
-        Condition.not_none(venue, "venue")
-
-        cdef list account_ids = self._index_venue_accounts.get(venue)
-        if not account_ids:
-            return None
-
-        return self._cached_accounts.get(account_ids[0])
-
     cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
         cdef list positions = self.positions_open(symbol, strategy_id)
         cdef Decimal net_quantity = Decimal()
@@ -670,6 +626,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         return net_quantity
 
+    # -- Trading queries ----------------------------------------------------
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
         """
         Return a value indicating whether the execution engine is net long a
@@ -736,6 +693,65 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         """
         return self.positions_open_count() == 0
+
+    # -- Account queries ----------------------------------------------------
+    cpdef Account account(self, AccountId account_id):
+        """
+        Return the account matching the given identifier (if found).
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(account_id, "account_id")
+
+        return self._cached_accounts.get(account_id)
+
+    cpdef Account account_for_venue(self, Venue venue):
+        """
+        Return the account for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the account.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef AccountId account_id = self._index_venue_account.get(venue)
+        if account_id is None:
+            return None
+
+        return self._cached_accounts.get(account_id)
+
+    cpdef AccountId account_id(self, Venue venue):
+        """
+        Return the account identifier for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the account.
+
+        Returns
+        -------
+        AccountId or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        return self._index_venue_account.get(venue)
 
     # -- Identifier queries ----------------------------------------------------
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id):

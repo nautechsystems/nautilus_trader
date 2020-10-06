@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
@@ -33,7 +32,6 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -154,7 +152,7 @@ cdef class TradingStrategy:
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=*) except *
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self, Symbol symbol) except *
