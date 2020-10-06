@@ -36,16 +36,14 @@ from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -94,6 +92,7 @@ cdef class TradingStrategy:
         self.log = None            # Initialized when registered with a trader
         # self.data = None         # Initialized when registered with the data engine
         self.execution = None      # Initialized when registered with the execution engine
+        self.portfolio = None      # Initialized when registered with the execution engine
         self.order_factory = None  # Initialized when registered with a trader
 
         # Private components
@@ -377,6 +376,7 @@ cdef class TradingStrategy:
 
         self._exec_engine = engine
         self.execution = engine.cache
+        self.portfolio = engine.portfolio
 
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
@@ -1192,107 +1192,6 @@ cdef class TradingStrategy:
                 return False
         return True
 
-# -- MANAGEMENT METHODS ----------------------------------------------------------------------------
-
-    cpdef Account account(self):
-        """
-        Return the account for the strategy.
-
-        Returns
-        -------
-        Account
-
-        """
-        Condition.not_none(self._exec_engine, "_exec_engine")
-
-        return self._exec_engine.account
-
-    cpdef Portfolio portfolio(self):
-        """
-        Return the portfolio for the strategy.
-
-        Returns
-        -------
-        Portfolio
-
-        """
-        Condition.not_none(self._exec_engine, "_exec_engine")
-
-        return self._exec_engine.portfolio
-
-    cpdef double get_exchange_rate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=PriceType.MID,
-    ):
-        """
-        Return the calculated exchange rate for the given currencies.
-
-        Parameters
-        ----------
-        from_currency : Currency
-            The currency to convert from.
-        to_currency : Currency
-            The currency to convert to.
-        price_type : PriceType
-            The price type for the exchange rate (default=MID).
-
-        Returns
-        -------
-        double
-
-        Raises
-        ------
-        ValueError
-            If price_type is UNDEFINED or LAST.
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.get_exchange_rate(
-            from_currency=from_currency,
-            to_currency=to_currency,
-            price_type=price_type)
-
-    cpdef double get_exchange_rate_for_account(
-            self,
-            Currency quote_currency,
-            PriceType price_type=PriceType.MID,
-    ):
-        """
-        Return the calculated exchange rate for the give trading instrument quote
-        currency to the account currency.
-
-        Parameters
-        ----------
-        quote_currency : Currency
-            The quote currency to convert from.
-        price_type : PriceType
-            The price type for the exchange rate (default=MID).
-
-        Returns
-        -------
-        double
-
-        Raises
-        ------
-        ValueError
-            If price_type is UNDEFINED or LAST.
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        cdef Account account = self.account()
-        if account is None:
-            self.log.error("Cannot get exchange rate (account is not initialized).")
-            return 0.0
-
-        return self._data_engine.get_exchange_rate(
-            from_currency=quote_currency,
-            to_currency=self.account().currency,
-            price_type=price_type)
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void start(self) except *:
@@ -1470,21 +1369,6 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
 
-    cpdef void account_inquiry(self) except *:
-        """
-        Send an account inquiry command to the execution engine.
-        """
-        Condition.not_none(self.execution, "execution")
-
-        cdef AccountInquiry command = AccountInquiry(
-            self.trader_id,
-            self._exec_engine.account_id,
-            self.uuid_factory.generate(),
-            self.clock.utc_now())
-
-        self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute(command)
-
     cpdef void submit_order(self, Order order, PositionId position_id=None) except *:
         """
         Send a submit order command with the given order to the execution engine.
@@ -1505,10 +1389,16 @@ cdef class TradingStrategy:
             # Null object pattern
             position_id = PositionId.null()
 
+        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(order.symbol.venue)
+        if account_id is None:
+            self.log.error(f"Cannot submit {order} "
+                           f"(no account registered for {order.symbol.venue}).")
+            return  # Cannot send command
+
         cdef SubmitOrder command = SubmitOrder(
             order.symbol.venue,
             self.trader_id,
-            self._exec_engine.account_id,
+            account_id,
             self.id,
             position_id,
             order,
@@ -1536,10 +1426,16 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
+        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(bracket_order.entry.symbol.venue)
+        if account_id is None:
+            self.log.error(f"Cannot submit {bracket_order}"
+                           f"(no account registered for {bracket_order.entry.symbol.venue}).")
+            return  # Cannot send command
+
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             bracket_order.entry.symbol.venue,
             self.trader_id,
-            self._exec_engine.account_id,
+            account_id,
             self.id,
             bracket_order,
             self.uuid_factory.generate(),
@@ -1589,13 +1485,20 @@ cdef class TradingStrategy:
             price = new_price
 
         if not modifying:
-            self.log.error("Cannot send command ModifyOrder (both new_quantity and new_price were None).")
+            self.log.error("Cannot send command ModifyOrder "
+                           "(both new_quantity and new_price were None).")
             return
+
+        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(order.symbol.venue)
+        if account_id is None:
+            self.log.error(f"Cannot modify {order} "
+                           f"(no account registered for {order.symbol.venue}).")
+            return  # Cannot send command
 
         cdef ModifyOrder command = ModifyOrder(
             order.symbol.venue,
             self.trader_id,
-            self._exec_engine.account_id,
+            account_id,
             order.cl_ord_id,
             quantity,
             price,
@@ -1620,10 +1523,16 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
+        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(order.symbol.venue)
+        if account_id is None:
+            self.log.error(f"Cannot cancel {order} "
+                           f"(no account registered for {order.symbol.venue}).")
+            return  # Cannot send command
+
         cdef CancelOrder command = CancelOrder(
             order.symbol.venue,
             self.trader_id,
-            self._exec_engine.account_id,
+            account_id,
             order.cl_ord_id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -1664,9 +1573,15 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         if position.is_closed():
-            self.log.warning(f"Cannot flatten {position.id.to_string(with_class=True)} "
+            self.log.warning(f"Cannot flatten {position} "
                              f"(the position is already closed).")
             return  # Invalid command
+
+        cdef AccountId account_id = self._exec_engine.cache.account_for_venue(position.symbol.venue)
+        if account_id is None:
+            self.log.error(f"Cannot flatten {position} "
+                           f"(no account registered for {position.symbol.venue}).")
+            return  # Cannot send command
 
         # Create flattening order
         cdef MarketOrder order = self.order_factory.market(
@@ -1679,7 +1594,7 @@ cdef class TradingStrategy:
         cdef SubmitOrder submit_order = SubmitOrder(
             position.symbol.venue,
             self.trader_id,
-            self._exec_engine.account_id,
+            account_id,
             self.id,
             position.id,
             order,

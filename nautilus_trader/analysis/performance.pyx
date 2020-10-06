@@ -51,8 +51,8 @@ cdef class PerformanceAnalyzer:
         """
         Initialize a new instance of the PerformanceAnalyzer class.
         """
-        self._account_starting_capital = None
-        self._account_capital = None
+        self._account_starting_balance = None
+        self._account_balance = None
         self._account_currency = None
         self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=["cash"])
@@ -94,25 +94,25 @@ cdef class PerformanceAnalyzer:
         """
         Condition.not_none(event, "event")
 
-        if self._account_capital is None:
+        if self._account_balance is None:
             # Initialize account data
-            self._account_starting_capital = event.balance
-            self._account_capital = event.balance
+            self._account_starting_balance = event.balance
+            self._account_balance = event.balance
             self._account_currency = event.currency
             return  # No transaction to handle
 
-        if self._account_capital == event.balance:
-            return  # No transaction to handle
+        # if self._account_balance == event.balance:  # TODO: Why was this here?
+        #     return  # No transaction to handle
 
         # Calculate transaction data
-        cdef Money pnl = Money(event.balance - self._account_capital, self._account_currency)
-        self._account_capital = event.balance
+        cdef Money pnl = Money(event.balance - self._account_balance, self._account_currency)
+        self._account_balance = event.balance
 
         # Set index if it does not exist
         if event.timestamp not in self._transactions:
             self._transactions.loc[event.timestamp] = 0
 
-        self._transactions.loc[event.timestamp]["capital"] = float(self._account_capital)
+        self._transactions.loc[event.timestamp]["capital"] = float(self._account_balance)
         self._transactions.loc[event.timestamp]["pnl"] = float(pnl)
 
     cpdef void add_return(self, datetime timestamp, double value) except *:
@@ -177,8 +177,8 @@ cdef class PerformanceAnalyzer:
         """
         Reset the analyzer by returning all stateful values to their initial value.
         """
-        self._account_starting_capital = None
-        self._account_capital = None
+        self._account_starting_balance = None
+        self._account_balance = None
         self._account_currency = None
         self._returns = pd.Series(dtype=float64)
         self._positions = pd.DataFrame(columns=["cash"])
@@ -237,7 +237,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return float(self._account_capital - self._account_starting_capital)
+        return float(self._account_balance - self._account_starting_balance)
 
     cpdef double total_pnl_percentage(self):
         """
@@ -248,13 +248,13 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if self._account_starting_capital == 0:  # Protect divide by zero
+        if self._account_starting_balance == 0:  # Protect divide by zero
             return 0.0
-        cdef double current = self._account_capital
-        cdef double starting = self._account_starting_capital.as_double()
-        cdef double difference = float(self._account_capital - self._account_starting_capital)
+        cdef double current = self._account_balance
+        cdef double starting = self._account_starting_balance.as_double()
+        cdef double difference = float(self._account_balance - self._account_starting_balance)
 
-        return (self._account_capital - self._account_starting_capital / self._account_starting_capital) * 100
+        return (self._account_balance - self._account_starting_balance / self._account_starting_balance) * 100
 
     cpdef double max_winner(self):
         """

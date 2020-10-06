@@ -24,6 +24,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -61,6 +62,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._cached_positions = {}           # type: {PositionId, Position}
 
         # Cached indexes
+        self._index_venue_accounts = {}       # type: {Venue, [AccountId]}
         self._index_order_position = {}       # type: {ClientOrderId, PositionId}
         self._index_order_strategy = {}       # type: {ClientOrderId, StrategyId}
         self._index_position_strategy = {}    # type: {PositionId, StrategyId}
@@ -120,6 +122,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._clear_indexes()
         self._log.info(f"Building indexes...")
 
+        self._build_index_venue_accounts()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
@@ -127,6 +130,18 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cpdef void integrity_check(self) except *:
         pass  # TODO
+
+    cdef void _build_index_venue_accounts(self) except *:
+        cdef AccountId account_id
+        for account_id in self._cached_accounts.keys():
+            self._cache_venue_account_id(account_id)
+
+    cdef void _cache_venue_account_id(self, AccountId account_id) except *:
+        cdef Venue venue = Venue(account_id.issuer)
+        if venue not in self._index_venue_accounts:
+            self._index_venue_accounts[venue] = []
+
+        self._index_venue_accounts[venue].append(account_id)
 
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId cl_ord_id
@@ -292,8 +307,10 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         Condition.not_in(account.id, self._cached_accounts, "account.id", "cached_accounts")
 
         self._cached_accounts[account.id] = account
+        self._cache_venue_account_id(account.id)
 
         self._log.debug(f"Added Account(id={account.id.value}).")
+        self._log.debug(f"Indexed {account.id.to_string(with_class=True)} for {account.id.issuer}.")
 
         # Update database
         self._database.add_account(account)
@@ -580,6 +597,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cdef void _clear_indexes(self) except *:
         self._log.info(f"Clearing indexes...")
+        self._index_venue_accounts.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -599,7 +617,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef Account get_account(self, AccountId account_id):
+    cpdef Account account(self, AccountId account_id):
         """
         Return the account matching the given identifier (if found).
 
@@ -616,6 +634,28 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         Condition.not_none(account_id, "account_id")
 
         return self._cached_accounts.get(account_id)
+
+    cpdef AccountId account_for_venue(self, Venue venue):
+        """
+        Return the first account for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the account identifier.
+
+        Returns
+        -------
+        AccountId or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef list accounts = self._index_venue_accounts.get(venue)
+        if not accounts:
+            return None
+
+        return accounts[0]
 
     cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
         cdef list positions = self.positions_open(symbol, strategy_id)

@@ -46,12 +46,10 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -66,9 +64,7 @@ cdef class ExecutionEngine:
 
     def __init__(
             self,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            ExecutionDatabase database not None,  # refactor
+            ExecutionDatabase database not None,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -79,12 +75,8 @@ cdef class ExecutionEngine:
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader identifier for the engine.
-        account_id : AccountId
-            The account identifier for the engine.
         database : ExecutionDatabase
-            The execution database adapter for the engines cache layer.
+            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -100,19 +92,15 @@ cdef class ExecutionEngine:
             If trader_id is not equal to the database.trader_id.
 
         """
-        Condition.equal(trader_id, database.trader_id, "trader_id", "database.trader_id")
-
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
-        self._pos_id_generator = PositionIdGenerator(trader_id.tag)
+        self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
         self._exec_clients = {}           # type: {Venue, ExecutionClient}
         self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
 
-        self.trader_id = trader_id
-        self.account_id = account_id
+        self.trader_id = database.trader_id
         self.cache = ExecutionCache(database, logger)
-        self.account = self.cache.get_account(account_id)
         self.portfolio = portfolio
 
         self.command_count = 0
@@ -469,22 +457,15 @@ cdef class ExecutionEngine:
             self._log.error(f"Cannot handle event ({event} is unrecognized).")
 
     cdef inline void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self.cache.get_account(event.account_id)
+        cdef Account account = self.cache.account(event.account_id)
         if account is None:
+            # Generate account
             account = Account(event)
-            if self.account_id == account.id:
-                self.account = account
-                self.cache.add_account(self.account)
-                self.portfolio.set_base_currency(event.currency)
-                return
-        elif account.id == event.account_id:
+            self.cache.add_account(account)
+            self.portfolio.set_base_currency(event.currency)  # TODO: Refactor
+        else:
             account.apply(event)
             self.cache.update_account(account)
-            return
-
-        self._log.warning(f"Cannot process event {event}, "
-                          f"event {event.account_id.to_string(with_class=True)} "
-                          f"does not match traders {self.account_id.to_string(with_class=True)}.")
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
         self.portfolio.update(event)

@@ -28,7 +28,11 @@ cdef class ExecutionCacheReadOnly:
     """
 
     # -- General queries -------------------------------------------------------
-    cpdef Account get_account(self, AccountId account_id):
+    cpdef Account account(self, AccountId account_id):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef AccountId account_for_venue(self, Venue venue):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

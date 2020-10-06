@@ -70,8 +70,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
-            account_id=self.account_id,
             database=database,
             portfolio=self.portfolio,
             clock=self.clock,
@@ -83,7 +81,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.account_event())
 
         self.venue = Venue("FXCM")
-        self.exec_client = MockExecutionClient(self.venue, self.exec_engine, self.logger)
+        self.exec_client = MockExecutionClient(
+            self.venue,
+            self.account_id,
+            self.exec_engine,
+            self.logger,
+        )
+
         self.exec_engine.register_client(self.exec_client)
 
     def test_register_strategy(self):

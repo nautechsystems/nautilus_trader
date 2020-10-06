@@ -94,8 +94,6 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=trader_id,
-            account_id=account_id,
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.clock,

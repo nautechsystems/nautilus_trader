@@ -22,8 +22,8 @@ from nautilus_trader.model.objects cimport Money
 
 
 cdef class PerformanceAnalyzer:
-    cdef Money _account_starting_capital
-    cdef Money _account_capital
+    cdef Money _account_starting_balance
+    cdef Money _account_balance
     cdef Currency _account_currency
     cdef object _returns
     cdef object _positions

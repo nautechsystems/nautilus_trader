@@ -57,8 +57,8 @@ cdef class SimulatedMarket:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef Account _account
 
+    cdef readonly Account account
     cdef readonly Venue venue
     cdef readonly OMSType oms_type
     cdef readonly ExecutionCache exec_cache
@@ -101,11 +101,9 @@ cdef class SimulatedMarket:
     cdef void _set_min_distances(self) except *
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-    cdef AccountState reset_account_event(self)
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
@@ -126,6 +124,7 @@ cdef class SimulatedMarket:
     cdef OrderId _generate_order_id(self, Symbol symbol)
     cdef ExecutionId _generate_execution_id(self)
     cdef AccountState _generate_account_event(self)
+    cdef AccountState _generate_account_reset_event(self)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market)
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market)
