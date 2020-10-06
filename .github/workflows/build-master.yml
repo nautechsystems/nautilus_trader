@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: CLA assistant lite
-        uses: cla-assistant/github-action@v2.0.1-alpha
       - uses: actions/checkout@v2
       - name: Setup Environment
         uses: actions/setup-python@v2
