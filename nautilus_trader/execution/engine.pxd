@@ -106,4 +106,3 @@ cdef class ExecutionEngine:
     cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
-    cdef void _reset(self) except *

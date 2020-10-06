@@ -697,12 +697,3 @@ cdef class ExecutionEngine:
             return  # Cannot send to strategy
 
         strategy.handle_event(event)
-
-    cdef void _reset(self) except *:
-        """
-        Reset the execution engine to its initial state.
-        """
-        self._registered_strategies.clear()
-        self._pos_id_generator.reset()
-        self.command_count = 0
-        self.event_count = 0
