@@ -29,6 +29,10 @@ cdef class Venue(Identifier):
     pass
 
 
+cdef class RoutedVenue(Venue):
+    pass
+
+
 cdef class Exchange(Venue):
     pass
 

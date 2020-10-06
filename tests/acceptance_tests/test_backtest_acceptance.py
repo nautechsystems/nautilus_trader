@@ -56,7 +56,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
             level_file=LogLevel.DEBUG,
             level_store=LogLevel.WARNING,
             log_thread=False,
-            log_to_file=False)
+            log_to_file=False,
+        )
 
         self.engine = BacktestEngine(
             data=data,
@@ -64,7 +65,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            config=config)
+            config=config,
+        )
 
     def tearDown(self):
         self.engine.dispose()
@@ -108,8 +110,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(559, strategies[0].fast_ema.count)
-        # TODO: [WIP] Analyzer lost contact with account
-        # self.assertEqual(-1872.51, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(-1872.51, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange

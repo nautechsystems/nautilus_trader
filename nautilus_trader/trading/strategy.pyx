@@ -1385,12 +1385,13 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "exec_engine")
 
+        cdef Position position
         if position_id is None:
             # Null object pattern
             position_id = PositionId.null()
 
-        cdef Account account = self._exec_engine.cache.first_account(order.symbol.venue)
-        if account is None:
+        cdef AccountId account_id = self.execution.account_id(order.symbol.venue)
+        if account_id is None:
             self.log.error(f"Cannot submit {order} "
                            f"(no account registered for {order.symbol.venue}).")
             return  # Cannot send command
@@ -1398,7 +1399,7 @@ cdef class TradingStrategy:
         cdef SubmitOrder command = SubmitOrder(
             order.symbol.venue,
             self.trader_id,
-            account.id,
+            account_id,
             self.id,
             position_id,
             order,
@@ -1409,7 +1410,7 @@ cdef class TradingStrategy:
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order, bint register=True) except *:
+    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
         """
         Send a SubmitBracketOrder command with the given bracket order to the
         execution engine.
@@ -1418,24 +1419,22 @@ cdef class TradingStrategy:
         ----------
         bracket_order : BracketOrder
             The bracket order to submit.
-        register : bool, optional
-            If the stop-loss and take-profit orders should be registered as such.
 
         """
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef Account account = self._exec_engine.cache.first_account(bracket_order.entry.symbol.venue)
-        if account is None:
-            self.log.error(f"Cannot submit {bracket_order}"
+        cdef AccountId account_id = self.execution.account_id(bracket_order.entry.symbol.venue)
+        if account_id is None:
+            self.log.error(f"Cannot submit {bracket_order} "
                            f"(no account registered for {bracket_order.entry.symbol.venue}).")
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             bracket_order.entry.symbol.venue,
             self.trader_id,
-            account.id,
+            account_id,
             self.id,
             bracket_order,
             self.uuid_factory.generate(),
@@ -1489,16 +1488,14 @@ cdef class TradingStrategy:
                            "(both new_quantity and new_price were None).")
             return
 
-        cdef Account account = self._exec_engine.cache.first_account(order.symbol.venue)
-        if account.id is None:
-            self.log.error(f"Cannot modify {order} "
-                           f"(no account registered for {order.symbol.venue}).")
+        if order.account_id is None:
+            self.log.error(f"Cannot cancel {order} (no account assigned to order yet).")
             return  # Cannot send command
 
         cdef ModifyOrder command = ModifyOrder(
             order.symbol.venue,
             self.trader_id,
-            account.id,
+            order.account_id,
             order.cl_ord_id,
             quantity,
             price,
@@ -1523,16 +1520,14 @@ cdef class TradingStrategy:
         Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef Account account = self._exec_engine.cache.first_account(order.symbol.venue)
-        if account is None:
-            self.log.error(f"Cannot cancel {order} "
-                           f"(no account registered for {order.symbol.venue}).")
+        if order.account_id is None:
+            self.log.error(f"Cannot cancel {order} (no account assigned to order yet).")
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
             order.symbol.venue,
             self.trader_id,
-            account.id,
+            order.account_id,
             order.cl_ord_id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
@@ -1543,7 +1538,11 @@ cdef class TradingStrategy:
 
     cpdef void cancel_all_orders(self, Symbol symbol) except *:
         """
-        Send a CancelAllOrders command for this strategy to the execution engine.
+        Cancel all orders for this strategy for the given symbol.
+
+        symbol : Symbol, optional
+            The specific symbol for the orders to cancel.
+
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
@@ -1554,14 +1553,13 @@ cdef class TradingStrategy:
             return
 
         cdef Order order
-        cdef CancelOrder command
         for order in working_orders:
             self.cancel_order(order)
 
     cpdef void flatten_position(self, Position position) except *:
         """
-        Send a FlattenPosition command for the given position identifier to the
-        execution engine.
+        Flatten the given position by generating a market order on the opposite
+        side for the positions quantity.
 
         Parameters
         ----------
@@ -1577,12 +1575,6 @@ cdef class TradingStrategy:
                              f"(the position is already closed).")
             return  # Invalid command
 
-        cdef Account account = self._exec_engine.cache.first_account(position.symbol.venue)
-        if account is None:
-            self.log.error(f"Cannot flatten {position} "
-                           f"(no account registered for {position.symbol.venue}).")
-            return  # Cannot send command
-
         # Create flattening order
         cdef MarketOrder order = self.order_factory.market(
             position.symbol,
@@ -1594,7 +1586,7 @@ cdef class TradingStrategy:
         cdef SubmitOrder submit_order = SubmitOrder(
             position.symbol.venue,
             self.trader_id,
-            account.id,
+            position.account_id,
             self.id,
             position.id,
             order,

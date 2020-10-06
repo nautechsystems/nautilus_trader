@@ -474,7 +474,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         position = self.exec_engine.cache.positions_open()[0]
         expected_commission = position.quantity * commission_percent
-        account = self.exec_engine.cache.first_account(Venue('FXCM'))
+        account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
 
         # Assert
         self.assertEqual(account_event1.commission.as_double(), order.filled_qty * commission_percent)

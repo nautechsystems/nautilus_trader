@@ -35,7 +35,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cdef dict _cached_orders
     cdef dict _cached_positions
 
-    cdef dict _index_venue_accounts
+    cdef dict _index_venue_account
     cdef dict _index_order_position
     cdef dict _index_order_strategy
     cdef dict _index_position_strategy
@@ -58,11 +58,8 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void cache_orders(self) except *
     cpdef void cache_positions(self) except *
     cpdef void build_index(self) except *
-    cdef void _build_index_venue_accounts(self) except *
-    cdef void _cache_venue_account_id(self, AccountId account_id) except *
-    cdef void _build_indexes_from_orders(self) except *
-    cdef void _build_indexes_from_positions(self) except *
     cpdef void integrity_check(self) except *
+
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
@@ -84,6 +81,10 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void flush_db(self) except *
     cdef void _clear_indexes(self) except *
 
+    cdef void _build_index_venue_accounts(self) except *
+    cdef void _cache_venue_account_id(self, AccountId account_id) except *
+    cdef void _build_indexes_from_orders(self) except *
+    cdef void _build_indexes_from_positions(self) except *
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
     cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
     cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id)

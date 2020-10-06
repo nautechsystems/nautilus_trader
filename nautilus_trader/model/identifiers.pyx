@@ -124,6 +124,32 @@ cdef class Venue(Identifier):
         super().__init__(name.upper())
 
 
+cdef class RoutedVenue(Venue):
+    """
+    Represents a venue routed via an intermediary such as a broker.
+    The identifier value must be unique at the fund level.
+    """
+
+    def __init__(self, str routing, str name):
+        """
+        Initialize a new instance of the RoutedVenue class.
+
+        Parameters
+        ----------
+        name : str
+            The routing name identifier value.
+        name : str
+            The venue name identifier value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
+        """
+        super().__init__(f"{routing.upper()}-{name.upper()}")
+
+
 cdef class Exchange(Venue):
     """
     Represents an exchange that financial market instruments are traded on.
