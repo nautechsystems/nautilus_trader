@@ -18,7 +18,7 @@ from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 
 
-cdef class RedisExecutionDatabase(ExecutionDatabase):
+cdef class PostgresExecutionDatabase(ExecutionDatabase):
     cdef readonly str key_trader
     cdef readonly str key_accounts
     cdef readonly str key_orders
@@ -27,4 +27,4 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer
-    cdef object _redis
+    cdef object _postgres
