@@ -35,6 +35,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cdef dict _cached_orders
     cdef dict _cached_positions
 
+    cdef dict _index_venue_accounts
     cdef dict _index_order_position
     cdef dict _index_order_strategy
     cdef dict _index_position_strategy
@@ -57,6 +58,8 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void cache_orders(self) except *
     cpdef void cache_positions(self) except *
     cpdef void build_index(self) except *
+    cdef void _build_index_venue_accounts(self) except *
+    cdef void _cache_venue_account_id(self, AccountId account_id) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *
     cpdef void integrity_check(self) except *

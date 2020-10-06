@@ -13,7 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionDatabase:

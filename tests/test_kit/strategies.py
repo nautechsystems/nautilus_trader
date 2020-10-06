@@ -139,7 +139,7 @@ class TestStrategy1(TradingStrategy):
     def on_bar(self, bar_type, bar):
         self.object_storer.store((bar_type, Bar))
 
-        if bar_type.equals(self.bar_type):
+        if bar_type == self.bar_type:
             if self.ema1.value > self.ema2.value:
                 buy_order = self.order_factory.market(
                     self.bar_type.symbol,

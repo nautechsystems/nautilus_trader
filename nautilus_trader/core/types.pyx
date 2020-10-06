@@ -100,7 +100,7 @@ cdef class ValidString:
         bool
 
         """
-        return self.value.__lt__(other.value)
+        return self.value < other.value
 
     def __le__(self, ValidString other) -> bool:
         """
@@ -117,7 +117,7 @@ cdef class ValidString:
         bool
 
         """
-        return self.value.__le__(other.value)
+        return self.value <= other.value
 
     def __gt__(self, ValidString other) -> bool:
         """
@@ -133,7 +133,7 @@ cdef class ValidString:
         bool
 
         """
-        return self.value.__gt__(other.value)
+        return self.value > other.value
 
     def __ge__(self, ValidString other) -> bool:
         """
@@ -150,7 +150,7 @@ cdef class ValidString:
         bool
 
         """
-        return self.value.__ge__(other.value)
+        return self.value >= other.value
 
     def __hash__(self) -> int:
         """
@@ -211,14 +211,14 @@ cdef class Identifier(ValidString):
 
         self.id_type = self.__class__.__name__
 
-    cpdef bint equals(self, Identifier other) except *:
+    def __eq__(self, Identifier other) -> bool:
         """
-        Return a value indicating whether the given object is equal to this object.
+        Return a value indicating whether this object is equal to (==) the given object.
 
         Parameters
         ----------
-        other : ValidString
-            The other object.
+        other : object
+            The other object to equate.
 
         Returns
         -------
@@ -226,3 +226,30 @@ cdef class Identifier(ValidString):
 
         """
         return self.id_type == other.id_type and self.value == other.value
+
+    def __ne__(self, Identifier other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the given object.
+
+        Parameters
+        ----------
+        other : object
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.id_type != other.id_type or self.value != other.value
+
+    def __hash__(self) -> int:
+        """
+        Return the hash code of this object.
+
+        Returns
+        -------
+        int
+
+        """
+        return hash(self.value)

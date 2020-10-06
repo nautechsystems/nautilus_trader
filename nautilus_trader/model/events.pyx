@@ -42,19 +42,16 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.
+
     """
 
     def __init__(
             self,
             AccountId account_id not None,
             Currency currency not None,
-            Money cash_balance not None,
-            Money cash_start_day not None,
-            Money cash_activity_day not None,
-            Money margin_used_liquidation not None,
-            Money margin_used_maintenance not None,
-            Decimal margin_ratio not None,
-            str margin_call_status not None,
+            Money balance not None,
+            Money margin_balance not None,
+            Money margin_available not None,
             UUID event_id not None,
             datetime event_timestamp not None,
     ):
@@ -67,48 +64,25 @@ cdef class AccountState(Event):
             The account identifier.
         currency : Currency
             The currency for the account.
-        cash_balance : Money
-            The account cash balance.
-        cash_start_day : Money
-            The account cash start of day.
-        cash_activity_day : Money
-            The account activity for the trading day.
-        margin_used_liquidation : Money
-            The account margin used before liquidation.
-        margin_used_maintenance : Money
-            The account margin used for maintenance.
-        margin_ratio : Decimal
-            The account margin ratio.
-        margin_call_status : str
-            The account margin call status (can be empty string).
+        balance : Money
+            The account balance.
+        margin_balance : Money
+            The account margin balance.
+        margin_available : Money
+            The account margin available.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
 
-        Raises
-        ------
-        ValueError
-            If currency is UNDEFINED.
-        ValueError
-            If margin ratio is negative (<0).
-        ValueError
-            If margin_call_status is not a valid string.
-
         """
-        Condition.not_negative(margin_ratio, "margin_ratio")
-        Condition.valid_string(margin_call_status, "margin_call_status")
         super().__init__(event_id, event_timestamp)
 
         self.account_id = account_id
         self.currency = currency
-        self.cash_balance = cash_balance
-        self.cash_start_day = cash_start_day
-        self.cash_activity_day = cash_activity_day
-        self.margin_used_liquidation = margin_used_liquidation
-        self.margin_used_maintenance = margin_used_maintenance
-        self.margin_ratio = margin_ratio
-        self.margin_call_status = margin_call_status
+        self.balance = balance
+        self.margin_balance = margin_balance
+        self.margin_available = margin_available
 
     def __str__(self) -> str:
         """
@@ -121,8 +95,9 @@ cdef class AccountState(Event):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
-                f"cash={self.cash_balance.to_string_formatted()}, "
-                f"margin_used={self.margin_used_maintenance.to_string_formatted()})")
+                f"balance={self.balance.to_string_formatted()}, "
+                f"margin_balance={self.margin_balance.to_string_formatted()}, "
+                f"margin_avail={self.margin_available.to_string_formatted()})")
 
     def __repr__(self) -> str:
         """
@@ -140,6 +115,7 @@ cdef class AccountState(Event):
 cdef class OrderEvent(Event):
     """
     The base class for all order events.
+
     """
 
     def __init__(
@@ -192,6 +168,7 @@ cdef class OrderEvent(Event):
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
+
     """
 
     def __init__(
@@ -267,6 +244,7 @@ cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted by the system to the
     broker/exchange.
+
     """
 
     def __init__(
@@ -320,7 +298,9 @@ cdef class OrderSubmitted(OrderEvent):
 
 cdef class OrderInvalid(OrderEvent):
     """
-    Represents an event where an order has been invalidated by the system.
+    Represents an event where an order has been invalidated by the Nautilus
+    system.
+
     """
 
     def __init__(
@@ -376,7 +356,8 @@ cdef class OrderInvalid(OrderEvent):
 
 cdef class OrderDenied(OrderEvent):
     """
-    Represents an event where an order has been denied by the system.
+    Represents an event where an order has been denied by the Nautilus system.
+
     """
 
     def __init__(
@@ -433,6 +414,7 @@ cdef class OrderDenied(OrderEvent):
 cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker/exchange.
+
     """
 
     def __init__(
@@ -498,6 +480,7 @@ cdef class OrderRejected(OrderEvent):
 cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the broker/exchange.
+
     """
 
     def __init__(
@@ -557,6 +540,7 @@ cdef class OrderAccepted(OrderEvent):
 cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker/exchange.
+
     """
 
     def __init__(
@@ -663,6 +647,7 @@ cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel or modify command has been
     rejected by the broker/exchange.
+
     """
 
     def __init__(
@@ -737,6 +722,7 @@ cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the
     broker/exchange.
+
     """
 
     def __init__(
@@ -797,6 +783,7 @@ cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the
     broker/exchange.
+
     """
 
     def __init__(
@@ -866,6 +853,7 @@ cdef class OrderModified(OrderEvent):
 cdef class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker/exchange.
+
     """
 
     def __init__(
@@ -925,6 +913,7 @@ cdef class OrderExpired(OrderEvent):
 cdef class OrderFilled(OrderEvent):
     """
     Represents an event where an order has been filled at the exchange.
+
     """
 
     def __init__(
@@ -1088,6 +1077,7 @@ cdef class OrderFilled(OrderEvent):
 cdef class PositionEvent(Event):
     """
     The base class for all position events.
+
     """
 
     def __init__(
@@ -1132,6 +1122,7 @@ cdef class PositionEvent(Event):
 cdef class PositionOpened(PositionEvent):
     """
     Represents an event where a position has been opened.
+
     """
 
     def __init__(
@@ -1184,6 +1175,7 @@ cdef class PositionOpened(PositionEvent):
 cdef class PositionModified(PositionEvent):
     """
     Represents an event where a position has been modified.
+
     """
 
     def __init__(
@@ -1245,6 +1237,7 @@ cdef class PositionModified(PositionEvent):
 cdef class PositionClosed(PositionEvent):
     """
     Represents an event where a position has been closed.
+
     """
 
     def __init__(

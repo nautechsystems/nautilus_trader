@@ -28,7 +28,6 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -38,13 +37,9 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountState(Event):
     cdef readonly AccountId account_id
     cdef readonly Currency currency
-    cdef readonly Money cash_balance
-    cdef readonly Money cash_start_day
-    cdef readonly Money cash_activity_day
-    cdef readonly Money margin_used_liquidation
-    cdef readonly Money margin_used_maintenance
-    cdef readonly Decimal margin_ratio
-    cdef readonly str margin_call_status
+    cdef readonly Money balance
+    cdef readonly Money margin_balance
+    cdef readonly Money margin_available
 
 
 cdef class OrderEvent(Event):

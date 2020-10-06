@@ -126,7 +126,7 @@ cdef class Instrument:
         bool
 
         """
-        return not self.__eq__(other)
+        return not self == other
 
     def __hash__(self) -> int:
         """
@@ -137,7 +137,7 @@ cdef class Instrument:
         int
 
         """
-        return hash(self.symbol.to_string())
+        return hash(self.id.value)
 
     def __str__(self) -> str:
         """

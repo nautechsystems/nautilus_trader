@@ -107,7 +107,6 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
-        print(engine.trader.generate_account_report())
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

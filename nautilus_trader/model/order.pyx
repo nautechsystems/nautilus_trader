@@ -180,22 +180,6 @@ cdef class Order:
 
         self._events.append(event)
 
-    cpdef bint equals(self, Order other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.cl_ord_id.equals(other.cl_ord_id)
-
     cpdef OrderState state(self):
         """
         Return the orders current state.
@@ -309,7 +293,7 @@ cdef class Order:
         bool
 
         """
-        return self.equals(other)
+        return self.cl_ord_id == other.cl_ord_id
 
     def __ne__(self, Order other) -> bool:
         """
@@ -325,7 +309,7 @@ cdef class Order:
         bool
 
         """
-        return not self.equals(other)
+        return self.cl_ord_id != other.cl_ord_id
 
     def __hash__(self) -> int:
         """
@@ -336,7 +320,7 @@ cdef class Order:
         int
 
         """
-        return hash(self.cl_ord_id)
+        return hash(self.cl_ord_id.value)
 
     def __str__(self) -> str:
         """
@@ -1025,22 +1009,6 @@ cdef class BracketOrder:
         self.has_take_profit = take_profit is not None
         self.timestamp = entry.timestamp
 
-    cpdef bint equals(self, BracketOrder other) except *:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.id.equals(other.id)
-
     def __eq__(self, BracketOrder other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given object.
@@ -1055,7 +1023,7 @@ cdef class BracketOrder:
         bool
 
         """
-        return self.equals(other)
+        return self.id == other.id
 
     def __ne__(self, BracketOrder other) -> bool:
         """
@@ -1071,7 +1039,7 @@ cdef class BracketOrder:
         bool
 
         """
-        return not self.equals(other)
+        return self.id != other.id
 
     def __hash__(self) -> int:
         """
