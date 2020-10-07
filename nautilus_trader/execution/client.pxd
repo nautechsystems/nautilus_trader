@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -40,7 +39,6 @@ cdef class ExecutionClient:
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
-    cpdef void account_inquiry(self, AccountInquiry command) except *
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void modify_order(self, ModifyOrder command) except *

@@ -16,16 +16,13 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.account cimport Account
 
 
 cdef class Portfolio:
@@ -56,25 +53,31 @@ cdef class Portfolio:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 
-        self._positions_open = {}    # type: [Symbol, {PositionId, Position}]
-        self._positions_closed = {}  # type: [Symbol, {PositionId, Position}]
+        self._accounts = {}          # type: {Venue: Account}
+        self._positions_open = {}    # type: {Venue: [Position]}
+        self._positions_closed = {}  # type: {Venue: [Position]}
 
-        self.base_currency = Currency.USD()  # Default
-        self.daily_pnl_realized = Money(0, self.base_currency)
-        self.total_pnl_realized = Money(0, self.base_currency)
         self.date_now = self._clock.utc_now().date()
 
-    cpdef void set_base_currency(self, Currency currency) except *:
+    cpdef void register_account(self, Account account) except *:
         """
-        Set the portfolios base currency.
+        Register the given account with the portfolio.
 
         Parameters
         ----------
-        currency : Currency
-            The base currency to set.
+        account : Account
+            The account to register.
+
+        Raises
+        ------
+        KeyError
+            If issuer is already registered with the portfolio.
 
         """
-        self.base_currency = currency
+        Condition.not_none(account, "account")
+        Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
+
+        self._accounts[account.id.issuer] = account
 
     cpdef void update(self, PositionEvent event) except *:
         """
@@ -90,7 +93,6 @@ cdef class Portfolio:
 
         if event.timestamp.date() != self.date_now:
             self.date_now = event.timestamp.date()
-            self.daily_pnl_realized = Money(0, event.position.quote_currency)
 
         if isinstance(event, PositionOpened):
             self._handle_position_opened(event)
@@ -106,177 +108,59 @@ cdef class Portfolio:
         """
         self._log.debug(f"Resetting...")
 
+        self._accounts.clear()
         self._positions_open.clear()
         self._positions_closed.clear()
-        self.base_currency = Currency.USD()  # Default
-        self.daily_pnl_realized = Money(0, self.base_currency)
-        self.total_pnl_realized = Money(0, self.base_currency)
         self.date_now = self._clock.utc_now().date()
 
         self._log.info("Reset.")
 
-    cpdef set symbols_open(self):
-        """
-        Return the open symbols in the portfolio.
-
-        Returns
-        -------
-        Set[Symbol]
-
-        """
-        return set(self._positions_open.keys())
-
-    cpdef set symbols_closed(self):
-        """
-        Return the closed symbols in the portfolio.
-
-        Returns
-        -------
-        Set[Symbol]
-
-        """
-        return set(self._positions_closed.keys())
-
-    cpdef set symbols_all(self):
-        """
-        Return the symbols in the portfolio.
-
-        Returns
-        -------
-        Set[Symbol]
-
-        """
-        return self.symbols_open().union(self.symbols_closed())
-
-    cpdef dict positions_open(self, Symbol symbol=None):
-        """
-        Return the open positions in the portfolio.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        cdef dict positions_open
-        if symbol is None:
-            positions_open = {}
-            for symbol, positions in self._positions_open.items():
-                positions_open = {**positions_open, **positions}
-            return positions_open
-
-        positions_open = self._positions_open.get(symbol)
-        if positions_open is None:
-            return {}
-        return positions_open.copy()
-
-    cpdef dict positions_closed(self, Symbol symbol=None):
-        """
-        Return the closed positions in the portfolio.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        cdef dict positions_closed
-        if symbol is None:
-            positions_closed = {}
-            for symbol, positions in self._positions_closed.items():
-                positions_closed = {**positions_closed, **positions}
-            return positions_closed
-
-        positions_closed = self._positions_closed.get(symbol)
-        if positions_closed is None:
-            return {}
-        return positions_closed.copy()
-
-    cpdef dict positions_all(self, Symbol symbol=None):
-        """
-        Return all positions in the portfolio.
-
-        Parameters
-        ----------
-        symbol : Symbol, optional
-            The symbol query filter
-
-        Returns
-        -------
-        Dict[PositionId, Position]
-
-        """
-        return {**self.positions_open(symbol), **self.positions_closed(symbol)}
-
     cdef void _handle_position_opened(self, PositionOpened event) except *:
         cdef Position position = event.position
+        cdef Venue venue = event.position.symbol.venue
+        cdef Account account = self._accounts.get(venue)
 
-        # Remove from positions closed if found
-        cdef dict positions_closed = self._positions_closed.get(position.symbol)
-        if positions_closed is not None:
-            if positions_closed.pop(position.id, None) is not None:
-                self._log.warning(f"{position.id} already found in closed positions).")
-            # Remove symbol from positions closed if empty
-            if not self._positions_closed[position.symbol]:
-                del self._positions_closed[position.symbol]
+        if account is None:
+            self._accounts[venue] = account
+            # TODO: Other protections for single account per venue
 
         # Add to positions open
-        cdef dict positions_open = self._positions_open.get(position.symbol)
-        if positions_open is None:
-            positions_open = {}
-            self._positions_open[position.symbol] = positions_open
+        cdef list positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            self._positions_open[venue] = [position]
+            return
 
-        if position.id in positions_open:
+        if position in positions_open:
             self._log.warning(f"The opened {position.id} already found in open positions.")
         else:
-            positions_open[position.id] = position
+            positions_open.append(position)
 
     cdef void _handle_position_modified(self, PositionModified event) except *:
-        cdef Position position = event.position
-        cdef OrderFilled fill_event = position.last_event()
-
-        if position.entry != fill_event.order_side:
-            # Increment PNL
-            pass
-            # TODO: Handle multiple currencies
-            # self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl_last)
-            # self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl_last)
+        pass # TODO: Implement
 
     cdef void _handle_position_closed(self, PositionClosed event) except *:
+        cdef Venue venue = event.position.symbol.venue
         cdef Position position = event.position
 
         # Remove from positions open if found
-        cdef dict positions_open = self._positions_open.get(position.symbol)
-        if positions_open is None:
-            self._log.error(f"Cannot find {position.symbol.value} in positions open.")
+        cdef list positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            self._log.error(f"Cannot find open positions for {venue}.")
         else:
-            if positions_open.pop(position.id, None) is None:
-                self._log.error(f"The closed {position.id} was not not found in open positions.")
-            else:
-                # Remove symbol dictionary from positions open if empty
-                if not self._positions_open[position.symbol]:
-                    del self._positions_open[position.symbol]
+            try:
+                positions_open.remove(position)
+            except ValueError as ex:
+                self._log.error(f"The closed {position} was not not found in open positions.")
 
         # Add to positions closed
-        cdef dict positions_closed = self._positions_closed.get(position.symbol)
-        if positions_closed is None:
-            positions_closed = {}
-            self._positions_closed[position.symbol] = positions_closed
-
-        if position.id in positions_closed:
-            self._log.warning(f"The closed {position.id} already found in closed positions.")
+        cdef list positions_closed = self._positions_closed.get(venue)
+        if not positions_closed:
+            self._positions_closed[venue] = [position]
         else:
-            positions_closed[position.id] = position
+            if position in positions_closed:
+                self._log.error(f"The closed {position} already found in closed positions.")
+            else:
+                positions_closed.append(position)
 
-        # Increment PNL
-        # TODO: Handle multiple currencies
-        # self.daily_pnl_realized = self.daily_pnl_realized.add(position.realized_pnl)
-        # self.total_pnl_realized = self.total_pnl_realized.add(position.realized_pnl)
+        # Increment PNLs
+        # TODO: Implement

@@ -81,7 +81,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void flush_db(self) except *
     cdef void _clear_indexes(self) except *
 
-    cdef void _build_index_venue_accounts(self) except *
+    cdef void _build_index_venue_account(self) except *
     cdef void _cache_venue_account_id(self, AccountId account_id) except *
     cdef void _build_indexes_from_orders(self) except *
     cdef void _build_indexes_from_positions(self) except *

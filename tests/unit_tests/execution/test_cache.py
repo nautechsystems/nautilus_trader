@@ -271,7 +271,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_add_account(self):
         # Arrange
-        event = TestStubs.account_event()
+        event = TestStubs.event_account_state()
         account = Account(event)
 
         # Act
@@ -282,7 +282,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_update_account(self):
         # Arrange
-        event = TestStubs.account_event()
+        event = TestStubs.event_account_state()
         account = Account(event)
 
         self.cache.add_account(account)

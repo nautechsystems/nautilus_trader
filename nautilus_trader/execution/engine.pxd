@@ -19,7 +19,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -84,7 +83,6 @@ cdef class ExecutionEngine:
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
 

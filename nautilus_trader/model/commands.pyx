@@ -26,52 +26,6 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 
 
-cdef class AccountInquiry(Command):
-    """
-    Represents a request for account status.
-    """
-
-    def __init__(
-            self,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
-    ):
-        """
-        Initialize a new instance of the AccountInquiry class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader identifier.
-        account_id : AccountId
-            The account identifier for the inquiry.
-        command_id : UUID
-            The commands identifier.
-        command_timestamp : datetime
-            The commands timestamp.
-
-        """
-        super().__init__(command_id, command_timestamp)
-
-        self.trader_id = trader_id
-        self.account_id = account_id
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return (f"{self.__class__.__name__}("
-                f"trader_id={self.account_id.value}, "
-                f"account_id={self.account_id.value})")
-
-
 cdef class SubmitOrder(Command):
     """
     Represents a command to submit the given order.
@@ -336,7 +290,7 @@ cdef class CancelOrder(Command):
 
 cdef class KillSwitch(Command):
     """
-    Represents a command to kill the trading system.
+    Represents a command to aggressively shutdown the trading system.
     """
 
     def __init__(

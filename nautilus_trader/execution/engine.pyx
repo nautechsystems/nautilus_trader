@@ -26,7 +26,6 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -210,7 +209,6 @@ cdef class ExecutionEngine:
     cpdef void load_cache(self) except *:
         """
         Load the cache up from the execution database.
-
         """
         self.cache.cache_accounts()
         self.cache.cache_orders()
@@ -221,7 +219,6 @@ cdef class ExecutionEngine:
     cpdef void integrity_check(self) except *:
         """
         Check integrity of data within the execution cache and database.
-
         """
         self.cache.integrity_check()
 
@@ -316,8 +313,6 @@ cdef class ExecutionEngine:
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
-        elif isinstance(command, AccountInquiry):
-            self._handle_account_inquiry(command)
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
@@ -408,17 +403,6 @@ cdef class ExecutionEngine:
 
         client.cancel_order(command)
 
-    cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
-        # For now we pull out the account issuer string (which should match the venue ID
-        # TODO: Venue instantiation is a temporary hack
-        cdef ExecutionClient client = self._exec_clients.get(Venue(command.account_id.issuer))
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.account_id.issuer} not registered).")
-            return
-
-        client.account_inquiry(command)
-
     cdef void _invalidate_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
@@ -462,7 +446,7 @@ cdef class ExecutionEngine:
             # Generate account
             account = Account(event)
             self.cache.add_account(account)
-            self.portfolio.set_base_currency(event.currency)  # TODO: Refactor
+            self.portfolio.register_account(account)
         else:
             account.apply(event)
             self.cache.update_account(account)

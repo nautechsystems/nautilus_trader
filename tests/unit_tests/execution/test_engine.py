@@ -78,7 +78,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         self.cache = self.exec_engine.cache
-        self.exec_engine.process(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.event_account_state())
 
         self.venue = Venue("FXCM")
         self.exec_client = MockExecutionClient(

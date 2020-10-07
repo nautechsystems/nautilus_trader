@@ -18,7 +18,6 @@ from nautilus_trader.backtest.market cimport SimulatedMarket
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -92,11 +91,6 @@ cdef class BacktestExecClient(ExecutionClient):
         pass  # Nothing to dispose
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
-
-    cpdef void account_inquiry(self, AccountInquiry command) except *:
-        Condition.not_none(command, "command")
-
-        self._market.handle_account_inquiry(command)
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")

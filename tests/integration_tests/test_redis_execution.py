@@ -241,7 +241,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
-        event = TestStubs.account_event()
+        event = TestStubs.event_account_state()
         account = Account(event)
 
         # Act
