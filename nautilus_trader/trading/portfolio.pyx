@@ -136,7 +136,7 @@ cdef class Portfolio:
             positions_open.append(position)
 
     cdef void _handle_position_modified(self, PositionModified event) except *:
-        pass # TODO: Implement
+        pass  # TODO: Implement
 
     cdef void _handle_position_closed(self, PositionClosed event) except *:
         cdef Venue venue = event.position.symbol.venue

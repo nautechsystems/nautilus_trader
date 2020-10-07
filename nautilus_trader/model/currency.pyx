@@ -17,21 +17,20 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport currency_type_to_string
 
-
-cdef Currency BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency AUD = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency CAD = Currency('CAD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency EUR = Currency('EUR', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency GBP = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency HKD = Currency('HKD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency JPY = Currency('JPY', precision=2, currency_type=CurrencyType.FIAT)
+BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
+ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
+XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
+USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
+AUD = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
+USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
+CAD = Currency('CAD', precision=2, currency_type=CurrencyType.FIAT)
+EUR = Currency('EUR', precision=2, currency_type=CurrencyType.FIAT)
+GBP = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
+CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
+HKD = Currency('HKD', precision=2, currency_type=CurrencyType.FIAT)
+NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
+SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
+JPY = Currency('JPY', precision=2, currency_type=CurrencyType.FIAT)
 
 
 cdef dict _CURRENCY_TABLE = {
