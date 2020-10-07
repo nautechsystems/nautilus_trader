@@ -33,7 +33,6 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 cdef class ExecutionCache(ExecutionCacheReadOnly):
     """
     Provides a cache for the execution engine.
-
     """
 
     def __init__(
@@ -85,7 +84,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Clear the current accounts cache and load accounts from the execution
         database.
-
         """
         self._log.info(f"Loading accounts to cache...")
 
@@ -96,7 +94,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Clear the current orders cache and load orders from the execution
         database.
-
         """
         self._log.info(f"Loading orders to cache...")
 
@@ -107,7 +104,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Clear the current positions cache and load positions from the execution
         database.
-
         """
         self._log.info(f"Loading positions to cache...")
 
@@ -117,12 +113,11 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void build_index(self) except *:
         """
         Clear the current cache index and re-build.
-
         """
         self._clear_indexes()
         self._log.info(f"Building indexes...")
 
-        self._build_index_venue_accounts()
+        self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
@@ -131,13 +126,13 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void integrity_check(self) except *:
         pass  # TODO: Implement
 
-    cdef void _build_index_venue_accounts(self) except *:
+    cdef void _build_index_venue_account(self) except *:
         cdef AccountId account_id
         for account_id in self._cached_accounts.keys():
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        self._index_venue_account[Venue(account_id.issuer)] = account_id
+        self._index_venue_account[account_id.issuer_as_venue()] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId cl_ord_id

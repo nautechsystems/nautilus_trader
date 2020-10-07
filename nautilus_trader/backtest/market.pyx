@@ -34,7 +34,6 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -501,12 +500,6 @@ cdef class SimulatedMarket:
             self.exec_client.handle_event(account_state)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
-
-    cpdef void handle_account_inquiry(self, AccountInquiry command) except *:
-        Condition.not_none(command, "command")
-
-        # Generate event -> send to ExecutionClient
-        self.exec_client.handle_event(self._generate_account_event())
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")

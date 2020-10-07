@@ -226,7 +226,7 @@ class TestStubs:
         return AccountId("FXCM", "000", AccountType.SIMULATED)
 
     @staticmethod
-    def account_event(account_id=None) -> AccountState:
+    def event_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 

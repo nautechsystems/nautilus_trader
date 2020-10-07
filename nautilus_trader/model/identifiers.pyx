@@ -124,22 +124,19 @@ cdef class Venue(Identifier):
         super().__init__(name.upper())
 
 
-cdef class RoutedVenue(Venue):
+cdef class Brokerage(Identifier):
     """
-    Represents a venue routed via an intermediary such as a broker.
-    The identifier value must be unique at the fund level.
+    Represents a brokerage intermediary.
     """
 
-    def __init__(self, str routing, str name):
+    def __init__(self, str name):
         """
-        Initialize a new instance of the RoutedVenue class.
+        Initialize a new instance of the Brokerage class.
 
         Parameters
         ----------
         name : str
-            The routing name identifier value.
-        name : str
-            The venue name identifier value.
+            The broker name identifier value.
 
         Raises
         ------
@@ -147,7 +144,37 @@ cdef class RoutedVenue(Venue):
             If name is not a valid string.
 
         """
-        super().__init__(f"{routing.upper()}-{name.upper()}")
+        super().__init__(name.upper())
+
+
+cdef class RoutedVenue(Venue):
+    """
+    Represents a venue routed via an intermediary broker.
+    The identifier value must be unique at the fund level.
+    """
+
+    def __init__(self, str broker, str venue):
+        """
+        Initialize a new instance of the RoutedVenue class.
+
+        Parameters
+        ----------
+        broker : str
+            The broker name identifier value.
+        venue : str
+            The venue name identifier value.
+
+        Raises
+        ------
+        ValueError
+            If broker is not a valid string.
+        ValueError
+            If venue is not a valid string.
+
+        """
+        self.broker = Brokerage(broker)
+        self.venue = Venue(venue)
+        super().__init__(f"{self.broker.value}-{self.venue.value}")
 
 
 cdef class Exchange(Venue):
@@ -416,6 +443,29 @@ cdef class StrategyId(Identifier):
         return StrategyId.from_string(value)
 
 
+cdef class Issuer(Identifier):
+    """
+    Represents an account issuer, may be a brokerage or exchange.
+    """
+
+    def __init__(self, str name):
+        """
+        Initialize a new instance of the Issuer class.
+
+        Parameters
+        ----------
+        name : str
+            The issuer identifier value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
+        """
+        super().__init__(name)
+
+
 cdef class AccountId(Identifier):
     """
     Represents a valid account identifier. The issuer and identifier
@@ -445,16 +495,24 @@ cdef class AccountId(Identifier):
         ValueError
             If issuer is not a valid string.
         ValueError
-            If account_number is not a valid string.
+            If identifier is not a valid string.
 
         """
-        Condition.valid_string(issuer, "issuer")
-        Condition.valid_string(identifier, "identifier")
         super().__init__(f"{issuer}-{identifier}-{account_type_to_string(account_type)}")
 
-        self.issuer = issuer
+        self.issuer = Issuer(issuer)
         self.identifier = Identifier(identifier)
         self.account_type = account_type
+
+    cdef Venue issuer_as_venue(self):
+        """
+        Return the account issuer as a venue.
+
+        Returns
+        -------
+        Venue
+        """
+        return Venue(self.issuer.value)
 
     @staticmethod
     cdef AccountId from_string(str value):
@@ -501,29 +559,6 @@ cdef class AccountId(Identifier):
 
         """
         return AccountId.from_string(value)
-
-
-cdef class AccountNumber(Identifier):
-    """
-    Represents a valid account number.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the AccountNumber class.
-
-        Parameters
-        ----------
-        value : str
-            The value of the account number.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        super().__init__(value)
 
 
 cdef class BracketOrderId(Identifier):

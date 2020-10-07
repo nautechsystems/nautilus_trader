@@ -126,7 +126,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.exec_client)
         self.market.register_client(self.exec_client)
-        self.exec_engine.process(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.event_account_state())
 
         self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 

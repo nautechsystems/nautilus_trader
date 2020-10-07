@@ -88,6 +88,11 @@ cdef class BacktestEngine:
             The optional initial fill model for the backtest engine,
             (if None then no probabilistic fills).
 
+        Raises
+        ------
+        TypeError
+            If strategies contains a type other than TradingStrategy.
+
         """
         if config is None:
             config = BacktestConfig()

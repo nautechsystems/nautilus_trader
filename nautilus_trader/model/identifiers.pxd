@@ -29,15 +29,16 @@ cdef class Venue(Identifier):
     pass
 
 
-cdef class RoutedVenue(Venue):
+cdef class Brokerage(Identifier):
     pass
+
+
+cdef class RoutedVenue(Venue):
+    cdef readonly Brokerage broker
+    cdef readonly Venue venue
 
 
 cdef class Exchange(Venue):
-    pass
-
-
-cdef class Brokerage(Identifier):
     pass
 
 
@@ -65,10 +66,17 @@ cdef class StrategyId(Identifier):
     @staticmethod
     cdef StrategyId from_string(str value)
 
+
+cdef class Issuer(Identifier):
+    pass
+
+
 cdef class AccountId(Identifier):
-    cdef readonly str issuer
+    cdef readonly Issuer issuer
     cdef readonly Identifier identifier
     cdef readonly AccountType account_type
+
+    cdef Venue issuer_as_venue(self)
 
     @staticmethod
     cdef AccountId from_string(str value)

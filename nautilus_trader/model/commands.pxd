@@ -26,11 +26,6 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 
 
-cdef class AccountInquiry(Command):
-    cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
-
-
 cdef class SubmitOrder(Command):
     cdef readonly Venue venue
     cdef readonly TraderId trader_id

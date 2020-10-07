@@ -19,7 +19,6 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.commands import AccountInquiry
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
@@ -228,24 +227,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
         print("\n")
-
-    def test_serialize_and_deserialize_account_inquiry_command(self):
-        # Arrange
-        command = AccountInquiry(
-            self.trader_id,
-            self.account_id,
-            uuid4(),
-            UNIX_EPOCH,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(command)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(deserialized, command)
-        print(b64encode(serialized))
-        print(command)
 
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange

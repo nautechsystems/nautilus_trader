@@ -42,7 +42,6 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.
-
     """
 
     def __init__(
@@ -115,7 +114,6 @@ cdef class AccountState(Event):
 cdef class OrderEvent(Event):
     """
     The base class for all order events.
-
     """
 
     def __init__(
@@ -168,7 +166,6 @@ cdef class OrderEvent(Event):
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
-
     """
 
     def __init__(
@@ -244,7 +241,6 @@ cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted by the system to the
     broker/exchange.
-
     """
 
     def __init__(
@@ -300,7 +296,6 @@ cdef class OrderInvalid(OrderEvent):
     """
     Represents an event where an order has been invalidated by the Nautilus
     system.
-
     """
 
     def __init__(
@@ -357,7 +352,6 @@ cdef class OrderInvalid(OrderEvent):
 cdef class OrderDenied(OrderEvent):
     """
     Represents an event where an order has been denied by the Nautilus system.
-
     """
 
     def __init__(
@@ -414,7 +408,6 @@ cdef class OrderDenied(OrderEvent):
 cdef class OrderRejected(OrderEvent):
     """
     Represents an event where an order has been rejected by the broker/exchange.
-
     """
 
     def __init__(
@@ -480,7 +473,6 @@ cdef class OrderRejected(OrderEvent):
 cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the broker/exchange.
-
     """
 
     def __init__(
@@ -540,7 +532,6 @@ cdef class OrderAccepted(OrderEvent):
 cdef class OrderWorking(OrderEvent):
     """
     Represents an event where an order is working with the broker/exchange.
-
     """
 
     def __init__(
@@ -647,7 +638,6 @@ cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel or modify command has been
     rejected by the broker/exchange.
-
     """
 
     def __init__(
@@ -722,7 +712,6 @@ cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the
     broker/exchange.
-
     """
 
     def __init__(
@@ -783,7 +772,6 @@ cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the
     broker/exchange.
-
     """
 
     def __init__(
@@ -853,7 +841,6 @@ cdef class OrderModified(OrderEvent):
 cdef class OrderExpired(OrderEvent):
     """
     Represents an event where an order has expired with the broker/exchange.
-
     """
 
     def __init__(
@@ -913,7 +900,6 @@ cdef class OrderExpired(OrderEvent):
 cdef class OrderFilled(OrderEvent):
     """
     Represents an event where an order has been filled at the exchange.
-
     """
 
     def __init__(
@@ -1077,7 +1063,6 @@ cdef class OrderFilled(OrderEvent):
 cdef class PositionEvent(Event):
     """
     The base class for all position events.
-
     """
 
     def __init__(
@@ -1122,7 +1107,6 @@ cdef class PositionEvent(Event):
 cdef class PositionOpened(PositionEvent):
     """
     Represents an event where a position has been opened.
-
     """
 
     def __init__(
@@ -1175,7 +1159,6 @@ cdef class PositionOpened(PositionEvent):
 cdef class PositionModified(PositionEvent):
     """
     Represents an event where a position has been modified.
-
     """
 
     def __init__(
@@ -1237,7 +1220,6 @@ cdef class PositionModified(PositionEvent):
 cdef class PositionClosed(PositionEvent):
     """
     Represents an event where a position has been closed.
-
     """
 
     def __init__(
