@@ -25,6 +25,8 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -32,6 +34,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import SecurityType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
@@ -53,7 +56,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import ForexInstrument
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -81,15 +84,14 @@ class TestStubs:
         return Symbol("USD/JPY", Venue('FXCM'))
 
     @staticmethod
-    def instrument_gbpusd() -> ForexInstrument:
-        return ForexInstrument(
+    def instrument_gbpusd() -> Instrument:
+        return Instrument(
             Symbol("GBP/USD", Venue('FXCM')),
+            SecurityType.FOREX,
+            base_currency=GBP,
+            quote_currency=USD,
             price_precision=5,
             size_precision=0,
-            min_stop_distance_entry=0,
-            min_limit_distance_entry=0,
-            min_stop_distance=0,
-            min_limit_distance=0,
             tick_size=Decimal("0.00001"),
             lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
@@ -100,15 +102,14 @@ class TestStubs:
         )
 
     @staticmethod
-    def instrument_usdjpy() -> ForexInstrument:
-        return ForexInstrument(
+    def instrument_usdjpy() -> Instrument:
+        return Instrument(
             Symbol("USD/JPY", Venue('FXCM')),
+            SecurityType.FOREX,
+            base_currency=USD,
+            quote_currency=JPY,
             price_precision=3,
             size_precision=0,
-            min_stop_distance_entry=0,
-            min_limit_distance_entry=0,
-            min_stop_distance=0,
-            min_limit_distance=0,
             tick_size=Decimal("0.001"),
             lot_size=Quantity(1000),
             min_trade_size=Quantity(1),

@@ -19,8 +19,10 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport ForexInstrument
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
 
@@ -90,7 +92,7 @@ cdef class InstrumentLoader:
     Provides instrument template methods for backtesting.
     """
 
-    cpdef ForexInstrument default_fx_ccy(self, Symbol symbol):
+    cpdef Instrument default_fx_ccy(self, Symbol symbol):
         """
         Return a default FX currency pair instrument from the given arguments.
 
@@ -117,14 +119,13 @@ cdef class InstrumentLoader:
         else:
             price_precision = 5
 
-        return ForexInstrument(
+        return Instrument(
             symbol=symbol,
+            security_type=SecurityType.FOREX,
+            base_currency=Currency.from_string_c(base_currency),
+            quote_currency=Currency.from_string_c(quote_currency),
             price_precision=price_precision,
             size_precision=0,
-            min_stop_distance_entry=0,
-            min_limit_distance_entry=0,
-            min_stop_distance=0,
-            min_limit_distance=0,
             tick_size=Decimal.from_float_c(1 / (10 ** price_precision), price_precision),
             lot_size=Quantity("1000"),
             min_trade_size=Quantity("1"),

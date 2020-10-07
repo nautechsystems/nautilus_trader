@@ -32,8 +32,9 @@ cdef class Instrument:
     def __init__(
             self,
             Symbol symbol not None,
-            Currency quote_currency not None,
             SecurityType security_type,
+            Currency base_currency not None,
+            Currency quote_currency not None,
             int price_precision,
             int size_precision,
             Decimal tick_size not None,
@@ -51,8 +52,10 @@ cdef class Instrument:
         ----------
         symbol : Symbol
             The symbol.
+        base_currency : Currency
+            The base asset currency.
         quote_currency : Currency
-            The quote currency.
+            The currency prices for the instrument are quoted in.
         security_type : SecurityType
             The security type.
         price_precision : int
@@ -84,8 +87,9 @@ cdef class Instrument:
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
-        self.quote_currency = quote_currency
         self.security_type = security_type
+        self.base_currency = base_currency
+        self.quote_currency = quote_currency
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.tick_size = tick_size
@@ -161,82 +165,3 @@ cdef class Instrument:
 
         """
         return f"<{str(self)} object at {id(self)}>"
-
-
-cdef class ForexInstrument(Instrument):
-    """
-    Represents a tradeable FOREX currency pair.
-    """
-
-    def __init__(
-            self,
-            Symbol symbol not None,
-            int price_precision,
-            int size_precision,
-            int min_stop_distance_entry,
-            int min_stop_distance,
-            int min_limit_distance_entry,
-            int min_limit_distance,
-            Decimal tick_size not None,
-            Quantity lot_size not None,
-            Quantity min_trade_size not None,
-            Quantity max_trade_size not None,
-            Decimal rollover_interest_buy not None,
-            Decimal rollover_interest_sell not None,
-            datetime timestamp not None,
-    ):
-        """
-        Initialize a new instance of the ForexInstrument class.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol.
-        price_precision : int
-            The price decimal precision.
-        size_precision : int
-            The trading size decimal precision.
-        min_stop_distance_entry : int
-            The minimum distance for stop entry orders.
-        min_stop_distance : int
-            The minimum tick distance for stop orders.
-        min_limit_distance_entry : int
-            The minimum distance for limit entry orders.
-        min_limit_distance : int
-            The minimum tick distance for limit orders.
-        tick_size : Decimal
-            The tick size.
-        lot_size : Quantity
-            The rounded lot size.
-        min_trade_size : Quantity
-            The minimum possible trade size.
-        max_trade_size : Quantity
-            The maximum possible trade size.
-        rollover_interest_buy : Decimal
-            The rollover interest for long positions.
-        rollover_interest_sell : Decimal
-            The rollover interest for short positions.
-        timestamp : datetime
-            The timestamp the instrument was created/updated at.
-
-        """
-        super().__init__(
-            symbol,
-            Currency.from_string_c(symbol.code[-3:]),
-            SecurityType.FOREX,
-            price_precision,
-            size_precision,
-            tick_size,
-            lot_size,
-            min_trade_size,
-            max_trade_size,
-            rollover_interest_buy,
-            rollover_interest_sell,
-            timestamp,
-        )
-
-        self.base_currency = Currency.from_string_c(symbol.code[:3])
-        self.min_stop_distance_entry = min_stop_distance_entry
-        self.min_stop_distance = min_stop_distance
-        self.min_limit_distance_entry = min_limit_distance_entry
-        self.min_limit_distance = min_limit_distance
