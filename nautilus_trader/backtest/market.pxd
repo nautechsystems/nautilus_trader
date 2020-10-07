@@ -37,6 +37,7 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -103,8 +104,7 @@ cdef class SimulatedMarket:
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
-    cdef Money _calculate_commission(self, Order order, LiquiditySide liquidity_side)
-    cpdef void adjust_account(self, OrderFilled event, Position position) except *
+    cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *
     cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
