@@ -21,7 +21,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.currency cimport USD
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -34,18 +33,7 @@ cdef class CommissionModel:
             self,
             Symbol symbol,
             Quantity filled_qty,
-            Price filled_price,
-            double exchange_rate,
             Currency currency,
-            LiquiditySide liquidity_side,
-    ):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Money calculate_for_notional(
-            self,
-            Symbol symbol,
-            Money notional_value,
             LiquiditySide liquidity_side,
     ):
         # Abstract method
@@ -101,8 +89,6 @@ cdef class GenericCommissionModel:
             self,
             Symbol symbol,
             Quantity filled_qty,
-            Price filled_price,
-            double exchange_rate,
             Currency currency,
             LiquiditySide liquidity_side,
     ):
@@ -115,10 +101,6 @@ cdef class GenericCommissionModel:
             The symbol for calculation.
         filled_qty : Quantity
             The filled quantity.
-        filled_price : Price
-            The filled price.
-        exchange_rate : double
-            The exchange rate (symbol quote currency to account base currency).
         currency : Currency
             The currency for the calculation.
         liquidity_side : LiquiditySide
@@ -131,43 +113,10 @@ cdef class GenericCommissionModel:
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(filled_qty, "filled_qty")
-        Condition.not_none(filled_price, "filled_price")
-        Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
-        cdef double commission = filled_qty * filled_price * exchange_rate * commission_rate_percent
-        cdef double final_commission = max(self.minimum.as_double(), commission)
-        return Money(max(self.minimum.as_double(), commission), currency)
-
-    cpdef Money calculate_for_notional(
-            self,
-            Symbol symbol,
-            Money notional_value,
-            LiquiditySide liquidity_side,
-    ):
-        """
-        Return the calculated commission for the given arguments.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for calculation.
-        notional_value : Money
-            The notional value for the transaction.
-        liquidity_side : LiquiditySide
-            The liquidity side of the trade.
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(notional_value, "notional_value")
-
-        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol))
-        cdef double value = max(self.minimum.as_double(), notional_value * commission_rate_percent)
-        return Money(value, notional_value.currency)
+        cdef double commission = max(self.minimum.as_double(), filled_qty * commission_rate_percent)
+        return Money(commission, currency)
 
     cpdef double get_rate(self, Symbol symbol) except *:
         """
@@ -241,8 +190,6 @@ cdef class MakerTakerCommissionModel:
             self,
             Symbol symbol,
             Quantity filled_qty,
-            Price filled_price,
-            double exchange_rate,
             Currency currency,
             LiquiditySide liquidity_side,
     ):
@@ -255,10 +202,6 @@ cdef class MakerTakerCommissionModel:
             The symbol for calculation.
         filled_qty : Quantity
             The filled quantity.
-        filled_price : Price
-            The filled price.
-        exchange_rate : double
-            The exchange rate (symbol quote currency to account base currency).
         currency : Currency
             The currency for the calculation.
         liquidity_side : LiquiditySide
@@ -271,42 +214,9 @@ cdef class MakerTakerCommissionModel:
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(filled_qty, "filled_qty")
-        Condition.not_none(filled_price, "filled_price")
-        Condition.positive(exchange_rate, "exchange_rate")
 
         cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
-        cdef double commission = filled_qty * filled_price * exchange_rate * commission_rate_percent
-        return Money(commission, currency)
-
-    cpdef Money calculate_for_notional(
-            self,
-            Symbol symbol,
-            Money notional_value,
-            LiquiditySide liquidity_side,
-    ):
-        """
-        Return the calculated commission for the given arguments.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for calculation.
-        notional_value : Money
-            The notional value for the transaction.
-        liquidity_side : LiquiditySide
-            The liquidity side of the trade.
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(notional_value, "notional_value")
-
-        cdef double commission_rate_percent = basis_points_as_percentage(self.get_rate(symbol, liquidity_side))
-        cdef double commission = notional_value * commission_rate_percent
-        return Money(notional_value * commission_rate_percent, notional_value.currency)
+        return Money(filled_qty * commission_rate_percent, currency)
 
     cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *:
         """

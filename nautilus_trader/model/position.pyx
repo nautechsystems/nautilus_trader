@@ -66,9 +66,9 @@ cdef class Position:
         self.avg_close_price = 0.0
         self.realized_points = 0.0
         self.realized_return = 0.0
-        self.realized_pnl = Money(0, event.quote_currency)
-        self.realized_pnl_last = Money(0, event.quote_currency)
-        self.commission = Money(0, event.quote_currency)
+        self.realized_pnl = Money(0, event.base_currency)
+        self.realized_pnl_last = Money(0, event.base_currency)
+        self.commission = Money(0, event.base_currency)
 
         self._update(event)
 
@@ -432,7 +432,7 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return self._calculate_pnl(self.avg_open_price, last.ask.as_double(), self.quantity)
         else:
-            return Money(0, self.quote_currency)
+            return Money(0, self.base_currency)
 
     cpdef Money total_pnl(self, QuoteTick last):
         """
@@ -537,5 +537,5 @@ cdef class Position:
             return 0.  # FLAT
 
     cdef Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_qty):
-        cdef double value = self._calculate_points(opened_price, closed_price) * filled_qty
-        return Money(value, self.quote_currency)
+        cdef double value = (self._calculate_points(opened_price, closed_price) / opened_price) * filled_qty
+        return Money(value, self.base_currency)

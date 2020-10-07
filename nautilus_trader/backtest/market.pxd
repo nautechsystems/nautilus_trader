@@ -84,8 +84,6 @@ cdef class SimulatedMarket:
 
     cdef dict _market
     cdef dict _slippages
-    cdef dict _min_stops
-    cdef dict _min_limits
 
     cdef dict _working_orders
     cdef dict _position_index
@@ -97,7 +95,6 @@ cdef class SimulatedMarket:
     cdef int _executions_count
 
     cdef void _set_slippages(self) except *
-    cdef void _set_min_distances(self) except *
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cpdef void register_client(self, ExecutionClient client) except *
@@ -106,7 +103,7 @@ cdef class SimulatedMarket:
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
-    cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side)
+    cdef Money _calculate_commission(self, Order order, LiquiditySide liquidity_side)
     cpdef void adjust_account(self, OrderFilled event, Position position) except *
     cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *

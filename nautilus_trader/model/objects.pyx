@@ -581,7 +581,7 @@ cdef class Money(Fraction):
             If currency is not equal to this currency
 
         """
-        # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
+        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
         return Money(self + other, self.currency)
 
     cdef inline Money sub(self, Money other):
@@ -603,7 +603,7 @@ cdef class Money(Fraction):
             If currency is not equal to this currency
 
         """
-        # Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
+        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
         return Money(self - other, self.currency)
 
     cpdef double as_double(self):

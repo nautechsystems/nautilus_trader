@@ -29,6 +29,7 @@ from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
@@ -41,6 +42,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
@@ -503,13 +505,10 @@ class SimulatedMarketTests(unittest.TestCase):
 
         # Act
         strategy.submit_order(order)
+        position = self.exec_engine.cache.positions_open()[0]
 
-        # TODO: Fix commission calculation
-        # filled_price = strategy.object_storer.get_store()[3].avg_price.as_double()
-        # commission = strategy.object_storer.get_store()[3].commission.as_double()
-        # commission = Money(-commission * filled_price, USD)
-        # position = self.exec_engine.cache.positions_open()[0]
-        # self.assertEqual(position.realized_pnl, commission)
+        # Assert
+        self.assertEqual(Money(75.00, USD), position.commission)
 
     def test_commission_maker_taker_order(self):
         # Arrange
@@ -599,10 +598,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        unrealized_pnl = position.unrealized_pnl(reduce_quote).as_double()
-        expected_unrealized_pnl = \
-            order_reduce.quantity.as_double() * (reduce_quote.bid - open_quote.ask)
-        self.assertEqual(unrealized_pnl, expected_unrealized_pnl)
+        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl(reduce_quote))
 
     # TODO: Position flip behaviour needs to be implemented
     # def test_position_dir_change(self):

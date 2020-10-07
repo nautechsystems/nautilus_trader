@@ -17,7 +17,6 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -27,15 +26,7 @@ cdef class CommissionModel:
         self,
         Symbol symbol,
         Quantity filled_qty,
-        Price filled_price,
-        double exchange_rate,
-        Currency currency,
-        LiquiditySide liquidity_side,
-    )
-    cpdef Money calculate_for_notional(
-        self,
-        Symbol symbol,
-        Money notional_value,
+        Currency base_currency,
         LiquiditySide liquidity_side,
     )
 
