@@ -18,6 +18,7 @@ from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.currency cimport USD
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -87,7 +88,7 @@ cdef class GenericCommissionModel:
         if rates is None:
             rates = {}
         if minimum is None:
-            minimum = Money(0, Currency.USD())
+            minimum = Money(0, USD)
         Condition.dict_types(rates, Symbol, float, "rates")
         Condition.not_negative(default_rate_bp, "default_rate_bp")
         super().__init__()

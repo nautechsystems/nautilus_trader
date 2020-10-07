@@ -25,7 +25,7 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
@@ -232,10 +232,10 @@ class TestStubs:
 
         return AccountState(
             account_id,
-            Currency.USD(),
-            Money(1000000.00, Currency.USD()),
-            Money(1000000.00, Currency.USD()),
-            Money(1000000.00, Currency.USD()),
+            USD,
+            Money(1000000.00, USD),
+            Money(1000000.00, USD),
+            Money(1000000.00, USD),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -305,10 +305,10 @@ class TestStubs:
             filled_qty,
             leaves_qty,
             order.price if fill_price is None else fill_price,
-            Money(commission, Currency.USD()),
+            Money(commission, USD),
             LiquiditySide.TAKER,
-            Currency.USD(),  # Stub event
-            Currency.USD(),  # Stub event
+            USD,  # Stub event
+            USD,  # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -448,10 +448,10 @@ class TestStubs:
             order.quantity,
             Quantity(),
             close_price,
-            Money(0, Currency.USD()),
+            Money(0, USD),
             LiquiditySide.TAKER,
-            Currency.USD(),  # Stub event
-            Currency.USD(),  # Stub event
+            USD,  # Stub event
+            USD,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),
@@ -469,10 +469,10 @@ class TestStubs:
             order.quantity,
             Quantity(),
             close_price,
-            Money(0, Currency.USD()),
+            Money(0, USD),
             LiquiditySide.TAKER,
-            Currency.USD(),  # Stub event
-            Currency.USD(),  # Stub event
+            USD,  # Stub event
+            USD,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),
