@@ -95,8 +95,8 @@ class PositionTests(unittest.TestCase):
         self.assertIsNone(position.open_duration)
         self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
-        self.assertEqual([order.cl_ord_id], position.get_order_ids())
-        self.assertEqual([ExecutionId("E-19700101-000000-001-001-1")], position.get_execution_ids())
+        self.assertEqual({order.cl_ord_id}, position.get_cl_ord_ids())
+        self.assertEqual({ExecutionId("E-19700101-000000-001-001-1")}, position.get_execution_ids())
         self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertTrue(position.is_long())
@@ -145,7 +145,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
-        self.assertEqual([ExecutionId("E-19700101-000000-001-001-1")], position.get_execution_ids())
+        self.assertEqual({ExecutionId("E-19700101-000000-001-001-1")}, position.get_execution_ids())
         self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertFalse(position.is_long())
@@ -230,7 +230,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
-            filled_qty=Quantity(100000),
+            filled_qty=Quantity(50000),
             leaves_qty=Quantity(),
         )
 
@@ -251,7 +251,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(PositionSide.SHORT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(1.00002, position.avg_open_price)
+        self.assertEqual(1.000015, position.avg_open_price)
         self.assertEqual(2, position.event_count())
         self.assertFalse(position.is_long())
         self.assertTrue(position.is_short())
@@ -259,12 +259,12 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertEqual(-0.000460000000000127, position.unrealized_points(last))
-        self.assertEqual(-0.00045999080018412335, position.unrealized_return(last))
-        self.assertEqual(Money(-46.00, USD), position.unrealized_pnl(last))
-        self.assertEqual(-0.000460000000000127, position.total_points(last))
-        self.assertEqual(-0.00045999080018412335, position.total_return(last))
-        self.assertEqual(Money(-46.00, USD), position.total_pnl(last))
+        self.assertAlmostEqual(-0.000465, position.unrealized_points(last))
+        self.assertAlmostEqual(-0.000465, position.unrealized_return(last))
+        self.assertEqual(Money(-46.50, USD), position.unrealized_pnl(last))
+        self.assertAlmostEqual(-0.000465, position.total_points(last))
+        self.assertAlmostEqual(-0.000465, position.total_return(last))
+        self.assertEqual(Money(-46.50, USD), position.total_pnl(last))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -369,8 +369,8 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
-            filled_qty=Quantity(100000),
-            leaves_qty=Quantity(50000),
+            filled_qty=Quantity(50000),
+            leaves_qty=Quantity(0),
         )
 
         last = QuoteTick(
@@ -392,21 +392,21 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0, position.avg_open_price)
         self.assertEqual(3, position.event_count())
-        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.get_order_ids())
+        self.assertEqual({order1.cl_ord_id, order2.cl_ord_id}, position.get_cl_ord_ids())
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(1.00003, position.avg_close_price)
+        self.assertEqual(1.00002, position.avg_close_price)
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())
-        self.assertEqual(-2.999999999997449e-05, position.realized_points)
-        self.assertEqual(-2.999999999997449e-05, position.realized_return)
-        self.assertEqual(Money(-3.000, USD), position.realized_pnl)
+        self.assertEqual(-1.999999999990898e-05, position.realized_points)
+        self.assertEqual(-1.999999999990898e-05, position.realized_return)
+        self.assertEqual(Money(-2.000, USD), position.realized_pnl)
         self.assertEqual(0.0, position.unrealized_points(last))
         self.assertEqual(0.0, position.unrealized_return(last))
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
-        self.assertEqual(-2.999999999997449e-05, position.total_points(last))
-        self.assertEqual(-2.999999999997449e-05, position.total_return(last))
-        self.assertEqual(Money(-3.000, USD), position.total_pnl(last))
+        self.assertEqual(-1.999999999990898e-05, position.total_points(last))
+        self.assertEqual(-1.999999999990898e-05, position.total_return(last))
+        self.assertEqual(Money(-2.000, USD), position.total_pnl(last))
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
@@ -449,11 +449,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.0, position.avg_open_price)
         self.assertEqual(2, position.event_count())
-        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.get_order_ids())
-        self.assertEqual([
+        self.assertEqual({order1.cl_ord_id, order2.cl_ord_id}, position.get_cl_ord_ids())
+        self.assertEqual({
             ExecutionId("E-19700101-000000-001-001-1"),
             ExecutionId("E-19700101-000000-001-001-2")
-        ],
+        },
             position.get_execution_ids(),
         )
         self.assertEqual(UNIX_EPOCH, position.closed_time)
@@ -515,7 +515,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.000005, position.avg_open_price)
         self.assertEqual(3, position.event_count())
-        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.get_order_ids())
+        self.assertEqual({order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id}, position.get_cl_ord_ids())
         self.assertEqual(UNIX_EPOCH, position.closed_time)
         self.assertEqual(1.0001, position.avg_close_price)
         self.assertFalse(position.is_long())

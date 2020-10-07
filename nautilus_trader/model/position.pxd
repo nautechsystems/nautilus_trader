@@ -26,22 +26,17 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Position:
-    cdef set _order_ids
-    cdef list _execution_ids
     cdef list _events
-    cdef dict _fill_prices
-    cdef dict _buy_quantities
-    cdef dict _sell_quantities
     cdef Quantity _buy_quantity
     cdef Quantity _sell_quantity
-    cdef double _relative_quantity
-    cdef int _qty_precision
+    cdef Decimal _relative_quantity
 
     cdef readonly PositionId id
     cdef readonly AccountId account_id
@@ -72,8 +67,9 @@ cdef class Position:
     cpdef str status_string(self)
     cpdef OrderFilled last_event(self)
     cpdef ExecutionId last_execution_id(self)
-    cpdef list get_order_ids(self)
-    cpdef list get_execution_ids(self)
+    cpdef set get_cl_ord_ids(self)
+    cpdef set get_order_ids(self)
+    cpdef set get_execution_ids(self)
     cpdef list get_events(self)
     cpdef int event_count(self)
     cpdef bint is_open(self) except *
@@ -81,7 +77,7 @@ cdef class Position:
     cpdef bint is_long(self) except *
     cpdef bint is_short(self) except *
     cpdef void apply(self, OrderFilled event) except *
-    cpdef double relative_quantity(self)
+    cpdef Decimal relative_quantity(self)
     cpdef double unrealized_points(self, QuoteTick last)
     cpdef double total_points(self, QuoteTick last)
     cpdef double unrealized_return(self, QuoteTick last)
@@ -92,7 +88,7 @@ cdef class Position:
     cdef void _update(self, OrderFilled event) except *
     cdef void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef double _calculate_avg_price(self, dict fills, Quantity total_qty)
+    cdef double _calculate_avg_price(self, Quantity cumulative, double avg_price, OrderFilled event)
     cdef double _calculate_points(self, double open_price, double close_price)
     cdef double _calculate_return(self, double open_price, double close_price)
     cdef Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)
