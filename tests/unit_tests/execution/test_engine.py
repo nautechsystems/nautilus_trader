@@ -19,7 +19,6 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -34,6 +33,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.stubs import TestStubs
@@ -78,7 +78,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         self.cache = self.exec_engine.cache
-        self.exec_engine.process(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.event_account_state())
 
         self.venue = Venue("FXCM")
         self.exec_client = MockExecutionClient(

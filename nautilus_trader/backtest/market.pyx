@@ -20,11 +20,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.market cimport CommissionModel
-from nautilus_trader.common.market cimport ExchangeRateCalculator
-from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
@@ -38,7 +34,6 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -71,6 +66,10 @@ from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
+from nautilus_trader.trading.commission cimport CommissionModel
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
@@ -169,7 +168,6 @@ cdef class SimulatedMarket:
         self._executions_count = 0
 
         self._set_slippages()
-        self._set_min_distances()
 
     cdef void _set_slippages(self) except *:
         cdef dict slippage_index = {}  # type: {Symbol, Decimal}
@@ -178,22 +176,6 @@ cdef class SimulatedMarket:
             slippage_index[symbol] = instrument.tick_size
 
         self._slippages = slippage_index
-
-    cdef void _set_min_distances(self) except *:
-        cdef dict min_stops = {}   # type: {Symbol, Decimal}
-        cdef dict min_limits = {}  # type: {Symbol, Decimal}
-
-        for symbol, instrument in self.instruments.items():
-            min_stops[symbol] = Decimal.from_float_c(
-                instrument.tick_size * instrument.min_stop_distance,
-                instrument.price_precision)
-
-            min_limits[symbol] = Decimal.from_float_c(
-                instrument.tick_size * instrument.min_limit_distance,
-                instrument.price_precision)
-
-        self._min_stops = min_stops
-        self._min_limits = min_limits
 
     cdef dict _build_current_bid_rates(self):
         cdef Symbol symbol
@@ -384,17 +366,18 @@ cdef class SimulatedMarket:
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
 
-    cpdef void adjust_account(self, OrderFilled event, Position position) except *:
+    cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *:
         Condition.not_none(event, "event")
 
-        cdef Instrument instrument = self.instruments[event.symbol]
-        cdef double exchange_rate = self.exchange_calculator.get_rate(
-            from_currency=instrument.quote_currency,
-            to_currency=self.account.currency,
-            price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-            bid_rates=self._build_current_bid_rates(),
-            ask_rates=self._build_current_ask_rates(),
-        )
+        cdef double exchange_rate = 1.
+        if instrument.base_currency != self.account_currency:
+            exchange_rate = self.exchange_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=self.account.currency,
+                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
+                bid_rates=self._build_current_bid_rates(),
+                ask_rates=self._build_current_ask_rates(),
+            )
 
         cdef PositionSide side
         cdef Money pnl = Money(0, self.account_currency)
@@ -414,8 +397,9 @@ cdef class SimulatedMarket:
                 exchange_rate=exchange_rate,
             )
 
-        self.total_commissions = self.total_commissions.sub(event.commission)
-        pnl = pnl.sub(event.commission)
+        cdef Money commission_for_account = Money(event.commission.as_double() * exchange_rate, self.account_currency)
+        self.total_commissions = self.total_commissions.add(commission_for_account)
+        pnl = pnl.sub(commission_for_account)
 
         if not self.frozen_account:
             self.account_balance = self.account_balance.add(pnl)
@@ -437,14 +421,14 @@ cdef class SimulatedMarket:
 
         cdef double difference
         if side == PositionSide.LONG:
-            difference = close_price - open_price
+            difference = (close_price - open_price) / open_price
         elif side == PositionSide.SHORT:
-            difference = open_price - close_price
+            difference = (open_price - close_price) / open_price
         else:
             raise ValueError(f"Cannot calculate the pnl of a "
                              f"{position_side_to_string(side)} side")
 
-        return Money(difference * quantity.as_double() * exchange_rate, self.account_currency)
+        return Money(difference * quantity * exchange_rate, self.account_currency)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
@@ -501,12 +485,6 @@ cdef class SimulatedMarket:
             self.exec_client.handle_event(account_state)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
-
-    cpdef void handle_account_inquiry(self, AccountInquiry command) except *:
-        Condition.not_none(command, "command")
-
-        # Generate event -> send to ExecutionClient
-        self.exec_client.handle_event(self._generate_account_event())
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
@@ -587,12 +565,12 @@ cdef class SimulatedMarket:
         # Check order price is valid and reject or fill
         if order.side == OrderSide.BUY:
             if order.type == OrderType.STOP_MARKET:
-                if order.price < current_market.ask + self._min_stops[order.symbol]:
+                if order.price < current_market.ask:
                     self._reject_order(order, f"BUY STOP order price of {order.price} is too "
                                               f"far from the market, ask={current_market.ask}")
                     return  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price >= current_market.ask - self._min_limits[order.symbol]:
+                if order.price >= current_market.ask:
                     if order.is_post_only:
                         self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
                                                   f"far from the market, ask={current_market.ask}")
@@ -603,13 +581,13 @@ cdef class SimulatedMarket:
                     return  # Filled
         elif order.side == OrderSide.SELL:
             if order.type == OrderType.STOP_MARKET:
-                if order.price > current_market.bid - self._min_stops[order.symbol]:
+                if order.price > current_market.bid:
 
                     self._reject_order(order, f"SELL STOP order price of {order.price} is too "
                                               f"far from the market, bid={current_market.bid}")
                     return  # Invalid price
             elif order.type == OrderType.LIMIT:
-                if order.price <= current_market.bid + self._min_limits[order.symbol]:
+                if order.price <= current_market.bid:
                     if order.is_post_only:
                         self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
                                                   f"far from the market, bid={current_market.bid}")
@@ -832,7 +810,7 @@ cdef class SimulatedMarket:
 
     cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
-            if order.price >= current_market.ask - self._min_limits[order.symbol]:
+            if order.price >= current_market.ask:
                 if order.is_post_only:
                     self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
                                               f"far from the market, ask={current_market.ask}")
@@ -842,7 +820,7 @@ cdef class SimulatedMarket:
                 self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
                 return  # Filled
         elif order.side == OrderSide.SELL:
-            if order.price <= current_market.bid + self._min_limits[order.symbol]:
+            if order.price <= current_market.bid:
                 if order.is_post_only:
                     self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
                                               f"far from the market, bid={current_market.bid}")
@@ -858,12 +836,12 @@ cdef class SimulatedMarket:
 
     cdef void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
-            if order.price < current_market.ask + self._min_stops[order.symbol]:
+            if order.price < current_market.ask:
                 self._reject_order(order, f"BUY STOP order price of {order.price} is too "
                                           f"far from the market, ask={current_market.ask}")
                 return  # Invalid price
         elif order.side == OrderSide.SELL:
-            if order.price > current_market.bid - self._min_stops[order.symbol]:
+            if order.price > current_market.bid:
                 self._reject_order(order, f"SELL STOP order price of {order.price} is too "
                                           f"far from the market, bid={current_market.bid}")
                 return  # Invalid price
@@ -895,27 +873,6 @@ cdef class SimulatedMarket:
 
         self.exec_client.handle_event(working)
 
-    cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side):
-        cdef Instrument instrument = self.instruments[order.symbol]
-        cdef double exchange_rate = self.exchange_calculator.get_rate(
-            from_currency=instrument.quote_currency,
-            to_currency=self.account.currency,
-            price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
-            bid_rates=self._build_current_bid_rates(),
-            ask_rates=self._build_current_ask_rates(),
-        )
-
-        cdef Money commission = self.commission_model.calculate(
-            symbol=order.symbol,
-            filled_qty=order.quantity,
-            filled_price=fill_price,
-            exchange_rate=exchange_rate,
-            currency=self.account_currency,
-            liquidity_side=liquidity_side
-        )
-
-        return commission
-
     cdef void _fill_order(
             self,
             Order order,
@@ -934,7 +891,13 @@ cdef class SimulatedMarket:
             position_id = position.id
 
         # Calculate commission
-        cdef Money commission = self._calculate_commission(order, fill_price, liquidity_side)
+        cdef Instrument instrument = self.instruments[order.symbol]
+        cdef Money commission = self.commission_model.calculate(
+            symbol=order.symbol,
+            filled_qty=order.quantity,
+            base_currency=instrument.base_currency,
+            liquidity_side=liquidity_side
+        )
 
         # Generate event
         cdef OrderFilled filled = OrderFilled(
@@ -958,7 +921,7 @@ cdef class SimulatedMarket:
             self._clock.utc_now(),
         )
 
-        self.adjust_account(filled, position)
+        self.adjust_account(filled, position, instrument)
 
         self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)

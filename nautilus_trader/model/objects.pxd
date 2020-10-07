@@ -20,6 +20,9 @@ from nautilus_trader.model.quicktions cimport Fraction
 cdef class Decimal(Fraction):
     cdef readonly int precision
 
+    cdef inline Decimal add(self, Fraction other)
+    cdef inline Decimal sub(self, Fraction other)
+
     @staticmethod
     cdef inline Decimal from_float_c(double value, int precision)
     cpdef double as_double(self)
@@ -42,6 +45,9 @@ cdef class Quantity(Fraction):
 cdef class Price(Fraction):
     cdef readonly int precision
 
+    cdef inline Price add(self, Fraction other)
+    cdef inline Price sub(self, Fraction other)
+
     @staticmethod
     cdef inline Price from_float_c(double value, int precision)
     cpdef double as_double(self)
@@ -53,9 +59,6 @@ cdef class Money(Fraction):
 
     cdef inline Money add(self, Money other)
     cdef inline Money sub(self, Money other)
-
-    @staticmethod
-    cdef Money zero(Currency currency)
 
     cpdef double as_double(self)
     cpdef str to_string(self)

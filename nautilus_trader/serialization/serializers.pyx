@@ -34,7 +34,6 @@ from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_from_string
 from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -358,10 +357,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             TIMESTAMP: convert_datetime_to_string(command.timestamp),
         }
 
-        if isinstance(command, AccountInquiry):
-            package[TRADER_ID] = command.trader_id.value
-            package[ACCOUNT_ID] = command.account_id.value
-        elif isinstance(command, SubmitOrder):
+        if isinstance(command, SubmitOrder):
             package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
@@ -422,14 +418,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef UUID command_id = UUID(unpacked[ID].decode(UTF8))
         cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
-        if command_type == AccountInquiry.__name__:
-            return AccountInquiry(
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                command_id,
-                command_timestamp,
-            )
-        elif command_type == SubmitOrder.__name__:
+        if command_type == SubmitOrder.__name__:
             return SubmitOrder(
                 Venue(unpacked[VENUE].decode(UTF8)),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),

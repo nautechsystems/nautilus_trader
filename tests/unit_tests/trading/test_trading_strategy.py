@@ -27,8 +27,6 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.market import GenericCommissionModel
-from nautilus_trader.common.portfolio import Portfolio
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -51,6 +49,8 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.commission import GenericCommissionModel
+from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.strategies import TestStrategy1
 from tests.test_kit.stubs import TestStubs
@@ -126,7 +126,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.exec_client)
         self.market.register_client(self.exec_client)
-        self.exec_engine.process(TestStubs.account_event())
+        self.exec_engine.process(TestStubs.event_account_state())
 
         self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 

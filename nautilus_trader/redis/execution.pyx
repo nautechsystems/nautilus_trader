@@ -15,7 +15,6 @@
 
 import redis
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -34,6 +33,7 @@ from nautilus_trader.model.order cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.serializers cimport EventSerializer
+from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

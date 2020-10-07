@@ -13,14 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
-
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -30,15 +26,7 @@ cdef class CommissionModel:
         self,
         Symbol symbol,
         Quantity filled_qty,
-        Price filled_price,
-        double exchange_rate,
-        Currency currency,
-        LiquiditySide liquidity_side,
-    )
-    cpdef Money calculate_for_notional(
-        self,
-        Symbol symbol,
-        Money notional_value,
+        Currency base_currency,
         LiquiditySide liquidity_side,
     )
 
@@ -60,22 +48,3 @@ cdef class MakerTakerCommissionModel(CommissionModel):
     cdef double maker_default_rate_bp
 
     cpdef double get_rate(self, Symbol symbol, LiquiditySide liquidity_side) except *
-
-
-cdef class ExchangeRateCalculator:
-    cpdef double get_rate(
-        self,
-        Currency from_currency,
-        Currency to_currency,
-        PriceType price_type,
-        dict bid_rates,
-        dict ask_rates
-    ) except *
-
-
-cdef class RolloverInterestCalculator:
-    cdef ExchangeRateCalculator _exchange_calculator
-    cdef dict _rate_data
-
-    cpdef object get_rate_data(self)
-    cpdef double calc_overnight_rate(self, Symbol symbol, date timestamp) except *

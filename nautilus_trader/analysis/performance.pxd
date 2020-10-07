@@ -15,10 +15,10 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.trading.account cimport Account
 
 
 cdef class PerformanceAnalyzer:

@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -39,16 +39,10 @@ cdef class Position:
             The order fill event which opened the position.
 
         """
-        self._order_ids = {event.cl_ord_id}         # type: {ClientOrderId}
-        self._execution_ids = [event.execution_id]  # type: [ExecutionId]
-        self._events = [event]                      # type: [OrderFilled]
-        self._fill_prices = {}                      # type: {ClientOrderId, Price}
-        self._buy_quantities = {}                   # type: {ClientOrderId, Quantity}
-        self._sell_quantities = {}                  # type: {ClientOrderId, Quantity}
-        self._buy_quantity = Quantity()             # Initialized in _update()
-        self._sell_quantity = Quantity()            # Initialized in _update()
-        self._relative_quantity = 0.0               # Initialized in _update()
-        self._qty_precision = event.filled_qty.precision
+        self._events = [event]               # type: [OrderFilled]
+        self._buy_quantity = Quantity()      # Initialized in _update()
+        self._sell_quantity = Quantity()     # Initialized in _update()
+        self._relative_quantity = Decimal()  # Initialized in _update()
 
         # Identifiers
         self.id = event.position_id
@@ -72,9 +66,9 @@ cdef class Position:
         self.avg_close_price = 0.0
         self.realized_points = 0.0
         self.realized_return = 0.0
-        self.realized_pnl = Money(0, event.quote_currency)
-        self.realized_pnl_last = Money(0, event.quote_currency)
-        self.commission = Money(0, event.quote_currency)
+        self.realized_pnl = Money(0, event.base_currency)
+        self.realized_pnl_last = Money(0, event.base_currency)
+        self.commission = Money(0, event.base_currency)
 
         self._update(event)
 
@@ -178,27 +172,41 @@ cdef class Position:
         cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string_formatted()} "
         return f"{position_side_to_string(self.side)}{quantity}{self.symbol}"
 
-    cpdef list get_order_ids(self):
+    cpdef set get_cl_ord_ids(self):
         """
-        Return a list of all order identifiers.
+        Return a list of all client order identifiers.
 
         Returns
         -------
-        List[OrderId]
+        Set[OrderId]
 
         """
-        return sorted(list(self._order_ids))
+        cdef OrderFilled event
+        return {event.cl_ord_id for event in self._events}
 
-    cpdef list get_execution_ids(self):
+    cpdef set get_order_ids(self):
+        """
+        Return a list of all client order identifiers.
+
+        Returns
+        -------
+        Set[OrderId]
+
+        """
+        cdef OrderFilled event
+        return {event.order_id for event in self._events}
+
+    cpdef set get_execution_ids(self):
         """
         Return a list of all execution identifiers.
 
         Returns
         -------
-        List[ExecutionId]
+        Set[ExecutionId]
 
         """
-        return self._execution_ids.copy()
+        cdef OrderFilled event
+        return {event.execution_id for event in self._events}
 
     cpdef list get_events(self):
         """
@@ -231,7 +239,7 @@ cdef class Position:
         ExecutionId
 
         """
-        return self._execution_ids[-1]
+        return self._events[-1].execution_id
 
     cpdef int event_count(self):
         """
@@ -300,17 +308,10 @@ cdef class Position:
         """
         Condition.not_none(event, "event")
 
-        # Update events
         self._events.append(event)
-
-        # Update identifiers
-        self._order_ids.add(event.cl_ord_id)
-        self._execution_ids.append(event.execution_id)
-
-        # Apply event
         self._update(event)
 
-    cpdef double relative_quantity(self):
+    cpdef Decimal relative_quantity(self):
         """
         Return the relative quantity of the position.
 
@@ -431,7 +432,7 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return self._calculate_pnl(self.avg_open_price, last.ask.as_double(), self.quantity)
         else:
-            return Money(0, self.quote_currency)
+            return Money(0, self.base_currency)
 
     cpdef Money total_pnl(self, QuoteTick last):
         """
@@ -453,31 +454,24 @@ cdef class Position:
         return self.realized_pnl.add(self.unrealized_pnl(last))
 
     cdef void _update(self, OrderFilled event) except *:
-        self._fill_prices[event.cl_ord_id] = event.avg_price
-        self._qty_precision = max(self._qty_precision, event.filled_qty.precision)
+        # Update total commission
+        self.commission = self.commission.add(event.commission)
 
-        cdef double new_commission
-        if self.quote_currency != event.commission.currency:
-            new_commission = event.commission * event.avg_price
-            self.commission = Money(self.commission + new_commission, self.commission.currency)
-        else:
-            self.commission = self.commission.add(event.commission)
-
+        # Calculate avg prices, points, return, PNL
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
         else:  # event.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(event)
 
         # Set quantities
-        self._relative_quantity = self._buy_quantity.as_double() - self._sell_quantity.as_double()
-        self.quantity = Quantity.from_float_c(abs(self._relative_quantity), precision=self._qty_precision)
+        self.quantity = Quantity(abs(self._relative_quantity))
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
         # Set state
-        if self._relative_quantity > 0.0:
+        if self._relative_quantity > 0:
             self.side = PositionSide.LONG
-        elif self._relative_quantity < 0.0:
+        elif self._relative_quantity < 0:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
@@ -485,54 +479,46 @@ cdef class Position:
             self.open_duration = self.closed_time - self.opened_time
 
     cdef void _handle_buy_order_fill(self, OrderFilled event) except *:
-        self._buy_quantities[event.cl_ord_id] = event.filled_qty
-        cdef double total_buy_qty = 0.0
-        cdef Quantity quantity
-        for quantity in self._buy_quantities.values():
-            total_buy_qty += quantity.as_double()
-        self._buy_quantity = Quantity.from_float_c(total_buy_qty, precision=self._qty_precision)
-
+        cdef Money pnl
         # LONG POSITION
-        if self._relative_quantity > 0.0:
-            self.avg_open_price = self._calculate_avg_price(self._buy_quantities, self._buy_quantity)
+        if self._relative_quantity > 0:
+            self.avg_open_price = self._calculate_avg_price(self._buy_quantity, self.avg_open_price, event)
         # SHORT POSITION
-        elif self._relative_quantity < 0.0:
-            self.avg_close_price = self._calculate_avg_price(self._buy_quantities, self._buy_quantity)
+        elif self._relative_quantity < 0:
+            self.avg_close_price = self._calculate_avg_price(self._buy_quantity, self.avg_close_price, event)
             self.realized_points = self._calculate_points(self.avg_open_price, self.avg_close_price)
             self.realized_return = self._calculate_return(self.avg_open_price, self.avg_close_price)
-            self.realized_pnl = self._calculate_pnl(self.avg_open_price, self.avg_close_price, self._buy_quantity)
+            self.realized_pnl = self._calculate_pnl(self.avg_open_price, self.avg_close_price, self._buy_quantity.add(event.filled_qty))
             self.realized_pnl = self.realized_pnl.sub(self.commission)
         else:
-            self.realized_pnl = self.realized_pnl.sub(self.commission)
+            self.realized_pnl = self.realized_pnl.sub(event.commission)
+
+        # Update quantities
+        self._buy_quantity = self._buy_quantity.add(event.filled_qty)
+        self._relative_quantity = self._relative_quantity.add(event.filled_qty)
 
     cdef void _handle_sell_order_fill(self, OrderFilled event) except *:
-        self._sell_quantities[event.cl_ord_id] = event.filled_qty
-        cdef double total_sell_qty = 0.0
-        cdef Quantity quantity
-        for quantity in self._sell_quantities.values():
-            total_sell_qty += quantity.as_double()
-        self._sell_quantity = Quantity.from_float_c(total_sell_qty, precision=self._qty_precision)
-
+        cdef Money pnl
         # SHORT POSITION
-        if self._relative_quantity < 0.0:
-            self.avg_open_price = self._calculate_avg_price(self._sell_quantities, self._sell_quantity)
+        if self._relative_quantity < 0:
+            self.avg_open_price = self._calculate_avg_price(self._sell_quantity, self.avg_open_price, event)
         # LONG POSITION
-        elif self._relative_quantity > 0.0:
-            self.avg_close_price = self._calculate_avg_price(self._sell_quantities, self._sell_quantity)
+
+        elif self._relative_quantity > 0:
+            self.avg_close_price = self._calculate_avg_price(self._sell_quantity,self.avg_close_price, event)
             self.realized_points = self._calculate_points(self.avg_open_price, self.avg_close_price)
             self.realized_return = self._calculate_return(self.avg_open_price, self.avg_close_price)
-            self.realized_pnl = self._calculate_pnl(self.avg_open_price, self.avg_close_price, self._sell_quantity)
+            self.realized_pnl = self._calculate_pnl(self.avg_open_price, self.avg_close_price, self._sell_quantity.add(event.filled_qty))
             self.realized_pnl = self.realized_pnl.sub(self.commission)
         else:
-            self.realized_pnl = self.realized_pnl.sub(self.commission)
+            self.realized_pnl = self.realized_pnl.sub(event.commission)
 
-    cdef double _calculate_avg_price(self, dict fills, Quantity total_quantity):
-        cdef double cumulative_price = 0.0
-        cdef ClientOrderId order_id
-        cdef Quantity quantity
-        for order_id, quantity in fills.items():
-            cumulative_price += self._fill_prices[order_id].as_double() * quantity.as_double()
-        return cumulative_price / total_quantity.as_double()
+        # Update quantities
+        self._sell_quantity = self._sell_quantity.add(event.filled_qty)
+        self._relative_quantity = self._relative_quantity.sub(event.filled_qty)
+
+    cdef double _calculate_avg_price(self, Quantity cumulative, double avg_price, OrderFilled event):
+        return ((cumulative * avg_price) + (event.filled_qty * event.avg_price)) / (cumulative.add(event.filled_qty))
 
     cdef double _calculate_points(self, double opened_price, double closed_price):
         if self.side == PositionSide.LONG:
@@ -540,7 +526,7 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return opened_price - closed_price
         else:
-            return 0.0  # FLAT
+            return 0.  # FLAT
 
     cdef double _calculate_return(self, double opened_price, double closed_price):
         if self.side == PositionSide.LONG:
@@ -548,8 +534,8 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return (opened_price - closed_price) / opened_price
         else:
-            return 0.0  # FLAT
+            return 0.  # FLAT
 
     cdef Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_qty):
-        cdef double value = self._calculate_points(opened_price, closed_price) * filled_qty.as_double()
-        return Money(value, self.quote_currency)
+        cdef double value = (self._calculate_points(opened_price, closed_price) / opened_price) * filled_qty
+        return Money(value, self.base_currency)

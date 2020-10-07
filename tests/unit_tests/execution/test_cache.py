@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.execution.cache import ExecutionCache
@@ -28,6 +27,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.stubs import TestStubs
 
@@ -271,7 +271,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_add_account(self):
         # Arrange
-        event = TestStubs.account_event()
+        event = TestStubs.event_account_state()
         account = Account(event)
 
         # Act
@@ -282,7 +282,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_update_account(self):
         # Arrange
-        event = TestStubs.account_event()
+        event = TestStubs.event_account_state()
         account = Account(event)
 
         self.cache.add_account(account)

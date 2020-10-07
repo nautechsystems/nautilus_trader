@@ -25,13 +25,16 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.currencies import JPY
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import SecurityType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
@@ -53,7 +56,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import ForexInstrument
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -81,15 +84,14 @@ class TestStubs:
         return Symbol("USD/JPY", Venue('FXCM'))
 
     @staticmethod
-    def instrument_gbpusd() -> ForexInstrument:
-        return ForexInstrument(
+    def instrument_gbpusd() -> Instrument:
+        return Instrument(
             Symbol("GBP/USD", Venue('FXCM')),
+            SecurityType.FOREX,
+            base_currency=GBP,
+            quote_currency=USD,
             price_precision=5,
             size_precision=0,
-            min_stop_distance_entry=0,
-            min_limit_distance_entry=0,
-            min_stop_distance=0,
-            min_limit_distance=0,
             tick_size=Decimal("0.00001"),
             lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
@@ -100,15 +102,14 @@ class TestStubs:
         )
 
     @staticmethod
-    def instrument_usdjpy() -> ForexInstrument:
-        return ForexInstrument(
+    def instrument_usdjpy() -> Instrument:
+        return Instrument(
             Symbol("USD/JPY", Venue('FXCM')),
+            SecurityType.FOREX,
+            base_currency=USD,
+            quote_currency=JPY,
             price_precision=3,
             size_precision=0,
-            min_stop_distance_entry=0,
-            min_limit_distance_entry=0,
-            min_stop_distance=0,
-            min_limit_distance=0,
             tick_size=Decimal("0.001"),
             lot_size=Quantity(1000),
             min_trade_size=Quantity(1),
@@ -226,16 +227,16 @@ class TestStubs:
         return AccountId("FXCM", "000", AccountType.SIMULATED)
 
     @staticmethod
-    def account_event(account_id=None) -> AccountState:
+    def event_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 
         return AccountState(
             account_id,
-            Currency.USD(),
-            Money(1000000.00, Currency.USD()),
-            Money(1000000.00, Currency.USD()),
-            Money(1000000.00, Currency.USD()),
+            USD,
+            Money(1000000.00, USD),
+            Money(1000000.00, USD),
+            Money(1000000.00, USD),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -305,10 +306,10 @@ class TestStubs:
             filled_qty,
             leaves_qty,
             order.price if fill_price is None else fill_price,
-            Money(commission, Currency.USD()),
+            Money(commission, USD),
             LiquiditySide.TAKER,
-            Currency.USD(),  # Stub event
-            Currency.USD(),  # Stub event
+            USD,  # Stub event
+            USD,  # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -448,10 +449,10 @@ class TestStubs:
             order.quantity,
             Quantity(),
             close_price,
-            Money(0, Currency.USD()),
+            Money(0, USD),
             LiquiditySide.TAKER,
-            Currency.USD(),  # Stub event
-            Currency.USD(),  # Stub event
+            USD,  # Stub event
+            USD,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),
@@ -469,10 +470,10 @@ class TestStubs:
             order.quantity,
             Quantity(),
             close_price,
-            Money(0, Currency.USD()),
+            Money(0, USD),
             LiquiditySide.TAKER,
-            Currency.USD(),  # Stub event
-            Currency.USD(),  # Stub event
+            USD,  # Stub event
+            USD,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),

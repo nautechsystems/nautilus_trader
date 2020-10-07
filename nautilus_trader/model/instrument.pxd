@@ -26,6 +26,7 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Instrument:
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
+    cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly SecurityType security_type
     cdef readonly int price_precision
@@ -37,11 +38,3 @@ cdef class Instrument:
     cdef readonly Decimal rollover_interest_buy
     cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp
-
-
-cdef class ForexInstrument(Instrument):
-    cdef readonly Currency base_currency
-    cdef readonly int min_stop_distance_entry
-    cdef readonly int min_stop_distance
-    cdef readonly int min_limit_distance_entry
-    cdef readonly int min_limit_distance
