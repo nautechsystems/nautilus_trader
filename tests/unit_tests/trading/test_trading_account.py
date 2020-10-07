@@ -16,7 +16,7 @@
 import unittest
 
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.objects import Money
@@ -30,10 +30,10 @@ class AccountTests(unittest.TestCase):
         # Arrange
         event = AccountState(
             AccountId.py_from_string("BITMEX-1513111-SIMULATED"),
-            Currency.BTC(),
-            Money(10., Currency.BTC()),
-            Money(10., Currency.BTC()),
-            Money(10., Currency.BTC()),
+            BTC,
+            Money(10., BTC),
+            Money(10., BTC),
+            Money(10., BTC),
             uuid4(),
             UNIX_EPOCH)
 
@@ -42,9 +42,9 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId.py_from_string("BITMEX-1513111-SIMULATED"), account.id)
-        self.assertEqual(Currency.BTC(), account.currency)
-        self.assertEqual(Money(10., Currency.BTC()), account.balance)
-        self.assertEqual(Money(10., Currency.BTC()), account.free_equity)
-        self.assertEqual(Money(10., Currency.BTC()), account.margin_balance)
-        self.assertEqual(Money(10., Currency.BTC()), account.margin_available)
+        self.assertEqual(BTC, account.currency)
+        self.assertEqual(Money(10., BTC), account.balance)
+        self.assertEqual(Money(10., BTC), account.free_equity)
+        self.assertEqual(Money(10., BTC), account.margin_balance)
+        self.assertEqual(Money(10., BTC), account.margin_available)
         self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)

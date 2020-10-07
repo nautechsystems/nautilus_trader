@@ -16,7 +16,9 @@
 import datetime
 import unittest
 
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import JPY
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.trading.calculators import ExchangeRateCalculator
 from nautilus_trader.trading.calculators import RolloverInterestCalculator
@@ -41,8 +43,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             converter.get_rate,
-            Currency.USD(),
-            Currency.JPY(),
+            USD,
+            JPY,
             PriceType.BID,
             bid_rates,
             ask_rates,
@@ -56,8 +58,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.AUD(),
-            Currency.USD(),
+            AUD,
+            USD,
             PriceType.BID,
             bid_rates,
             ask_rates,
@@ -74,8 +76,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.JPY(),
-            Currency.USD(),
+            JPY,
+            USD,
             PriceType.BID,
             bid_rates,
             ask_rates,
@@ -97,15 +99,15 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result1 = converter.get_rate(
-            Currency.JPY(),
-            Currency.AUD(),
+            JPY,
+            AUD,
             PriceType.BID,
             bid_rates,
             ask_rates)
 
         result2 = converter.get_rate(
-            Currency.AUD(),
-            Currency.JPY(),
+            AUD,
+            JPY,
             PriceType.ASK,
             bid_rates,
             ask_rates)
@@ -122,8 +124,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.JPY(),
-            Currency.USD(),
+            JPY,
+            USD,
             PriceType.MID,
             bid_rates,
             ask_rates)
@@ -139,8 +141,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         result = converter.get_rate(
-            Currency.USD(),
-            Currency.JPY(),
+            USD,
+            JPY,
             PriceType.MID,
             bid_rates,
             ask_rates)

@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -42,31 +42,31 @@ class GenericCommissionModelTests(unittest.TestCase):
             filled_price=Price("1.63000"),
             exchange_rate=1.00,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD(),
+            currency=USD,
         )
 
         # Assert
-        self.assertEqual(Money(32.60, Currency.USD()), result)
+        self.assertEqual(Money(32.60, USD), result)
 
     def test_calculate_returns_correct_minimum_commission(self):
         # Arrange
-        model = GenericCommissionModel(minimum=Money(2.00, Currency.USD()))
+        model = GenericCommissionModel(minimum=Money(2.00, USD))
 
         # Act
-        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000, Currency.USD()), LiquiditySide.TAKER)
+        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000, USD), LiquiditySide.TAKER)
 
         # Assert
-        self.assertEqual(Money(2.00, Currency.USD()), result)
+        self.assertEqual(Money(2.00, USD), result)
 
     def test_calculate_returns_correct_commission_for_notional(self):
         # Arrange
         model = GenericCommissionModel()
 
         # Act
-        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD()), LiquiditySide.TAKER)
+        result = model.calculate_for_notional(GBPUSD_FXCM, Money(1000000, USD), LiquiditySide.TAKER)
 
         # Assert
-        self.assertEqual(Money(20.00, Currency.USD()), result)
+        self.assertEqual(Money(20.00, USD), result)
 
     def test_calculate_returns_correct_commission_with_exchange_rate(self):
         # Arrange
@@ -79,11 +79,11 @@ class GenericCommissionModelTests(unittest.TestCase):
             filled_price=Price("95.000"),
             exchange_rate=0.01052632,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD(),
+            currency=USD,
         )
 
         # Assert
-        self.assertEqual(Money(20.00, Currency.USD()), result)
+        self.assertEqual(Money(20.00, USD), result)
 
 
 class MakerTakerCommissionModelTests(unittest.TestCase):
@@ -99,21 +99,21 @@ class MakerTakerCommissionModelTests(unittest.TestCase):
             filled_price=Price("1.63000"),
             exchange_rate=1.00,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD(),
+            currency=USD,
         )
 
         # Assert
-        self.assertEqual(Money(1222.50, Currency.USD()), result)
+        self.assertEqual(Money(1222.50, USD), result)
 
     def test_calculate_returns_correct_commission_for_notional(self):
         # Arrange
         calculator = MakerTakerCommissionModel()
 
         # Act
-        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, Currency.USD()), LiquiditySide.TAKER)
+        result = calculator.calculate_for_notional(GBPUSD_FXCM, Money(1000000, USD), LiquiditySide.TAKER)
 
         # Assert
-        self.assertEqual(Money(750.00, Currency.USD()), result)
+        self.assertEqual(Money(750.00, USD), result)
 
     def test_calculate_returns_correct_commission_with_exchange_rate(self):
         # Arrange
@@ -126,8 +126,8 @@ class MakerTakerCommissionModelTests(unittest.TestCase):
             filled_price=Price("95.000"),
             exchange_rate=0.01052632,
             liquidity_side=LiquiditySide.TAKER,
-            currency=Currency.USD(),
+            currency=USD,
         )
 
         # Assert
-        self.assertEqual(Money(750.00, Currency.USD()), result)
+        self.assertEqual(Money(750.00, USD), result)

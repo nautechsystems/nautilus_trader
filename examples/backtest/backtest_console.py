@@ -25,7 +25,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -64,7 +64,7 @@ if __name__ == "__main__":
         exec_db_flush=False,
         frozen_account=False,
         starting_capital=1000000,
-        account_currency=Currency.USD(),
+        account_currency=USD,
         short_term_interest_csv_path="default",
         bypass_logging=False,
         level_console=LogLevel.INFO,
