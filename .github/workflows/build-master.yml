@@ -15,24 +15,20 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: '3.x'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install setuptools wheel twine
           sudo apt-get install redis-server
           sudo redis-server --daemonize yes
-
       - name: Build
         run: |
           python -m pip install -r requirements.txt
           python setup.py build_ext --inplace
-
       - name: Test
         run: |
           cd scripts
           bash run_tests.sh
-
       - name: Publish Package
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}

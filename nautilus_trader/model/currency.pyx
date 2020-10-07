@@ -17,38 +17,37 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport currency_type_to_string
 
+BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
+ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
+XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
+USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
+AUD = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
+USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
+CAD = Currency('CAD', precision=2, currency_type=CurrencyType.FIAT)
+EUR = Currency('EUR', precision=2, currency_type=CurrencyType.FIAT)
+GBP = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
+CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
+HKD = Currency('HKD', precision=2, currency_type=CurrencyType.FIAT)
+NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
+SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
+JPY = Currency('JPY', precision=2, currency_type=CurrencyType.FIAT)
 
-# TODO: Add all currencies
-cdef Currency _BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency _ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency _XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency _USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
-cdef Currency _AUD = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _CAD = Currency('CAD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _EUR = Currency('EUR', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _GBP = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _HKD = Currency('HKD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
-cdef Currency _JPY = Currency('JPY', precision=2, currency_type=CurrencyType.FIAT)
 
 cdef dict _CURRENCY_TABLE = {
-    'BTC': _BTC,
-    'ETH': _ETH,
-    'XRP': _XRP,
-    'USDT': _USDT,
-    'AUD': _AUD,
-    'USD': _USD,
-    'CAD': _CAD,
-    'EUR': _EUR,
-    'GBP': _GBP,
-    'CHF': _CHF,
-    'HKD': _HKD,
-    'NZD': _NZD,
-    'SGD': _SGD,
-    'JPY': _JPY,
+    'BTC': BTC,
+    'ETH': ETH,
+    'XRP': XRP,
+    'USDT': USDT,
+    'AUD': AUD,
+    'USD': USD,
+    'CAD': CAD,
+    'EUR': EUR,
+    'GBP': GBP,
+    'CHF': CHF,
+    'HKD': HKD,
+    'NZD': NZD,
+    'SGD': SGD,
+    'JPY': JPY,
 }
 
 
@@ -199,159 +198,3 @@ cdef class Currency:
 
         """
         return _CURRENCY_TABLE.get(code)
-
-    @staticmethod
-    def BTC() -> Currency:
-        """
-        The Bitcoin crypto currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _BTC
-
-    @staticmethod
-    def ETH() -> Currency:
-        """
-        The Ether crypto currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _ETH
-
-    @staticmethod
-    def XRP() -> Currency:
-        """
-        The Ripple crypto currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _XRP
-
-    @staticmethod
-    def USDT() -> Currency:
-        """
-        The Tether crypto currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _USDT
-
-    @staticmethod
-    def AUD() -> Currency:
-        """
-        The Australian Dollar fiat currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _AUD
-
-    @staticmethod
-    def USD() -> Currency:
-        """
-        The United States Dollar fiat currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _USD
-
-    @staticmethod
-    def CAD() -> Currency:
-        """
-        The Canadian Dollar fiat currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _CAD
-
-    @staticmethod
-    def CHF() -> Currency:
-        """
-        The Swiss Frank fiat currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _CHF
-
-    @staticmethod
-    def EUR() -> Currency:
-        """
-        The Euro fiat currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _EUR
-
-    @staticmethod
-    def HKD() -> Currency:
-        """
-        The Hong Kong Dollar currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _HKD
-
-    @staticmethod
-    def SGD() -> Currency:
-        """
-        The Singapore Dollar currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _SGD
-
-    @staticmethod
-    def NZD() -> Currency:
-        """
-        The New Zealand Dollar currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _NZD
-
-    @staticmethod
-    def JPY() -> Currency:
-        """
-        The Japanese Yen currency.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return _JPY

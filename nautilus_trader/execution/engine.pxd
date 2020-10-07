@@ -16,11 +16,9 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -40,6 +38,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -84,7 +83,6 @@ cdef class ExecutionEngine:
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _handle_account_inquiry(self, AccountInquiry command) except *
     cdef void _invalidate_order(self, Order order, str reason) except *
     cdef void _deny_order(self, Order order, str reason) except *
 
@@ -106,4 +104,3 @@ cdef class ExecutionEngine:
     cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
-    cdef void _reset(self) except *

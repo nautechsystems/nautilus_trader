@@ -16,19 +16,14 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.market cimport CommissionModel
-from nautilus_trader.common.market cimport ExchangeRateCalculator
-from nautilus_trader.common.market cimport RolloverInterestCalculator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -42,6 +37,7 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -51,6 +47,10 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
+from nautilus_trader.trading.commission cimport CommissionModel
 
 
 cdef class SimulatedMarket:
@@ -85,8 +85,6 @@ cdef class SimulatedMarket:
 
     cdef dict _market
     cdef dict _slippages
-    cdef dict _min_stops
-    cdef dict _min_limits
 
     cdef dict _working_orders
     cdef dict _position_index
@@ -98,7 +96,6 @@ cdef class SimulatedMarket:
     cdef int _executions_count
 
     cdef void _set_slippages(self) except *
-    cdef void _set_min_distances(self) except *
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cpdef void register_client(self, ExecutionClient client) except *
@@ -107,12 +104,10 @@ cdef class SimulatedMarket:
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
-    cdef Money _calculate_commission(self, Order order, Price fill_price, LiquiditySide liquidity_side)
-    cpdef void adjust_account(self, OrderFilled event, Position position) except *
+    cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *
     cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double exchange_rate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
-    cpdef void handle_account_inquiry(self, AccountInquiry command) except *
     cpdef void handle_submit_order(self, SubmitOrder command) except *
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void handle_modify_order(self, ModifyOrder command) except *

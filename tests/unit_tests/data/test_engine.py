@@ -26,7 +26,9 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.wrangling import TickDataWrangler
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import JPY
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
@@ -66,7 +68,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.data_engine.get_exchange_rate(Currency.JPY(), Currency.USD())
+        result = self.data_engine.get_exchange_rate(JPY, USD)
 
         # Assert
         self.assertEqual(0.009025266685348969, result)
@@ -85,7 +87,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.data_engine.get_exchange_rate(Currency.AUD(), Currency.USD())
+        result = self.data_engine.get_exchange_rate(AUD, USD)
 
         # Assert
         self.assertEqual(0.80005, result)

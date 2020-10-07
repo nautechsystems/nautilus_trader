@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -22,17 +21,21 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.account cimport Account
 
 
 cdef class ExecutionCacheReadOnly:
 
-    # -- General queries -------------------------------------------------------
-    cpdef Account account(self, AccountId account_id)
-    cpdef Account first_account(self, Venue venue)
+    # -- Trading queries -------------------------------------------------------
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_flat(self, Symbol symbol=*, StrategyId strategy_id=*) except *
     cpdef bint is_completely_flat(self) except *
+
+    # -- Account queries -------------------------------------------------------
+    cpdef Account account(self, AccountId account_id)
+    cpdef Account account_for_venue(self, Venue venue)
+    cpdef AccountId account_id(self, Venue venue)
 
     # -- Identifier queries ----------------------------------------------------
     cpdef set order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)

@@ -31,9 +31,6 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
-from nautilus_trader.common.market cimport CommissionModel
-from nautilus_trader.common.market cimport GenericCommissionModel
-from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -53,6 +50,9 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
+from nautilus_trader.trading.commission cimport CommissionModel
+from nautilus_trader.trading.commission cimport GenericCommissionModel
+from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -87,6 +87,11 @@ cdef class BacktestEngine:
         fill_model : FillModel
             The optional initial fill model for the backtest engine,
             (if None then no probabilistic fills).
+
+        Raises
+        ------
+        TypeError
+            If strategies contains a type other than TradingStrategy.
 
         """
         if config is None:

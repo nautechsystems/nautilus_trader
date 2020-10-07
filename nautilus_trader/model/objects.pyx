@@ -76,6 +76,38 @@ cdef class Decimal(Fraction):
         """
         return f"<{self.__class__.__name__}({self}) object at {id(self)}>"
 
+    cdef inline Decimal add(self, Fraction other):
+        """
+        Add the other decimal to this decimal.
+
+        Parameters
+        ----------
+        other : Decimal
+            The decimal to add.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Decimal(self + other)
+
+    cdef inline Decimal sub(self, Fraction other):
+        """
+        Subtract the other decimal from this decimal.
+
+        Parameters
+        ----------
+        other : Decimal
+            The decimal to subtract.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return Decimal(self - other)
+
     @staticmethod
     def from_float(value: float, precision: int):
         """
@@ -100,11 +132,32 @@ cdef class Decimal(Fraction):
 
     @staticmethod
     cdef inline Decimal from_float_c(double value, int precision):
+        """
+        Return a decimal from the given value and precision.
+
+        Returns
+        -------
+        Decimal
+
+        Raises
+        ------
+        ValueError
+            If precision is negative (< 0)
+
+        """
         Condition.not_negative_int(precision, "precision")
 
         return Decimal(format(value, f'.{precision}f'))
 
     cpdef double as_double(self):
+        """
+        Return the value of the decimal as a double.
+
+        Returns
+        -------
+        double
+
+        """
         return self._numerator / self._denominator
 
     cpdef str to_string(self):
@@ -180,9 +233,35 @@ cdef class Quantity(Fraction):
         return f"<{self.__class__.__name__}({self}) object at {id(self)}>"
 
     cdef inline Quantity add(self, Quantity other):
+        """
+        Add the other quantity to this quantity.
+
+        Parameters
+        ----------
+        other : Quantity
+            The quantity to add.
+
+        Returns
+        -------
+        Quantity
+
+        """
         return Quantity(self + other)
 
     cdef inline Quantity sub(self, Quantity other):
+        """
+        Subtract the other quantity from this quantity.
+
+        Parameters
+        ----------
+        other : Fraction
+            The quantity to subtract.
+
+        Returns
+        -------
+        Quantity
+
+        """
         return Quantity(self - other)
 
     @staticmethod
@@ -211,11 +290,37 @@ cdef class Quantity(Fraction):
 
     @staticmethod
     cdef inline Quantity from_float_c(double value, int precision):
+        """
+        Return a quantity from the given value and precision.
+
+        Parameters
+        ----------
+        value : double
+            The value of the quantity.
+        precision : int, optional.
+            The decimal precision for the quantity.
+
+        Raises
+        ------
+        ValueError
+            If value is negative (< 0).
+        ValueError
+            If precision is negative (< 0).
+
+        """
         Condition.not_negative_int(precision, "precision")
 
         return Quantity(format(value, f'.{precision}f'))
 
     cpdef double as_double(self):
+        """
+        Return the value of the quantity as a double.
+
+        Returns
+        -------
+        double
+
+        """
         return self._numerator / self._denominator
 
     cpdef str to_string(self):
@@ -301,10 +406,42 @@ cdef class Price(Fraction):
         """
         return f"<{self.__class__.__name__}({self}) object at {id(self)}>"
 
+    cdef inline Price add(self, Fraction other):
+        """
+        Add the other price to this price.
+
+        Parameters
+        ----------
+        other : Fraction
+            The fractional value to add.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price(self + other)
+
+    cdef inline Price sub(self, Fraction other):
+        """
+        Subtract the other price from this price.
+
+        Parameters
+        ----------
+        other : Fraction
+            The fractional value to subtract.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price(self - other)
+
     @staticmethod
     def from_float(value: float, precision: int) -> Price:
         """
-        Return a price from the given float and precision.
+        Return a price from the given value and precision.
 
         Parameters
         ----------
@@ -327,11 +464,37 @@ cdef class Price(Fraction):
 
     @staticmethod
     cdef inline Price from_float_c(double value, int precision):
+        """
+        Return a price from the given value and precision.
+
+        Parameters
+        ----------
+        value : double
+            The value of the price.
+        precision : int.
+            The decimal precision of the price.
+
+        Raises
+        ------
+        ValueError
+            If value is negative (< 0).
+        ValueError
+            If precision is negative (< 0).
+
+        """
         Condition.not_negative_int(precision, "precision")
 
         return Price(format(value, f'.{precision}f'))
 
     cpdef double as_double(self):
+        """
+        Return the value of the price as a double.
+
+        Returns
+        -------
+        double
+
+        """
         return self._numerator / self._denominator
 
     cpdef str to_string(self):
@@ -400,16 +563,58 @@ cdef class Money(Fraction):
                 f"object at {id(self)}>")
 
     cdef inline Money add(self, Money other):
+        """
+        Add the given money to this money.
+
+        Parameters
+        ----------
+        other : Money
+            The money to add.
+
+        Returns
+        -------
+        Money
+
+        Raises
+        ------
+        ValueError
+            If currency is not equal to this currency
+
+        """
+        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
         return Money(self + other, self.currency)
 
     cdef inline Money sub(self, Money other):
+        """
+        Subtract the given money from this money.
+
+        Parameters
+        ----------
+        other : Money
+            The money to subtract.
+
+        Returns
+        -------
+        Money
+
+        Raises
+        ------
+        ValueError
+            If currency is not equal to this currency
+
+        """
+        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
         return Money(self - other, self.currency)
 
-    @staticmethod
-    cdef Money zero(Currency currency):
-        return Money(0, currency)
-
     cpdef double as_double(self):
+        """
+        Return the value of the money as a double.
+
+        Returns
+        -------
+        double
+
+        """
         return self._numerator / self._denominator
 
     cpdef str to_string(self):

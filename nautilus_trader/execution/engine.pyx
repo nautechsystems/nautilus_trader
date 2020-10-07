@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
@@ -21,14 +20,12 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
-from nautilus_trader.common.portfolio cimport Portfolio
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands cimport AccountInquiry
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -54,6 +51,8 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -210,7 +209,6 @@ cdef class ExecutionEngine:
     cpdef void load_cache(self) except *:
         """
         Load the cache up from the execution database.
-
         """
         self.cache.cache_accounts()
         self.cache.cache_orders()
@@ -221,7 +219,6 @@ cdef class ExecutionEngine:
     cpdef void integrity_check(self) except *:
         """
         Check integrity of data within the execution cache and database.
-
         """
         self.cache.integrity_check()
 
@@ -316,8 +313,6 @@ cdef class ExecutionEngine:
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
-        elif isinstance(command, AccountInquiry):
-            self._handle_account_inquiry(command)
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
@@ -408,17 +403,6 @@ cdef class ExecutionEngine:
 
         client.cancel_order(command)
 
-    cdef void _handle_account_inquiry(self, AccountInquiry command) except *:
-        # For now we pull out the account issuer string (which should match the venue ID
-        # TODO: Venue instantiation is a temporary hack
-        cdef ExecutionClient client = self._exec_clients.get(Venue(command.account_id.issuer))
-        if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.account_id.issuer} not registered).")
-            return
-
-        client.account_inquiry(command)
-
     cdef void _invalidate_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
@@ -462,7 +446,7 @@ cdef class ExecutionEngine:
             # Generate account
             account = Account(event)
             self.cache.add_account(account)
-            self.portfolio.set_base_currency(event.currency)  # TODO: Refactor
+            self.portfolio.register_account(account)
         else:
             account.apply(event)
             self.cache.update_account(account)
@@ -697,12 +681,3 @@ cdef class ExecutionEngine:
             return  # Cannot send to strategy
 
         strategy.handle_event(event)
-
-    cdef void _reset(self) except *:
-        """
-        Reset the execution engine to its initial state.
-        """
-        self._registered_strategies.clear()
-        self._pos_id_generator.reset()
-        self.command_count = 0
-        self.event_count = 0

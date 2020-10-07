@@ -12,3 +12,28 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from cpython.datetime cimport date
+
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport Symbol
+
+
+cdef class ExchangeRateCalculator:
+    cpdef double get_rate(
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type,
+        dict bid_rates,
+        dict ask_rates
+    ) except *
+
+
+cdef class RolloverInterestCalculator:
+    cdef ExchangeRateCalculator _exchange_calculator
+    cdef dict _rate_data
+
+    cpdef object get_rate_data(self)
+    cpdef double calc_overnight_rate(self, Symbol symbol, date timestamp) except *

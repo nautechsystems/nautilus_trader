@@ -20,7 +20,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -49,14 +49,15 @@ class BacktestAcceptanceTests(unittest.TestCase):
             exec_db_flush=False,
             frozen_account=False,
             starting_capital=1000000,
-            account_currency=Currency.USD(),
+            account_currency=USD,
             short_term_interest_csv_path='default',
             bypass_logging=False,
             level_console=LogLevel.DEBUG,
             level_file=LogLevel.DEBUG,
             level_store=LogLevel.WARNING,
             log_thread=False,
-            log_to_file=False)
+            log_to_file=False,
+        )
 
         self.engine = BacktestEngine(
             data=data,
@@ -64,7 +65,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            config=config)
+            config=config,
+        )
 
     def tearDown(self):
         self.engine.dispose()
@@ -108,8 +110,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(559, strategies[0].fast_ema.count)
-        # TODO: [WIP] Analyzer lost contact with account
-        # self.assertEqual(-1872.51, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(-1857.67, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange

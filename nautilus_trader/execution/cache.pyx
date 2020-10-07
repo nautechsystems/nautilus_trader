@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.account cimport Account
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -27,13 +26,13 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionCache(ExecutionCacheReadOnly):
     """
     Provides a cache for the execution engine.
-
     """
 
     def __init__(
@@ -62,7 +61,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         self._cached_positions = {}           # type: {PositionId, Position}
 
         # Cached indexes
-        self._index_venue_accounts = {}       # type: {Venue, [AccountId]}
+        self._index_venue_account = {}        # type: {Venue, AccountId}
         self._index_order_position = {}       # type: {ClientOrderId, PositionId}
         self._index_order_strategy = {}       # type: {ClientOrderId, StrategyId}
         self._index_position_strategy = {}    # type: {PositionId, StrategyId}
@@ -85,7 +84,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Clear the current accounts cache and load accounts from the execution
         database.
-
         """
         self._log.info(f"Loading accounts to cache...")
 
@@ -96,7 +94,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Clear the current orders cache and load orders from the execution
         database.
-
         """
         self._log.info(f"Loading orders to cache...")
 
@@ -107,7 +104,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         Clear the current positions cache and load positions from the execution
         database.
-
         """
         self._log.info(f"Loading positions to cache...")
 
@@ -117,31 +113,26 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
     cpdef void build_index(self) except *:
         """
         Clear the current cache index and re-build.
-
         """
         self._clear_indexes()
         self._log.info(f"Building indexes...")
 
-        self._build_index_venue_accounts()
+        self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
         self._log.info(f"Indexes built.")
 
     cpdef void integrity_check(self) except *:
-        pass  # TODO
+        pass  # TODO: Implement
 
-    cdef void _build_index_venue_accounts(self) except *:
+    cdef void _build_index_venue_account(self) except *:
         cdef AccountId account_id
         for account_id in self._cached_accounts.keys():
             self._cache_venue_account_id(account_id)
 
     cdef void _cache_venue_account_id(self, AccountId account_id) except *:
-        cdef Venue venue = Venue(account_id.issuer)
-        if venue not in self._index_venue_accounts:
-            self._index_venue_accounts[venue] = []
-
-        self._index_venue_accounts[venue].append(account_id)
+        self._index_venue_account[account_id.issuer_as_venue()] = account_id
 
     cdef void _build_indexes_from_orders(self) except *:
         cdef ClientOrderId cl_ord_id
@@ -597,7 +588,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
     cdef void _clear_indexes(self) except *:
         self._log.info(f"Clearing indexes...")
-        self._index_venue_accounts.clear()
+        self._index_venue_account.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -617,46 +608,6 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef Account account(self, AccountId account_id):
-        """
-        Return the account matching the given identifier (if found).
-
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-
-        Returns
-        -------
-        Account or None
-
-        """
-        Condition.not_none(account_id, "account_id")
-
-        return self._cached_accounts.get(account_id)
-
-    cpdef Account first_account(self, Venue venue):
-        """
-        Return the first account for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the account identifier.
-
-        Returns
-        -------
-        AccountId or None
-
-        """
-        Condition.not_none(venue, "venue")
-
-        cdef list account_ids = self._index_venue_accounts.get(venue)
-        if not account_ids:
-            return None
-
-        return self._cached_accounts.get(account_ids[0])
-
     cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
         cdef list positions = self.positions_open(symbol, strategy_id)
         cdef Decimal net_quantity = Decimal()
@@ -670,6 +621,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         return net_quantity
 
+    # -- Trading queries ----------------------------------------------------
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
         """
         Return a value indicating whether the execution engine is net long a
@@ -736,6 +688,65 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         """
         return self.positions_open_count() == 0
+
+    # -- Account queries ----------------------------------------------------
+    cpdef Account account(self, AccountId account_id):
+        """
+        Return the account matching the given identifier (if found).
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(account_id, "account_id")
+
+        return self._cached_accounts.get(account_id)
+
+    cpdef Account account_for_venue(self, Venue venue):
+        """
+        Return the account for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the account.
+
+        Returns
+        -------
+        Account or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef AccountId account_id = self._index_venue_account.get(venue)
+        if account_id is None:
+            return None
+
+        return self._cached_accounts.get(account_id)
+
+    cpdef AccountId account_id(self, Venue venue):
+        """
+        Return the account identifier for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the account.
+
+        Returns
+        -------
+        AccountId or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        return self._index_venue_account.get(venue)
 
     # -- Identifier queries ----------------------------------------------------
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id):

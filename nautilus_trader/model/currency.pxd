@@ -16,6 +16,22 @@
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 
 
+cdef Currency BTC
+cdef Currency ETH
+cdef Currency XRP
+cdef Currency USDT
+cdef Currency AUD
+cdef Currency USD
+cdef Currency CAD
+cdef Currency EUR
+cdef Currency GBP
+cdef Currency CHF
+cdef Currency HKD
+cdef Currency NZD
+cdef Currency SGD
+cdef Currency JPY
+
+
 cdef class Currency:
     cdef readonly str code
     cdef readonly int precision

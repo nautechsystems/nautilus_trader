@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.common.account import Account
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.enums import OrderSide
@@ -28,6 +27,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.trading.account import Account
 import redis
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
@@ -241,7 +241,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
-        event = TestStubs.account_event()
+        event = TestStubs.event_account_state()
         account = Account(event)
 
         # Act
