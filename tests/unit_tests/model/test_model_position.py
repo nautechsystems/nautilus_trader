@@ -502,3 +502,86 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(19.00, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl)
         self.assertEqual(Money(19.00, USD), position.total_pnl)
+
+    def test_position_realised_pnl_with_interleaved_orders_sides(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(12),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(17),
+        )
+
+        order3 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(9),
+        )
+
+        order4 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(3),
+        )
+
+        order5 = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.SELL,
+            Quantity(4),
+        )
+
+        # Act
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            fill_price=Price("100"),
+        )
+        position = Position(fill1)
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("99"),
+        )
+        position.apply(fill2)
+        self.assertEqual(Quantity(29), position.quantity)
+        self.assertEqual(Money(0, USD), position.realized_pnl)
+        self.assertEqual(99.41379310344827, position.avg_open_price)
+
+        fill3 = TestStubs.event_order_filled(
+            order3,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("101"),
+        )
+        position.apply(fill3)
+        self.assertEqual(Quantity(20), position.quantity)
+        self.assertEqual(Money(0.14, USD), position.realized_pnl)
+        self.assertEqual(99.41379310344827, position.avg_open_price)
+
+        fill4 = TestStubs.event_order_filled(
+            order4,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("103"),
+        )
+        position.apply(fill4)
+        self.assertEqual(Quantity(23), position.quantity)
+        self.assertEqual(Money(0.14, USD), position.realized_pnl)
+        self.assertEqual(99.8815592203898, position.avg_open_price)
+
+        fill5 = TestStubs.event_order_filled(
+            order5,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("105"),
+        )
+        position.apply(fill5)
+        self.assertEqual(Quantity(19), position.quantity)
+        self.assertEqual(Money(0.34, USD), position.realized_pnl)
+        self.assertEqual(99.8815592203898, position.avg_open_price)

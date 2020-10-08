@@ -582,8 +582,8 @@ class SimulatedMarketTests(unittest.TestCase):
             self.usdjpy.symbol,
             Price("100.003"),
             Price("100.003"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(100000),
+            Quantity(100000),
             UNIX_EPOCH)
         self.market.process_tick(reduce_quote)
 
