@@ -38,8 +38,8 @@ cdef class ExchangeRateCalculator:
             Currency from_currency,
             Currency to_currency,
             PriceType price_type,
-            dict bid_rates,
-            dict ask_rates
+            dict bid_quotes,
+            dict ask_quotes
     ) except *:
         """
         Return the calculated exchange rate for the given quote currency to the
@@ -54,10 +54,10 @@ cdef class ExchangeRateCalculator:
             The currency to convert to.
         price_type : PriceType
             The price type for conversion.
-        bid_rates : dict
-            The dictionary of currency pair bid rates Dict[str, double].
-        ask_rates : dict
-            The dictionary of currency pair ask rates Dict[str, double].
+        bid_quotes : dict
+            The dictionary of currency pair bid quotes Dict[str, double].
+        ask_quotes : dict
+            The dictionary of currency pair ask quotes Dict[str, double].
 
         Returns
         -------
@@ -66,26 +66,26 @@ cdef class ExchangeRateCalculator:
         Raises
         ------
         ValueError
-            If bid_rates length is not equal to ask_rates length.
+            If bid_quotes length is not equal to ask_quotes length.
         ValueError
             If price_type is UNDEFINED or LAST.
 
         """
-        Condition.not_none(bid_rates, "bid_rates")
-        Condition.not_none(ask_rates, "ask_rates")
-        Condition.equal(len(bid_rates), len(ask_rates), "len(bid_rates)", "len(ask_rates)")
+        Condition.not_none(bid_quotes, "bid_quotes")
+        Condition.not_none(ask_quotes, "ask_quotes")
+        Condition.equal(len(bid_quotes), len(ask_quotes), "len(bid_quotes)", "len(ask_quotes)")
 
         if from_currency == to_currency:
             return 1.0  # No exchange necessary
 
         if price_type == PriceType.BID:
-            calculation_rates = bid_rates
+            calculation_rates = bid_quotes
         elif price_type == PriceType.ASK:
-            calculation_rates = ask_rates
+            calculation_rates = ask_quotes
         elif price_type == PriceType.MID:
             calculation_rates = {}  # type: {str, float}
-            for ccy_pair in bid_rates.keys():
-                calculation_rates[ccy_pair] = (bid_rates[ccy_pair] + ask_rates[ccy_pair]) / 2.0
+            for ccy_pair in bid_quotes.keys():
+                calculation_rates[ccy_pair] = (bid_quotes[ccy_pair] + ask_quotes[ccy_pair]) / 2.0
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}")
 

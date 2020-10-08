@@ -15,8 +15,6 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Account:
