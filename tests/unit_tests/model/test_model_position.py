@@ -84,6 +84,7 @@ class PositionTests(unittest.TestCase):
 
         # Act
         position = Position(fill)
+        position.update(last)
 
         # Assert
         self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), position.from_order)
@@ -105,12 +106,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertEqual(0.0004899999999998794, position.unrealized_points(last))
-        self.assertEqual(0.0004899951000488789, position.unrealized_return(last))
-        self.assertEqual(Money(49.00, USD), position.unrealized_pnl(last))
-        self.assertEqual(0.0004899999999998794, position.total_points(last))
-        self.assertEqual(0.0004899951000488789, position.total_return(last))
-        self.assertEqual(Money(49.00, USD), position.total_pnl(last))
+        self.assertEqual(Money(49.00, USD), position.unrealized_pnl)
+        self.assertEqual(Money(49.00, USD), position.total_pnl)
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -137,6 +134,7 @@ class PositionTests(unittest.TestCase):
 
         # Act
         position = Position(fill)
+        position.update(last)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
@@ -154,12 +152,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertEqual(-0.00046999999999997044, position.unrealized_points(last))
-        self.assertEqual(-0.0004699953000469699, position.unrealized_return(last))
-        self.assertEqual(Money(-47.00, USD), position.unrealized_pnl(last))
-        self.assertEqual(-0.00046999999999997044, position.total_points(last))
-        self.assertEqual(-0.0004699953000469699, position.total_return(last))
-        self.assertEqual(Money(-47.00, USD), position.total_pnl(last))
+        self.assertEqual(Money(-47.00, USD), position.unrealized_pnl)
+        self.assertEqual(Money(-47.00, USD), position.total_pnl)
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -187,6 +181,7 @@ class PositionTests(unittest.TestCase):
         )
 
         position = Position(fill)
+        position.update(last)
 
         # Act
         # Assert
@@ -202,12 +197,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertEqual(0.0004899999999998794, position.unrealized_points(last))
-        self.assertEqual(0.0004899951000488789, position.unrealized_return(last))
-        self.assertEqual(Money(24.50, USD), position.unrealized_pnl(last))
-        self.assertEqual(0.0004899999999998794, position.total_points(last))
-        self.assertEqual(0.0004899951000488789, position.total_return(last))
-        self.assertEqual(Money(24.50, USD), position.total_pnl(last))
+        self.assertEqual(Money(24.50, USD), position.unrealized_pnl)
+        self.assertEqual(Money(24.50, USD), position.total_pnl)
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -246,6 +237,7 @@ class PositionTests(unittest.TestCase):
 
         # Act
         position.apply(fill2)
+        position.update(last)
 
         # Assert
         self.assertEqual(Quantity(100000), position.quantity)
@@ -259,12 +251,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertAlmostEqual(-0.000465, position.unrealized_points(last))
-        self.assertAlmostEqual(-0.000465, position.unrealized_return(last))
-        self.assertEqual(Money(-46.50, USD), position.unrealized_pnl(last))
-        self.assertAlmostEqual(-0.000465, position.total_points(last))
-        self.assertAlmostEqual(-0.000465, position.total_return(last))
-        self.assertEqual(Money(-46.50, USD), position.total_pnl(last))
+        self.assertEqual(Money(-46.50, USD), position.unrealized_pnl)
+        self.assertEqual(Money(-46.50, USD), position.total_pnl)
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -314,6 +302,7 @@ class PositionTests(unittest.TestCase):
 
         # Act
         position.apply(fill2)
+        position.update(last)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -330,12 +319,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertEqual(0.0, position.unrealized_points(last))
-        self.assertEqual(0.0, position.unrealized_return(last))
-        self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
-        self.assertEqual(0.0, position.total_points(last))
-        self.assertEqual(0.0, position.total_return(last))
-        self.assertEqual(Money(0, USD), position.total_pnl(last))
+        self.assertEqual(Money(0, USD), position.unrealized_pnl)
+        self.assertEqual(Money(0, USD), position.total_pnl)
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -385,6 +370,7 @@ class PositionTests(unittest.TestCase):
         # Act
         position.apply(fill2)
         position.apply(fill3)
+        position.update(last)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -398,15 +384,9 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())
-        self.assertEqual(-1.999999999990898e-05, position.realized_points)
-        self.assertEqual(-1.999999999990898e-05, position.realized_return)
         self.assertEqual(Money(-2.000, USD), position.realized_pnl)
-        self.assertEqual(0.0, position.unrealized_points(last))
-        self.assertEqual(0.0, position.unrealized_return(last))
-        self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
-        self.assertEqual(-1.999999999990898e-05, position.total_points(last))
-        self.assertEqual(-1.999999999990898e-05, position.total_return(last))
-        self.assertEqual(Money(-2.000, USD), position.total_pnl(last))
+        self.assertEqual(Money(0, USD), position.unrealized_pnl)
+        self.assertEqual(Money(-2.000, USD), position.total_pnl)
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
@@ -442,6 +422,7 @@ class PositionTests(unittest.TestCase):
 
         # Act
         position.apply(fill2)
+        position.update(last)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -464,12 +445,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(0.0, position.realized_points)
         self.assertEqual(0.0, position.realized_return)
         self.assertEqual(Money(0, USD), position.realized_pnl)
-        self.assertEqual(0.0, position.unrealized_points(last))
-        self.assertEqual(0.0, position.unrealized_return(last))
-        self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
-        self.assertEqual(0.0, position.total_points(last))
-        self.assertEqual(0.0, position.total_return(last))
-        self.assertEqual(Money(0, USD), position.total_pnl(last))
+        self.assertEqual(Money(0, USD), position.unrealized_pnl)
+        self.assertEqual(Money(0, USD), position.total_pnl)
 
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
@@ -508,6 +485,7 @@ class PositionTests(unittest.TestCase):
         position = Position(fill1)
         position.apply(fill2)
         position.apply(fill3)
+        position.update(last)
 
         # Assert
         self.assertEqual(Quantity(), position.quantity)
@@ -521,12 +499,6 @@ class PositionTests(unittest.TestCase):
         self.assertFalse(position.is_long())
         self.assertFalse(position.is_short())
         self.assertTrue(position.is_closed())
-        self.assertEqual(9.499999999995623e-05, position.realized_points)
-        self.assertEqual(9.499952500233122e-05, position.realized_return)
         self.assertEqual(Money(19.00, USD), position.realized_pnl)
-        self.assertEqual(0.0, position.unrealized_points(last))
-        self.assertEqual(0.0, position.unrealized_return(last))
-        self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
-        self.assertEqual(9.499999999995623e-05, position.total_points(last))
-        self.assertEqual(9.499952500233122e-05, position.total_return(last))
-        self.assertEqual(Money(19.00, USD), position.total_pnl(last))
+        self.assertEqual(Money(0, USD), position.unrealized_pnl)
+        self.assertEqual(Money(19.00, USD), position.total_pnl)

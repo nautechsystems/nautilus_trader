@@ -54,6 +54,7 @@ cdef class DataEngine:
             self,
             int tick_capacity,
             int bar_capacity,
+            Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
@@ -67,6 +68,8 @@ cdef class DataEngine:
             The length for the internal ticks deque per symbol (> 0).
         bar_capacity : int
             The length for the internal bars deque per symbol (> 0).
+        portfolio : int
+            The portfolio to register to receive quote ticks.
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory
@@ -88,6 +91,7 @@ cdef class DataEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._portfolio = portfolio
         self._exchange_calculator = ExchangeRateCalculator()
 
         self._use_previous_close = True
@@ -716,6 +720,9 @@ cdef class DataEngine:
 
         if not send_to_handlers:
             return
+
+        # Send to portfolio as a priority
+        self._portfolio.handle_tick(tick)
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(symbol)

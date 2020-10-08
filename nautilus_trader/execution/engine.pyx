@@ -452,7 +452,7 @@ cdef class ExecutionEngine:
             self.cache.update_account(account)
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
-        self.portfolio.update(event)
+        self.portfolio.handle_event(event)
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:

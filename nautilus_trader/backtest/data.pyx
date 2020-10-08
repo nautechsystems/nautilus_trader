@@ -42,6 +42,7 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class BacktestDataContainer:
@@ -166,6 +167,7 @@ cdef class BacktestDataEngine(DataEngine):
             BacktestDataContainer data not None,
             int tick_capacity,
             int bar_capacity,
+            Portfolio portfolio not None,
             TestClock clock not None,
             Logger logger not None
     ):
@@ -175,6 +177,7 @@ cdef class BacktestDataEngine(DataEngine):
         :param data: The data needed for the backtest data engine.
         :param tick_capacity: The max length of the internal tick deques.
         :param bar_capacity: The max length of the internal bar deques.
+
         :param clock: The clock for the component.
         :param logger: The logger for the component.
         :raises ValueError: If the tick_capacity is not positive (> 0).
@@ -185,6 +188,7 @@ cdef class BacktestDataEngine(DataEngine):
         super().__init__(
             tick_capacity=tick_capacity,
             bar_capacity=bar_capacity,
+            portfolio=portfolio,
             clock=clock,
             uuid_factory=TestUUIDFactory(),
             logger=logger,

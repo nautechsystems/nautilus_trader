@@ -78,8 +78,20 @@ cdef class Portfolio:
         Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
 
         self._accounts[account.id.issuer] = account
+        account.register_portfolio(self)
 
-    cpdef void update(self, PositionEvent event) except *:
+    cpdef void handle_tick(self, QuoteTick tick) except *:
+        """
+        TBD.
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick to handle
+
+        """
+        pass
+
+    cpdef void handle_event(self, PositionEvent event) except *:
         """
         Update the portfolio with the given event.
 

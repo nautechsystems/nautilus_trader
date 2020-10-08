@@ -67,21 +67,22 @@ class TradingStrategyTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
         self.data_engine = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
+            portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
         self.data_engine.set_use_previous_close(False)
-
-        self.portfolio = Portfolio(
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-        )
 
         self.analyzer = PerformanceAnalyzer()
 

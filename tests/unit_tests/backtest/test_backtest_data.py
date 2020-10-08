@@ -21,8 +21,10 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -42,10 +44,16 @@ class BacktestDataEngineTests(unittest.TestCase):
 
     def test_initialize_client_with_data(self):
         # Arrange
+        uuid_factory = TestUUIDFactory()
+        logger = TestLogger(self.test_clock)
+
+        portfolio = Portfolio(self.test_clock, uuid_factory, logger)
+
         client = BacktestDataEngine(
             data=self.data,
             tick_capacity=1000,
             bar_capacity=1000,
+            portfolio=portfolio,
             clock=self.test_clock,
             logger=TestLogger(self.test_clock),
         )

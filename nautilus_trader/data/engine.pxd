@@ -32,6 +32,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -39,6 +40,7 @@ cdef class DataEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef Portfolio _portfolio
     cdef ExchangeRateCalculator _exchange_calculator
     cdef dict _clients
     cdef bint _use_previous_close
