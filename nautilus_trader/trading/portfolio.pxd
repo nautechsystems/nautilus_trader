@@ -18,30 +18,57 @@ from cpython.datetime cimport date
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
 cdef class Portfolio:
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
+    cdef ExchangeRateCalculator _xrate_calculator
 
+    cdef dict _bid_quotes
+    cdef dict _ask_quotes
     cdef dict _accounts
     cdef dict _positions_open
     cdef dict _positions_closed
+    cdef dict _venue_unrealized_pnl
+    cdef dict _venue_position_value
+    cdef bint _calculated_latest
+    cdef Money _unrealized_pnl
+    cdef Money _position_value
 
     cdef readonly date date_now
+    cdef readonly Currency base_currency
 
+    cpdef void set_base_currency(self, Currency currency) except *
     cpdef void register_account(self, Account account) except *
     cpdef void handle_tick(self, QuoteTick tick) except *
     cpdef void handle_event(self, PositionEvent event) except *
+    cpdef Money unrealized_pnl(self, Venue venue=*)
+    cpdef Money position_value(self, Venue venue=*)
+    cpdef Money position_margin(self, Venue venue)
+    cpdef Money order_margin(self, Venue venue)
     cpdef void reset(self) except *
 
-    cdef void _handle_position_opened(self, PositionOpened event) except *
-    cdef void _handle_position_modified(self, PositionModified event) except *
-    cdef void _handle_position_closed(self, PositionClosed event) except *
+    cdef inline Money _money_zero(self)
+    cdef inline double _get_xrate(self, Currency currency, PositionSide side)
+    cdef inline void _calculate_position_value(self, Position position) except *
+    cdef inline void _calculate_long_position_value_change(self, Venue venue, OrderSide fill_side, Money change) except *
+    cdef inline void _calculate_short_position_value_change(self, Venue venue, OrderSide fill_side, Money change) except *
+    cdef inline void _calculate_unrealized_pnl(self) except *
+    cdef inline void _handle_position_opened(self, PositionOpened event) except *
+    cdef inline void _handle_position_modified(self, PositionModified event) except *
+    cdef inline void _handle_position_closed(self, PositionClosed event) except *

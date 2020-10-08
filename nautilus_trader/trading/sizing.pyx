@@ -152,7 +152,7 @@ cdef class FixedRiskSizer(PositionSizer):
         ValueError
             If the risk_bp is not positive (> 0).
         ValueError
-            If the exchange_rate is not positive (> 0).
+            If the xrate is not positive (> 0).
         ValueError
             If the commission_rate is negative (< 0).
         ValueError
@@ -169,7 +169,7 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_none(entry, "price_entry")
         Condition.not_none(stop_loss, "price_stop_loss")
         Condition.positive(risk_bp, "risk_bp")
-        Condition.not_negative(exchange_rate, "exchange_rate")
+        Condition.not_negative(exchange_rate, "xrate")
         Condition.not_negative(commission_rate_bp, "commission_rate_bp")
         Condition.positive_int(units, "units")
         Condition.not_negative_int(unit_batch_size, "unit_batch_size")

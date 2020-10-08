@@ -16,13 +16,21 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.currency cimport USD
+from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
+from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
 cdef class Portfolio:
@@ -52,12 +60,39 @@ cdef class Portfolio:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-
-        self._accounts = {}          # type: {Venue: Account}
-        self._positions_open = {}    # type: {Venue: [Position]}
-        self._positions_closed = {}  # type: {Venue: [Position]}
+        self._xrate_calculator = ExchangeRateCalculator()
 
         self.date_now = self._clock.utc_now().date()
+        self.base_currency = USD
+
+        self._bid_quotes = {}            # type: {str: float}
+        self._ask_quotes = {}            # type: {str: float}
+        self._accounts = {}              # type: {Venue: Account}
+        self._positions_open = {}        # type: {Venue: [Position]}
+        self._positions_closed = {}      # type: {Venue: [Position]}
+        self._venue_unrealized_pnl = {}  # type: {Venue: Money}
+        self._venue_position_value = {}  # type: {Venue: Money}
+
+        self._unrealized_pnl = self._money_zero()
+        self._position_value = self._money_zero()
+        self._calculated_latest = False
+
+    cpdef void set_base_currency(self, Currency currency) except *:
+        """
+        Set the base currency for the portfolio.
+
+        Parameters
+        ----------
+        currency : Currency
+            The base currency to set.
+
+        """
+        Condition.not_none(currency, "currency")
+
+        self.base_currency = currency
+        self._unrealized_pnl = self._money_zero()
+        self._position_value = self._money_zero()
+        self._calculated_latest = False
 
     cpdef void register_account(self, Account account) except *:
         """
@@ -77,7 +112,7 @@ cdef class Portfolio:
         Condition.not_none(account, "account")
         Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
 
-        self._accounts[account.id.issuer] = account
+        self._accounts[account.id.issuer_as_venue()] = account
         account.register_portfolio(self)
 
     cpdef void handle_tick(self, QuoteTick tick) except *:
@@ -89,15 +124,43 @@ cdef class Portfolio:
             The tick to handle
 
         """
-        cdef list positions_open = self._positions_open.get(tick.symbol.venue)
+        self._calculated_latest = False
+        # TODO: Handle the case of same symbol over different venues
+        self._bid_quotes[tick.symbol.code] = tick.bid.as_double()
+        self._ask_quotes[tick.symbol.code] = tick.ask.as_double()
+
+        cdef Venue venue = tick.symbol.venue
+        cdef list positions_open = self._positions_open.get(venue)
 
         if not positions_open:
             return
 
+        cdef dict unrealized_pnls = {}  # type: {(Currency, PositionSide), float}
+        cdef tuple currency_side        # type: (Currency, PositionSide)
+
+        cdef double pnl
+        # Total all venue position unrealized pnls in position base currencies
         cdef Position position
         for position in positions_open:
             if position.symbol == tick.symbol:
                 position.update(tick)
+                currency_side = (position.base_currency, position.side)
+                pnl = unrealized_pnls.get(currency_side, 0.)
+                unrealized_pnls[currency_side] = pnl + position.unrealized_pnl.as_double()
+
+        cdef double total_unrealized_pnl = 0.
+        cdef double xrate
+        cdef Currency currency
+        cdef PositionSide side
+        for currency_side, pnl in unrealized_pnls.items():
+            currency = currency_side[0]
+            if currency == self.base_currency:
+                total_unrealized_pnl += pnl
+            else:
+                xrate = self._get_xrate(currency, currency_side[1])
+                total_unrealized_pnl += pnl * xrate
+
+        self._venue_unrealized_pnl[venue] = Money(total_unrealized_pnl, self.base_currency)
 
     cpdef void handle_event(self, PositionEvent event) except *:
         """
@@ -118,8 +181,59 @@ cdef class Portfolio:
             self._handle_position_opened(event)
         elif isinstance(event, PositionModified):
             self._handle_position_modified(event)
-        else:
+        elif isinstance(event, PositionClosed):
             self._handle_position_closed(event)
+
+    cpdef Money unrealized_pnl(self, Venue venue=None):
+        """
+        Return the unrealized pnl for the portfolio or a specific venue.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue filter for the unrealized pnl.
+
+        Returns
+        -------
+        Money
+
+        """
+        if venue is not None:
+            return self._venue_unrealized_pnl.get(venue, self._money_zero())
+
+        if self._calculated_latest:
+            return self._unrealized_pnl
+
+        # Recalculate
+        self._calculate_unrealized_pnl()
+        return self._unrealized_pnl
+
+    cpdef Money position_value(self, Venue venue=None):
+        """
+        Return the value at risk for the portfolio or a specific venue.
+
+        Parameters
+        ----------
+        venue : Venue, optional.
+            The venue filter for the value at risk.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(venue, "venue")
+
+        if venue is not None:
+            return self._venue_position_value.get(venue, self._money_zero())
+
+        return self._position_value
+
+    cpdef Money position_margin(self, Venue venue):
+        return self._money_zero()
+
+    cpdef Money order_margin(self, Venue venue):
+        return self._money_zero()
 
     cpdef void reset(self) except *:
         """
@@ -128,21 +242,94 @@ cdef class Portfolio:
         """
         self._log.debug(f"Resetting...")
 
+        self._bid_quotes.clear()
+        self._ask_quotes.clear()
         self._accounts.clear()
         self._positions_open.clear()
         self._positions_closed.clear()
-        self.date_now = self._clock.utc_now().date()
+        self._venue_unrealized_pnl.clear()
+        self._venue_position_value.clear()
+        self._unrealized_pnl = self._money_zero()
+        self._position_value = self._money_zero()
+        self._calculated_latest = False
 
         self._log.info("Reset.")
 
-    cdef void _handle_position_opened(self, PositionOpened event) except *:
+    cdef inline Money _money_zero(self):
+        return Money(0, self.base_currency)
+
+    cdef inline double _get_xrate(self, Currency currency, PositionSide side):
+        cdef PriceType price_type = PriceType.BID if side == PositionSide.LONG else PriceType.ASK
+        # TODO: Handle exceptions
+        return self._xrate_calculator.get_rate(
+            from_currency=currency,
+            to_currency=self.base_currency,
+            price_type=price_type,
+            bid_quotes=self._bid_quotes,
+            ask_quotes=self._ask_quotes,
+        )
+
+    cdef inline void _calculate_unrealized_pnl(self) except *:
+        cdef Money new_unrealized_pnl = self._money_zero()
+        cdef Money unrealized_pnl
+        for unrealized_pnl in self._venue_unrealized_pnl.values():
+            new_unrealized_pnl.add(unrealized_pnl)
+
+        self._unrealized_pnl = new_unrealized_pnl
+        self._calculated_latest = True
+
+    cdef inline void _calculate_position_value(self, Position position) except *:
+        cdef OrderFilled fill = position.last_event()
+        cdef double xrate = 1.
+        if fill.base_currency != self.base_currency:
+            xrate = self._get_xrate(fill.base_currency, position.side)
+
+        # TODO: Add multiplier
+        cdef Money change = Money(fill.filled_qty.as_double() * xrate, self.base_currency)
+
+        if position.entry == OrderSide.BUY:
+            self._calculate_long_position_value_change(position.symbol.venue, fill.order_side, change)
+        elif position.entry == OrderSide.SELL:
+            self._calculate_short_position_value_change(position.symbol.venue, fill.order_side, change)
+        # TODO: Handle invalid orderside
+
+    cdef inline void _calculate_long_position_value_change(
+            self,
+            Venue venue,
+            OrderSide fill_side,
+            Money change,
+    ) except *:
+        cdef Money previous_value = self._venue_position_value.get(venue, self._money_zero())
+
+        if fill_side == OrderSide.BUY:
+            self._position_value = self._position_value.add(change)
+            self._venue_position_value[venue] = previous_value.add(change)
+        else:
+            self._position_value = self._position_value.sub(change)
+            self._venue_position_value[venue] = previous_value.add(change)
+
+    cdef inline void _calculate_short_position_value_change(
+            self,
+            Venue venue,
+            OrderSide fill_side,
+            Money change,
+    ) except *:
+        cdef Money previous_value = self._venue_position_value.get(venue, self._money_zero())
+
+        if fill_side == OrderSide.SELL:
+            self._position_value = self._position_value.add(change)
+            self._venue_position_value[venue] = previous_value.add(change)
+        else:
+            self._position_value = self._position_value.sub(change)
+            self._venue_position_value[venue] = previous_value.add(change)
+
+    cdef inline void _handle_position_opened(self, PositionOpened event) except *:
         cdef Position position = event.position
         cdef Venue venue = event.position.symbol.venue
         cdef Account account = self._accounts.get(venue)
 
         if account is None:
             self._accounts[venue] = account
-            # TODO: Other protections for single account per venue
 
         # Add to positions open
         cdef list positions_open = self._positions_open.get(venue)
@@ -155,10 +342,12 @@ cdef class Portfolio:
         else:
             positions_open.append(position)
 
-    cdef void _handle_position_modified(self, PositionModified event) except *:
-        pass  # TODO: Implement
+        self._calculate_position_value(position)
 
-    cdef void _handle_position_closed(self, PositionClosed event) except *:
+    cdef inline void _handle_position_modified(self, PositionModified event) except *:
+        self._calculate_position_value(event.position)
+
+    cdef inline void _handle_position_closed(self, PositionClosed event) except *:
         cdef Venue venue = event.position.symbol.venue
         cdef Position position = event.position
 
@@ -182,5 +371,4 @@ cdef class Portfolio:
             else:
                 positions_closed.append(position)
 
-        # Increment PNLs
-        # TODO: Implement
+        self._calculate_position_value(position)
