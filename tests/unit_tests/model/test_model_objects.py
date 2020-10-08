@@ -48,7 +48,7 @@ class ObjectTests(unittest.TestCase):
     def test_quantity_equality(self):
         # Arrange
         # Act
-        quantity1 = Quantity("1")
+        quantity1 = Quantity(1)
         quantity2 = Quantity("1")
         quantity3 = Quantity("2")
 
@@ -63,15 +63,16 @@ class ObjectTests(unittest.TestCase):
         self.assertEqual("0", str(Quantity("0")))
         self.assertEqual("1000", str(Quantity("1000")))
         self.assertEqual("10.05", Quantity("10.05").to_string())
-        # self.assertEqual("1K", Quantity("1000").to_string_formatted())
+        self.assertEqual("1K", Quantity(1000).to_string_formatted())
+        self.assertEqual("1K", Quantity("1000").to_string_formatted())
         self.assertEqual("120,100", Quantity("120100").to_string_formatted())
-        # self.assertEqual("200K", Quantity("200000").to_string_formatted())
-        # self.assertEqual("1M", Quantity("1000000").to_string_formatted())
-        # self.assertEqual("2.5M", Quantity("2500000").to_string_formatted())
+        self.assertEqual("200K", Quantity("200000").to_string_formatted())
+        self.assertEqual("1M", Quantity("1000000").to_string_formatted())
+        self.assertEqual("1M", Quantity(1000000).to_string_formatted())
+        self.assertEqual("2.5M", Quantity("2500000").to_string_formatted())
         self.assertEqual("1,111,111", Quantity("1111111").to_string_formatted())
-        # self.assertEqual("2.523M", Quantity("2523000").to_string_formatted())
-        # self.assertEqual("100M", Quantity("100000000").to_string_formatted())
-        # self.assertEqual("1,000.0", Quantity("1000").to_string(format_commas=True))
+        self.assertEqual("2.523M", Quantity("2523000").to_string_formatted())
+        self.assertEqual("100M", Quantity("100000000").to_string_formatted())
 
     def test_quantity_comparisons(self):
         # Arrange
