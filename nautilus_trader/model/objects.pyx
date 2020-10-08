@@ -343,7 +343,19 @@ cdef class Quantity(Fraction):
         str
 
         """
-        return f"{self.as_double():,.{self.precision}f}"
+        cdef double self_as_double = self.as_double()
+
+        if self.precision > 0:
+            return f"{self_as_double:.{self.precision}f}"
+
+        if self_as_double < 1000 or self_as_double % 1000 != 0:
+            return f"{self_as_double:,.0f}"
+
+        if self < 1000000:
+            return f"{round(self_as_double / 1000)}K"
+
+        cdef str millions = f"{self_as_double / 1000000:.3f}".rstrip("0").rstrip(".")
+        return f"{millions}M"
 
 
 cdef class Price(Fraction):
