@@ -265,5 +265,5 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # -----------------------------------------------------------------------------------------------------------------------------------------
 
         # 05/10/20 Change to simple EMA Cross - 1 month.
-        # 9502337 function calls (9417247 primitive calls) in 10.532 seconds (benchmark)
-        #  843037 function calls (840998 primitive calls) in 5.677 seconds
+        #  9502337 function calls  (9417247 primitive calls) in 10.532 seconds (benchmark)
+        # 14520673 function calls (14405965 primitive calls) in 13.248 seconds (wire portfolio to receive ticks)

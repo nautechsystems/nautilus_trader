@@ -89,7 +89,15 @@ cdef class Portfolio:
             The tick to handle
 
         """
-        pass
+        cdef list positions_open = self._positions_open.get(tick.symbol.venue)
+
+        if not positions_open:
+            return
+
+        cdef Position position
+        for position in positions_open:
+            if position.symbol == tick.symbol:
+                position.update(tick)
 
     cpdef void handle_event(self, PositionEvent event) except *:
         """
