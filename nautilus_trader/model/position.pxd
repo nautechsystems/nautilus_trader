@@ -82,12 +82,12 @@ cdef class Position:
     cpdef bint is_short(self) except *
     cpdef Decimal relative_quantity(self)
 
-    cdef void _handle_buy_order_fill(self, OrderFilled event) except *
-    cdef void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef double _calculate_cost(self, double avg_price,  Quantity total_quantity)
-    cdef double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event)
-    cdef double _calculate_avg_open_price(self, OrderFilled event)
-    cdef double _calculate_avg_close_price(self, OrderFilled event)
-    cdef double _calculate_points(self, double open_price, double close_price)
-    cdef double _calculate_return(self, double open_price, double close_price)
-    cdef Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)
+    cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
+    cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
+    cdef inline double _calculate_cost(self, double avg_price,  Quantity total_quantity)
+    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event)
+    cdef inline double _calculate_avg_open_price(self, OrderFilled event)
+    cdef inline double _calculate_avg_close_price(self, OrderFilled event)
+    cdef inline double _calculate_points(self, double open_price, double close_price)
+    cdef inline double _calculate_return(self, double open_price, double close_price)
+    cdef inline Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)
