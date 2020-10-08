@@ -74,18 +74,19 @@ class SimulatedMarketTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
-        self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.data_engine.set_use_previous_close(False)
-
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
+
+        self.data_engine = DataEngine(
+            tick_capacity=1000,
+            bar_capacity=1000,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger)
+        self.data_engine.set_use_previous_close(False)
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -598,7 +599,8 @@ class SimulatedMarketTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl(reduce_quote))
+        position.update(reduce_quote)
+        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl)
 
     # TODO: Position flip behaviour needs to be implemented
     # def test_position_dir_change(self):

@@ -61,17 +61,18 @@ class TraderTests(unittest.TestCase):
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
+        self.portfolio = Portfolio(
+            clock=clock,
+            uuid_factory=uuid_factory,
+            logger=logger,
+        )
+
         data_engine = BacktestDataEngine(
             data=data,
             tick_capacity=1000,
             bar_capacity=1000,
+            portfolio=self.portfolio,
             clock=clock,
-            logger=logger,
-        )
-
-        self.portfolio = Portfolio(
-            clock=clock,
-            uuid_factory=uuid_factory,
             logger=logger,
         )
 

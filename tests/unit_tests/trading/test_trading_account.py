@@ -44,7 +44,6 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(AccountId.py_from_string("BITMEX-1513111-SIMULATED"), account.id)
         self.assertEqual(BTC, account.currency)
         self.assertEqual(Money(10., BTC), account.balance)
-        self.assertEqual(Money(10., BTC), account.free_equity)
         self.assertEqual(Money(10., BTC), account.margin_balance)
         self.assertEqual(Money(10., BTC), account.margin_available)
         self.assertEqual(UNIX_EPOCH, account.last_event().timestamp)

@@ -22,6 +22,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 
 
@@ -37,7 +38,8 @@ cdef class Portfolio:
     cdef readonly date date_now
 
     cpdef void register_account(self, Account account) except *
-    cpdef void update(self, PositionEvent event) except *
+    cpdef void handle_tick(self, QuoteTick tick) except *
+    cpdef void handle_event(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
     cdef void _handle_position_opened(self, PositionOpened event) except *

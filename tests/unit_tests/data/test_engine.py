@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
@@ -45,13 +46,23 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class DataEngineTests(unittest.TestCase):
 
     def setUp(self):
-        clock = TestClock()
+        self.clock = TestClock()
+        self.uuid_factory = TestUUIDFactory()
+        self.logger = TestLogger(self.clock)
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
         self.data_engine = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock),
+            portfolio=self.portfolio,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
         )
 
     def test_get_exchange_rate_returns_correct_rate(self):
