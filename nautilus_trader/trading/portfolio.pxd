@@ -48,6 +48,8 @@ cdef class Portfolio:
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
+    cdef dict _position_margins
+    cdef dict _order_margins
     cdef dict _unrealized_pnls
     cdef dict _open_values
     cdef Money _unrealized_pnl
@@ -67,16 +69,18 @@ cdef class Portfolio:
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
-    cpdef Money unrealized_pnl(self, Venue venue=*)
-    cpdef Money position_value(self, Venue venue=*)
-    cpdef Money position_margin(self, Venue venue)
     cpdef Money order_margin(self, Venue venue)
+    cpdef Money position_margin(self, Venue venue)
+    cpdef Money unrealized_pnl(self, Venue venue=*)
+    cpdef Money open_value(self, Venue venue=*)
 
     cdef inline Money _money_zero(self)
     cdef inline double _get_xrate(self, Currency currency, PositionSide side)
-    cdef inline void _calculate_position_value(self, Position position) except *
-    cdef inline void _calculate_long_position_value_change(self, Venue venue, OrderSide fill_side, Money change) except *
-    cdef inline void _calculate_short_position_value_change(self, Venue venue, OrderSide fill_side, Money change) except *
+    cdef inline void _update_order_margin(self, Venue venue) except *
+    cdef inline void _update_position_margin(self, Venue venue) except *
+    cdef inline void _calculate_open_value(self, Position position) except *
+    cdef inline void _calculate_long_open_value_change(self, Venue venue, OrderSide fill_side, Money change) except *
+    cdef inline void _calculate_short_open_value_change(self, Venue venue, OrderSide fill_side, Money change) except *
     cdef inline void _calculate_unrealized_pnl(self) except *
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *
