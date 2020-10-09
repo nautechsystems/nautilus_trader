@@ -19,6 +19,7 @@ import unittest
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
@@ -36,7 +37,7 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class BacktestAcceptanceTests(unittest.TestCase):
 
     def setUp(self):
-        self.usdjpy = TestStubs.instrument_usdjpy()
+        self.usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
         data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])

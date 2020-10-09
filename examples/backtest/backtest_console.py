@@ -22,6 +22,7 @@ from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.bar import BarSpecification
@@ -35,7 +36,7 @@ from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 if __name__ == "__main__":
-    USDJPY = TestStubs.instrument_usdjpy()
+    USDJPY = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
     data = BacktestDataContainer()
     data.add_instrument(USDJPY)
