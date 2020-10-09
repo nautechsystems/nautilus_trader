@@ -123,7 +123,7 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def ethusd_bitmex() -> Instrument:
+    def ethxbt_bitmex() -> Instrument:
         """
         Return the BitMEX ETH/XBT perpetual contract for backtesting.
         """
@@ -145,15 +145,15 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def ethxbt_bitmex() -> Instrument:
+    def ethusd_bitmex() -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
+            symbol=Symbol("ETH/USD", Venue('BITMEX')),
             security_type=SecurityType.CRYPTO,
             base_currency=ETH,
-            quote_currency=BTC,
+            quote_currency=USD,
             settlement_currency=BTC,
             price_precision=2,
             size_precision=0,
