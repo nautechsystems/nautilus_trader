@@ -245,7 +245,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if self._account_starting_balance == 0:  # Protect divide by zero
+        if self._account_starting_balance.as_double() == 0:  # Protect divide by zero
             return 0.0
         cdef double current = self._account_balance
         cdef double starting = self._account_starting_balance.as_double()
@@ -610,7 +610,7 @@ cdef class PerformanceAnalyzer:
         """
         return [
             f"PNL:               {round(self.total_pnl(), 2):,} {self._account_currency}",
-            f"PNL %:             {round(self.total_pnl_percentage(), 2)}%",
+            f"PNL %:             {self.total_pnl_percentage()}",
             f"Max Winner:        {round(self.max_winner(), 2):,} {self._account_currency}",
             f"Avg Winner:        {round(self.avg_winner(), 2):,} {self._account_currency}",
             f"Min Winner:        {round(self.min_winner(), 2):,} {self._account_currency}",
