@@ -84,7 +84,7 @@ cdef class Position:
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline double _calculate_cost(self, double avg_price,  Quantity total_quantity)
+    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity)
     cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event)
     cdef inline double _calculate_avg_open_price(self, OrderFilled event)
     cdef inline double _calculate_avg_close_price(self, OrderFilled event)

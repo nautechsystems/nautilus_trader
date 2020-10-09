@@ -223,7 +223,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, self.strategy.quote_ticks, AUDUSD_FXCM)
+        self.assertRaises(KeyError, self.strategy.quote_ticks, AUDUSD_FXCM)
 
     def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
         # Arrange
@@ -241,7 +241,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, self.strategy.bars, bar_type)
+        self.assertRaises(KeyError, self.strategy.bars, bar_type)
 
     def test_bars(self):
         # Arrange
@@ -269,7 +269,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, self.strategy.bar, unknown_bar_type, 0)
+        self.assertRaises(KeyError, self.strategy.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
         # Arrange
@@ -311,7 +311,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_getting_tick_with_unknown_tick_type_raises_exception(self):
         # Act
         # Assert
-        self.assertRaises(ValueError, self.strategy.quote_tick, AUDUSD_FXCM, 0)
+        self.assertRaises(KeyError, self.strategy.quote_tick, AUDUSD_FXCM, 0)
 
     def test_get_quote_tick(self):
         tick = QuoteTick(
