@@ -307,7 +307,7 @@ cdef class Position:
         """
         return self._events[-1].execution_id
 
-    cpdef int event_count(self):
+    cpdef int event_count(self) except *:
         """
         Return the count of order fill events.
 
@@ -412,29 +412,29 @@ cdef class Position:
         self._sell_quantity = self._sell_quantity.add(event.filled_qty)
         self._relative_quantity = self._relative_quantity.sub(event.filled_qty)
 
-    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity):
+    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity) except *:
         return abs(avg_price * total_quantity.as_double())
 
-    cdef inline double _calculate_avg_open_price(self, OrderFilled event):
+    cdef inline double _calculate_avg_open_price(self, OrderFilled event) except *:
         if not self.avg_open_price:
             return event.avg_price.as_double()
 
         return self._calculate_avg_price(self.avg_open_price, self.quantity, event)
 
-    cdef inline double _calculate_avg_close_price(self, OrderFilled event):
+    cdef inline double _calculate_avg_close_price(self, OrderFilled event) except *:
         if not self.avg_close_price:
             return event.avg_price.as_double()
 
         cdef Quantity close_quantity = Quantity(abs(self._sell_quantity)) if self.side == PositionSide.LONG else self._buy_quantity
         return self._calculate_avg_price(self.avg_close_price, close_quantity, event)
 
-    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event):
+    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event) except *:
         cdef double start_cost = self._calculate_cost(price_open, quantity_open)
         cdef double event_cost = self._calculate_cost(event.avg_price, event.filled_qty)
         cdef Quantity cumulative_quantity = quantity_open.add(event.filled_qty)
         return (start_cost + event_cost) / cumulative_quantity.as_double()
 
-    cdef inline double _calculate_points(self, double opened_price, double closed_price):
+    cdef inline double _calculate_points(self, double opened_price, double closed_price) except *:
         if self.side == PositionSide.LONG:
             return closed_price - opened_price
         elif self.side == PositionSide.SHORT:
@@ -442,7 +442,7 @@ cdef class Position:
         else:
             return 0.  # FLAT
 
-    cdef inline double _calculate_return(self, double opened_price, double closed_price):
+    cdef inline double _calculate_return(self, double opened_price, double closed_price) except *:
         if self.side == PositionSide.LONG:
             return (closed_price - opened_price) / opened_price
         elif self.side == PositionSide.SHORT:

@@ -36,6 +36,6 @@ cdef class Account:
     cpdef void update_order_margin(self, Money money) except *
     cpdef void update_position_margin(self, Money money) except *
 
-    cpdef int event_count(self)
+    cpdef int event_count(self) except *
     cpdef list get_events(self)
     cpdef AccountState last_event(self)

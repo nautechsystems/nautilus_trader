@@ -73,7 +73,7 @@ cdef class PositionSizer:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef double _calculate_risk_ticks(self, Price entry, Price stop_loss):
+    cdef double _calculate_risk_ticks(self, Price entry, Price stop_loss) except *:
         return abs(entry - stop_loss) / self.instrument.tick_size
 
     cdef double _calculate_riskable_money(
@@ -81,7 +81,7 @@ cdef class PositionSizer:
             double equity,
             double risk_bp,
             double commission_rate_bp,
-    ):
+    ) except *:
         if equity <= 0:
             return 0.0
         cdef double risk_money = equity * basis_points_as_percentage(risk_bp)

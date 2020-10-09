@@ -60,8 +60,8 @@ cdef class StrategyId(Identifier):
 
     @staticmethod
     cdef StrategyId null()
-    cdef bint is_null(self)
-    cdef bint not_null(self)
+    cdef bint is_null(self) except *
+    cdef bint not_null(self) except *
 
     @staticmethod
     cdef StrategyId from_string(str value)
@@ -102,8 +102,8 @@ cdef class PositionId(Identifier):
 
     @staticmethod
     cdef PositionId null()
-    cdef bint is_null(self)
-    cdef bint not_null(self)
+    cdef bint is_null(self) except *
+    cdef bint not_null(self) except *
 
 
 cdef class ExecutionId(Identifier):

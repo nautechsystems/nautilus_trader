@@ -179,7 +179,7 @@ cdef class Account:
 
         self.position_margin = margin
 
-    cpdef int event_count(self):
+    cpdef int event_count(self) except *:
         """
         Return the count of events.
 

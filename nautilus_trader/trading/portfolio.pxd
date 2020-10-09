@@ -75,7 +75,7 @@ cdef class Portfolio:
     cpdef Money open_value(self, Venue venue=*)
 
     cdef inline Money _money_zero(self)
-    cdef inline double _get_xrate(self, Currency currency, PositionSide side)
+    cdef inline double _get_xrate(self, Currency currency, PositionSide side) except *
     cdef inline void _update_order_margin(self, Venue venue) except *
     cdef inline void _update_position_margin(self, Venue venue) except *
     cdef inline void _calculate_open_value(self, Position position) except *

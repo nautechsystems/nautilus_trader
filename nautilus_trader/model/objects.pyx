@@ -156,7 +156,7 @@ cdef class Decimal(Fraction):
 
         return Decimal(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the decimal as a double.
 
@@ -321,7 +321,7 @@ cdef class Quantity(Fraction):
 
         return Quantity(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the quantity as a double.
 
@@ -509,7 +509,7 @@ cdef class Price(Fraction):
 
         return Price(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the price as a double.
 
@@ -742,7 +742,7 @@ cdef class Money(Fraction):
         Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
         return Money(self - other, self.currency)
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the money as a double.
 

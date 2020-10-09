@@ -75,7 +75,7 @@ cdef class Position:
     cpdef set get_order_ids(self)
     cpdef set get_execution_ids(self)
     cpdef list get_events(self)
-    cpdef int event_count(self)
+    cpdef int event_count(self) except *
     cpdef bint is_open(self) except *
     cpdef bint is_closed(self) except *
     cpdef bint is_long(self) except *
@@ -84,10 +84,10 @@ cdef class Position:
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity)
-    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event)
-    cdef inline double _calculate_avg_open_price(self, OrderFilled event)
-    cdef inline double _calculate_avg_close_price(self, OrderFilled event)
-    cdef inline double _calculate_points(self, double open_price, double close_price)
-    cdef inline double _calculate_return(self, double open_price, double close_price)
+    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity) except *
+    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event) except *
+    cdef inline double _calculate_avg_open_price(self, OrderFilled event) except *
+    cdef inline double _calculate_avg_close_price(self, OrderFilled event) except *
+    cdef inline double _calculate_points(self, double open_price, double close_price) except *
+    cdef inline double _calculate_return(self, double open_price, double close_price) except *
     cdef inline Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)

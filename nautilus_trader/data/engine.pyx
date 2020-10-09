@@ -1147,7 +1147,7 @@ cdef class DataEngine:
 
         return self._bars[bar_type][index]
 
-    cpdef int quote_tick_count(self, Symbol symbol):
+    cpdef int quote_tick_count(self, Symbol symbol) except *:
         """
         Return the count of quote ticks for the given symbol.
 
@@ -1165,7 +1165,7 @@ cdef class DataEngine:
 
         return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
 
-    cpdef int trade_tick_count(self, Symbol symbol):
+    cpdef int trade_tick_count(self, Symbol symbol) except *:
         """
         Return the count of trade ticks for the given symbol.
 
@@ -1183,7 +1183,7 @@ cdef class DataEngine:
 
         return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
 
-    cpdef int bar_count(self, BarType bar_type):
+    cpdef int bar_count(self, BarType bar_type) except *:
         """
         Return the count of bars for the given bar type.
 
@@ -1263,7 +1263,7 @@ cdef class DataEngine:
             Currency from_currency,
             Currency to_currency,
             PriceType price_type=PriceType.MID,
-    ):
+    ) except *:
         """
         Return the calculated exchange rate for the given currencies.
 
