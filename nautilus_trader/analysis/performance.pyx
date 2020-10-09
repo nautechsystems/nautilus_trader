@@ -245,7 +245,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if self._account_starting_balance == 0:  # Protect divide by zero
+        if self._account_starting_balance.as_double() == 0:  # Protect divide by zero
             return 0.0
         cdef double current = self._account_balance
         cdef double starting = self._account_starting_balance.as_double()
