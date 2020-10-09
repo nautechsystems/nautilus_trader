@@ -78,7 +78,7 @@ cdef class PositionSizer:
 
     cdef double _calculate_riskable_money(
             self,
-            Money equity,
+            double equity,
             double risk_bp,
             double commission_rate_bp,
     ):
@@ -175,14 +175,14 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_negative_int(unit_batch_size, "unit_batch_size")
 
         if exchange_rate <= 0.0:
-            return Quantity(precision=self.instrument.size_precision)
+            return Quantity(0, precision=self.instrument.size_precision)
 
         cdef double risk_points = self._calculate_risk_ticks(entry, stop_loss)
-        cdef double risk_money = self._calculate_riskable_money(equity, risk_bp, commission_rate_bp)
+        cdef double risk_money = self._calculate_riskable_money(equity.as_double(), risk_bp, commission_rate_bp)
 
         if risk_points <= 0.0:
             # Divide by zero protection
-            return Quantity(precision=self.instrument.size_precision)
+            return Quantity(0, precision=self.instrument.size_precision)
 
         # Calculate position size
         cdef double tick_size = self.instrument.tick_size

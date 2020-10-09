@@ -30,15 +30,15 @@ class FiniteStateMachineTests(unittest.TestCase):
             return 'INITIALIZED'
         elif value == 2:
             return 'STARTING'
-        elif value == 2:
+        elif value == 3:
             return 'RUNNING'
-        elif value == 2:
+        elif value == 4:
             return 'STOPPING'
-        elif value == 2:
+        elif value == 5:
             return 'STOPPED'
-        elif value == 2:
+        elif value == 6:
             return 'RESETTING'
-        elif value == 2:
+        elif value == 7:
             return 'FAULTED'
         else:
             return 'UNDEFINED'
