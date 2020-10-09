@@ -170,27 +170,32 @@ cdef class Portfolio:
                 pnl = unrealized_pnls.get(currency_side, 0.)
                 unrealized_pnls[currency_side] = pnl + position.unrealized_pnl.as_double()
 
-        cdef double total_unrealized_pnl = 0.
+        cdef double cumulative_pnl = 0.
         cdef double xrate
         cdef Currency currency
         cdef PositionSide side
         for currency_side, pnl in unrealized_pnls.items():
             currency = currency_side[0]
             if currency == self.base_currency:
-                total_unrealized_pnl += pnl
+                cumulative_pnl += pnl
             else:
                 xrate = self._get_xrate(currency, currency_side[1])
-                total_unrealized_pnl += pnl * xrate
+                cumulative_pnl += pnl * xrate
 
-        self._unrealized_pnls[venue] = Money(total_unrealized_pnl, self.base_currency)
+        cdef Money unrealized_pnl = Money(cumulative_pnl, self.base_currency)
+        self._unrealized_pnls[venue] = unrealized_pnl
+
+        cdef Account account = self._accounts.get(venue)
+        if account:
+            account.update_unrealized_pnl(unrealized_pnl)
 
     cpdef void update_orders_working(self, set orders) except *:
         """
-        TBD.
+        Update the portfolio with the given orders.
 
         Parameters
         ----------
-        orders
+        orders : Set[Order]
 
         """
         Condition.not_none(orders, "orders")
@@ -227,7 +232,8 @@ cdef class Portfolio:
                 self._orders_working[venue] = {order}
         elif order.is_completed() and orders_working:
             orders_working.discard(order)
-            self._log.debug(f"Discarded working {order}")
+
+        # TODO: Recalculate order margin
 
     cpdef void update_positions(self, set positions) except *:
         """
@@ -256,8 +262,9 @@ cdef class Portfolio:
                 positions_closed = self._positions_closed.get(position.symbol.venue, set())
                 positions_closed.add(position)
                 self._positions_closed[position.symbol.venue].add(position)
-                self._log.debug(f"Added closed {position}")
                 closed_count += 1
+
+        # TODO: Recalculate position margin
 
         self._log.info(f"Updated {open_count} position(s) open.")
         self._log.info(f"Updated {closed_count} position(s) closed.")
@@ -324,7 +331,7 @@ cdef class Portfolio:
         Money
 
         """
-        return self._money_zero()
+        return self._order_margins.get(venue)
 
     cpdef Money position_margin(self, Venue venue):
         """
@@ -340,7 +347,7 @@ cdef class Portfolio:
         Money
 
         """
-        return self._money_zero()
+        return self._position_margins.get(venue)
 
     cpdef Money unrealized_pnl(self, Venue venue=None):
         """
@@ -428,20 +435,16 @@ cdef class Portfolio:
                                f"position.entry was {order_side_to_string(position.entry)}")
 
     cdef inline void _update_order_margin(self, Venue venue) except *:
-        cdef Money order_margin = Money
-        # TODO: Do calculation
-
         cdef Account account = self._accounts.get(venue)
+        cdef Money order_margin  # TODO: Do calculation
         if account:
-            account.update_order_margin(order_margin)
+            account.update_order_margin(Money(0, account.currency))
 
     cdef inline void _update_position_margin(self, Venue venue) except *:
-        cdef Money position_margin = Money
-        # TODO: Do calculation
-
         cdef Account account = self._accounts.get(venue)
+        cdef Money position_margin  # TODO: Do calculation
         if account:
-            account.update_position_margin(position_margin)
+            account.update_position_margin(Money(0, account.currency))
 
     cdef inline void _calculate_long_open_value_change(
             self,

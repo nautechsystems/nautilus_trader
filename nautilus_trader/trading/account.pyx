@@ -40,6 +40,7 @@ cdef class Account:
         self.account_type = self.id.account_type
         self.currency = event.currency
         self.balance = Money(0, self.currency)
+        self.unrealized_pnl = Money(0, self.currency)
         self.margin_balance = Money(0, self.currency)
         self.margin_available = Money(0, self.currency)
         self.order_margin = Money(0, self.currency)
@@ -136,8 +137,6 @@ cdef class Account:
         self.balance = event.balance
         self.margin_balance = event.margin_balance
         self.margin_available = event.margin_available
-        self.order_margin = Money(0, self.currency)
-        self.position_margin = Money(0, self.currency)
 
     cpdef void update_order_margin(self, Money margin) except *:
         """
@@ -155,9 +154,10 @@ cdef class Account:
 
         """
         Condition.not_none(margin, "money")
-        Condition.equal(margin.currency, self.currency, "money.currency", "self.currency")
+        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
 
         self.order_margin = margin
+        self._update_margin_available()
 
     cpdef void update_position_margin(self, Money margin) except *:
         """
@@ -178,6 +178,28 @@ cdef class Account:
         Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
 
         self.position_margin = margin
+        self._update_margin_available()
+
+    cpdef void update_unrealized_pnl(self, Money pnl) except *:
+        """
+        Update the accounts unrealized PNL.
+
+        Parameters
+        ----------
+        pnl : Money
+            The current unrealized pnl.
+
+        Raises
+        ----------
+        ValueError
+            If pnl.currency is not equal to self.currency.
+
+        """
+        Condition.not_none(pnl, "pnl")
+        Condition.equal(pnl.currency, self.currency, "pnl.currency", "self.currency")
+
+        self.unrealized_pnl = pnl
+        self._update_margin_balance()
 
     cpdef int event_count(self) except *:
         """
@@ -211,3 +233,10 @@ cdef class Account:
 
         """
         return self._events[-1]
+
+    cdef inline void _update_margin_balance(self) except *:
+        self.margin_balance = self.balance.sub(self.unrealized_pnl)
+        self._update_margin_available()
+
+    cdef inline void _update_margin_available(self) except *:
+        self.margin_available = self.margin_balance.sub(self.order_margin).sub(self.position_margin)
