@@ -17,6 +17,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport USD
@@ -73,6 +74,8 @@ cdef class Portfolio:
         self._orders_working = {}        # type: {Venue: {Order}}
         self._positions_open = {}        # type: {Venue: {Position}}
         self._positions_closed = {}      # type: {Venue: {Position}}
+        self._position_margins = {}      # type: {Venue: Money}
+        self._order_margins = {}         # type: {Venue: Money}
         self._unrealized_pnls = {}       # type: {Venue: Money}
         self._open_values = {}           # type: {Venue: Money}
 
@@ -297,6 +300,8 @@ cdef class Portfolio:
         self._orders_working.clear()
         self._positions_open.clear()
         self._positions_closed.clear()
+        self._position_margins.clear()
+        self._order_margins.clear()
         self._unrealized_pnls.clear()
         self._open_values.clear()
         self._unrealized_pnl = self._money_zero()
@@ -304,6 +309,38 @@ cdef class Portfolio:
         self._calculated_latest_totals = False
 
         self._log.info("Reset.")
+
+    cpdef Money order_margin(self, Venue venue):
+        """
+        Return the order margin for the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the order margin.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._money_zero()
+
+    cpdef Money position_margin(self, Venue venue):
+        """
+        Return the position margin for the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the position margin.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._money_zero()
 
     cpdef Money unrealized_pnl(self, Venue venue=None):
         """
@@ -329,7 +366,7 @@ cdef class Portfolio:
         self._calculate_unrealized_pnl()
         return self._unrealized_pnl
 
-    cpdef Money position_value(self, Venue venue=None):
+    cpdef Money open_value(self, Venue venue=None):
         """
         Return the value at risk for the portfolio or a specific venue.
 
@@ -349,12 +386,6 @@ cdef class Portfolio:
             return self._open_value
 
         return self._open_values.get(venue, self._money_zero())
-
-    cpdef Money position_margin(self, Venue venue):
-        return self._money_zero()
-
-    cpdef Money order_margin(self, Venue venue):
-        return self._money_zero()
 
     cdef inline Money _money_zero(self):
         return Money(0, self.base_currency)
@@ -379,22 +410,40 @@ cdef class Portfolio:
         self._unrealized_pnl = new_unrealized_pnl
         self._calculated_latest = True
 
-    cdef inline void _calculate_position_value(self, Position position) except *:
+    cdef inline void _calculate_open_value(self, Position position) except *:
         cdef OrderFilled fill = position.last_event()
         cdef double xrate = 1.
         if fill.base_currency != self.base_currency:
             xrate = self._get_xrate(fill.base_currency, position.side)
 
         # TODO: Add multiplier
-        cdef Money change = Money(fill.filled_qty.as_double() * xrate, self.base_currency)
+        cdef Money change = Money(fill.filled_qty * xrate, self.base_currency)
 
         if position.entry == OrderSide.BUY:
-            self._calculate_long_position_value_change(position.symbol.venue, fill.order_side, change)
+            self._calculate_long_open_value_change(position.symbol.venue, fill.order_side, change)
         elif position.entry == OrderSide.SELL:
-            self._calculate_short_position_value_change(position.symbol.venue, fill.order_side, change)
-        # TODO: Handle invalid order side
+            self._calculate_short_open_value_change(position.symbol.venue, fill.order_side, change)
+        else:
+            raise RuntimeError(f"Cannot calculate position value, "
+                               f"position.entry was {order_side_to_string(position.entry)}")
 
-    cdef inline void _calculate_long_position_value_change(
+    cdef inline void _update_order_margin(self, Venue venue) except *:
+        cdef Money order_margin = Money
+        # TODO: Do calculation
+
+        cdef Account account = self._accounts.get(venue)
+        if account:
+            account.update_order_margin(order_margin)
+
+    cdef inline void _update_position_margin(self, Venue venue) except *:
+        cdef Money position_margin = Money
+        # TODO: Do calculation
+
+        cdef Account account = self._accounts.get(venue)
+        if account:
+            account.update_position_margin(position_margin)
+
+    cdef inline void _calculate_long_open_value_change(
             self,
             Venue venue,
             OrderSide fill_side,
@@ -409,7 +458,7 @@ cdef class Portfolio:
             self._open_value = self._open_value.sub(change)
             self._open_values[venue] = previous_value.add(change)
 
-    cdef inline void _calculate_short_position_value_change(
+    cdef inline void _calculate_short_open_value_change(
             self,
             Venue venue,
             OrderSide fill_side,
@@ -439,10 +488,10 @@ cdef class Portfolio:
         else:
             self._positions_open[venue] = {position}
 
-        self._calculate_position_value(position)
+        self._calculate_open_value(position)
 
     cdef inline void _handle_position_modified(self, PositionModified event) except *:
-        self._calculate_position_value(event.position)
+        self._calculate_open_value(event.position)
 
     cdef inline void _handle_position_closed(self, PositionClosed event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -460,4 +509,4 @@ cdef class Portfolio:
         else:
             self._positions_closed[venue] = {position}
 
-        self._calculate_position_value(position)
+        self._calculate_open_value(position)
