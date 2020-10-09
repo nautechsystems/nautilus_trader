@@ -38,32 +38,32 @@ cdef class PerformanceAnalyzer:
     cpdef object get_positions(self)
     cpdef object get_transactions(self)
     cpdef object get_equity_curve(self)
-    cpdef double total_pnl(self)
-    cpdef double total_pnl_percentage(self)
-    cpdef double max_winner(self)
-    cpdef double max_loser(self)
-    cpdef double min_winner(self)
-    cpdef double min_loser(self)
-    cpdef double avg_winner(self)
-    cpdef double avg_loser(self)
-    cpdef double win_rate(self)
-    cpdef double expectancy(self)
-    cpdef double annual_return(self)
-    cpdef double cum_return(self)
-    cpdef double max_drawdown_return(self)
-    cpdef double annual_volatility(self)
-    cpdef double sharpe_ratio(self)
-    cpdef double calmar_ratio(self)
-    cpdef double sortino_ratio(self)
-    cpdef double omega_ratio(self)
-    cpdef double stability_of_timeseries(self)
-    cpdef double returns_mean(self)
-    cpdef double returns_variance(self)
-    cpdef double returns_skew(self)
-    cpdef double returns_kurtosis(self)
-    cpdef double returns_tail_ratio(self)
-    cpdef double alpha(self)
-    cpdef double beta(self)
+    cpdef double total_pnl(self) except *
+    cpdef double total_pnl_percentage(self) except *
+    cpdef double max_winner(self) except *
+    cpdef double max_loser(self) except *
+    cpdef double min_winner(self) except *
+    cpdef double min_loser(self) except *
+    cpdef double avg_winner(self) except *
+    cpdef double avg_loser(self) except *
+    cpdef double win_rate(self) except *
+    cpdef double expectancy(self) except *
+    cpdef double annual_return(self) except *
+    cpdef double cum_return(self) except *
+    cpdef double max_drawdown_return(self) except *
+    cpdef double annual_volatility(self) except *
+    cpdef double sharpe_ratio(self) except *
+    cpdef double calmar_ratio(self) except *
+    cpdef double sortino_ratio(self) except *
+    cpdef double omega_ratio(self) except *
+    cpdef double stability_of_timeseries(self) except *
+    cpdef double returns_mean(self) except *
+    cpdef double returns_variance(self) except *
+    cpdef double returns_skew(self) except *
+    cpdef double returns_kurtosis(self) except *
+    cpdef double returns_tail_ratio(self) except *
+    cpdef double alpha(self) except *
+    cpdef double beta(self) except *
     cpdef dict get_performance_stats(self)
 
     cdef list get_performance_stats_formatted(self, Currency account_currency)

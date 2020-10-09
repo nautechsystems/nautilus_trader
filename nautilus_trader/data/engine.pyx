@@ -18,6 +18,7 @@ import cython
 from cpython.datetime cimport datetime
 
 from collections import deque
+from typing import List
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.handlers cimport BarHandler
@@ -741,7 +742,7 @@ cdef class DataEngine:
             return
 
         # Send to portfolio as a priority
-        self._portfolio.handle_tick(tick)
+        self._portfolio.update_tick(tick)
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(symbol)
@@ -889,7 +890,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
+    cpdef void handle_bars(self, BarType bar_type, list bars: List[Bar]) except *:
         """
         Handle the given bar type and bars by handling each bar individually.
 

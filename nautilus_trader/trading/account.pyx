@@ -35,7 +35,6 @@ cdef class Account:
         Condition.not_none(event, "event")
 
         self._events = [event]
-        self._portfolio = None  # Initialized when registered with portfolio
 
         self.id = event.account_id
         self.account_type = self.id.account_type
@@ -119,25 +118,66 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef void register_portfolio(self, Portfolio portfolio) except *:
+    cpdef void apply(self, AccountState event) except *:
         """
-        Register the given portfolio with the account.
+        Applies the given account event to the account.
 
         Parameters
         ----------
-        portfolio : Portfolio
-            The portfolio to register.
+        event : AccountState
+            The account event to apply.
+
+        """
+        Condition.not_none(event, "event")
+        Condition.equal(self.id, event.account_id, "id", "event.account_id")
+
+        self._events.append(event)
+
+        self.balance = event.balance
+        self.margin_balance = event.margin_balance
+        self.margin_available = event.margin_available
+        self.order_margin = Money(0, self.currency)
+        self.position_margin = Money(0, self.currency)
+
+    cpdef void update_order_margin(self, Money margin) except *:
+        """
+        Update the order margin.
+
+        Parameters
+        ----------
+        margin : Money
+            The current order margin.
 
         Raises
         ----------
         ValueError
-            If a portfolio is already registered.
+            If margin.currency is not equal to self.currency.
 
         """
-        Condition.not_none(portfolio, "portfolio")
-        Condition.none(self._portfolio, "self._portfolio")  # No portfolio should be registered
+        Condition.not_none(margin, "money")
+        Condition.equal(margin.currency, self.currency, "money.currency", "self.currency")
 
-        self._portfolio = portfolio
+        self.order_margin = margin
+
+    cpdef void update_position_margin(self, Money margin) except *:
+        """
+        Update the position margin.
+
+        Parameters
+        ----------
+        margin : Money
+            The current position margin.
+
+        Raises
+        ----------
+        ValueError
+            If margin.currency is not equal to self.currency.
+
+        """
+        Condition.not_none(margin, "money")
+        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
+
+        self.position_margin = margin
 
     cpdef int event_count(self):
         """
@@ -171,24 +211,3 @@ cdef class Account:
 
         """
         return self._events[-1]
-
-    cpdef void apply(self, AccountState event) except *:
-        """
-        Applies the given account event to the account.
-
-        Parameters
-        ----------
-        event : AccountState
-            The account event to apply.
-
-        """
-        Condition.not_none(event, "event")
-        Condition.equal(self.id, event.account_id, "id", "event.account_id")
-
-        self._events.append(event)
-
-        self.balance = event.balance
-        self.margin_balance = event.margin_balance
-        self.margin_available = event.margin_available
-        self.order_margin = Money(0, self.currency)
-        self.position_margin = Money(0, self.currency)
