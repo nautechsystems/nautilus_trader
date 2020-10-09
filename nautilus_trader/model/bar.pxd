@@ -40,7 +40,7 @@ cdef class BarType:
 
     @staticmethod
     cdef BarType from_string(str value)
-    cdef bint is_time_aggregated(self)
+    cdef bint is_time_aggregated(self) except *
     cdef str aggregation_string(self)
     cdef str price_type_string(self)
     cpdef str to_string(self)

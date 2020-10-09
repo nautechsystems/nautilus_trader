@@ -369,7 +369,7 @@ cdef class StrategyId(Identifier):
         """
         return _NULL_STRATEGY_ID
 
-    cdef bint is_null(self):
+    cdef bint is_null(self) except *:
         """
         Return a value indicating whether this strategy identifier is equal to
         the null identifier 'NULL'.
@@ -381,7 +381,7 @@ cdef class StrategyId(Identifier):
         """
         return self.value == _NULL_STRATEGY_ID.value
 
-    cdef bint not_null(self):
+    cdef bint not_null(self) except *:
         """
         Return a value indicating whether this strategy identifier is not equal
         to the null identifier 'NULL'.
@@ -687,7 +687,7 @@ cdef class PositionId(Identifier):
         """
         return _NULL_POSITION_ID
 
-    cdef bint is_null(self):
+    cdef bint is_null(self) except *:
         """
         Return a value indicating whether this position identifier is equal to
         the null identifier 'P-NULL'.
@@ -699,7 +699,7 @@ cdef class PositionId(Identifier):
         """
         return self.value == _NULL_POSITION_ID.value
 
-    cdef bint not_null(self):
+    cdef bint not_null(self) except *:
         """
         Return a value indicating whether this position identifier is not equal
         to the null identifier 'P-NULL'.

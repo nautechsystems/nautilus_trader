@@ -16,18 +16,18 @@
 import pandas as pd
 
 
-cdef int precision_from_string(str value)
-cpdef double fast_mean(list values)
+cdef int precision_from_string(str value) except *
+cpdef double fast_mean(list values) except *
 cpdef double fast_mean_iterated(
     list values,
     double next_value,
     double current_value,
     int expected_length,
     bint drop_left=*,
-)
-cpdef double fast_std(list values)
-cpdef double fast_std_with_mean(list values, double mean)
-cpdef double basis_points_as_percentage(double basis_points)
+) except *
+cpdef double fast_std(list values) except *
+cpdef double fast_std_with_mean(list values, double mean) except *
+cpdef double basis_points_as_percentage(double basis_points) except *
 cdef long get_size_of(obj)
 cpdef str format_bytes(double size)
 cpdef str pad_string(str string, int length, str pad=*)

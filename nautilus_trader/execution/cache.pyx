@@ -1199,7 +1199,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         return cl_ord_id in self._index_orders_completed
 
-    cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return the total count of orders with the given query filters.
 
@@ -1217,7 +1217,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         return len(self.order_ids(symbol, strategy_id))
 
-    cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return the count of working orders with the given query filters.
 
@@ -1235,7 +1235,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         return len(self.order_working_ids(symbol, strategy_id))
 
-    cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return the count of completed orders with the given query filters.
 
@@ -1351,7 +1351,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
 
         return position_id in self._index_positions_closed
 
-    cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return the total count of positions with the given query filters.
 
@@ -1369,7 +1369,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         return len(self.position_ids(symbol, strategy_id))
 
-    cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return the count of open positions with the given query filters.
 
@@ -1387,7 +1387,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         return len(self.position_open_ids(symbol, strategy_id))
 
-    cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """
         Return the count of closed positions with the given query filters.
 

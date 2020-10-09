@@ -651,16 +651,16 @@ cdef class SimulatedMarket:
             event_timestamp=self._clock.utc_now(),
         )
 
-    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_limit_filled()
 
-    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.bid == order_price and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.bid == order_price and self.fill_model.is_limit_filled()
 
     cdef void _submit_order(self, Order order) except *:

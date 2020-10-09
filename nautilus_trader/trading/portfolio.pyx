@@ -390,7 +390,7 @@ cdef class Portfolio:
     cdef inline Money _money_zero(self):
         return Money(0, self.base_currency)
 
-    cdef inline double _get_xrate(self, Currency currency, PositionSide side):
+    cdef inline double _get_xrate(self, Currency currency, PositionSide side) except *:
         cdef PriceType price_type = PriceType.BID if side == PositionSide.LONG else PriceType.ASK
         # TODO: Handle exceptions
         return self._xrate_calculator.get_rate(

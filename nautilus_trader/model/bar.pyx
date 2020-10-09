@@ -318,7 +318,7 @@ cdef class BarType:
         """
         return BarType.from_string(value)
 
-    cdef bint is_time_aggregated(self):
+    cdef bint is_time_aggregated(self) except *:
         """
         Return a value indicating whether the aggregation is a measure of time.
 

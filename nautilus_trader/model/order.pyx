@@ -224,7 +224,7 @@ cdef class Order:
         """
         return self._events.copy()
 
-    cpdef int event_count(self):
+    cpdef int event_count(self) except *:
         """
         Return the count of events received by the order.
 

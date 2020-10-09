@@ -136,15 +136,15 @@ cdef class ExecutionCacheReadOnly:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int orders_total_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int orders_completed_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -168,15 +168,15 @@ cdef class ExecutionCacheReadOnly:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int positions_total_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int positions_open_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None):
+    cpdef int positions_closed_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 

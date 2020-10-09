@@ -1050,7 +1050,7 @@ cdef class TradingStrategy:
 
         return self._data_engine.bar(bar_type, index)
 
-    cpdef int quote_tick_count(self, Symbol symbol):
+    cpdef int quote_tick_count(self, Symbol symbol) except *:
         """
         Return the count of quote ticks held by the strategy for the given symbol.
 
@@ -1069,7 +1069,7 @@ cdef class TradingStrategy:
 
         return self._data_engine.quote_tick_count(symbol)
 
-    cpdef int trade_tick_count(self, Symbol symbol):
+    cpdef int trade_tick_count(self, Symbol symbol) except *:
         """
         Return the count of trade ticks held by the strategy for the given symbol.
 
@@ -1088,7 +1088,7 @@ cdef class TradingStrategy:
 
         return self._data_engine.trade_tick_count(symbol)
 
-    cpdef int bar_count(self, BarType bar_type):
+    cpdef int bar_count(self, BarType bar_type) except *:
         """
         Return the count of bars held by the strategy for the given bar type.
 
