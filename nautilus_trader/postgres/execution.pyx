@@ -84,58 +84,49 @@ cdef class PostgresExecutionDatabase(ExecutionDatabase):
         self._postgres = None
 
     cpdef void flush(self) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef dict load_accounts(self):
-        return {}
+        raise NotImplemented()
 
     cpdef dict load_orders(self):
-        return {}
+        raise NotImplemented()
 
     cpdef dict load_positions(self):
-        return {}
+        raise NotImplemented()
 
     cpdef Account load_account(self, AccountId account_id):
-        return None
+        raise NotImplemented()
 
     cpdef Order load_order(self, ClientOrderId cl_ord_id):
-        return None
+        raise NotImplemented()
 
     cpdef Position load_position(self, PositionId position_id):
-        return None
+        raise NotImplemented()
 
     cpdef dict load_strategy(self, StrategyId strategy_id):
-        return {}
+        raise NotImplemented()
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void add_account(self, Account account) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void add_order(self, Order order, PositionId position_id) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void add_position(self, Position position) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void update_account(self, Account event) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void update_order(self, Order order) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void update_position(self, Position position) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
-        # NO-OP
-        pass
+        raise NotImplemented()

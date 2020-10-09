@@ -23,6 +23,7 @@ import pytz
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
@@ -102,7 +103,7 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
         self.market = SimulatedMarket(
             venue=Venue("FXCM"),

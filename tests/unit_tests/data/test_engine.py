@@ -18,6 +18,7 @@ import unittest
 
 import pytz
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
@@ -112,7 +113,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.wrangler = TickDataWrangler(
-            instrument=TestStubs.instrument_usdjpy(),
+            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data})

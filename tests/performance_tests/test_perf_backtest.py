@@ -23,6 +23,7 @@ import pytz
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -40,7 +41,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
     def test_run_with_empty_strategy(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
@@ -87,7 +88,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
     def test_run_for_tick_processing(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
@@ -127,7 +128,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
     def test_run_with_ema_cross_strategy(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)

@@ -20,6 +20,7 @@ import pandas as pd
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
@@ -60,7 +61,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.usdjpy = TestStubs.instrument_usdjpy()
+        self.usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()[:2000]
         self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()[:2000]
 
