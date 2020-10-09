@@ -26,16 +26,19 @@ cdef class Account:
     cdef readonly AccountId id
     cdef readonly AccountType account_type
     cdef readonly Currency currency
-    cdef readonly Money balance           # balance includes realized PNL
-    cdef readonly Money margin_balance    # balance + unrealized PNL
-    cdef readonly Money margin_available  # margin_balance - order_margin - position_margin
+    cdef readonly Money balance
+    cdef readonly Money unrealized_pnl
+    cdef readonly Money margin_balance
+    cdef readonly Money margin_available
     cdef readonly Money order_margin
     cdef readonly Money position_margin
 
     cpdef void apply(self, AccountState event) except *
-    cpdef void update_order_margin(self, Money money) except *
-    cpdef void update_position_margin(self, Money money) except *
-
+    cpdef void update_order_margin(self, Money margin) except *
+    cpdef void update_position_margin(self, Money margin) except *
+    cpdef void update_unrealized_pnl(self, Money pnl) except *
     cpdef int event_count(self) except *
     cpdef list get_events(self)
     cpdef AccountState last_event(self)
+    cdef inline void _update_margin_balance(self) except *
+    cdef inline void _update_margin_available(self) except *
