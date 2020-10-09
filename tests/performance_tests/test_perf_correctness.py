@@ -17,9 +17,6 @@ import unittest
 
 from nautilus_trader.core.correctness import PyCondition
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import TestStubs
-
-USDJPY_FXCM = TestStubs.instrument_usdjpy()
 
 
 class CorrectnessTests:

@@ -20,12 +20,20 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.currency cimport BTC
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.currency cimport ETH
+from nautilus_trader.model.currency cimport USD
+from nautilus_trader.model.currency cimport USDT
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Decimal
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 
+# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 cdef class CSVTickDataLoader:
     """
@@ -92,7 +100,118 @@ cdef class InstrumentLoader:
     Provides instrument template methods for backtesting.
     """
 
-    cpdef Instrument default_fx_ccy(self, Symbol symbol):
+    @staticmethod
+    def xbtusd_bitmex() -> Instrument:
+        """
+        Return the BitMEX XBT/USD perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("XBT/USD", Venue('BITMEX')),
+            security_type=SecurityType.CRYPTO,
+            base_currency=BTC,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            price_precision=1,
+            size_precision=0,
+            tick_size=Decimal("0.5"),
+            lot_size=Quantity(1),
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(1e7),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=_UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def ethxbt_bitmex() -> Instrument:
+        """
+        Return the BitMEX ETH/XBT perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
+            security_type=SecurityType.CRYPTO,
+            base_currency=ETH,
+            quote_currency=BTC,
+            settlement_currency=BTC,
+            price_precision=5,
+            size_precision=0,
+            tick_size=Decimal("0.00001"),
+            lot_size=Quantity(1),
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(1e8),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=_UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def ethusd_bitmex() -> Instrument:
+        """
+        Return the BitMEX ETH/USD perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("ETH/USD", Venue('BITMEX')),
+            security_type=SecurityType.CRYPTO,
+            base_currency=ETH,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            price_precision=2,
+            size_precision=0,
+            tick_size=Decimal("0.05"),
+            lot_size=Quantity(1),
+            min_trade_size=Quantity(1),
+            max_trade_size=Quantity(1e7),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=_UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def btcusd_binance() -> Instrument:
+        """
+        Return the Binance BTC/USD instrument for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("BTC/USD", Venue('BINANCE')),
+            security_type=SecurityType.CRYPTO,
+            base_currency=BTC,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            price_precision=2,
+            size_precision=6,
+            tick_size=Decimal("0.01"),
+            lot_size=Quantity(1),
+            min_trade_size=Money(10, USDT),
+            max_trade_size=Quantity("100"),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=_UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def ethusd_binance() -> Instrument:
+        """
+        Return the Binance ETH/USD instrument for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("ETH/USD", Venue('BINANCE')),
+            security_type=SecurityType.CRYPTO,
+            base_currency=ETH,
+            quote_currency=USD,
+            settlement_currency=ETH,
+            price_precision=2,
+            size_precision=5,
+            tick_size=Decimal("0.01"),
+            lot_size=Quantity(1),
+            min_trade_size=Money(10, USDT),
+            max_trade_size=Quantity("100"),
+            rollover_interest_buy=Decimal(),
+            rollover_interest_sell=Decimal(),
+            timestamp=_UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def default_fx_ccy(Symbol symbol) -> Instrument:
         """
         Return a default FX currency pair instrument from the given arguments.
 
@@ -124,6 +243,7 @@ cdef class InstrumentLoader:
             security_type=SecurityType.FOREX,
             base_currency=Currency.from_string_c(base_currency),
             quote_currency=Currency.from_string_c(quote_currency),
+            settlement_currency=Currency.from_string_c(base_currency),
             price_precision=price_precision,
             size_precision=0,
             tick_size=Decimal.from_float_c(1 / (10 ** price_precision), price_precision),
@@ -132,5 +252,5 @@ cdef class InstrumentLoader:
             max_trade_size=Quantity("50000000"),
             rollover_interest_buy=Decimal(),
             rollover_interest_sell=Decimal(),
-            timestamp=datetime.now(pytz.utc),
+            timestamp=_UNIX_EPOCH,
         )

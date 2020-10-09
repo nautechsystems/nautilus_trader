@@ -15,6 +15,11 @@
 
 """Define common basic value objects in the trading domain."""
 
+from cpython.object cimport Py_GE
+from cpython.object cimport Py_GT
+from cpython.object cimport Py_LE
+from cpython.object cimport Py_LT
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport precision_from_string
 from nautilus_trader.model.currency cimport Currency
@@ -47,6 +52,8 @@ cdef class Decimal(Fraction):
             If value is a float.
 
         """
+        Condition.not_none(value, "value")
+
         if isinstance(value, float):
             raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
         super().__init__(value)
@@ -200,6 +207,8 @@ cdef class Quantity(Fraction):
             If value is negative (< 0).
 
         """
+        Condition.not_none(value, "value")
+
         if isinstance(value, float):
             raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
         super().__init__(value)
@@ -343,7 +352,19 @@ cdef class Quantity(Fraction):
         str
 
         """
-        return f"{self.as_double():,.{self.precision}f}"
+        cdef double self_as_double = self.as_double()
+
+        if self.precision > 0:
+            return f"{self_as_double:.{self.precision}f}"
+
+        if self_as_double < 1000 or self_as_double % 1000 != 0:
+            return f"{self_as_double:,.0f}"
+
+        if self < 1000000:
+            return f"{round(self_as_double / 1000)}K"
+
+        cdef str millions = f"{self_as_double / 1000000:.3f}".rstrip("0").rstrip(".")
+        return f"{millions}M"
 
 
 cdef class Price(Fraction):
@@ -374,6 +395,8 @@ cdef class Price(Fraction):
             If value is negative (< 0).
 
         """
+        Condition.not_none(value, "value")
+
         if isinstance(value, float):
             raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
         super().__init__(value)
@@ -532,11 +555,124 @@ cdef class Money(Fraction):
             The currency of the money.
 
         """
+        Condition.not_none(value, "value")
+
         if not isinstance(value, float):
             value = float(value)
         super().__init__(f"{value:.{currency.precision}f}")
 
         self.currency = currency
+
+    def __eq__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is equal to (==) the given object.
+
+        Parameters
+        ----------
+        other : Money
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._eq(other) and self.currency == other.currency
+
+    def __ne__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the given object.
+
+        Parameters
+        ----------
+        other : Money
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return not self == other
+
+    def __lt__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is less than (<) the given object.
+
+        Parameters
+        ----------
+        other : Money
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._richcmp(other, Py_LT) and self.currency == other.currency
+
+    def __le__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is less than or equal to (<=) the given object.
+
+        Parameters
+        ----------
+        other : Money
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._richcmp(other, Py_LE) and self.currency == other.currency
+
+    def __gt__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is greater than (>) the given object.
+
+        Parameters
+        ----------
+        other : Money
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._richcmp(other, Py_GT) and self.currency == other.currency
+
+    def __ge__(self, Money other) -> bool:
+        """
+        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+
+        Parameters
+        ----------
+        other : Money
+            The other object to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._richcmp(other, Py_GE) and self.currency == other.currency
+
+    def __hash__(self) -> int:
+        """"
+        Return the hash code of this object.
+
+        Notes
+        -----
+        The hash is based on the ticks timestamp only.
+
+        Returns
+        -------
+        int
+
+        """
+        return hash(self.to_string_formatted())
 
     def __str__(self) -> str:
         """

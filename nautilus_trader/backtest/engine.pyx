@@ -112,6 +112,8 @@ cdef class BacktestEngine:
         self.test_clock.set_time(self.clock.utc_now())
         self.uuid_factory = TestUUIDFactory()
 
+        self.analyzer = PerformanceAnalyzer()
+
         self.logger = TestLogger(
             clock=LiveClock(),
             name=self.trader_id.value,
@@ -167,13 +169,6 @@ cdef class BacktestEngine:
 
         # Setup execution cache
         self.test_clock.set_time(self.clock.utc_now())  # For logging consistency
-        self.data_engine = BacktestDataEngine(
-            data=data,
-            tick_capacity=config.tick_capacity,
-            bar_capacity=config.bar_capacity,
-            clock=self.test_clock,
-            logger=self.test_logger,
-        )
 
         self.portfolio = Portfolio(
             clock=self.test_clock,
@@ -181,7 +176,16 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.analyzer = PerformanceAnalyzer()
+        self.portfolio.set_base_currency(config.account_currency)
+
+        self.data_engine = BacktestDataEngine(
+            data=data,
+            tick_capacity=config.tick_capacity,
+            bar_capacity=config.bar_capacity,
+            portfolio=self.portfolio,
+            clock=self.test_clock,
+            logger=self.test_logger,
+        )
 
         self.exec_engine = ExecutionEngine(
             database=exec_db,

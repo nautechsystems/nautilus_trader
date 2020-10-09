@@ -32,6 +32,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
+from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -39,12 +40,15 @@ cdef class DataEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef ExchangeRateCalculator _exchange_calculator
+    cdef Portfolio _portfolio
+    cdef ExchangeRateCalculator _xrate_calculator
     cdef dict _clients
     cdef bint _use_previous_close
 
     cdef dict _instruments
     cdef dict _instrument_handlers
+    cdef dict _bid_quotes
+    cdef dict _ask_quotes
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _quote_tick_handlers
@@ -139,7 +143,7 @@ cdef class DataEngine:
     cpdef bint has_trade_ticks(self, Symbol symbol) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
-    cpdef double get_exchange_rate(
+    cpdef double get_xrate(
         self,
         Currency from_currency,
         Currency to_currency,

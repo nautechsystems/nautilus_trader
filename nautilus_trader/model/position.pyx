@@ -39,7 +39,7 @@ cdef class Position:
             The order fill event which opened the position.
 
         """
-        self._events = [event]               # type: [OrderFilled]
+        self._events = []                    # type: [OrderFilled]
         self._buy_quantity = Quantity()      # Initialized in _update()
         self._sell_quantity = Quantity()     # Initialized in _update()
         self._relative_quantity = Decimal()  # Initialized in _update()
@@ -67,10 +67,12 @@ cdef class Position:
         self.realized_points = 0.0
         self.realized_return = 0.0
         self.realized_pnl = Money(0, event.base_currency)
-        self.realized_pnl_last = Money(0, event.base_currency)
+        self.unrealized_pnl = Money(0, event.base_currency)
+        self.total_pnl = Money(0, event.base_currency)
         self.commission = Money(0, event.base_currency)
+        self.last_tick = None  # Can be none
 
-        self._update(event)
+        self.apply(event)
 
     def __eq__(self, Position other) -> bool:
         """
@@ -137,6 +139,70 @@ cdef class Position:
 
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    cpdef void apply(self, OrderFilled event) except *:
+        """
+        Applies the given order fill event to the position.
+
+        Parameters
+        ----------
+        event : OrderFillEvent
+            The order fill event to apply.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._events.append(event)
+
+        # Update total commission
+        self.commission = self.commission.add(event.commission)
+
+        # Calculate avg prices, points, return, PNL
+        if event.order_side == OrderSide.BUY:
+            self._handle_buy_order_fill(event)
+        else:  # event.order_side == OrderSide.SELL:
+            self._handle_sell_order_fill(event)
+
+        # Set quantities
+        self.quantity = Quantity(abs(self._relative_quantity))
+        if self.quantity > self.peak_quantity:
+            self.peak_quantity = self.quantity
+
+        # Set state
+        if self._relative_quantity > 0:
+            self.side = PositionSide.LONG
+        elif self._relative_quantity < 0:
+            self.side = PositionSide.SHORT
+        else:
+            self.side = PositionSide.FLAT
+            self.closed_time = event.execution_time
+            self.open_duration = self.closed_time - self.opened_time
+
+    cpdef void update(self, QuoteTick tick) except *:
+        """
+        Update the position with the given tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick to update with.
+
+        Raises
+        ------
+        ValueError
+            If tick.symbol is not equal to self.symbol
+        """
+        Condition.not_none(tick, "tick")
+        Condition.equal(tick.symbol, self.symbol, "tick.symbol", "self.symbol")
+
+        self.last_tick = tick
+
+        if self.side == PositionSide.LONG:
+            self.unrealized_pnl = self._calculate_pnl(self.avg_open_price, tick.bid.as_double(), self.quantity)
+        elif self.side == PositionSide.SHORT:
+            self.unrealized_pnl = self._calculate_pnl(self.avg_open_price, tick.ask.as_double(), self.quantity)
+
+        self.total_pnl = self.realized_pnl.add(self.unrealized_pnl)
 
     cpdef str to_string(self):
         """
@@ -296,21 +362,6 @@ cdef class Position:
         """
         return self.side == PositionSide.SHORT
 
-    cpdef void apply(self, OrderFilled event) except *:
-        """
-        Applies the given order fill event to the position.
-
-        Parameters
-        ----------
-        event : OrderFillEvent
-            The order fill event to apply.
-
-        """
-        Condition.not_none(event, "event")
-
-        self._events.append(event)
-        self._update(event)
-
     cpdef Decimal relative_quantity(self):
         """
         Return the relative quantity of the position.
@@ -324,203 +375,66 @@ cdef class Position:
         """
         return self._relative_quantity
 
-    cpdef double unrealized_points(self, QuoteTick last):
-        """
-        Return the calculated unrealized points for the position from the given current price.
-
-        Parameters
-        ----------
-        last : QuoteTick
-            The position symbols last tick.
-
-        Returns
-        -------
-        double
-
-        """
-        Condition.not_none(last, "last")
-        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
-
-        if self.side == PositionSide.LONG:
-            return self._calculate_points(self.avg_open_price, last.bid.as_double())
-        elif self.side == PositionSide.SHORT:
-            return self._calculate_points(self.avg_open_price, last.ask.as_double())
-        else:
-            return 0.0
-
-    cpdef double total_points(self, QuoteTick last):
-        """
-        Return the calculated unrealized points for the position from the given current price.
-
-        Parameters
-        ----------
-        last : QuoteTick
-            The position symbols last tick.
-
-        Returns
-        -------
-        double
-
-        """
-        Condition.not_none(last, "last")
-        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
-
-        return self.realized_points + self.unrealized_points(last)
-
-    cpdef double unrealized_return(self, QuoteTick last):
-        """
-        Return the calculated unrealized return for the position from the given current price.
-
-        Parameters
-        ----------
-        last : QuoteTick
-            The position symbols last tick.
-
-        Returns
-        -------
-        double
-
-        """
-        Condition.not_none(last, "last")
-        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
-
-        if self.side == PositionSide.LONG:
-            return self._calculate_return(self.avg_open_price, last.bid.as_double())
-        elif self.side == PositionSide.SHORT:
-            return self._calculate_return(self.avg_open_price, last.ask.as_double())
-        else:
-            return 0.0
-
-    cpdef double total_return(self, QuoteTick last):
-        """
-        Return the calculated unrealized return for the position from the given current price.
-
-        Parameters
-        ----------
-        last : QuoteTick
-            The position symbols last tick.
-
-        Returns
-        -------
-        double
-
-        """
-        Condition.not_none(last, "last")
-        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
-
-        return self.realized_return + self.unrealized_return(last)
-
-    cpdef Money unrealized_pnl(self, QuoteTick last):
-        """
-        Return the calculated unrealized return for the position from the given current price.
-
-        Parameters
-        ----------
-        last : QuoteTick
-            The position symbols last tick.
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(last, "last")
-        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
-
-        if self.side == PositionSide.LONG:
-            return self._calculate_pnl(self.avg_open_price, last.bid.as_double(), self.quantity)
-        elif self.side == PositionSide.SHORT:
-            return self._calculate_pnl(self.avg_open_price, last.ask.as_double(), self.quantity)
-        else:
-            return Money(0, self.base_currency)
-
-    cpdef Money total_pnl(self, QuoteTick last):
-        """
-        Return the calculated unrealized return for the position from the given current price.
-
-        Parameters
-        ----------
-        last : QuoteTick
-            The position symbols last tick.
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(last, "last")
-        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
-
-        return self.realized_pnl.add(self.unrealized_pnl(last))
-
-    cdef void _update(self, OrderFilled event) except *:
-        # Update total commission
-        self.commission = self.commission.add(event.commission)
-
-        # Calculate avg prices, points, return, PNL
-        if event.order_side == OrderSide.BUY:
-            self._handle_buy_order_fill(event)
-        else:  # event.order_side == OrderSide.SELL:
-            self._handle_sell_order_fill(event)
-
-        # Set quantities
-        self.quantity = Quantity(abs(self._relative_quantity))
-        if self.quantity > self.peak_quantity:
-            self.peak_quantity = self.quantity
-
-        # Set state
-        if self._relative_quantity > 0:
-            self.side = PositionSide.LONG
-        elif self._relative_quantity < 0:
-            self.side = PositionSide.SHORT
-        else:
-            self.side = PositionSide.FLAT
-            self.closed_time = event.execution_time
-            self.open_duration = self.closed_time - self.opened_time
-
-    cdef void _handle_buy_order_fill(self, OrderFilled event) except *:
-        cdef Money pnl
+    cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
+        cdef Money realized_pnl = Money(0, self.realized_pnl.currency)
         # LONG POSITION
         if self._relative_quantity > 0:
-            self.avg_open_price = self._calculate_avg_price(self._buy_quantity, self.avg_open_price, event)
+            self.avg_open_price = self._calculate_avg_open_price(event)
         # SHORT POSITION
         elif self._relative_quantity < 0:
-            self.avg_close_price = self._calculate_avg_price(self._buy_quantity, self.avg_close_price, event)
+            self.avg_close_price = self._calculate_avg_close_price(event)
             self.realized_points = self._calculate_points(self.avg_open_price, self.avg_close_price)
             self.realized_return = self._calculate_return(self.avg_open_price, self.avg_close_price)
-            self.realized_pnl = self._calculate_pnl(self.avg_open_price, self.avg_close_price, self._buy_quantity.add(event.filled_qty))
-            self.realized_pnl = self.realized_pnl.sub(self.commission)
-        else:
-            self.realized_pnl = self.realized_pnl.sub(event.commission)
+            realized_pnl = self._calculate_pnl(self.avg_open_price, event.avg_price, event.filled_qty)
+
+        self.realized_pnl = self.realized_pnl.add(realized_pnl)
 
         # Update quantities
         self._buy_quantity = self._buy_quantity.add(event.filled_qty)
         self._relative_quantity = self._relative_quantity.add(event.filled_qty)
 
-    cdef void _handle_sell_order_fill(self, OrderFilled event) except *:
-        cdef Money pnl
+    cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *:
+        cdef Money realized_pnl = Money(0, self.realized_pnl.currency)
         # SHORT POSITION
         if self._relative_quantity < 0:
-            self.avg_open_price = self._calculate_avg_price(self._sell_quantity, self.avg_open_price, event)
+            self.avg_open_price = self._calculate_avg_open_price(event)
         # LONG POSITION
-
         elif self._relative_quantity > 0:
-            self.avg_close_price = self._calculate_avg_price(self._sell_quantity,self.avg_close_price, event)
+            self.avg_close_price = self._calculate_avg_close_price(event)
             self.realized_points = self._calculate_points(self.avg_open_price, self.avg_close_price)
             self.realized_return = self._calculate_return(self.avg_open_price, self.avg_close_price)
-            self.realized_pnl = self._calculate_pnl(self.avg_open_price, self.avg_close_price, self._sell_quantity.add(event.filled_qty))
-            self.realized_pnl = self.realized_pnl.sub(self.commission)
-        else:
-            self.realized_pnl = self.realized_pnl.sub(event.commission)
+            realized_pnl = self._calculate_pnl(self.avg_open_price, event.avg_price, event.filled_qty)
+
+        realized_pnl = realized_pnl.sub(event.commission)
+        self.realized_pnl = self.realized_pnl.add(realized_pnl)
 
         # Update quantities
         self._sell_quantity = self._sell_quantity.add(event.filled_qty)
         self._relative_quantity = self._relative_quantity.sub(event.filled_qty)
 
-    cdef double _calculate_avg_price(self, Quantity cumulative, double avg_price, OrderFilled event):
-        return ((cumulative * avg_price) + (event.filled_qty * event.avg_price)) / (cumulative.add(event.filled_qty))
+    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity):
+        return abs(avg_price * total_quantity.as_double())
 
-    cdef double _calculate_points(self, double opened_price, double closed_price):
+    cdef inline double _calculate_avg_open_price(self, OrderFilled event):
+        if not self.avg_open_price:
+            return event.avg_price.as_double()
+
+        return self._calculate_avg_price(self.avg_open_price, self.quantity, event)
+
+    cdef inline double _calculate_avg_close_price(self, OrderFilled event):
+        if not self.avg_close_price:
+            return event.avg_price.as_double()
+
+        cdef Quantity close_quantity = Quantity(abs(self._sell_quantity)) if self.side == PositionSide.LONG else self._buy_quantity
+        return self._calculate_avg_price(self.avg_close_price, close_quantity, event)
+
+    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event):
+        cdef double start_cost = self._calculate_cost(price_open, quantity_open)
+        cdef double event_cost = self._calculate_cost(event.avg_price, event.filled_qty)
+        cdef Quantity cumulative_quantity = quantity_open.add(event.filled_qty)
+        return (start_cost + event_cost) / cumulative_quantity.as_double()
+
+    cdef inline double _calculate_points(self, double opened_price, double closed_price):
         if self.side == PositionSide.LONG:
             return closed_price - opened_price
         elif self.side == PositionSide.SHORT:
@@ -528,7 +442,7 @@ cdef class Position:
         else:
             return 0.  # FLAT
 
-    cdef double _calculate_return(self, double opened_price, double closed_price):
+    cdef inline double _calculate_return(self, double opened_price, double closed_price):
         if self.side == PositionSide.LONG:
             return (closed_price - opened_price) / opened_price
         elif self.side == PositionSide.SHORT:
@@ -536,6 +450,6 @@ cdef class Position:
         else:
             return 0.  # FLAT
 
-    cdef Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_qty):
-        cdef double value = (self._calculate_points(opened_price, closed_price) / opened_price) * filled_qty
+    cdef inline Money _calculate_pnl(self, double opened_price, double closed_price, Quantity filled_qty):
+        cdef double value = self._calculate_points(opened_price, closed_price) / opened_price * abs(filled_qty)
         return Money(value, self.base_currency)

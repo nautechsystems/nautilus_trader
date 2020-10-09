@@ -20,6 +20,7 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
@@ -42,14 +43,14 @@ from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 
-USDJPY_FXCM = TestStubs.instrument_usdjpy().symbol
+USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
 class TraderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
@@ -61,17 +62,18 @@ class TraderTests(unittest.TestCase):
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
 
+        self.portfolio = Portfolio(
+            clock=clock,
+            uuid_factory=uuid_factory,
+            logger=logger,
+        )
+
         data_engine = BacktestDataEngine(
             data=data,
             tick_capacity=1000,
             bar_capacity=1000,
+            portfolio=self.portfolio,
             clock=clock,
-            logger=logger,
-        )
-
-        self.portfolio = Portfolio(
-            clock=clock,
-            uuid_factory=uuid_factory,
             logger=logger,
         )
 

@@ -20,6 +20,7 @@ import pandas as pd
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
@@ -60,7 +61,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.usdjpy = TestStubs.instrument_usdjpy()
+        self.usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         self.bid_data_1min = TestDataProvider.usdjpy_1min_bid()[:2000]
         self.ask_data_1min = TestDataProvider.usdjpy_1min_ask()[:2000]
 
@@ -74,18 +75,19 @@ class SimulatedMarketTests(unittest.TestCase):
         self.uuid_factory = TestUUIDFactory()
         self.logger = TestLogger(self.clock)
 
-        self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger)
-        self.data_engine.set_use_previous_close(False)
-
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
+
+        self.data_engine = DataEngine(
+            tick_capacity=1000,
+            bar_capacity=1000,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger)
+        self.data_engine.set_use_previous_close(False)
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -581,8 +583,8 @@ class SimulatedMarketTests(unittest.TestCase):
             self.usdjpy.symbol,
             Price("100.003"),
             Price("100.003"),
-            Quantity(1),
-            Quantity(1),
+            Quantity(100000),
+            Quantity(100000),
             UNIX_EPOCH)
         self.market.process_tick(reduce_quote)
 
@@ -598,7 +600,8 @@ class SimulatedMarketTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl(reduce_quote))
+        position.update(reduce_quote)
+        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl)
 
     # TODO: Position flip behaviour needs to be implemented
     # def test_position_dir_change(self):

@@ -15,6 +15,7 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -22,12 +23,14 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from tests.test_kit.stubs import TestStubs
 
+USDJPY = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+
 
 class FixedRiskSizerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.sizer = FixedRiskSizer(TestStubs.instrument_gbpusd())
+        self.sizer = FixedRiskSizer(USDJPY)
 
     def test_calculate_single_unit_size(self):
         # Arrange
@@ -132,7 +135,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_for_usdjpy(self):
         # Arrange
-        sizer = FixedRiskSizer(TestStubs.instrument_usdjpy())
+        sizer = FixedRiskSizer(InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()))
         equity = Money(1000000, USD)
 
         # Act

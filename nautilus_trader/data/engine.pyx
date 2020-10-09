@@ -54,6 +54,7 @@ cdef class DataEngine:
             self,
             int tick_capacity,
             int bar_capacity,
+            Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
@@ -67,6 +68,8 @@ cdef class DataEngine:
             The length for the internal ticks deque per symbol (> 0).
         bar_capacity : int
             The length for the internal bars deque per symbol (> 0).
+        portfolio : int
+            The portfolio to register to receive quote ticks.
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory
@@ -88,7 +91,8 @@ cdef class DataEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
-        self._exchange_calculator = ExchangeRateCalculator()
+        self._portfolio = portfolio
+        self._xrate_calculator = ExchangeRateCalculator()
 
         self._use_previous_close = True
         self.tick_capacity = tick_capacity  # Per symbol
@@ -99,6 +103,8 @@ cdef class DataEngine:
         # Cached data
         self._instruments = {}          # type: {Symbol, Instrument}
         self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
+        self._bid_quotes = {}           # type: {Symbol, float}
+        self._ask_quotes = {}           # type: {Symbol, float}
         self._quote_ticks = {}          # type: {Symbol, [QuoteTick]}
         self._trade_ticks = {}          # type: {Symbol, [TradeTick]}
         self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
@@ -153,6 +159,18 @@ cdef class DataEngine:
         cdef DataClient client
         for client in self._clients:
             client.reset()
+
+        self._instruments.clear()
+        self._instrument_handlers.clear()
+        self._bid_quotes.clear()
+        self._ask_quotes.clear()
+        self._quote_ticks.clear()
+        self._trade_ticks.clear()
+        self._quote_tick_handlers.clear()
+        self._trade_tick_handlers.clear()
+        self._bars.clear()
+        self._bar_aggregators.clear()
+        self._bar_handlers.clear()
 
     cpdef void dispose(self) except *:
         """
@@ -698,6 +716,11 @@ cdef class DataEngine:
 
         cdef Symbol symbol = tick.symbol
 
+        # Update latest quotes
+        # TODO: Handle the case of same symbol over different venues
+        self._bid_quotes[symbol.code] = tick.bid.as_double()
+        self._ask_quotes[symbol.code] = tick.ask.as_double()
+
         # Update ticks and spreads
         ticks = self._quote_ticks.get(symbol)
 
@@ -716,6 +739,9 @@ cdef class DataEngine:
 
         if not send_to_handlers:
             return
+
+        # Send to portfolio as a priority
+        self._portfolio.handle_tick(tick)
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(symbol)
@@ -1231,11 +1257,12 @@ cdef class DataEngine:
 
         return bar_type in self._bars and len(self._bars[bar_type]) > 0
 
-    cpdef double get_exchange_rate(
+    cpdef double get_xrate(
             self,
             Currency from_currency,
             Currency to_currency,
-            PriceType price_type=PriceType.MID):
+            PriceType price_type=PriceType.MID,
+    ):
         """
         Return the calculated exchange rate for the given currencies.
 
@@ -1258,16 +1285,16 @@ cdef class DataEngine:
             If price_type is UNDEFINED or LAST.
 
         """
-        cdef Symbol symbol
-        cdef dict bid_rates = {symbol.code: ticks[0].bid.as_double() for symbol, ticks in self._quote_ticks.items() if len(ticks) > 0}
-        cdef dict ask_rates = {symbol.code: ticks[0].ask.as_double() for symbol, ticks in self._quote_ticks.items() if len(ticks) > 0}
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+        # TODO: price_type not UNDEFINED or LAST
 
-        return self._exchange_calculator.get_rate(
+        return self._xrate_calculator.get_rate(
             from_currency=from_currency,
             to_currency=to_currency,
             price_type=price_type,
-            bid_rates=bid_rates,
-            ask_rates=ask_rates,
+            bid_quotes=self._bid_quotes,
+            ask_quotes=self._ask_quotes,
         )
 
 # ------------------------------------------------------------------------------------------------ #

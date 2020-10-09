@@ -74,7 +74,7 @@ cdef class SimulatedMarket:
     cdef readonly Money account_balance
     cdef readonly Money account_balance_start_day
     cdef readonly Money account_balance_activity_day
-    cdef readonly ExchangeRateCalculator exchange_calculator
+    cdef readonly ExchangeRateCalculator xrate_calculator
     cdef readonly CommissionModel commission_model
     cdef readonly RolloverInterestCalculator rollover_calculator
     cdef readonly double rollover_spread
@@ -105,7 +105,7 @@ cdef class SimulatedMarket:
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
     cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *
-    cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double exchange_rate)
+    cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double xrate)
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
