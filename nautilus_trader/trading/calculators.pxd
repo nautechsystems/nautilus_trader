@@ -26,8 +26,8 @@ cdef class ExchangeRateCalculator:
         Currency from_currency,
         Currency to_currency,
         PriceType price_type,
-        dict bid_rates,
-        dict ask_rates
+        dict bid_quotes,
+        dict ask_quotes
     ) except *
 
 

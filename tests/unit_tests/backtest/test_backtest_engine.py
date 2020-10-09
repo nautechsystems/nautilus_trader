@@ -21,6 +21,7 @@ from pandas import Timestamp
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -37,7 +38,7 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
@@ -61,16 +62,15 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_timer_and_alert_sequencing_with_bar_execution(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
-        instrument = TestStubs.instrument_usdjpy()
         bar_type = TestStubs.bartype_usdjpy_1min_bid()
 
-        tick_tock = TickTock(instrument=instrument, bar_type=bar_type)
+        tick_tock = TickTock(instrument=usdjpy, bar_type=bar_type)
 
         engine = BacktestEngine(
             data=data,
@@ -94,7 +94,7 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_timer_alert_sequencing_with_tick_execution(self):
         # Arrange
-        usdjpy = TestStubs.instrument_usdjpy()
+        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])

@@ -148,7 +148,7 @@ cdef class SimulatedMarket:
         self.account_balance_start_day = config.starting_capital
         self.account_balance_activity_day = Money(0, self.account_currency)
 
-        self.exchange_calculator = ExchangeRateCalculator()
+        self.xrate_calculator = ExchangeRateCalculator()
         self.commission_model = commission_model
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
@@ -369,14 +369,14 @@ cdef class SimulatedMarket:
     cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *:
         Condition.not_none(event, "event")
 
-        cdef double exchange_rate = 1.
+        cdef double xrate = 1.
         if instrument.base_currency != self.account_currency:
-            exchange_rate = self.exchange_calculator.get_rate(
+            xrate = self.xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
                 to_currency=self.account.currency,
                 price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-                bid_rates=self._build_current_bid_rates(),
-                ask_rates=self._build_current_ask_rates(),
+                bid_quotes=self._build_current_bid_rates(),
+                ask_quotes=self._build_current_ask_rates(),
             )
 
         cdef PositionSide side
@@ -394,10 +394,10 @@ cdef class SimulatedMarket:
                 open_price=position.avg_open_price,
                 close_price=event.avg_price.as_double(),
                 quantity=event.filled_qty,
-                exchange_rate=exchange_rate,
+                xrate=xrate,
             )
 
-        cdef Money commission_for_account = Money(event.commission.as_double() * exchange_rate, self.account_currency)
+        cdef Money commission_for_account = Money(event.commission.as_double() * xrate, self.account_currency)
         self.total_commissions = self.total_commissions.add(commission_for_account)
         pnl = pnl.sub(commission_for_account)
 
@@ -415,7 +415,7 @@ cdef class SimulatedMarket:
             double open_price,
             double close_price,
             Quantity quantity,
-            double exchange_rate,
+            double xrate,
     ):
         Condition.not_none(quantity, "quantity")
 
@@ -428,7 +428,7 @@ cdef class SimulatedMarket:
             raise ValueError(f"Cannot calculate the pnl of a "
                              f"{position_side_to_string(side)} side")
 
-        return Money(difference * quantity * exchange_rate, self.account_currency)
+        return Money(difference * quantity * xrate, self.account_currency)
 
     cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
@@ -440,7 +440,7 @@ cdef class SimulatedMarket:
         cdef Instrument instrument
         cdef Currency base_currency
         cdef double interest_rate
-        cdef double exchange_rate
+        cdef double xrate
         cdef double rollover
         cdef double rollover_cumulative = 0.0
         cdef double mid_price
@@ -457,14 +457,14 @@ cdef class SimulatedMarket:
                 interest_rate = self.rollover_calculator.calc_overnight_rate(
                     position.symbol,
                     timestamp)
-                exchange_rate = self.exchange_calculator.get_rate(
+                xrate = self.xrate_calculator.get_rate(
                     from_currency=instrument.quote_currency,
                     to_currency=self.account.currency,
                     price_type=PriceType.MID,
-                    bid_rates=self._build_current_bid_rates(),
-                    ask_rates=self._build_current_ask_rates(),
+                    bid_quotes=self._build_current_bid_rates(),
+                    ask_quotes=self._build_current_ask_rates(),
                 )
-                rollover = mid_price * position.quantity.as_double() * interest_rate * exchange_rate
+                rollover = mid_price * position.quantity.as_double() * interest_rate * xrate
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
 

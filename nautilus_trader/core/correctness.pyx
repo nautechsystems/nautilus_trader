@@ -103,7 +103,7 @@ cdef class Condition:
 
         Raises
         -------
-        ValueError
+        TypeError
             If argument is not None.
 
         """
@@ -112,7 +112,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' argument was not None"
         if ex_type is None or type(ex_type) != type(Exception):
-            raise ValueError(msg)
+            raise TypeError(msg)
         else:
             raise ex_type(msg)
 
@@ -132,7 +132,7 @@ cdef class Condition:
 
         Raises
         -------
-        ValueError
+        TypeError
             If argument is None.
 
         """
@@ -141,7 +141,7 @@ cdef class Condition:
 
         cdef str msg = f"The \'{param}\' argument was None"
         if ex_type is None or type(ex_type) != type(Exception):
-            raise ValueError(msg)
+            raise TypeError(msg)
         else:
             raise ex_type(msg)
 
@@ -449,7 +449,7 @@ cdef class Condition:
 
         Raises
         -------
-        ValueError
+        KeyError
             If element is not contained in the collection.
 
         """
@@ -461,7 +461,7 @@ cdef class Condition:
         cdef str msg = (f"The \'{param1}\' {element} was not contained in "
                         f"the {param2} collection")
         if ex_type is None or type(ex_type) != type(Exception):
-            raise ValueError(msg)
+            raise KeyError(msg)
         else:
             raise ex_type(msg)
 
@@ -491,7 +491,7 @@ cdef class Condition:
 
         Raises
         -------
-        ValueError
+        KeyError
             If element is contained in the collection.
 
         """
@@ -503,7 +503,7 @@ cdef class Condition:
         cdef str msg = (f"The \'{param1}\' {element} was already contained in "
                         f"the \'{param2}\' collection")
         if ex_type is None or type(ex_type) != type(Exception):
-            raise ValueError(msg)
+            raise KeyError(msg)
         else:
             raise ex_type(msg)
 
@@ -882,7 +882,7 @@ class PyCondition:
 
         Raises
         -------
-        ValueError
+        TypeError
             If argument is not None.
 
         """
@@ -904,7 +904,7 @@ class PyCondition:
 
         Raises
         -------
-        ValueError
+        TypeError
             If argument is None.
 
         """
@@ -1125,7 +1125,7 @@ class PyCondition:
 
         Raises
         -------
-        ValueError
+        KeyError
             If element is not contained in the collection.
 
         """
@@ -1151,7 +1151,7 @@ class PyCondition:
 
         Raises
         -------
-        ValueError
+        KeyError
             If element is contained in the collection.
 
         """

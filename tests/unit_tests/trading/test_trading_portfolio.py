@@ -69,7 +69,7 @@ class PortfolioTests(unittest.TestCase):
         position_opened = TestStubs.event_position_opened(position)
 
         # Act
-        self.portfolio.update(position_opened)
+        self.portfolio.handle_event(position_opened)
 
         # Assert
         # TODO: Implement Portfolio logic
@@ -84,7 +84,7 @@ class PortfolioTests(unittest.TestCase):
         position = Position(order_filled)
         position_opened = TestStubs.event_position_opened(position)
 
-        self.portfolio.update(position_opened)
+        self.portfolio.handle_event(position_opened)
 
         # Act
         self.portfolio.reset()
@@ -111,8 +111,8 @@ class PortfolioTests(unittest.TestCase):
         position_opened2 = TestStubs.event_position_opened(position2)
 
         # Act
-        self.portfolio.update(position_opened1)
-        self.portfolio.update(position_opened2)
+        self.portfolio.handle_event(position_opened1)
+        self.portfolio.handle_event(position_opened2)
 
         # Assert
         # TODO: Implement Portfolio logic
@@ -136,8 +136,8 @@ class PortfolioTests(unittest.TestCase):
         position_modified = TestStubs.event_position_modified(position)
 
         # Act
-        self.portfolio.update(position_opened)
-        self.portfolio.update(position_modified)
+        self.portfolio.handle_event(position_opened)
+        self.portfolio.handle_event(position_modified)
 
         # Assert
         # TODO: Implement Portfolio logic
@@ -161,8 +161,8 @@ class PortfolioTests(unittest.TestCase):
         position_closed = TestStubs.event_position_closed(position)
 
         # Act
-        self.portfolio.update(position_opened)
-        self.portfolio.update(position_closed)
+        self.portfolio.handle_event(position_opened)
+        self.portfolio.handle_event(position_closed)
 
         # Assert
         # TODO: Implement Portfolio logic
@@ -201,10 +201,10 @@ class PortfolioTests(unittest.TestCase):
         position_closed = TestStubs.event_position_closed(position3)
 
         # Act
-        self.portfolio.update(position_opened1)
-        self.portfolio.update(position_opened2)
-        self.portfolio.update(position_opened3)
-        self.portfolio.update(position_closed)
+        self.portfolio.handle_event(position_opened1)
+        self.portfolio.handle_event(position_opened2)
+        self.portfolio.handle_event(position_opened3)
+        self.portfolio.handle_event(position_closed)
 
         # Assert
         # TODO: Implement Portfolio logic

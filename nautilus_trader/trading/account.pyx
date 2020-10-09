@@ -35,14 +35,16 @@ cdef class Account:
         Condition.not_none(event, "event")
 
         self._events = [event]
+        self._portfolio = None  # Initialized when registered with portfolio
 
         self.id = event.account_id
         self.account_type = self.id.account_type
         self.currency = event.currency
-        self.balance = event.balance
-        self.margin_balance = event.margin_balance
-        self.margin_available = event.margin_available
-        self.free_equity = None
+        self.balance = Money(0, self.currency)
+        self.margin_balance = Money(0, self.currency)
+        self.margin_available = Money(0, self.currency)
+        self.order_margin = Money(0, self.currency)
+        self.position_margin = Money(0, self.currency)
 
         # Update account
         self.apply(event)
@@ -117,6 +119,26 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    cpdef void register_portfolio(self, Portfolio portfolio) except *:
+        """
+        Register the given portfolio with the account.
+
+        Parameters
+        ----------
+        portfolio : Portfolio
+            The portfolio to register.
+
+        Raises
+        ----------
+        ValueError
+            If a portfolio is already registered.
+
+        """
+        Condition.not_none(portfolio, "portfolio")
+        Condition.none(self._portfolio, "self._portfolio")  # No portfolio should be registered
+
+        self._portfolio = portfolio
+
     cpdef int event_count(self):
         """
         Return the count of events.
@@ -168,4 +190,5 @@ cdef class Account:
         self.balance = event.balance
         self.margin_balance = event.margin_balance
         self.margin_available = event.margin_available
-        self.free_equity = event.balance
+        self.order_margin = Money(0, self.currency)
+        self.position_margin = Money(0, self.currency)

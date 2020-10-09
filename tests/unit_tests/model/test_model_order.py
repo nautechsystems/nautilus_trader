@@ -120,7 +120,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         self.assertRaises(
-            ValueError,
+            TypeError,
             StopMarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),

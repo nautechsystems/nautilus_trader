@@ -18,6 +18,7 @@ import unittest
 
 import pytz
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
@@ -34,6 +35,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
@@ -45,13 +47,23 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class DataEngineTests(unittest.TestCase):
 
     def setUp(self):
-        clock = TestClock()
+        self.clock = TestClock()
+        self.uuid_factory = TestUUIDFactory()
+        self.logger = TestLogger(self.clock)
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
         self.data_engine = DataEngine(
             tick_capacity=1000,
             bar_capacity=1000,
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=TestLogger(clock),
+            portfolio=self.portfolio,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
         )
 
     def test_get_exchange_rate_returns_correct_rate(self):
@@ -68,7 +80,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.data_engine.get_exchange_rate(JPY, USD)
+        result = self.data_engine.get_xrate(JPY, USD)
 
         # Assert
         self.assertEqual(0.009025266685348969, result)
@@ -87,7 +99,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.data_engine.get_exchange_rate(AUD, USD)
+        result = self.data_engine.get_xrate(AUD, USD)
 
         # Assert
         self.assertEqual(0.80005, result)
@@ -101,7 +113,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.wrangler = TickDataWrangler(
-            instrument=TestStubs.instrument_usdjpy(),
+            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data})

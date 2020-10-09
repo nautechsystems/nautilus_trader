@@ -25,8 +25,6 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -34,7 +32,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import SecurityType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelled
@@ -56,8 +53,6 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -72,6 +67,22 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 class TestStubs:
 
     @staticmethod
+    def symbol_xbtusd_bitmex() -> Symbol:
+        return Symbol("XBT/USD", Venue('BITMEX'))
+
+    @staticmethod
+    def symbol_ethusd_bitmex() -> Symbol:
+        return Symbol("ETH/USD", Venue('BITMEX'))
+
+    @staticmethod
+    def symbol_btcusd_binance() -> Symbol:
+        return Symbol("BTC/USD", Venue('BINANCE'))
+
+    @staticmethod
+    def symbol_ethusdt_binance() -> Symbol:
+        return Symbol("ETH/USDT", Venue('BINANCE'))
+
+    @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
         return Symbol("AUD/USD", Venue('FXCM'))
 
@@ -82,42 +93,6 @@ class TestStubs:
     @staticmethod
     def symbol_usdjpy_fxcm() -> Symbol:
         return Symbol("USD/JPY", Venue('FXCM'))
-
-    @staticmethod
-    def instrument_gbpusd() -> Instrument:
-        return Instrument(
-            Symbol("GBP/USD", Venue('FXCM')),
-            SecurityType.FOREX,
-            base_currency=GBP,
-            quote_currency=USD,
-            price_precision=5,
-            size_precision=0,
-            tick_size=Decimal("0.00001"),
-            lot_size=Quantity(1000),
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
-            timestamp=UNIX_EPOCH,
-        )
-
-    @staticmethod
-    def instrument_usdjpy() -> Instrument:
-        return Instrument(
-            Symbol("USD/JPY", Venue('FXCM')),
-            SecurityType.FOREX,
-            base_currency=USD,
-            quote_currency=JPY,
-            price_precision=3,
-            size_precision=0,
-            tick_size=Decimal("0.001"),
-            lot_size=Quantity(1000),
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(50000000),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
-            timestamp=UNIX_EPOCH,
-        )
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:

@@ -7,6 +7,7 @@ empyrical>=0.5.3
 redis>=3.4.1
 psutil>=5.7.0
 pytz>=2020.1
+ccxt>=1.35.72
 msgpack>=1.0.0
 matplotlib>=2.2.2
 flake8>=3.8.3
