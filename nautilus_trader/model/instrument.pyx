@@ -26,7 +26,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Instrument:
     """
-    Represents a tradeable financial market instrument.
+    The base class for all instruments. Represents a tradeable financial market
+    instrument.
     """
 
     def __init__(
@@ -35,12 +36,13 @@ cdef class Instrument:
             SecurityType security_type,
             Currency base_currency not None,
             Currency quote_currency not None,
+            Currency settlement_currency not None,
             int price_precision,
             int size_precision,
             Decimal tick_size not None,
             Quantity lot_size not None,
-            Quantity min_trade_size not None,
-            Quantity max_trade_size not None,
+            object min_trade_size not None,
+            object max_trade_size not None,
             Decimal rollover_interest_buy not None,
             Decimal rollover_interest_sell not None,
             datetime timestamp not None,
@@ -52,12 +54,14 @@ cdef class Instrument:
         ----------
         symbol : Symbol
             The symbol.
-        base_currency : Currency
-            The base asset currency.
-        quote_currency : Currency
-            The currency prices for the instrument are quoted in.
         security_type : SecurityType
             The security type.
+        base_currency : Currency
+            The base currency.
+        quote_currency : Currency
+            The quote currency.
+        settlement_currency : Currency
+            The settlement currency.
         price_precision : int
             The price decimal precision.
         size_precision : int
@@ -65,10 +69,10 @@ cdef class Instrument:
         tick_size : Decimal
             The tick size.
         lot_size : Quantity
-            The rounded lot size.
-        min_trade_size : Quantity
+            The rounded lot unit size.
+        min_trade_size : Quantity or Money
             The minimum possible trade size.
-        max_trade_size : Quantity
+        max_trade_size : Quantity or Money
             The maximum possible trade size.
         rollover_interest_buy : Decimal
             The rollover interest for long positions.
@@ -85,13 +89,25 @@ cdef class Instrument:
         Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
         Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')
 
+        # Determine standard/inverse/quanto
+        cdef bint is_inverse = quote_currency == settlement_currency
+        cdef bint is_quanto = base_currency != quote_currency and base_currency != settlement_currency
+        cdef bint is_standard = not is_inverse and not is_quanto
+        if is_quanto:
+            is_inverse = False
+
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
         self.security_type = security_type
         self.base_currency = base_currency
         self.quote_currency = quote_currency
+        self.settlement_currency = settlement_currency
+        self.is_standard = is_standard
+        self.is_inverse = is_inverse
+        self.is_quanto = is_quanto
         self.price_precision = price_precision
         self.size_precision = size_precision
+        self.cost_precision = self.settlement_currency.precision
         self.tick_size = tick_size
         self.lot_size = lot_size
         self.min_trade_size = min_trade_size

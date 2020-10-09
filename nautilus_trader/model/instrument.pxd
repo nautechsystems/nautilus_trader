@@ -26,15 +26,20 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Instrument:
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
+    cdef readonly SecurityType security_type
     cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
-    cdef readonly SecurityType security_type
+    cdef readonly Currency settlement_currency
+    cdef readonly bint is_standard
+    cdef readonly bint is_inverse
+    cdef readonly bint is_quanto
     cdef readonly int price_precision
     cdef readonly int size_precision
+    cdef readonly int cost_precision
     cdef readonly Decimal tick_size
     cdef readonly Quantity lot_size
-    cdef readonly Quantity min_trade_size
-    cdef readonly Quantity max_trade_size
+    cdef readonly object min_trade_size
+    cdef readonly object max_trade_size
     cdef readonly Decimal rollover_interest_buy
     cdef readonly Decimal rollover_interest_sell
     cdef readonly datetime timestamp

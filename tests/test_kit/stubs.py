@@ -72,7 +72,7 @@ class TestStubs:
 
     @staticmethod
     def symbol_ethusd_bitmex() -> Symbol:
-        return Symbol("ETH/USD", Venue('BINANCE'))
+        return Symbol("ETH/USD", Venue('BITMEX'))
 
     @staticmethod
     def symbol_btcusd_binance() -> Symbol:
