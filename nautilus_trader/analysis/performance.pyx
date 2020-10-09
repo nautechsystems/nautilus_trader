@@ -610,7 +610,7 @@ cdef class PerformanceAnalyzer:
         """
         return [
             f"PNL:               {round(self.total_pnl(), 2):,} {self._account_currency}",
-            f"PNL %:             {self.total_pnl_percentage()}",
+            f"PNL %:             {round(self.total_pnl_percentage(), 2)}%",
             f"Max Winner:        {round(self.max_winner(), 2):,} {self._account_currency}",
             f"Avg Winner:        {round(self.avg_winner(), 2):,} {self._account_currency}",
             f"Min Winner:        {round(self.min_winner(), 2):,} {self._account_currency}",
