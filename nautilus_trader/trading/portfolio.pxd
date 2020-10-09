@@ -26,7 +26,9 @@ from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
@@ -41,27 +43,34 @@ cdef class Portfolio:
 
     cdef dict _bid_quotes
     cdef dict _ask_quotes
+    cdef dict _instruments
     cdef dict _accounts
+    cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
-    cdef dict _venue_unrealized_pnl
-    cdef dict _venue_position_value
-    cdef bint _calculated_latest
+    cdef dict _unrealized_pnls
+    cdef dict _open_values
     cdef Money _unrealized_pnl
-    cdef Money _position_value
+    cdef Money _open_value
+    cdef bint _calculated_latest_totals
 
     cdef readonly date date_now
     cdef readonly Currency base_currency
 
     cpdef void set_base_currency(self, Currency currency) except *
     cpdef void register_account(self, Account account) except *
-    cpdef void handle_tick(self, QuoteTick tick) except *
-    cpdef void handle_event(self, PositionEvent event) except *
+    cpdef void update_instrument(self, Instrument instrument) except *
+    cpdef void update_tick(self, QuoteTick tick) except *
+    cpdef void update_orders_working(self, set orders) except *
+    cpdef void update_order(self, Order order) except *
+    cpdef void update_positions(self, set positions) except *
+    cpdef void update_position(self, PositionEvent event) except *
+    cpdef void reset(self) except *
+
     cpdef Money unrealized_pnl(self, Venue venue=*)
     cpdef Money position_value(self, Venue venue=*)
     cpdef Money position_margin(self, Venue venue)
     cpdef Money order_margin(self, Venue venue)
-    cpdef void reset(self) except *
 
     cdef inline Money _money_zero(self)
     cdef inline double _get_xrate(self, Currency currency, PositionSide side)

@@ -85,16 +85,11 @@ cdef class Instrument:
         Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
-        Condition.equal(size_precision, lot_size.precision, 'size_precision', 'round_lot_size.precision')
-        Condition.equal(size_precision, min_trade_size.precision, 'size_precision', 'min_trade_size.precision')
-        Condition.equal(size_precision, max_trade_size.precision, 'size_precision', 'max_trade_size.precision')
 
         # Determine standard/inverse/quanto
-        cdef bint is_inverse = quote_currency == settlement_currency
         cdef bint is_quanto = base_currency != quote_currency and base_currency != settlement_currency
-        cdef bint is_standard = not is_inverse and not is_quanto
-        if is_quanto:
-            is_inverse = False
+        cdef bint is_inverse = not is_quanto and quote_currency == settlement_currency
+        cdef bint is_standard = not is_quanto and not is_inverse
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
@@ -102,9 +97,9 @@ cdef class Instrument:
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.settlement_currency = settlement_currency
-        self.is_standard = is_standard
-        self.is_inverse = is_inverse
         self.is_quanto = is_quanto
+        self.is_inverse = is_inverse
+        self.is_standard = is_standard
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.cost_precision = self.settlement_currency.precision
