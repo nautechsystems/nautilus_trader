@@ -13,49 +13,83 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport currency_type_to_string
 
+# Crypto currencies
 BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
+XBT = Currency('XBT', precision=8, currency_type=CurrencyType.CRYPTO)
 ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
-XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
 USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
+XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
+BCH = Currency('BCH', precision=2, currency_type=CurrencyType.CRYPTO)
+BNB = Currency('BNB', precision=4, currency_type=CurrencyType.CRYPTO)
+DOT = Currency('DOT', precision=4, currency_type=CurrencyType.CRYPTO)
+LINK = Currency('LINK', precision=4, currency_type=CurrencyType.CRYPTO)
+LTC = Currency('LTC', precision=2, currency_type=CurrencyType.CRYPTO)
+
+# Fiat currencies
 AUD = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
 CAD = Currency('CAD', precision=2, currency_type=CurrencyType.FIAT)
+CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
+CNY = Currency('CNY', precision=2, currency_type=CurrencyType.FIAT)
+CNH = Currency('CNH', precision=2, currency_type=CurrencyType.FIAT)
+CZK = Currency('CZK', precision=2, currency_type=CurrencyType.FIAT)
 EUR = Currency('EUR', precision=2, currency_type=CurrencyType.FIAT)
 GBP = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
-CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
 HKD = Currency('HKD', precision=2, currency_type=CurrencyType.FIAT)
-NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
-SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
 JPY = Currency('JPY', precision=2, currency_type=CurrencyType.FIAT)
+MXN = Currency('MXN', precision=2, currency_type=CurrencyType.FIAT)
+NOK = Currency('NOK', precision=2, currency_type=CurrencyType.FIAT)
+NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
+RUB = Currency('RUB', precision=2, currency_type=CurrencyType.FIAT)
+SEK = Currency('SEK', precision=2, currency_type=CurrencyType.FIAT)
+TRY = Currency('TRY', precision=2, currency_type=CurrencyType.FIAT)
+SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
+USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
+ZAR = Currency('ZAR', precision=2, currency_type=CurrencyType.FIAT)
 
 
 cdef dict _CURRENCY_TABLE = {
     'BTC': BTC,
+    'XBT': XBT,
     'ETH': ETH,
     'XRP': XRP,
+    'BCH': BCH,
+    'BNB': BNB,
+    'DOT': DOT,
+    'LINK': LINK,
+    'LTC': LTC,
     'USDT': USDT,
     'AUD': AUD,
-    'USD': USD,
     'CAD': CAD,
+    'CHF': CHF,
+    'CNY': CNY,
+    'CNH': CNH,
+    'CZK': CZK,
     'EUR': EUR,
     'GBP': GBP,
-    'CHF': CHF,
     'HKD': HKD,
-    'NZD': NZD,
-    'SGD': SGD,
     'JPY': JPY,
+    'MXN': MXN,
+    'NOK': NOK,
+    'NZD': NZD,
+    'RUB': RUB,
+    'SEK': SEK,
+    'TRY': TRY,
+    'SGD': SGD,
+    'USD': USD,
+    'ZAR': ZAR,
 }
 
 
-# noinspection PyPep8Naming
-# (currency naming correct)
 cdef class Currency:
     """
-    Represents a medium of exchange in a specified denomination.
+    Represents a medium of exchange in a specified denomination with a fixed
+    decimal precision.
     """
 
     def __init__(
@@ -65,14 +99,14 @@ cdef class Currency:
             CurrencyType currency_type,
     ):
         """
-        Initialize a new instance of the OrderInitialized class.
+        Initialize a new instance of the Currency class.
 
         Parameters
         ----------
         code : str
-            The client order identifier.
+            The currency code.
         precision : int
-            The order symbol.
+            The currency decimal precision.
         currency_type : CurrencyType
             The currency type.
 
@@ -96,11 +130,12 @@ cdef class Currency:
 
     def __eq__(self, Currency other) -> bool:
         """
-        Return a value indicating whether this object is equal to (==) the given object.
+        Return a value indicating whether this object is equal to (==) the given
+        object.
 
         Parameters
         ----------
-        other : object
+        other : Currency
             The other object to equate.
 
         Returns
@@ -114,11 +149,12 @@ cdef class Currency:
 
     def __ne__(self, Currency other) -> bool:
         """
-        Return a value indicating whether this object is not equal to (!=) the given object.
+        Return a value indicating whether this object is not equal to (!=) the
+        given object.
 
         Parameters
         ----------
-        other : object
+        other : Currency
             The other object to equate.
 
         Returns
@@ -152,8 +188,8 @@ cdef class Currency:
 
     def __repr__(self) -> str:
         """
-        Return the string representation of this object which includes the objects
-        location in memory.
+        Return the string representation of this object which includes the
+        objects location in memory.
 
         Returns
         -------
@@ -166,9 +202,9 @@ cdef class Currency:
                 f"type={currency_type_to_string(self.currency_type)})")
 
     @staticmethod
-    def from_string(str code) -> Currency:
+    def from_string(str code):
         """
-        Return a currency from the given string.
+        Return a currency from the given string (if found).
 
         Parameters
         ----------
@@ -177,7 +213,7 @@ cdef class Currency:
 
         Returns
         -------
-        Currency
+        Currency or None
 
         """
         return _CURRENCY_TABLE.get(code)
@@ -185,7 +221,7 @@ cdef class Currency:
     @staticmethod
     cdef from_string_c(str code):
         """
-        Return a currency from the given string.
+        Return a currency from the given string (if found).
 
         Parameters
         ----------
@@ -194,7 +230,7 @@ cdef class Currency:
 
         Returns
         -------
-        Currency
+        Currency or None
 
         """
         return _CURRENCY_TABLE.get(code)
