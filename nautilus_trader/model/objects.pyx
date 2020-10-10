@@ -357,7 +357,7 @@ cdef class Quantity(Fraction):
         if self.precision > 0:
             return f"{self_as_double:.{self.precision}f}"
 
-        if self_as_double < 1000 or self_as_double % 1000 != 0:
+        if self < 1000 or self % 1000 != 0:
             return f"{self_as_double:,.0f}"
 
         if self < 1000000:

@@ -20,7 +20,7 @@ cdef class Fraction:
     cdef _denominator
     cdef Py_hash_t _hash
 
-    cdef limit_denominator(self, max_denominator=*)
-    cdef _eq(a, b)
-    cdef _richcmp(self, other, int op)
-    cdef as_integer_ratio(self)
+    cdef Fraction limit_denominator(self, max_denominator=*)
+    cdef bint _eq(a, b)
+    cdef bint _richcmp(self, other, int op)
+    cdef tuple as_integer_ratio(self)

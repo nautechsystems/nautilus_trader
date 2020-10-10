@@ -136,8 +136,8 @@ cdef class Account:
         self._events.append(event)
 
         self.balance = event.balance
-        self.margin_balance = event.margin_balance
-        self.margin_available = event.margin_available
+        self._update_margin_balance()
+        self._update_margin_available()
 
     cpdef void update_order_margin(self, Money margin) except *:
         """
