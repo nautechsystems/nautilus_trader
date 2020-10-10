@@ -17,9 +17,27 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport AccountState
 
 
-cdef class Account:
+cdef class AccountReadOnly:
     """
-    Represents a trading account.
+    Provides a read-only facade for a trading account.
+    """
+
+    cpdef int event_count(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef list get_events(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef AccountState last_event(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class Account(AccountReadOnly):
+    """
+    Provides a trading account.
     """
 
     def __init__(self, AccountState event):

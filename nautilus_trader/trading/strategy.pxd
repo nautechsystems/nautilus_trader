@@ -39,7 +39,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.trading.portfolio cimport PortfolioReadOnly
 
 
 cdef class TradingStrategy:
@@ -50,7 +50,7 @@ cdef class TradingStrategy:
     cdef readonly LoggerAdapter log
     # cdef readonly DataCacheReadOnly data
     cdef readonly ExecutionCacheReadOnly execution
-    cdef readonly Portfolio portfolio
+    cdef readonly PortfolioReadOnly portfolio
     cdef readonly OrderFactory order_factory
 
     cdef list _indicators

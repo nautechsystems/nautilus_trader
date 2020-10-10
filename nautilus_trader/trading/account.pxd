@@ -20,9 +20,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport Money
 
 
-cdef class Account:
-    cdef list _events
-
+cdef class AccountReadOnly:
     cdef readonly AccountId id
     cdef readonly AccountType account_type
     cdef readonly Currency currency
@@ -33,12 +31,18 @@ cdef class Account:
     cdef readonly Money order_margin
     cdef readonly Money position_margin
 
+    cpdef int event_count(self) except *
+    cpdef list get_events(self)
+    cpdef AccountState last_event(self)
+
+
+cdef class Account(AccountReadOnly):
+    cdef list _events
+
     cpdef void apply(self, AccountState event) except *
     cpdef void update_order_margin(self, Money margin) except *
     cpdef void update_position_margin(self, Money margin) except *
     cpdef void update_unrealized_pnl(self, Money pnl) except *
-    cpdef int event_count(self) except *
-    cpdef list get_events(self)
-    cpdef AccountState last_event(self)
+
     cdef inline void _update_margin_balance(self) except *
     cdef inline void _update_margin_available(self) except *

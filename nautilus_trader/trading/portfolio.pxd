@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -31,7 +29,15 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class Portfolio:
+cdef class PortfolioReadOnly:
+    cpdef Account account(self, Venue venue)
+    cpdef Money order_margin(self, Venue venue)
+    cpdef Money position_margin(self, Venue venue)
+    cpdef Money unrealized_pnl(self, Venue venue)
+    cpdef Money open_value(self, Venue venue)
+
+
+cdef class Portfolio(PortfolioReadOnly):
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
@@ -44,9 +50,6 @@ cdef class Portfolio:
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
-    cdef dict _position_margins
-    cdef dict _order_margins
-    cdef dict _unrealized_pnls
     cdef dict _open_values
 
     cpdef void register_account(self, Account account) except *
@@ -57,11 +60,6 @@ cdef class Portfolio:
     cpdef void update_positions(self, set positions) except *
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
-
-    cpdef Money order_margin(self, Venue venue)
-    cpdef Money position_margin(self, Venue venue)
-    cpdef Money unrealized_pnl(self, Venue venue)
-    cpdef Money open_value(self, Venue venue)
 
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *
