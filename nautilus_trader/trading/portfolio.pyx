@@ -31,9 +31,34 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class Portfolio:
+cdef class PortfolioReadOnly:
     """
-    Provides a trading portfolio of positions.
+    Provides a read-only facade for a trading portfolio.
+    """
+    cpdef Account account(self, Venue venue):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Money order_margin(self, Venue venue):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Money position_margin(self, Venue venue):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Money unrealized_pnl(self, Venue venue):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Money open_value(self, Venue venue):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class Portfolio(PortfolioReadOnly):
+    """
+    Provides a trading portfolio.
     """
 
     def __init__(
@@ -67,9 +92,6 @@ cdef class Portfolio:
         self._orders_working = {}        # type: {Venue: {Order}}
         self._positions_open = {}        # type: {Venue: {Position}}
         self._positions_closed = {}      # type: {Venue: {Position}}
-        self._position_margins = {}      # type: {Venue: Money}
-        self._order_margins = {}         # type: {Venue: Money}
-        self._unrealized_pnls = {}       # type: {Venue: Money}
         self._open_values = {}           # type: {Venue: Money}
 
     cpdef void register_account(self, Account account) except *:
@@ -153,9 +175,7 @@ cdef class Portfolio:
                 )
                 pnl += position.unrealized_pnl.as_double() * xrate
 
-        cdef Money unrealized_pnl = Money(pnl, account.currency)
-        self._unrealized_pnls[venue] = unrealized_pnl
-        account.update_unrealized_pnl(unrealized_pnl)
+        account.update_unrealized_pnl(Money(pnl, account.currency))
 
     cpdef void update_orders_working(self, set orders) except *:
         """
@@ -280,16 +300,31 @@ cdef class Portfolio:
         self._orders_working.clear()
         self._positions_open.clear()
         self._positions_closed.clear()
-        self._position_margins.clear()
-        self._order_margins.clear()
-        self._unrealized_pnls.clear()
         self._open_values.clear()
 
         self._log.info("Reset.")
 
+    cpdef Account account(self, Venue venue):
+        """
+        Return the account for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the account.
+
+        Returns
+        -------
+        AccountReadOnly or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        return self._accounts.get(venue)
+
     cpdef Money order_margin(self, Venue venue):
         """
-        Return the order margin for the given venue.
+        Return the order margin for the given venue (if found).
 
         Parameters
         ----------
@@ -298,14 +333,17 @@ cdef class Portfolio:
 
         Returns
         -------
-        Money
+        Money or None
 
         """
-        return self._order_margins.get(venue)
+        Condition.not_none(venue, "venue")
+
+        cdef Account account = self._accounts.get(venue)
+        return account.order_margin if account else None
 
     cpdef Money position_margin(self, Venue venue):
         """
-        Return the position margin for the given venue.
+        Return the position margin for the given venue (if found).
 
         Parameters
         ----------
@@ -314,14 +352,17 @@ cdef class Portfolio:
 
         Returns
         -------
-        Money
+        Money or None
 
         """
-        return self._position_margins.get(venue)
+        Condition.not_none(venue, "venue")
+
+        cdef Account account = self._accounts.get(venue)
+        return account.position_margin if account else None
 
     cpdef Money unrealized_pnl(self, Venue venue):
         """
-        Return the unrealized pnl for the given venue.
+        Return the unrealized pnl for the given venue (if found).
 
         Parameters
         ----------
@@ -335,11 +376,12 @@ cdef class Portfolio:
         """
         Condition.not_none(venue, "venue")
 
-        return self._unrealized_pnls.get(venue)
+        cdef Account account = self._accounts.get(venue)
+        return account.unrealized_pnl if account else None
 
     cpdef Money open_value(self, Venue venue):
         """
-        Return the open value for the given venue.
+        Return the open value for the given venue (if found).
 
         Parameters
         ----------
@@ -405,7 +447,6 @@ cdef class Portfolio:
             # TODO: Implement calculation
             order_margin = Money(0, account.currency)
 
-        self._order_margins[venue] = order_margin
         account.update_order_margin(order_margin)
 
     cdef inline void _update_position_margin(self, Venue venue, set positions_open, Account account) except *:
@@ -416,7 +457,6 @@ cdef class Portfolio:
             # TODO: Implement calculation
             position_margin = Money(0, account.currency)
 
-        self._position_margins[venue] = position_margin
         account.update_position_margin(position_margin)
 
     cdef inline void _update_open_value(self, Venue venue, set positions_open, Account account) except *:

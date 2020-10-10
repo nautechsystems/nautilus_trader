@@ -71,6 +71,20 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio = Portfolio(self.clock, uuid_factor, logger)
         self.portfolio.register_account(self.account)
 
+    def test_account_when_no_account_returns_none(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertIsNone(self.portfolio.account(FXCM))
+
+    def test_account_when_account_returns_read_only_facade(self):
+        # Arrange
+        # Act
+        result = self.portfolio.account(BITMEX)
+
+        # Assert
+        self.assertEqual(self.account, result)
+
     def test_unrealized_pnl_when_no_account_returns_none(self):
         # Arrange
         # Act
