@@ -55,8 +55,8 @@ cdef class Account:
 
         Parameters
         ----------
-        other : object
-            The other object to equate.
+        other : Account
+            The other account to equate.
 
         Returns
         -------
@@ -69,12 +69,13 @@ cdef class Account:
 
     def __ne__(self, Account other) -> bool:
         """
-        Return a value indicating whether this object is not equal to (!=) the given object.
+        Return a value indicating whether this object is not equal to (!=) the
+        given object.
 
         Parameters
         ----------
-        other : object
-            The other object to equate.
+        other : Account
+            The other account to equate.
 
         Returns
         -------
@@ -109,8 +110,8 @@ cdef class Account:
 
     def __repr__(self) -> str:
         """
-        Return the string representation of this object which includes the objects
-        location in memory.
+        Return the string representation of this object which includes the
+        objects location in memory.
 
         Returns
         -------
@@ -235,8 +236,8 @@ cdef class Account:
         return self._events[-1]
 
     cdef inline void _update_margin_balance(self) except *:
-        self.margin_balance = self.balance.sub(self.unrealized_pnl)
+        self.margin_balance = Money(self.balance + self.unrealized_pnl, self.currency)
         self._update_margin_available()
 
     cdef inline void _update_margin_available(self) except *:
-        self.margin_available = self.margin_balance.sub(self.order_margin).sub(self.position_margin)
+        self.margin_available = Money(self.margin_balance - self.order_margin - self.position_margin, self.currency)
