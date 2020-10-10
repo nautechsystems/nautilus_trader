@@ -1,6 +1,5 @@
 # flake8: noqa
 # cython: language_level=3str
-## cython: profile=True
 
 # Copyright (c) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
 # 2011, 2012, 2013, 2014 Python Software Foundation; All Rights Reserved
@@ -11,7 +10,7 @@
 # Adapted for efficient Cython compilation by Stefan Behnel.
 #
 
-# Full credits to the author scoder gh@behnel.de
+# Full credits to the author Stefan Behnel gh@behnel.de
 # This source code originally found at https://github.com/scoder/quicktions/blob/master/src/quicktions.pyx
 # The following modifications have been made;
 # - flake8: noqa at top of file
@@ -236,8 +235,10 @@ except AttributeError:  # pre Py3.2
 
 cdef class Fraction:
     """A Rational number.
+
     Takes a string like '3/2' or '1.5', another Rational instance, a
     numerator/denominator pair, or a float.
+
     Examples
     --------
     >>> Fraction(10, -8)
@@ -263,7 +264,7 @@ cdef class Fraction:
     Fraction(147, 100)
     """
 
-    def __init__(self, numerator=0, denominator=None, *, bint _normalize=False):
+    def __init__(self, numerator=0, denominator=None, *, bint _normalize=True):
         cdef Fraction value
         self._hash = -1
 
@@ -402,15 +403,16 @@ cdef class Fraction:
         else:
             return cls(digits, pow10(-exp))
 
-    cdef as_integer_ratio(self):
+    cdef tuple as_integer_ratio(self):
         """Return the integer ratio as a tuple.
         Return a tuple of two integers, whose ratio is equal to the
         Fraction and with a positive denominator.
         """
-        return (self._numerator, self._denominator)
+        return self._numerator, self._denominator
 
-    cdef limit_denominator(self, max_denominator=1000000):
+    cdef Fraction limit_denominator(self, max_denominator=1000000):
         """Closest Fraction to self with denominator at most max_denominator.
+
         >>> Fraction('3.141592653589793').limit_denominator(10)
         Fraction(22, 7)
         >>> Fraction('3.141592653589793').limit_denominator(100)
@@ -726,7 +728,7 @@ cdef class Fraction:
         return (<Fraction>a)._richcmp(b, op)
 
     @cython.final
-    cdef _eq(a, b):
+    cdef bint _eq(a, b):
         if type(b) is int or type(b) is long:
             return a._numerator == b and a._denominator == 1
         if type(b) is Fraction:
@@ -747,7 +749,7 @@ cdef class Fraction:
         return NotImplemented
 
     @cython.final
-    cdef _richcmp(self, other, int op):
+    cdef bint _richcmp(self, other, int op):
         """Helper for comparison operators, for internal use only.
         Implement comparison between a Rational instance `self`, and
         either another Rational instance or a float `other`.  If

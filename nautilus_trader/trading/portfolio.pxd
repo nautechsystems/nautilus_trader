@@ -49,8 +49,6 @@ cdef class Portfolio:
     cdef dict _unrealized_pnls
     cdef dict _open_values
 
-    cdef readonly date date_now
-
     cpdef void register_account(self, Account account) except *
     cpdef void update_instrument(self, Instrument instrument) except *
     cpdef void update_tick(self, QuoteTick tick) except *
