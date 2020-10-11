@@ -110,9 +110,5 @@ cdef class ExecutionId(Identifier):
     pass
 
 
-cdef class MatchId(Identifier):
-    pass
-
-
 cdef class InstrumentId(Identifier):
     pass
