@@ -240,4 +240,4 @@ class PriceTests(unittest.TestCase):
 
         print(repr(price))
         # Assert
-        self.assertTrue(result.startswith("<Price(1.00000) object at"))
+        self.assertTrue(result.startswith("<Price('1.00000') object at"))
