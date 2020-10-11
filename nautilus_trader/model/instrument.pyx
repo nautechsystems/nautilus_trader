@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -33,7 +33,7 @@ cdef class Instrument:
     def __init__(
             self,
             Symbol symbol not None,
-            SecurityType security_type,
+            AssetType asset_type,
             Currency base_currency not None,
             Currency quote_currency not None,
             Currency settlement_currency not None,
@@ -54,8 +54,8 @@ cdef class Instrument:
         ----------
         symbol : Symbol
             The symbol.
-        security_type : SecurityType
-            The security type.
+        asset_type : AssetType
+            The asset type.
         base_currency : Currency
             The base currency.
         quote_currency : Currency
@@ -82,7 +82,7 @@ cdef class Instrument:
             The timestamp the instrument was created/updated at.
 
         """
-        Condition.not_equal(security_type, SecurityType.UNDEFINED, 'security_type', 'UNDEFINED')
+        Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
 
@@ -93,7 +93,7 @@ cdef class Instrument:
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
-        self.security_type = security_type
+        self.asset_type = asset_type
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.settlement_currency = settlement_currency
