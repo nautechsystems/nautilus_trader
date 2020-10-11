@@ -24,6 +24,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -33,7 +34,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -94,7 +94,7 @@ cdef class SimulatedMarket:
             TestLogger logger not None,
     ):
         """
-        Initialize a new instance of the SimulatedBroker class.
+        Initialize a new instance of the SimulatedMarket class.
 
         Parameters
         ----------
@@ -273,7 +273,7 @@ cdef class SimulatedMarket:
         if self.day_number != time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
-            self.account_balance_start_day = self.account.balance
+            self.account_balance_start_day = self.account.balance()
             self.account_balance_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
 
@@ -448,7 +448,7 @@ cdef class SimulatedMarket:
         cdef QuoteTick market
         for position in open_positions:
             instrument = self.instruments[position.symbol]
-            if instrument.security_type == SecurityType.FOREX:
+            if instrument.asset_type == AssetType.FOREX:
                 mid_price = mid_prices.get(instrument.symbol, 0.0)
                 if mid_price == 0.0:
                     market = self._market[instrument.symbol]
@@ -651,16 +651,16 @@ cdef class SimulatedMarket:
             event_timestamp=self._clock.utc_now(),
         )
 
-    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_limit_filled()
 
-    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.bid == order_price and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market):
+    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.bid == order_price and self.fill_model.is_limit_filled()
 
     cdef void _submit_order(self, Order order) except *:

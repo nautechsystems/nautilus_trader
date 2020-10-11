@@ -59,35 +59,34 @@ cdef class Position:
     cdef readonly double realized_points
     cdef readonly double realized_return
     cdef readonly Money realized_pnl
-    cdef readonly Money unrealized_pnl
-    cdef readonly Money total_pnl
     cdef readonly Money commission
     cdef readonly QuoteTick last_tick
 
     cpdef void apply(self, OrderFilled event) except *
-    cpdef void update(self, QuoteTick tick) except *
     cpdef str to_string(self)
     cpdef str position_side_as_string(self)
     cpdef str status_string(self)
     cpdef OrderFilled last_event(self)
     cpdef ExecutionId last_execution_id(self)
-    cpdef set get_cl_ord_ids(self)
-    cpdef set get_order_ids(self)
-    cpdef set get_execution_ids(self)
-    cpdef list get_events(self)
-    cpdef int event_count(self)
+    cpdef set cl_ord_ids(self)
+    cpdef set order_ids(self)
+    cpdef set execution_ids(self)
+    cpdef list events(self)
+    cpdef int event_count(self) except *
     cpdef bint is_open(self) except *
     cpdef bint is_closed(self) except *
     cpdef bint is_long(self) except *
     cpdef bint is_short(self) except *
     cpdef Decimal relative_quantity(self)
+    cpdef Money unrealized_pnl(self, QuoteTick last)
+    cpdef Money total_pnl(self, QuoteTick last)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity)
-    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event)
-    cdef inline double _calculate_avg_open_price(self, OrderFilled event)
-    cdef inline double _calculate_avg_close_price(self, OrderFilled event)
-    cdef inline double _calculate_points(self, double open_price, double close_price)
-    cdef inline double _calculate_return(self, double open_price, double close_price)
+    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity) except *
+    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event) except *
+    cdef inline double _calculate_avg_open_price(self, OrderFilled event) except *
+    cdef inline double _calculate_avg_close_price(self, OrderFilled event) except *
+    cdef inline double _calculate_points(self, double open_price, double close_price) except *
+    cdef inline double _calculate_return(self, double open_price, double close_price) except *
     cdef inline Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)

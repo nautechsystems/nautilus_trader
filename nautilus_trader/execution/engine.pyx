@@ -216,6 +216,10 @@ cdef class ExecutionEngine:
         self.cache.build_index()
         self._set_position_symbol_counts()
 
+        # Update portfolio
+        self.portfolio.update_orders_working(set(self.cache.orders_working()))
+        self.portfolio.update_positions(set(self.cache.positions_open()))
+
     cpdef void integrity_check(self) except *:
         """
         Check integrity of data within the execution cache and database.
@@ -452,7 +456,7 @@ cdef class ExecutionEngine:
             self.cache.update_account(account)
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
-        self.portfolio.handle_event(event)
+        self.portfolio.update_position(event)
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
@@ -474,9 +478,13 @@ cdef class ExecutionEngine:
 
         self.cache.update_order(order)
 
+        # Update portfolio
+        if order.is_working() or order.is_completed():
+            self.portfolio.update_order(order)
+
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
-            return  # _handle_order_fill(event) will send to strategy (refactor)
+            return  # Sent to strategy
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 

@@ -67,8 +67,6 @@ cdef class Position:
         self.realized_points = 0.0
         self.realized_return = 0.0
         self.realized_pnl = Money(0, event.base_currency)
-        self.unrealized_pnl = Money(0, event.base_currency)
-        self.total_pnl = Money(0, event.base_currency)
         self.commission = Money(0, event.base_currency)
         self.last_tick = None  # Can be none
 
@@ -178,32 +176,6 @@ cdef class Position:
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
 
-    cpdef void update(self, QuoteTick tick) except *:
-        """
-        Update the position with the given tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick to update with.
-
-        Raises
-        ------
-        ValueError
-            If tick.symbol is not equal to self.symbol
-        """
-        Condition.not_none(tick, "tick")
-        Condition.equal(tick.symbol, self.symbol, "tick.symbol", "self.symbol")
-
-        self.last_tick = tick
-
-        if self.side == PositionSide.LONG:
-            self.unrealized_pnl = self._calculate_pnl(self.avg_open_price, tick.bid.as_double(), self.quantity)
-        elif self.side == PositionSide.SHORT:
-            self.unrealized_pnl = self._calculate_pnl(self.avg_open_price, tick.ask.as_double(), self.quantity)
-
-        self.total_pnl = self.realized_pnl.add(self.unrealized_pnl)
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -238,7 +210,7 @@ cdef class Position:
         cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string_formatted()} "
         return f"{position_side_to_string(self.side)}{quantity}{self.symbol}"
 
-    cpdef set get_cl_ord_ids(self):
+    cpdef set cl_ord_ids(self):
         """
         Return a list of all client order identifiers.
 
@@ -250,7 +222,7 @@ cdef class Position:
         cdef OrderFilled event
         return {event.cl_ord_id for event in self._events}
 
-    cpdef set get_order_ids(self):
+    cpdef set order_ids(self):
         """
         Return a list of all client order identifiers.
 
@@ -262,7 +234,7 @@ cdef class Position:
         cdef OrderFilled event
         return {event.order_id for event in self._events}
 
-    cpdef set get_execution_ids(self):
+    cpdef set execution_ids(self):
         """
         Return a list of all execution identifiers.
 
@@ -274,7 +246,7 @@ cdef class Position:
         cdef OrderFilled event
         return {event.execution_id for event in self._events}
 
-    cpdef list get_events(self):
+    cpdef list events(self):
         """
         Return a list of all order fill events.
 
@@ -307,7 +279,7 @@ cdef class Position:
         """
         return self._events[-1].execution_id
 
-    cpdef int event_count(self):
+    cpdef int event_count(self) except *:
         """
         Return the count of order fill events.
 
@@ -375,8 +347,49 @@ cdef class Position:
         """
         return self._relative_quantity
 
+    cpdef Money unrealized_pnl(self, QuoteTick last):
+        """
+        Return the unrealized PNL from the given last quote tick.
+
+        Parameters
+        ----------
+        last : QuoteTick
+            The last tick for the calculation.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(last, "last")
+
+        if self.side == PositionSide.LONG:
+            return self._calculate_pnl(self.avg_open_price, last.bid.as_double(), self.quantity)
+        elif self.side == PositionSide.SHORT:
+            return self._calculate_pnl(self.avg_open_price, last.ask.as_double(), self.quantity)
+        else:
+            return Money(0, self.base_currency)
+
+    cpdef Money total_pnl(self, QuoteTick last):
+        """
+        Return the total PNL from the given last quote tick.
+
+        Parameters
+        ----------
+        last : QuoteTick
+            The last tick for the calculation.
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(last, "last")
+
+        return self.realized_pnl.add(self.unrealized_pnl(last))
+
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
-        cdef Money realized_pnl = Money(0, self.realized_pnl.currency)
+        cdef Money realized_pnl = event.commission
         # LONG POSITION
         if self._relative_quantity > 0:
             self.avg_open_price = self._calculate_avg_open_price(event)
@@ -394,7 +407,7 @@ cdef class Position:
         self._relative_quantity = self._relative_quantity.add(event.filled_qty)
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *:
-        cdef Money realized_pnl = Money(0, self.realized_pnl.currency)
+        cdef Money realized_pnl = event.commission
         # SHORT POSITION
         if self._relative_quantity < 0:
             self.avg_open_price = self._calculate_avg_open_price(event)
@@ -405,36 +418,35 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_open_price, self.avg_close_price)
             realized_pnl = self._calculate_pnl(self.avg_open_price, event.avg_price, event.filled_qty)
 
-        realized_pnl = realized_pnl.sub(event.commission)
         self.realized_pnl = self.realized_pnl.add(realized_pnl)
 
         # Update quantities
         self._sell_quantity = self._sell_quantity.add(event.filled_qty)
         self._relative_quantity = self._relative_quantity.sub(event.filled_qty)
 
-    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity):
+    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity) except *:
         return abs(avg_price * total_quantity.as_double())
 
-    cdef inline double _calculate_avg_open_price(self, OrderFilled event):
+    cdef inline double _calculate_avg_open_price(self, OrderFilled event) except *:
         if not self.avg_open_price:
             return event.avg_price.as_double()
 
         return self._calculate_avg_price(self.avg_open_price, self.quantity, event)
 
-    cdef inline double _calculate_avg_close_price(self, OrderFilled event):
+    cdef inline double _calculate_avg_close_price(self, OrderFilled event) except *:
         if not self.avg_close_price:
             return event.avg_price.as_double()
 
         cdef Quantity close_quantity = Quantity(abs(self._sell_quantity)) if self.side == PositionSide.LONG else self._buy_quantity
         return self._calculate_avg_price(self.avg_close_price, close_quantity, event)
 
-    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event):
+    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event) except *:
         cdef double start_cost = self._calculate_cost(price_open, quantity_open)
         cdef double event_cost = self._calculate_cost(event.avg_price, event.filled_qty)
         cdef Quantity cumulative_quantity = quantity_open.add(event.filled_qty)
         return (start_cost + event_cost) / cumulative_quantity.as_double()
 
-    cdef inline double _calculate_points(self, double opened_price, double closed_price):
+    cdef inline double _calculate_points(self, double opened_price, double closed_price) except *:
         if self.side == PositionSide.LONG:
             return closed_price - opened_price
         elif self.side == PositionSide.SHORT:
@@ -442,7 +454,7 @@ cdef class Position:
         else:
             return 0.  # FLAT
 
-    cdef inline double _calculate_return(self, double opened_price, double closed_price):
+    cdef inline double _calculate_return(self, double opened_price, double closed_price) except *:
         if self.side == PositionSide.LONG:
             return (closed_price - opened_price) / opened_price
         elif self.side == PositionSide.SHORT:

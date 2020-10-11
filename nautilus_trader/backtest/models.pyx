@@ -85,7 +85,7 @@ cdef class FillModel:
         """
         return self._did_event_occur(self.prob_slippage)
 
-    cdef bint _did_event_occur(self, double probability):
+    cdef bint _did_event_occur(self, double probability) except *:
         # Return a result indicating whether an event occurred based on the
         # given probability.
 

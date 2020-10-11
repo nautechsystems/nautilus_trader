@@ -19,7 +19,7 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport BTC
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.currency cimport ETH
@@ -107,7 +107,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("XBT/USD", Venue('BITMEX')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -129,7 +129,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("ETH/XBT", Venue('BITMEX')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=ETH,
             quote_currency=BTC,
             settlement_currency=BTC,
@@ -151,7 +151,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("ETH/USD", Venue('BITMEX')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -167,15 +167,15 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def btcusd_binance() -> Instrument:
+    def btcusdt_binance() -> Instrument:
         """
-        Return the Binance BTC/USD instrument for backtesting.
+        Return the Binance BTC/USDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("BTC/USD", Venue('BINANCE')),
-            security_type=SecurityType.CRYPTO,
+            symbol=Symbol("BTC/USDT", Venue('BINANCE')),
+            asset_type=AssetType.CRYPTO,
             base_currency=BTC,
-            quote_currency=USD,
+            quote_currency=USDT,
             settlement_currency=BTC,
             price_precision=2,
             size_precision=6,
@@ -189,15 +189,15 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def ethusd_binance() -> Instrument:
+    def ethusdt_binance() -> Instrument:
         """
-        Return the Binance ETH/USD instrument for backtesting.
+        Return the Binance ETH/USDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/USD", Venue('BINANCE')),
-            security_type=SecurityType.CRYPTO,
+            symbol=Symbol("ETH/USDT", Venue('BINANCE')),
+            asset_type=AssetType.CRYPTO,
             base_currency=ETH,
-            quote_currency=USD,
+            quote_currency=USDT,
             settlement_currency=ETH,
             price_precision=2,
             size_precision=5,
@@ -240,7 +240,7 @@ cdef class InstrumentLoader:
 
         return Instrument(
             symbol=symbol,
-            security_type=SecurityType.FOREX,
+            asset_type=AssetType.FOREX,
             base_currency=Currency.from_string_c(base_currency),
             quote_currency=Currency.from_string_c(quote_currency),
             settlement_currency=Currency.from_string_c(base_currency),

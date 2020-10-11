@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum SecurityType:
+cpdef enum AssetType:
     UNDEFINED = 0,  # Invalid value
     FOREX = 1,
     BOND = 2,
@@ -25,7 +25,7 @@ cpdef enum SecurityType:
     CRYPTO = 7
 
 
-cdef inline str security_type_to_string(int value):
+cdef inline str asset_type_to_string(int value):
     if value == 1:
         return 'FOREX'
     elif value == 2:
@@ -44,20 +44,20 @@ cdef inline str security_type_to_string(int value):
         return 'UNDEFINED'
 
 
-cdef inline SecurityType security_type_from_string(str value):
+cdef inline AssetType asset_type_from_string(str value):
     if value == 'FOREX':
-        return SecurityType.FOREX
+        return AssetType.FOREX
     elif value == 'BOND':
-        return SecurityType.BOND
+        return AssetType.BOND
     elif value == 'EQUITY':
-        return SecurityType.EQUITY
+        return AssetType.EQUITY
     elif value == 'FUTURES':
-        return SecurityType.FUTURES
+        return AssetType.FUTURES
     elif value == 'CFD':
-        return SecurityType.CFD
+        return AssetType.CFD
     elif value == 'OPTION':
-        return SecurityType.OPTION
+        return AssetType.OPTION
     elif value == 'CRYPTO':
-        return SecurityType.CRYPTO
+        return AssetType.CRYPTO
     else:
-        return SecurityType.UNDEFINED
+        return AssetType.UNDEFINED

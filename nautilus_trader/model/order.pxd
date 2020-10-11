@@ -79,9 +79,9 @@ cdef class Order:
 
     cpdef OrderState state(self)
     cpdef Event last_event(self)
-    cpdef list get_execution_ids(self)
-    cpdef list get_events(self)
-    cpdef int event_count(self)
+    cpdef list execution_ids(self)
+    cpdef list events(self)
+    cpdef int event_count(self) except *
     cpdef bint is_buy(self) except *
     cpdef bint is_sell(self) except *
     cpdef bint is_working(self) except *

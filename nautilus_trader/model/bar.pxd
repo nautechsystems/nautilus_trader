@@ -28,7 +28,7 @@ cdef class BarSpecification:
     cdef readonly PriceType price_type
 
     @staticmethod
-    cdef BarSpecification from_string(str value)
+    cdef BarSpecification from_string_c(str value)
     cdef str aggregation_string(self)
     cdef str price_type_string(self)
     cpdef str to_string(self)
@@ -39,8 +39,8 @@ cdef class BarType:
     cdef readonly BarSpecification spec
 
     @staticmethod
-    cdef BarType from_string(str value)
-    cdef bint is_time_aggregated(self)
+    cdef BarType from_string_c(str value)
+    cdef bint is_time_aggregated(self) except *
     cdef str aggregation_string(self)
     cdef str price_type_string(self)
     cpdef str to_string(self)
@@ -56,6 +56,6 @@ cdef class Bar:
     cdef readonly bint checked
 
     @staticmethod
-    cdef Bar from_serializable_string(str value)
+    cdef Bar from_serializable_string_c(str value)
     cpdef str to_string(self)
     cpdef str to_serializable_string(self)

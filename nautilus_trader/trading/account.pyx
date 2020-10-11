@@ -19,7 +19,7 @@ from nautilus_trader.model.events cimport AccountState
 
 cdef class Account:
     """
-    Represents a trading account.
+    Provides a trading account.
     """
 
     def __init__(self, AccountState event):
@@ -34,17 +34,15 @@ cdef class Account:
         """
         Condition.not_none(event, "event")
 
-        self._events = [event]
-        self._portfolio = None  # Initialized when registered with portfolio
-
         self.id = event.account_id
         self.account_type = self.id.account_type
         self.currency = event.currency
-        self.balance = Money(0, self.currency)
-        self.margin_balance = Money(0, self.currency)
-        self.margin_available = Money(0, self.currency)
-        self.order_margin = Money(0, self.currency)
-        self.position_margin = Money(0, self.currency)
+
+        self._events = [event]
+        self._portfolio = None
+        self._balance = None
+        self._order_margin = Money(0, self.currency)
+        self._position_margin = Money(0, self.currency)
 
         # Update account
         self.apply(event)
@@ -55,8 +53,8 @@ cdef class Account:
 
         Parameters
         ----------
-        other : object
-            The other object to equate.
+        other : Account
+            The other account to equate.
 
         Returns
         -------
@@ -69,12 +67,13 @@ cdef class Account:
 
     def __ne__(self, Account other) -> bool:
         """
-        Return a value indicating whether this object is not equal to (!=) the given object.
+        Return a value indicating whether this object is not equal to (!=) the
+        given object.
 
         Parameters
         ----------
-        other : object
-            The other object to equate.
+        other : Account
+            The other account to equate.
 
         Returns
         -------
@@ -109,8 +108,8 @@ cdef class Account:
 
     def __repr__(self) -> str:
         """
-        Return the string representation of this object which includes the objects
-        location in memory.
+        Return the string representation of this object which includes the
+        objects location in memory.
 
         Returns
         -------
@@ -119,58 +118,19 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef void register_portfolio(self, Portfolio portfolio) except *:
+    cpdef void register_portfolio(self, PortfolioReadOnly portfolio):
         """
         Register the given portfolio with the account.
 
         Parameters
         ----------
-        portfolio : Portfolio
-            The portfolio to register.
-
-        Raises
-        ----------
-        ValueError
-            If a portfolio is already registered.
+        portfolio : PortfolioReadOnly
+            The portfolio to register
 
         """
         Condition.not_none(portfolio, "portfolio")
-        Condition.none(self._portfolio, "self._portfolio")  # No portfolio should be registered
 
         self._portfolio = portfolio
-
-    cpdef int event_count(self):
-        """
-        Return the count of events.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self._events)
-
-    cpdef list get_events(self):
-        """
-        Return the events received by the account.
-
-        Returns
-        -------
-        List[AccountState]
-
-        """
-        return self._events.copy()
-
-    cpdef AccountState last_event(self):
-        """
-        Return the last event.
-
-        Returns
-        -------
-        AccountState
-
-        """
-        return self._events[-1]
 
     cpdef void apply(self, AccountState event) except *:
         """
@@ -186,9 +146,157 @@ cdef class Account:
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
+        self._balance = event.balance
 
-        self.balance = event.balance
-        self.margin_balance = event.margin_balance
-        self.margin_available = event.margin_available
-        self.order_margin = Money(0, self.currency)
-        self.position_margin = Money(0, self.currency)
+    cpdef void update_order_margin(self, Money margin) except *:
+        """
+        Update the order margin.
+
+        Parameters
+        ----------
+        margin : Money
+            The current order margin.
+
+        Raises
+        ----------
+        ValueError
+            If margin.currency is not equal to self.currency.
+
+        """
+        Condition.not_none(margin, "money")
+        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
+
+        self._order_margin = margin
+
+    cpdef void update_position_margin(self, Money margin) except *:
+        """
+        Update the position margin.
+
+        Parameters
+        ----------
+        margin : Money
+            The current position margin.
+
+        Raises
+        ----------
+        ValueError
+            If margin.currency is not equal to self.currency.
+
+        """
+        Condition.not_none(margin, "money")
+        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
+
+        self._position_margin = margin
+
+    cpdef Money balance(self):
+        """
+        Return the current account balance.
+
+        Returns
+        -------
+        Money or None
+
+        """
+        return self._balance
+
+    cpdef Money unrealized_pnl(self):
+        """
+        Return the current account unrealized PNL.
+
+        Returns
+        -------
+        Money or None
+
+        """
+        Condition.not_none(self._portfolio, "self._portfolio")
+
+        return self._portfolio.unrealized_pnl(self.id.issuer_as_venue())
+
+    cpdef Money margin_balance(self):
+        """
+        Return the current account margin balance.
+
+        Returns
+        -------
+        Money or None
+
+        """
+        Condition.not_none(self._portfolio, "self._portfolio")
+
+        cdef Money unrealized_pnl = self.unrealized_pnl()
+        if not unrealized_pnl:
+            return None
+
+        return self._balance.add(self.unrealized_pnl())
+
+    cpdef Money margin_available(self):
+        """
+        Return the current account margin available.
+
+        Returns
+        -------
+        Money or None
+
+        """
+        Condition.not_none(self._portfolio, "self._portfolio")
+
+        cdef Money margin_balance = self.margin_balance()
+        if not margin_balance:
+            return None
+
+        return Money(margin_balance - self._order_margin - self._position_margin, self.currency)
+
+    cpdef Money order_margin(self):
+        """
+        Return the account order margin.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._order_margin
+
+    cpdef Money position_margin(self):
+        """
+        Return the account position margin.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._position_margin
+
+    cpdef AccountState last_event(self):
+        """
+        Return the accounts last state event.
+
+        Returns
+        -------
+        AccountState
+
+        """
+        return self._events[-1]
+
+    cpdef list events(self):
+        """
+        Return all events received by the account.
+
+        Returns
+        -------
+        List[AccountState]
+
+        """
+        return self._events.copy()
+
+    cpdef int event_count(self) except *:
+        """
+        Return the count of events.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)

@@ -284,7 +284,7 @@ cdef class QuoteTick(Tick):
             raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
 
     @staticmethod
-    cdef QuoteTick from_serializable_string(Symbol symbol, str values):
+    cdef QuoteTick from_serializable_string_c(Symbol symbol, str values):
         """
         Return a tick parsed from the given symbol and values string.
 
@@ -320,7 +320,7 @@ cdef class QuoteTick(Tick):
         )
 
     @staticmethod
-    def py_from_serializable_string(Symbol symbol, str values):
+    def from_serializable_string(Symbol symbol, str values):
         """
         Return a tick parsed from the given symbol and values string.
 
@@ -341,7 +341,7 @@ cdef class QuoteTick(Tick):
             If values is not a valid string.
 
         """
-        return QuoteTick.from_serializable_string(symbol, values)
+        return QuoteTick.from_serializable_string_c(symbol, values)
 
     cpdef str to_string(self):
         """
@@ -416,7 +416,7 @@ cdef class TradeTick(Tick):
         self.match_id = match_id
 
     @staticmethod
-    cdef TradeTick from_serializable_string(Symbol symbol, str values):
+    cdef TradeTick from_serializable_string_c(Symbol symbol, str values):
         """
         Return a tick parsed from the given symbol and values string.
 
@@ -452,7 +452,7 @@ cdef class TradeTick(Tick):
         )
 
     @staticmethod
-    def py_from_serializable_string(Symbol symbol, str values):
+    def from_serializable_string(Symbol symbol, str values):
         """
         Return a tick parsed from the given symbol and values string.
 
@@ -473,7 +473,7 @@ cdef class TradeTick(Tick):
             If values is not a valid string.
 
         """
-        return TradeTick.from_serializable_string(symbol, values)
+        return TradeTick.from_serializable_string_c(symbol, values)
 
     cpdef str to_string(self):
         """

@@ -86,7 +86,7 @@ cdef class OrderFactory:
             initial_count=initial_count,
         )
 
-    cpdef int count(self):
+    cpdef int count(self) except *:
         """
         Return the internal order identifier generator count.
 

@@ -18,6 +18,7 @@ import cython
 from cpython.datetime cimport datetime
 
 from collections import deque
+from typing import List
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.handlers cimport BarHandler
@@ -741,7 +742,7 @@ cdef class DataEngine:
             return
 
         # Send to portfolio as a priority
-        self._portfolio.handle_tick(tick)
+        self._portfolio.update_tick(tick)
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(symbol)
@@ -889,7 +890,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
+    cpdef void handle_bars(self, BarType bar_type, list bars: List[Bar]) except *:
         """
         Handle the given bar type and bars by handling each bar individually.
 
@@ -1146,7 +1147,7 @@ cdef class DataEngine:
 
         return self._bars[bar_type][index]
 
-    cpdef int quote_tick_count(self, Symbol symbol):
+    cpdef int quote_tick_count(self, Symbol symbol) except *:
         """
         Return the count of quote ticks for the given symbol.
 
@@ -1164,7 +1165,7 @@ cdef class DataEngine:
 
         return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
 
-    cpdef int trade_tick_count(self, Symbol symbol):
+    cpdef int trade_tick_count(self, Symbol symbol) except *:
         """
         Return the count of trade ticks for the given symbol.
 
@@ -1182,7 +1183,7 @@ cdef class DataEngine:
 
         return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
 
-    cpdef int bar_count(self, BarType bar_type):
+    cpdef int bar_count(self, BarType bar_type) except *:
         """
         Return the count of bars for the given bar type.
 
@@ -1262,7 +1263,7 @@ cdef class DataEngine:
             Currency from_currency,
             Currency to_currency,
             PriceType price_type=PriceType.MID,
-    ):
+    ) except *:
         """
         Return the calculated exchange rate for the given currencies.
 

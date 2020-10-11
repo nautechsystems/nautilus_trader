@@ -23,7 +23,7 @@ class ObjectCacheTests(unittest.TestCase):
 
     def test_cache_initialization(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.py_from_string)
+        cache = ObjectCache(Symbol, Symbol.from_string)
 
         # Act
         # Assert
@@ -33,7 +33,7 @@ class ObjectCacheTests(unittest.TestCase):
 
     def test_get_from_empty_cache(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.py_from_string)
+        cache = ObjectCache(Symbol, Symbol.from_string)
         symbol = "AUD/USD.FXCM"
 
         # Act
@@ -45,7 +45,7 @@ class ObjectCacheTests(unittest.TestCase):
 
     def test_get_from_cache(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.py_from_string)
+        cache = ObjectCache(Symbol, Symbol.from_string)
         symbol = "AUD/USD.FXCM"
         cache.get(symbol)
 
@@ -61,7 +61,7 @@ class ObjectCacheTests(unittest.TestCase):
 
     def test_clear_cache(self):
         # Arrange
-        cache = ObjectCache(Symbol, Symbol.py_from_string)
+        cache = ObjectCache(Symbol, Symbol.from_string)
         symbol = "AUD/USD.FXCM"
         cache.get(symbol)
 

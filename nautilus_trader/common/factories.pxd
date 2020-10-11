@@ -38,7 +38,7 @@ cdef class OrderFactory:
 
     cdef readonly StrategyId strategy_id
 
-    cpdef int count(self)
+    cpdef int count(self) except *
     cpdef void set_count(self, int count) except *
     cpdef void reset(self) except *
 

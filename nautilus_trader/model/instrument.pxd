@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -26,13 +26,13 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Instrument:
     cdef readonly InstrumentId id
     cdef readonly Symbol symbol
-    cdef readonly SecurityType security_type
+    cdef readonly AssetType asset_type
     cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly Currency settlement_currency
-    cdef readonly bint is_standard
-    cdef readonly bint is_inverse
     cdef readonly bint is_quanto
+    cdef readonly bint is_inverse
+    cdef readonly bint is_standard
     cdef readonly int price_precision
     cdef readonly int size_precision
     cdef readonly int cost_precision

@@ -41,7 +41,7 @@ cdef class QuoteTick(Tick):
     cpdef Quantity extract_volume(self, PriceType price_type)
 
     @staticmethod
-    cdef QuoteTick from_serializable_string(Symbol symbol, str values)
+    cdef QuoteTick from_serializable_string_c(Symbol symbol, str values)
 
 
 cdef class TradeTick(Tick):
@@ -51,4 +51,4 @@ cdef class TradeTick(Tick):
     cdef readonly MatchId match_id
 
     @staticmethod
-    cdef TradeTick from_serializable_string(Symbol symbol, str values)
+    cdef TradeTick from_serializable_string_c(Symbol symbol, str values)
