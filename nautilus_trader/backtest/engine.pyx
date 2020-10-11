@@ -176,8 +176,6 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.portfolio.set_base_currency(config.account_currency)
-
         self.data_engine = BacktestDataEngine(
             data=data,
             tick_capacity=config.tick_capacity,

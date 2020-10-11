@@ -256,5 +256,5 @@ class DecimalTests(unittest.TestCase):
         result = repr(Decimal("1.1"))
 
         # Assert
-        self.assertTrue(result.startswith("<Decimal(1.1) object at "))
+        self.assertTrue(result.startswith("<Decimal('1.1') object at "))
         self.assertTrue(result.endswith(">"))

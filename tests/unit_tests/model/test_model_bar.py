@@ -56,7 +56,7 @@ class BarSpecificationTests(unittest.TestCase):
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
 
         # Act
-        result = BarSpecification.py_from_string(str(bar_spec))
+        result = BarSpecification.from_string(str(bar_spec))
 
         # Assert
         self.assertEqual(bar_spec, result)
@@ -98,7 +98,7 @@ class BarTests(unittest.TestCase):
         bar = TestStubs.bar_5decimal()
 
         # Act
-        result = Bar.py_from_serializable_string(bar.to_serializable_string())
+        result = Bar.from_serializable_string(bar.to_serializable_string())
 
         # Assert
         self.assertEqual(bar, result)

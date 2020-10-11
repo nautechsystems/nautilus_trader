@@ -54,9 +54,9 @@ cdef class ExecutionCacheReadOnly:
     cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_order_completed(self, ClientOrderId cl_ord_id) except *
-    cpdef int orders_total_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef int orders_total_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
+    cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
+    cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
 
     # -- Position queries ------------------------------------------------------
     cpdef Position position(self, PositionId position_id)
@@ -69,9 +69,9 @@ cdef class ExecutionCacheReadOnly:
     cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_position_open(self, PositionId position_id) except *
     cpdef bint is_position_closed(self, PositionId position_id) except *
-    cpdef int positions_total_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int positions_open_count(self, Symbol symbol=*, StrategyId strategy_id=*)
-    cpdef int positions_closed_count(self, Symbol symbol=*, StrategyId strategy_id=*)
+    cpdef int positions_total_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
+    cpdef int positions_open_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
+    cpdef int positions_closed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
 
     # -- Strategy queries ------------------------------------------------------
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id)

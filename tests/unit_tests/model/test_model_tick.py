@@ -84,7 +84,7 @@ class TickTests(unittest.TestCase):
         )
 
         # Act
-        result = QuoteTick.py_from_serializable_string(AUDUSD_FXCM, tick.to_serializable_string())
+        result = QuoteTick.from_serializable_string(AUDUSD_FXCM, tick.to_serializable_string())
 
         # Assert
         self.assertEqual(tick, result)
@@ -101,7 +101,7 @@ class TickTests(unittest.TestCase):
         )
 
         # Act
-        result = TradeTick.py_from_serializable_string(AUDUSD_FXCM, tick.to_serializable_string())
+        result = TradeTick.from_serializable_string(AUDUSD_FXCM, tick.to_serializable_string())
 
         # Assert
         self.assertEqual(tick, result)

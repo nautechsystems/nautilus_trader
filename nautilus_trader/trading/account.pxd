@@ -18,24 +18,31 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.trading.portfolio cimport PortfolioReadOnly
 
 
 cdef class Account:
     cdef list _events
-    cdef Portfolio _portfolio
+    cdef Money _balance
+    cdef Money _order_margin
+    cdef Money _position_margin
+    cdef PortfolioReadOnly _portfolio
 
     cdef readonly AccountId id
     cdef readonly AccountType account_type
     cdef readonly Currency currency
-    cdef readonly Money balance           # balance includes realized PNL
-    cdef readonly Money margin_balance    # balance + unrealized PNL
-    cdef readonly Money margin_available  # margin_balance - order_margin - position_margin
-    cdef readonly Money order_margin
-    cdef readonly Money position_margin
 
-    cpdef void register_portfolio(self, Portfolio portfolio) except *
-    cpdef int event_count(self)
-    cpdef list get_events(self)
-    cpdef AccountState last_event(self)
+    cpdef void register_portfolio(self, PortfolioReadOnly portfolio)
     cpdef void apply(self, AccountState event) except *
+    cpdef void update_order_margin(self, Money margin) except *
+    cpdef void update_position_margin(self, Money margin) except *
+
+    cpdef Money balance(self)
+    cpdef Money unrealized_pnl(self)
+    cpdef Money margin_balance(self)
+    cpdef Money margin_available(self)
+    cpdef Money order_margin(self)
+    cpdef Money position_margin(self)
+    cpdef AccountState last_event(self)
+    cpdef list events(self)
+    cpdef int event_count(self) except *

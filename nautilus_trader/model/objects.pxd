@@ -25,7 +25,7 @@ cdef class Decimal(Fraction):
 
     @staticmethod
     cdef inline Decimal from_float_c(double value, int precision)
-    cpdef double as_double(self)
+    cpdef double as_double(self) except *
     cpdef str to_string(self)
 
 
@@ -37,7 +37,7 @@ cdef class Quantity(Fraction):
 
     @staticmethod
     cdef inline Quantity from_float_c(double value, int precision)
-    cpdef double as_double(self)
+    cpdef double as_double(self) except *
     cpdef str to_string(self)
     cpdef str to_string_formatted(self)
 
@@ -50,7 +50,7 @@ cdef class Price(Fraction):
 
     @staticmethod
     cdef inline Price from_float_c(double value, int precision)
-    cpdef double as_double(self)
+    cpdef double as_double(self) except *
     cpdef str to_string(self)
 
 
@@ -60,6 +60,6 @@ cdef class Money(Fraction):
     cdef inline Money add(self, Money other)
     cdef inline Money sub(self, Money other)
 
-    cpdef double as_double(self)
+    cpdef double as_double(self) except *
     cpdef str to_string(self)
     cpdef str to_string_formatted(self)

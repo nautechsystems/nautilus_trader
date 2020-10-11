@@ -39,7 +39,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.trading.portfolio cimport PortfolioReadOnly
 
 
 cdef class TradingStrategy:
@@ -50,7 +50,7 @@ cdef class TradingStrategy:
     cdef readonly LoggerAdapter log
     # cdef readonly DataCacheReadOnly data
     cdef readonly ExecutionCacheReadOnly execution
-    cdef readonly Portfolio portfolio
+    cdef readonly PortfolioReadOnly portfolio
     cdef readonly OrderFactory order_factory
 
     cdef list _indicators
@@ -130,9 +130,9 @@ cdef class TradingStrategy:
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
-    cpdef int quote_tick_count(self, Symbol symbol)
-    cpdef int trade_tick_count(self, Symbol symbol)
-    cpdef int bar_count(self, BarType bar_type)
+    cpdef int quote_tick_count(self, Symbol symbol) except *
+    cpdef int trade_tick_count(self, Symbol symbol) except *
+    cpdef int bar_count(self, BarType bar_type) except *
     cpdef bint has_quote_ticks(self, Symbol symbol) except *
     cpdef bint has_trade_ticks(self, Symbol symbol) except *
     cpdef bint has_bars(self, BarType bar_type) except *

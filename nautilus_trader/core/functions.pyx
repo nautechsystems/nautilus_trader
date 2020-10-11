@@ -47,7 +47,7 @@ cdef inline int precision_from_string(str value):
 
     Notes
     -----
-    If no decimal place then precision will be zero.
+    If no decimal place then precision will be inferred as zero.
 
     """
     Condition.valid_string(value, "value")

@@ -81,7 +81,7 @@ cdef class Decimal(Fraction):
         str
 
         """
-        return f"<{self.__class__.__name__}({self}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
 
     cdef inline Decimal add(self, Fraction other):
         """
@@ -156,7 +156,7 @@ cdef class Decimal(Fraction):
 
         return Decimal(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the decimal as a double.
 
@@ -239,7 +239,7 @@ cdef class Quantity(Fraction):
         str
 
         """
-        return f"<{self.__class__.__name__}({self}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
 
     cdef inline Quantity add(self, Quantity other):
         """
@@ -321,7 +321,7 @@ cdef class Quantity(Fraction):
 
         return Quantity(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the quantity as a double.
 
@@ -352,18 +352,16 @@ cdef class Quantity(Fraction):
         str
 
         """
-        cdef double self_as_double = self.as_double()
-
         if self.precision > 0:
-            return f"{self_as_double:.{self.precision}f}"
+            return f"{self.as_double():.{self.precision}f}"
 
-        if self_as_double < 1000 or self_as_double % 1000 != 0:
-            return f"{self_as_double:,.0f}"
+        if self < 1000 or self % 1000 != 0:
+            return f"{int(self):,.0f}"
 
         if self < 1000000:
-            return f"{round(self_as_double / 1000)}K"
+            return f"{round(self / 1000)}K"
 
-        cdef str millions = f"{self_as_double / 1000000:.3f}".rstrip("0").rstrip(".")
+        cdef str millions = f"{self.as_double() / 1000000:.3f}".rstrip("0").rstrip(".")
         return f"{millions}M"
 
 
@@ -427,7 +425,7 @@ cdef class Price(Fraction):
         str
 
         """
-        return f"<{self.__class__.__name__}({self}) object at {id(self)}>"
+        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
 
     cdef inline Price add(self, Fraction other):
         """
@@ -509,7 +507,7 @@ cdef class Price(Fraction):
 
         return Price(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the price as a double.
 
@@ -695,7 +693,7 @@ cdef class Money(Fraction):
         str
 
         """
-        return (f"<{self.__class__.__name__}({self}, currency={self.currency}) "
+        return (f"<{self.__class__.__name__}('{self}', {self.currency}) "
                 f"object at {id(self)}>")
 
     cdef inline Money add(self, Money other):
@@ -742,7 +740,7 @@ cdef class Money(Fraction):
         Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
         return Money(self - other, self.currency)
 
-    cpdef double as_double(self):
+    cpdef double as_double(self) except *:
         """
         Return the value of the money as a double.
 
