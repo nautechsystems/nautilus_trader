@@ -43,10 +43,10 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -123,10 +123,10 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.serializer = MsgPackOrderSerializer()
         self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=TestClock())
+            clock=TestClock(),
+        )
         print("\n")
 
     def test_serialize_and_deserialize_market_orders(self):
@@ -223,10 +223,10 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
         self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=TestClock())
+            clock=TestClock(),
+        )
         print("\n")
 
     def test_serialize_and_deserialize_submit_order_commands(self):
