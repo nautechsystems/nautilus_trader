@@ -33,7 +33,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -448,7 +448,7 @@ cdef class SimulatedMarket:
         cdef QuoteTick market
         for position in open_positions:
             instrument = self.instruments[position.symbol]
-            if instrument.security_type == SecurityType.FOREX:
+            if instrument.asset_type == AssetType.FOREX:
                 mid_price = mid_prices.get(instrument.symbol, 0.0)
                 if mid_price == 0.0:
                     market = self._market[instrument.symbol]

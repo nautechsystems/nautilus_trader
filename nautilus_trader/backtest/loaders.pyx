@@ -19,7 +19,7 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.security_type cimport SecurityType
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport BTC
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.currency cimport ETH
@@ -107,7 +107,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("XBT/USD", Venue('BITMEX')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -129,7 +129,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("ETH/XBT", Venue('BITMEX')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=ETH,
             quote_currency=BTC,
             settlement_currency=BTC,
@@ -151,7 +151,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("ETH/USD", Venue('BITMEX')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -173,7 +173,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("BTC/USD", Venue('BINANCE')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -195,7 +195,7 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("ETH/USD", Venue('BINANCE')),
-            security_type=SecurityType.CRYPTO,
+            asset_type=AssetType.CRYPTO,
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=ETH,
@@ -240,7 +240,7 @@ cdef class InstrumentLoader:
 
         return Instrument(
             symbol=symbol,
-            security_type=SecurityType.FOREX,
+            asset_type=AssetType.FOREX,
             base_currency=Currency.from_string_c(base_currency),
             quote_currency=Currency.from_string_c(quote_currency),
             settlement_currency=Currency.from_string_c(base_currency),
