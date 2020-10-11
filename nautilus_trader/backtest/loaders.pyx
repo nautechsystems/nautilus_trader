@@ -167,15 +167,15 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def btcusd_binance() -> Instrument:
+    def btcusdt_binance() -> Instrument:
         """
-        Return the Binance BTC/USD instrument for backtesting.
+        Return the Binance BTC/USDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("BTC/USD", Venue('BINANCE')),
+            symbol=Symbol("BTC/USDT", Venue('BINANCE')),
             asset_type=AssetType.CRYPTO,
             base_currency=BTC,
-            quote_currency=USD,
+            quote_currency=USDT,
             settlement_currency=BTC,
             price_precision=2,
             size_precision=6,
@@ -189,15 +189,15 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def ethusd_binance() -> Instrument:
+    def ethusdt_binance() -> Instrument:
         """
-        Return the Binance ETH/USD instrument for backtesting.
+        Return the Binance ETH/USDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/USD", Venue('BINANCE')),
+            symbol=Symbol("ETH/USDT", Venue('BINANCE')),
             asset_type=AssetType.CRYPTO,
             base_currency=ETH,
-            quote_currency=USD,
+            quote_currency=USDT,
             settlement_currency=ETH,
             price_precision=2,
             size_precision=5,

@@ -202,7 +202,7 @@ cdef class Order:
         """
         return self._events[-1]
 
-    cpdef list get_execution_ids(self):
+    cpdef list execution_ids(self):
         """
         Return a sorted list of execution identifiers.
 
@@ -213,7 +213,7 @@ cdef class Order:
         """
         return self._execution_ids.copy()
 
-    cpdef list get_events(self):
+    cpdef list events(self):
         """
         Return a list or order events.
 

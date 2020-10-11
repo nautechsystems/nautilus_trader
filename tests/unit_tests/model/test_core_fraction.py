@@ -23,6 +23,7 @@ from nautilus_trader.model.quicktions import Fraction as F
 from nautilus_trader.model.quicktions import _gcd as gcd
 
 
+# TODO: Investigate usage of this test class
 class DummyFloat(object):
     """
     Dummy float class for testing comparisons with Fractions.
@@ -57,6 +58,7 @@ class DummyFloat(object):
     __rsub__ = __sub__
 
 
+# TODO: Investigate usage of this test class
 # class DummyRational(object):
 #     """Test comparison of Fraction with a naive rational implementation."""
 #
@@ -327,7 +329,7 @@ class FractionTest(unittest.TestCase):
     #     self.assertNotEqual(F(4, 2), r)
     #     '''
 
-    # Nautilus implementation has hidden from_float
+    # ********** Nautilus implementation has hidden from_float **********
 
     # def testFromFloat(self):
     #     self.assertRaises(TypeError, F.from_float, 3+4j)
@@ -357,7 +359,8 @@ class FractionTest(unittest.TestCase):
     #         ValueError, "Cannot convert nan to Fraction.",
     #         F.from_float, nan)
 
-    # Nautilus implementation has hidden from_decimal
+    # ********** Nautilus implementation has hidden from_decimal **********
+
     # def testFromDecimal(self):
     #     self.assertRaises(TypeError, F.from_decimal, 3+4j)
     #     self.assertEqual(F(10, 1), F.from_decimal(10))
@@ -600,7 +603,7 @@ class FractionTest(unittest.TestCase):
         self.assertFalse(F(1, 2) != F(1, 2))
         self.assertTrue(F(1, 2) != F(1, 3))
 
-    # TODO: Assess DummyRational
+    # TODO: Assess DummyRational test class
     # def testComparisonsDummyRational(self):
     #     self.assertTrue(F(1, 2) == DummyRational(1, 2))
     #     self.assertTrue(DummyRational(1, 2) == F(1, 2))
@@ -633,7 +636,7 @@ class FractionTest(unittest.TestCase):
     #     self.assertTrue(DummyRational(1, 2) >= F(1, 2))
     #     self.assertTrue(DummyRational(1, 2) >= F(1, 7))
 
-    # TODO: Assess DummyFloat
+    # TODO: Assess DummyFloat test class
     # def testComparisonsDummyFloat(self):
     #     x = DummyFloat(1./3.)
     #     y = F(1, 3)
@@ -731,8 +734,8 @@ class FractionTest(unittest.TestCase):
     #                      repr(F('3.1415926535')))
     #     self.assertEqual("Fraction(-1, 100000000000000000000)",
     #                      repr(F(1, -10**20)))
-    #     self.assertEqual("7/3", str(F(7, 3)))
-    #     self.assertEqual("7", str(F(7, 1)))
+        # self.assertEqual("7/3", str(F(7, 3)))
+        # self.assertEqual("7", str(F(7, 1)))
 
     def testHash(self):
         if sys.version_info >= (3,2):
