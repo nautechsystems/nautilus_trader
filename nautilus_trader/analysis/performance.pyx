@@ -74,7 +74,7 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(positions, "positions")
 
         cdef AccountState event
-        for event in account.get_events():
+        for event in account.events():
             self.add_transaction(event)
 
         cdef Position position

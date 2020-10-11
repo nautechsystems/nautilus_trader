@@ -24,6 +24,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -33,7 +34,6 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -94,7 +94,7 @@ cdef class SimulatedMarket:
             TestLogger logger not None,
     ):
         """
-        Initialize a new instance of the SimulatedBroker class.
+        Initialize a new instance of the SimulatedMarket class.
 
         Parameters
         ----------
@@ -273,7 +273,7 @@ cdef class SimulatedMarket:
         if self.day_number != time_now.day:
             # Set account statistics for new day
             self.day_number = time_now.day
-            self.account_balance_start_day = self.account.balance
+            self.account_balance_start_day = self.account.balance()
             self.account_balance_activity_day = Money(0, self.account_currency)
             self.rollover_applied = False
 

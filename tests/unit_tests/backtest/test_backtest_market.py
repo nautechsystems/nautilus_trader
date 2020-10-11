@@ -482,7 +482,7 @@ class SimulatedMarketTests(unittest.TestCase):
         self.assertEqual(account_event1.commission.as_double(), order.filled_qty * commission_percent)
         self.assertEqual(account_event2.commission.as_double(), top_up_order.filled_qty * commission_percent)
         self.assertEqual(account_event3.commission.as_double(), reduce_order.filled_qty * commission_percent)
-        self.assertTrue(1000000 - expected_commission == account.balance.as_double())
+        self.assertTrue(1000000 - expected_commission == account.balance().as_double())
 
     def test_realized_pnl_contains_commission(self):
         # Arrange
@@ -600,8 +600,7 @@ class SimulatedMarketTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        position.update(reduce_quote)
-        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl)
+        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl(reduce_quote))
 
     # TODO: Position flip behaviour needs to be implemented
     # def test_position_dir_change(self):

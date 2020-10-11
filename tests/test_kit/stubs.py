@@ -25,6 +25,7 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -256,6 +257,8 @@ class TestStubs:
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
+            base_currency=USD,
+            quote_currency=JPY,
             commission=0,
     ) -> OrderFilled:
         if position_id is None:
@@ -281,10 +284,10 @@ class TestStubs:
             filled_qty,
             leaves_qty,
             order.price if fill_price is None else fill_price,
-            Money(commission, USD),
+            Money(commission, base_currency),
             LiquiditySide.TAKER,
-            USD,  # Stub event
-            USD,  # Stub event
+            base_currency,   # Stub event
+            quote_currency,  # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,

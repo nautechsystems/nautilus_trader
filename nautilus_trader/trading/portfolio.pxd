@@ -44,13 +44,13 @@ cdef class Portfolio(PortfolioReadOnly):
     cdef ExchangeRateCalculator _xrate_calculator
 
     cdef dict _instruments
+    cdef dict _ticks
     cdef dict _bid_quotes
     cdef dict _ask_quotes
     cdef dict _accounts
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
-    cdef dict _open_values
 
     cpdef void register_account(self, Account account) except *
     cpdef void update_instrument(self, Instrument instrument) except *
@@ -64,6 +64,3 @@ cdef class Portfolio(PortfolioReadOnly):
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *
     cdef inline void _handle_position_closed(self, PositionClosed event) except *
-    cdef inline void _update_order_margin(self, Venue venue, set orders_working, Account account) except *
-    cdef inline void _update_position_margin(self, Venue venue, set positions_open, Account account) except *
-    cdef inline void _update_open_value(self, Venue venue, set positions_open, Account account) except *

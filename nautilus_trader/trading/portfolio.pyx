@@ -86,13 +86,13 @@ cdef class Portfolio(PortfolioReadOnly):
         self._xrate_calculator = ExchangeRateCalculator()
 
         self._instruments = {}           # type: {Symbol, Instrument}
+        self._ticks = {}                 # type: {Symbol, QuoteTick}
         self._bid_quotes = {}            # type: {Venue: {str: float}}
         self._ask_quotes = {}            # type: {Venue: {str: float}}
         self._accounts = {}              # type: {Venue: Account}
         self._orders_working = {}        # type: {Venue: {Order}}
         self._positions_open = {}        # type: {Venue: {Position}}
         self._positions_closed = {}      # type: {Venue: {Position}}
-        self._open_values = {}           # type: {Venue: Money}
 
     cpdef void register_account(self, Account account) except *:
         """
@@ -113,6 +113,7 @@ cdef class Portfolio(PortfolioReadOnly):
         Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
 
         self._accounts[account.id.issuer_as_venue()] = account
+        account.register_portfolio(self)
 
     cpdef void update_instrument(self, Instrument instrument) except *:
         """
@@ -142,40 +143,17 @@ cdef class Portfolio(PortfolioReadOnly):
 
         cdef Venue venue = tick.symbol.venue
 
-        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
-        cdef dict ask_quotes = self._ask_quotes.get(venue, {})
+        self._ticks[tick.symbol] = tick
+
+        cdef dict bid_quotes = self._bid_quotes.get(venue)
+        cdef dict ask_quotes = self._ask_quotes.get(venue)
+        if not bid_quotes:
+            self._bid_quotes[venue] = {tick.symbol.code: tick.bid.as_double()}
+            self._ask_quotes[venue] = {tick.symbol.code: tick.ask.as_double()}
+            return
+
         bid_quotes[tick.symbol.code] = tick.bid.as_double()
         ask_quotes[tick.symbol.code] = tick.ask.as_double()
-        self._bid_quotes[venue] = bid_quotes
-        self._ask_quotes[venue] = ask_quotes
-
-        cdef set positions_open = self._positions_open.get(venue)
-        if not positions_open:
-            return
-
-        cdef Account account = self._accounts.get(venue)
-        if not account:
-            return
-
-        cdef double pnl = 0.
-        cdef double xrate = 1.
-        cdef Position position
-        for position in positions_open:
-            if position.symbol == tick.symbol:
-                position.update(tick)
-            if position.base_currency == account.currency:
-                pnl += position.unrealized_pnl.as_double()
-            else:
-                xrate = self._xrate_calculator.get_rate(
-                    from_currency=position.base_currency,
-                    to_currency=account.currency,
-                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                    bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes
-                )
-                pnl += position.unrealized_pnl.as_double() * xrate
-
-        account.update_unrealized_pnl(Money(pnl, account.currency))
 
     cpdef void update_orders_working(self, set orders) except *:
         """
@@ -221,9 +199,7 @@ cdef class Portfolio(PortfolioReadOnly):
         elif order.is_completed() and orders_working:
             orders_working.discard(order)
 
-        cdef Account account = self._accounts.get(venue)
-        if account:
-            self._update_order_margin(venue, orders_working, account)
+        # TODO: Update order margin
 
     cpdef void update_positions(self, set positions) except *:
         """
@@ -258,12 +234,7 @@ cdef class Portfolio(PortfolioReadOnly):
         self._log.info(f"Updated {open_count} position(s) open.")
         self._log.info(f"Updated {closed_count} position(s) closed.")
 
-        cdef Venue venue
-        cdef Account account
-        for venue, positions_open in self._positions_open.items():
-            account = self._accounts.get(venue)
-            if account:
-                self._update_position_margin(venue, positions_open, account)
+        # TODO: Update position margin
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -286,6 +257,8 @@ cdef class Portfolio(PortfolioReadOnly):
         elif isinstance(event, PositionClosed):
             self._handle_position_closed(event)
 
+        # TODO: Update position margin
+
     cpdef void reset(self) except *:
         """
         Reset the portfolio by returning all stateful values to their initial
@@ -294,13 +267,13 @@ cdef class Portfolio(PortfolioReadOnly):
         self._log.debug(f"Resetting...")
 
         self._instruments.clear()
+        self._ticks.clear()
         self._bid_quotes.clear()
         self._ask_quotes.clear()
         self._accounts.clear()
         self._orders_working.clear()
         self._positions_open.clear()
         self._positions_closed.clear()
-        self._open_values.clear()
 
         self._log.info("Reset.")
 
@@ -320,6 +293,10 @@ cdef class Portfolio(PortfolioReadOnly):
         """
         Condition.not_none(venue, "venue")
 
+        cdef Account account = self._accounts.get(venue)
+        if not account:
+            self._log.error(f"Cannot get account (no account registered for {venue}).")
+            return None
         return self._accounts.get(venue)
 
     cpdef Money order_margin(self, Venue venue):
@@ -339,7 +316,10 @@ cdef class Portfolio(PortfolioReadOnly):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        return account.order_margin if account else None
+        if not account:
+            self._log.error(f"Cannot get order margin (no account registered for {venue}).")
+            return None
+        return account.order_margin()
 
     cpdef Money position_margin(self, Venue venue):
         """
@@ -358,7 +338,10 @@ cdef class Portfolio(PortfolioReadOnly):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        return account.position_margin if account else None
+        if not account:
+            self._log.error(f"Cannot get position margin (no account registered for {venue}).")
+            return None
+        return account.position_margin()
 
     cpdef Money unrealized_pnl(self, Venue venue):
         """
@@ -377,7 +360,36 @@ cdef class Portfolio(PortfolioReadOnly):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        return account.unrealized_pnl if account else None
+        if not account:
+            self._log.error(f"Cannot calculate unrealized PNL (no account registered for {venue}).")
+            return None
+
+        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
+        cdef dict ask_quotes = self._bid_quotes.get(venue, {})
+        cdef set positions_open = self._positions_open.get(venue)
+
+        cdef QuoteTick last
+        cdef double pnl = 0.
+        cdef double xrate = 1.
+        cdef Position position
+        for position in positions_open:
+            last = self._ticks.get(position.symbol)
+            if not last:
+                self._log.error(f"Cannot calculate unrealized PNL (no quotes for {position.symbol}).")
+                return None
+            if position.base_currency == account.currency:
+                pnl += position.unrealized_pnl(last).as_double()
+            else:
+                xrate = self._xrate_calculator.get_rate(
+                    from_currency=position.base_currency,
+                    to_currency=account.currency,
+                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+                    bid_quotes=bid_quotes,
+                    ask_quotes=ask_quotes
+                )
+                pnl += position.unrealized_pnl(last).as_double() * xrate
+
+        return Money(pnl, account.currency)
 
     cpdef Money open_value(self, Venue venue):
         """
@@ -395,7 +407,32 @@ cdef class Portfolio(PortfolioReadOnly):
         """
         Condition.not_none(venue, "venue")
 
-        return self._open_values.get(venue)
+        cdef Account account = self._accounts.get(venue)
+        if not account:
+            self._log.error(f"Cannot calculate open value (no account registered for {venue}).")
+            return None
+
+        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
+        cdef dict ask_quotes = self._bid_quotes.get(venue, {})
+        cdef set positions_open = self._positions_open.get(venue)
+
+        cdef double open_value = 0.
+        cdef double xrate = 1.
+        cdef Position position
+        for position in positions_open:
+            if position.base_currency == account.currency:
+                open_value += position.quantity.as_double()
+            else:
+                xrate = self._xrate_calculator.get_rate(
+                    from_currency=position.base_currency,
+                    to_currency=account.currency,
+                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+                    bid_quotes=bid_quotes,
+                    ask_quotes=ask_quotes
+                )
+                open_value += position.quantity.as_double() * xrate
+
+        return Money(open_value, account.currency)
 
     cdef inline void _handle_position_opened(self, PositionOpened event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -406,19 +443,9 @@ cdef class Portfolio(PortfolioReadOnly):
         positions_open.add(position)
         self._positions_open[venue] = positions_open
 
-        cdef Account account = self._accounts.get(venue)
-        if account:
-            self._update_position_margin(venue, positions_open, account)
-            self._update_open_value(venue, positions_open, account)
-
     cdef inline void _handle_position_modified(self, PositionModified event) except *:
         cdef Venue venue = event.position.symbol.venue
         cdef set positions_open = self._positions_open.get(venue)
-
-        cdef Account account = self._accounts.get(venue)
-        if account:
-            self._update_position_margin(venue, positions_open, account)
-            self._update_open_value(venue, positions_open, account)
 
     cdef inline void _handle_position_closed(self, PositionClosed event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -433,57 +460,3 @@ cdef class Portfolio(PortfolioReadOnly):
         cdef set positions_closed = self._positions_closed.get(venue, set())
         positions_closed.add(position)
         self._positions_closed[venue] = positions_closed
-
-        cdef Account account = self._accounts.get(venue)
-        if account:
-            self._update_position_margin(venue, positions_open, account)
-            self._update_open_value(venue, positions_open, account)
-
-    cdef inline void _update_order_margin(self, Venue venue, set orders_working, Account account) except *:
-        cdef Money order_margin
-        if not orders_working:
-            order_margin = Money(0, account.currency)
-        else:
-            # TODO: Implement calculation
-            order_margin = Money(0, account.currency)
-
-        account.update_order_margin(order_margin)
-
-    cdef inline void _update_position_margin(self, Venue venue, set positions_open, Account account) except *:
-        cdef Money position_margin
-        if not positions_open:
-            position_margin = Money(0, account.currency)
-        else:
-            # TODO: Implement calculation
-            position_margin = Money(0, account.currency)
-
-        account.update_position_margin(position_margin)
-
-    cdef inline void _update_open_value(self, Venue venue, set positions_open, Account account) except *:
-        if not positions_open:
-            self._open_values[venue] = Money(0, account.currency)
-            return
-
-        cdef double open_value = 0.
-        cdef dict bid_quotes
-        cdef dict ask_quotes
-        cdef Position position
-        for position in positions_open:
-            if position.base_currency == account.currency:
-                open_value += position.quantity.as_double()
-            else:
-                bid_quotes = self._bid_quotes.get(venue)
-                ask_quotes = self._ask_quotes.get(venue)
-                if not bid_quotes or not ask_quotes:
-                    self._log.error(f"Cannot calculate open value (no bid and ask quotes for {venue}).")
-                    continue
-                xrate = self._xrate_calculator.get_rate(
-                    from_currency=position.base_currency,
-                    to_currency=account.currency,
-                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                    bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes
-                )
-                open_value += position.quantity.as_double() * xrate
-
-        self._open_values[venue] = Money(open_value, account.currency)
