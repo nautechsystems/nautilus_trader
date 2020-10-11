@@ -21,15 +21,22 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 FXCM = Venue("FXCM")
@@ -70,7 +77,7 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertIsNone(self.portfolio.account(FXCM))
 
-    def test_account_when_account_returns_read_only_facade(self):
+    def test_account_when_account_returns_the_account_facade(self):
         # Arrange
         # Act
         result = self.portfolio.account(BITMEX)
@@ -102,29 +109,41 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertIsNone(self.portfolio.open_value(FXCM))
 
-    # def test_opening_one_position_updates_portfolio(self):
-    #     # Arrange
-    #     order = self.order_factory.market(
-    #         XBTUSD_BITMEX,
-    #         OrderSide.BUY,
-    #         Quantity("100"),
-    #     )
-    #
-    #     fill = TestStubs.event_order_filled(
-    #         order=order,
-    #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "1"),
-    #         fill_price=Price("1.00000"),
-    #     )
-    #
-    #     position = Position(fill)
-    #     position_opened = TestStubs.event_position_opened(position)
-    #
-    #     # Act
-    #     self.portfolio.update_position(position_opened)
-    #
-    #     # Assert
-    #     self.assertEqual(Money(0, BTC), self.portfolio.open_value(BITMEX))
+    def test_opening_one_position_updates_portfolio(self):
+        # Arrange
+        order = self.order_factory.market(
+            XBTUSD_BITMEX,
+            OrderSide.BUY,
+            Quantity("100"),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order=order,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("1.00000"),
+        )
+
+        last = QuoteTick(
+            XBTUSD_BITMEX,
+            Price("10501.5"),
+            Price("10500.0"),
+            Quantity("2.54"),
+            Quantity("0.91"),
+            UNIX_EPOCH,
+        )
+
+        self.portfolio.update_tick(last)
+
+        position = Position(fill)
+        position_opened = TestStubs.event_position_opened(position)
+
+        # Act
+        # self.portfolio.update_position(position_opened)
+
+        # Assert
+        self.assertIsNotNone(position_opened)
+        # self.assertEqual(Money(0, BTC), self.portfolio.open_value(BITMEX))
 
     # def test_reset_portfolio(self):
     #     # Arrange

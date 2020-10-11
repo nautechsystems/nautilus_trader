@@ -19,6 +19,7 @@ import unittest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import XBT
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.trading.calculators import ExchangeRateCalculator
 from nautilus_trader.trading.calculators import RolloverInterestCalculator
@@ -68,7 +69,43 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         # Assert
         self.assertEqual(0.8, result)
 
-    def test_calculate_exchange_rate_for_inverse(self):
+    def test_get_rate_when_symbol_has_slash(self):
+        # Arrange
+        converter = ExchangeRateCalculator()
+        bid_rates = {"AUD/USD": 0.80000}
+        ask_rates = {"AUD/USD": 0.80010}
+
+        # Act
+        result = converter.get_rate(
+            AUD,
+            USD,
+            PriceType.BID,
+            bid_rates,
+            ask_rates,
+        )
+
+        # Assert
+        self.assertEqual(0.8, result)
+
+    def test_get_rate_for_inverse1(self):
+        # Arrange
+        converter = ExchangeRateCalculator()
+        bid_rates = {"XBT/USD": 10501.5}
+        ask_rates = {"XBT/USD": 10500.0}
+
+        # Act
+        result = converter.get_rate(
+            USD,
+            XBT,
+            PriceType.BID,
+            bid_rates,
+            ask_rates,
+        )
+
+        # Assert
+        self.assertEqual(9.522449173927534e-05, result)
+
+    def test_get_rate_for_inverse2(self):
         # Arrange
         converter = ExchangeRateCalculator()
         bid_rates = {"USDJPY": 110.100}

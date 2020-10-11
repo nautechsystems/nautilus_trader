@@ -29,8 +29,9 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 cdef class ExchangeRateCalculator:
     """
-    Provides exchange rate calculations between currencies. An exchange rate is
-    the value of one nation or economic zones currency versus that of another.
+    Provides exchange rate calculations between currencies.
+
+    An exchange rate is the value of one asset versus that of another.
     """
 
     cpdef double get_rate(
@@ -44,7 +45,7 @@ cdef class ExchangeRateCalculator:
         """
         Return the calculated exchange rate for the given quote currency to the
         given base currency for the given price type using the given dictionary of
-        bid and ask rates.
+        bid and ask quotes.
 
         Parameters
         ----------
@@ -76,89 +77,115 @@ cdef class ExchangeRateCalculator:
         Condition.equal(len(bid_quotes), len(ask_quotes), "len(bid_quotes)", "len(ask_quotes)")
 
         if from_currency == to_currency:
-            return 1.0  # No exchange necessary
+            return 1.  # No exchange necessary
 
         if price_type == PriceType.BID:
-            calculation_rates = bid_quotes
+            calculation_quotes = bid_quotes
         elif price_type == PriceType.ASK:
-            calculation_rates = ask_quotes
+            calculation_quotes = ask_quotes
         elif price_type == PriceType.MID:
-            calculation_rates = {}  # type: {str, float}
-            for ccy_pair in bid_quotes.keys():
-                calculation_rates[ccy_pair] = (bid_quotes[ccy_pair] + ask_quotes[ccy_pair]) / 2.0
+            calculation_quotes = {s: (bid_quotes[s] + ask_quotes[s]) / 2.0 for s in bid_quotes}  # type: {str, float}
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}")
 
+        cdef str symbol
+        cdef double quote
+        cdef tuple pieces
+        cdef str code_lhs
+        cdef str code_rhs
+        cdef set codes = set()
         cdef dict exchange_rates = {}
-        cdef set symbols = set()
-        cdef str symbol_lhs
-        cdef str symbol_rhs
 
-        # Add given currency rates
-        for ccy_pair, rate in calculation_rates.items():
-            # Get currency pair symbols
-            symbol_lhs = ccy_pair[:3]
-            symbol_rhs = ccy_pair[-3:]
-            symbols.add(symbol_lhs)
-            symbols.add(symbol_rhs)
+        # Build quote table
+        for symbol, quote in calculation_quotes.items():
+            # Get symbol codes
+            if '/' in symbol:
+                pieces = symbol.partition('/')
+                code_lhs = pieces[0]
+                code_rhs = pieces[2]
+            else:
+                if len(symbol) != 6:
+                    raise ValueError(f"Cannot parse symbol {symbol}")
+                code_lhs = symbol[:3]
+                code_rhs = symbol[-3:]
+
+            codes.add(code_lhs)
+            codes.add(code_rhs)
+
             # Add currency dictionaries if they do not already exist
-            if symbol_lhs not in exchange_rates:
-                exchange_rates[symbol_lhs] = {}
-            if symbol_rhs not in exchange_rates:
-                exchange_rates[symbol_rhs] = {}
+            if code_lhs not in exchange_rates:
+                exchange_rates[code_lhs] = {}
+            if code_rhs not in exchange_rates:
+                exchange_rates[code_rhs] = {}
             # Add currency rates
-            exchange_rates[symbol_lhs][symbol_lhs] = 1.0
-            exchange_rates[symbol_rhs][symbol_rhs] = 1.0
-            exchange_rates[symbol_lhs][symbol_rhs] = rate
+            exchange_rates[code_lhs][code_lhs] = 1.
+            exchange_rates[code_rhs][code_rhs] = 1.
+            exchange_rates[code_lhs][code_rhs] = quote
 
         # Generate possible currency pairs from all symbols
-        cdef list possible_pairs = list(permutations(symbols, 2))
+        cdef list code_perms = list(permutations(codes, 2))
 
         # Calculate currency inverses
-        for ccy_pair in possible_pairs:
-            if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
+        for perm in code_perms:
+            if perm[0] not in exchange_rates[perm[1]]:
                 # Search for inverse
-                if ccy_pair[1] in exchange_rates[ccy_pair[0]]:
-                    exchange_rates[ccy_pair[1]][ccy_pair[0]] = 1.0 / exchange_rates[ccy_pair[0]][ccy_pair[1]]
-            if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
+                if perm[1] in exchange_rates[perm[0]]:
+                    exchange_rates[perm[1]][perm[0]] = 1. / exchange_rates[perm[0]][perm[1]]
+            if perm[1] not in exchange_rates[perm[0]]:
                 # Search for inverse
-                if ccy_pair[0] in exchange_rates[ccy_pair[1]]:
-                    exchange_rates[ccy_pair[0]][ccy_pair[1]] = 1.0 / exchange_rates[ccy_pair[1]][ccy_pair[0]]
+                if perm[0] in exchange_rates[perm[1]]:
+                    exchange_rates[perm[0]][perm[1]] = 1. / exchange_rates[perm[1]][perm[0]]
 
-        cdef str symbol
-        cdef str lhs_str = from_currency.code
-        cdef str rhs_str = to_currency.code
-        try:
-            return exchange_rates[lhs_str][rhs_str]
-        except KeyError:
-            pass  # Exchange rate not yet calculated
-
-        # Continue to calculate remaining currency rates
-        cdef double common_ccy1
-        cdef double common_ccy2
-        for ccy_pair in possible_pairs:
-            if ccy_pair[0] not in exchange_rates[ccy_pair[1]]:
-                # Search for common currency
-                for symbol in symbols:
-                    if symbol in exchange_rates[ccy_pair[0]] and symbol in exchange_rates[ccy_pair[1]]:
-                        common_ccy1 = exchange_rates[ccy_pair[0]][symbol]
-                        common_ccy2 = exchange_rates[ccy_pair[1]][symbol]
-                        exchange_rates[ccy_pair[1]][ccy_pair[0]] = common_ccy2 / common_ccy1
-                        # Check inverse and calculate if not found
-                        if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
-                            exchange_rates[ccy_pair[0]][ccy_pair[1]] = common_ccy1 / common_ccy2
-                    elif ccy_pair[0] in exchange_rates[symbol] and ccy_pair[1] in exchange_rates[symbol]:
-                        common_ccy1 = exchange_rates[symbol][ccy_pair[0]]
-                        common_ccy2 = exchange_rates[symbol][ccy_pair[1]]
-                        exchange_rates[ccy_pair[1]][ccy_pair[0]] = common_ccy2 / common_ccy1
-                        # Check inverse and calculate if not found
-                        if ccy_pair[1] not in exchange_rates[ccy_pair[0]]:
-                            exchange_rates[ccy_pair[0]][ccy_pair[1]] = common_ccy1 / common_ccy2
-        try:
-            return exchange_rates[lhs_str][rhs_str]
-        except KeyError:
-            raise ValueError(f"Cannot calculate exchange rate for {lhs_str}{rhs_str} or {rhs_str}{lhs_str} "
+        cdef dict crosses = exchange_rates.get(from_currency.code)
+        if not crosses:
+            raise ValueError(f"Cannot calculate exchange rate for "
+                             f"{from_currency.code}{to_currency.code} or "
+                             f"{to_currency.code}{from_currency.code} "
                              f"(not enough data)")
+
+        cdef double xrate = crosses.get(to_currency.code, -1)
+        if xrate >= 0:
+            return xrate
+
+        # Exchange rate not yet calculated
+        # Continue to calculate remaining exchange rates
+        cdef double common_rate1
+        cdef double common_rate2
+        for perm in code_perms:
+            if perm[0] in exchange_rates[perm[1]]:
+                continue
+            # Search for common currency
+            for code in codes:
+                if code in exchange_rates[perm[0]] and code in exchange_rates[perm[1]]:
+                    common_rate1 = exchange_rates[perm[0]][code]
+                    common_rate2 = exchange_rates[perm[1]][code]
+                    exchange_rates[perm[1]][perm[0]] = common_rate2 / common_rate1
+                    # Check inverse and calculate if not found
+                    if perm[1] not in exchange_rates[perm[0]]:
+                        exchange_rates[perm[0]][perm[1]] = common_rate1 / common_rate2
+                elif perm[0] in exchange_rates[code] and perm[1] in exchange_rates[code]:
+                    common_rate1 = exchange_rates[code][perm[0]]
+                    common_rate2 = exchange_rates[code][perm[1]]
+                    exchange_rates[perm[1]][perm[0]] = common_rate2 / common_rate1
+                    # Check inverse and calculate if not found
+                    if perm[1] not in exchange_rates[perm[0]]:
+                        exchange_rates[perm[0]][perm[1]] = common_rate1 / common_rate2
+
+        crosses = exchange_rates.get(from_currency.code)
+        if not crosses:
+            raise ValueError(f"Cannot calculate exchange rate for "
+                             f"{from_currency.code}{to_currency.code} or "
+                             f"{to_currency.code}{from_currency.code} "
+                             f"(not enough data)")
+
+        xrate = crosses.get(to_currency.code, -1)
+        if xrate >= 0:
+            return xrate
+
+        raise ValueError(f"Cannot calculate exchange rate for "
+                         f"{from_currency.code}{to_currency.code} or "
+                         f"{to_currency.code}{from_currency.code} "
+                         f"(not enough data)")
 
 
 cdef class RolloverInterestCalculator:

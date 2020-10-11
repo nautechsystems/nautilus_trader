@@ -427,14 +427,18 @@ cdef class Portfolio(PortfolioReadOnly):
             if position.base_currency == account.currency:
                 open_value += position.quantity.as_double()
             else:
-                xrate = self._xrate_calculator.get_rate(
-                    from_currency=position.base_currency,
-                    to_currency=account.currency,
-                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                    bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes
-                )
-                open_value += position.quantity.as_double() * xrate
+                try:
+                    xrate = self._xrate_calculator.get_rate(
+                        from_currency=position.base_currency,
+                        to_currency=account.currency,
+                        price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+                        bid_quotes=bid_quotes,
+                        ask_quotes=ask_quotes
+                    )
+                    open_value += position.quantity.as_double() * xrate
+                except ValueError as ex:
+                    self._log.exception(ex)
+                    return None
 
         return Money(open_value, account.currency)
 
