@@ -364,14 +364,16 @@ cdef class Portfolio(PortfolioReadOnly):
             self._log.error(f"Cannot calculate unrealized PNL (no account registered for {venue}).")
             return None
 
+        cdef set positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            return Money(0, account.currency)
+
         cdef dict bid_quotes = self._bid_quotes.get(venue, {})
         cdef dict ask_quotes = self._bid_quotes.get(venue, {})
-        cdef set positions_open = self._positions_open.get(venue)
-
-        cdef QuoteTick last
         cdef double pnl = 0.
         cdef double xrate = 1.
         cdef Position position
+        cdef QuoteTick last
         for position in positions_open:
             last = self._ticks.get(position.symbol)
             if not last:
@@ -412,10 +414,12 @@ cdef class Portfolio(PortfolioReadOnly):
             self._log.error(f"Cannot calculate open value (no account registered for {venue}).")
             return None
 
+        cdef set positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            return Money(0, account.currency)
+
         cdef dict bid_quotes = self._bid_quotes.get(venue, {})
         cdef dict ask_quotes = self._bid_quotes.get(venue, {})
-        cdef set positions_open = self._positions_open.get(venue)
-
         cdef double open_value = 0.
         cdef double xrate = 1.
         cdef Position position

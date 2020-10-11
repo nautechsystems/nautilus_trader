@@ -226,7 +226,7 @@ cdef class Account:
             return None
 
         cdef Money unrealized_pnl = self.unrealized_pnl()
-        if not unrealized_pnl:
+        if unrealized_pnl is None:
             return None
 
         return Money(self._balance + unrealized_pnl, self.currency)
