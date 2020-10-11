@@ -484,7 +484,7 @@ cdef class ExecutionEngine:
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
-            return  # _handle_order_fill(event) will send to strategy (refactor)
+            return  # Sent to strategy
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 

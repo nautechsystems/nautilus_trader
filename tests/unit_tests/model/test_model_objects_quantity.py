@@ -253,6 +253,7 @@ class QuantityTests(unittest.TestCase):
         self.assertEqual("1000", str(Quantity("1000")))
         self.assertEqual("10.05", Quantity("10.05").to_string())
         self.assertEqual("1K", Quantity(1000).to_string_formatted())
+        self.assertEqual("1,112", Quantity(1112).to_string_formatted())
         self.assertEqual("1K", Quantity("1000").to_string_formatted())
         self.assertEqual("120,100", Quantity("120100").to_string_formatted())
         self.assertEqual("200K", Quantity("200000").to_string_formatted())

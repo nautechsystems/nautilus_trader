@@ -472,19 +472,16 @@ cdef class Fraction:
     def denominator(self):
         return self._denominator
 
-    def __repr__(self):
-        """repr(self)"""
-        # return '%s(%s, %s)' % (self.__class__.__name__,
-        #                        self._numerator, self._denominator)
-        return str(self._numerator / self._denominator)
-
     def __str__(self):
         """str(self)"""
-        # if self._denominator == 1:
-        #     return str(self._numerator)
-        # else:
-        #     return '%s/%s' % (self._numerator, self._denominator)
-        return str(self._numerator / self._denominator)
+        if self._denominator == 1:
+            return str(self._numerator)
+        else:
+            return str(self._numerator / self._denominator).replace(".0 ", "")
+
+    def __repr__(self):
+        """repr(self)"""
+        return f"<{self.__class__.__name__}('{str(self)}') object at {id(self)}>"
 
     def __add__(a, b):
         """a + b"""

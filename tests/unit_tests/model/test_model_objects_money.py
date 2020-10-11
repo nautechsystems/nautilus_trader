@@ -293,4 +293,4 @@ class MoneyTests(unittest.TestCase):
         result = repr(money)
 
         # Assert
-        self.assertTrue(result.startswith("<Money(1.00, currency=USD) object at"))
+        self.assertTrue(result.startswith("<Money('1.00', USD) object at"))
