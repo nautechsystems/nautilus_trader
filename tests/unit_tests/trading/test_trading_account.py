@@ -29,7 +29,7 @@ class AccountTests(unittest.TestCase):
     def setUp(self):
         # Fixture setup
         state = AccountState(
-            AccountId.py_from_string("BITMEX-1513111-SIMULATED"),
+            AccountId.from_string("BITMEX-1513111-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -44,7 +44,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(AccountId.py_from_string("BITMEX-1513111-SIMULATED"), self.account.id)
+        self.assertEqual(AccountId.from_string("BITMEX-1513111-SIMULATED"), self.account.id)
         self.assertEqual(BTC, self.account.currency)
         self.assertEqual(Money(10, BTC), self.account.balance)
         self.assertEqual(Money(10, BTC), self.account.margin_balance)

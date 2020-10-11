@@ -55,10 +55,10 @@ cdef class Symbol(Identifier):
         self.venue = venue
 
     @staticmethod
-    cdef Symbol from_string(str value):
+    cdef Symbol from_string_c(str value):
         """
         Return a symbol parsed from the given string value. Must be correctly
-        formatted with two valid strings either side of a period '.'.
+        formatted with two valid strings either side of a period.
 
         Example: "AUD/USD.FXCM".
 
@@ -78,12 +78,10 @@ cdef class Symbol(Identifier):
         return Symbol(partitioned[0], Venue(partitioned[2]))
 
     @staticmethod
-    def py_from_string(value: str) -> Symbol:
+    def from_string(value: str) -> Symbol:
         """
-        Python wrapper for the from_string method.
-
         Return a symbol parsed from the given string value. Must be correctly
-        formatted with two valid strings either side of a period '.'.
+        formatted with two valid strings either side of a period.
 
         Example: "AUD/USD.FXCM".
 
@@ -97,7 +95,7 @@ cdef class Symbol(Identifier):
         Symbol
 
         """
-        return Symbol.from_string(value)
+        return Symbol.from_string_c(value)
 
 
 cdef class Venue(Identifier):
@@ -260,13 +258,13 @@ cdef class TraderId(Identifier):
         self.tag = IdTag(tag)
 
     @staticmethod
-    cdef TraderId from_string(str value):
+    cdef TraderId from_string_c(str value):
         """
         Return a trader identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen '-'.
+        correctly formatted with two valid strings either side of a hyphen.
 
         Its is expected a trader identifier  is the abbreviated name of the
-        trader with an order identifier tag number separated by a hyphen '-'.
+        trader with an order identifier tag number separated by a hyphen.
 
         Example: "TESTER-001".
 
@@ -287,13 +285,13 @@ cdef class TraderId(Identifier):
         return TraderId(name=partitioned[0], tag=partitioned[2])
 
     @staticmethod
-    def py_from_string(value: str) -> TraderId:
+    def from_string(value: str) -> TraderId:
         """
         Return a trader identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen '-'.
+        correctly formatted with two valid strings either side of a hyphen.
 
         Its is expected a trader identifier  is the abbreviated name of the
-        trader with an order identifier tag number separated by a hyphen '-'.
+        trader with an order identifier tag number separated by a hyphen.
 
         Example: "TESTER-001".
 
@@ -307,7 +305,7 @@ cdef class TraderId(Identifier):
         TraderId
 
         """
-        return TraderId.from_string(value)
+        return TraderId.from_string_c(value)
 
 
 cdef StrategyId _NULL_STRATEGY_ID = StrategyId('S', 'NULL')
@@ -394,13 +392,13 @@ cdef class StrategyId(Identifier):
         return self.value != _NULL_STRATEGY_ID.value
 
     @staticmethod
-    cdef StrategyId from_string(str value):
+    cdef StrategyId from_string_c(str value):
         """
         Return a strategy identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen '-'.
+        correctly formatted with two valid strings either side of a hyphen.
 
         Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen '-'.
+        an order_id tag number separated by a hyphen.
 
         Example: "EMACross-001".
 
@@ -420,13 +418,13 @@ cdef class StrategyId(Identifier):
         return StrategyId(name=partitioned[0], tag=partitioned[2])
 
     @staticmethod
-    def py_from_string(value: str) -> StrategyId:
+    def from_string(value: str) -> StrategyId:
         """
         Return a strategy identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen '-'.
+        correctly formatted with two valid strings either side of a hyphen.
 
         Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen '-'.
+        an order_id tag number separated by a hyphen.
 
         Example: "EMACross-001".
 
@@ -440,7 +438,7 @@ cdef class StrategyId(Identifier):
         StrategyId
 
         """
-        return StrategyId.from_string(value)
+        return StrategyId.from_string_c(value)
 
 
 cdef class Issuer(Identifier):
@@ -515,10 +513,10 @@ cdef class AccountId(Identifier):
         return Venue(self.issuer.value)
 
     @staticmethod
-    cdef AccountId from_string(str value):
+    cdef AccountId from_string_c(str value):
         """
-        Return an account identifier from the given string value. Must be correctly
-        formatted with two valid strings either side of a hyphen '-'.
+        Return an account identifier from the given string value. Must be
+        correctly formatted with two valid strings either side of a hyphen.
 
         Example: "FXCM-02851908-DEMO".
 
@@ -535,16 +533,21 @@ cdef class AccountId(Identifier):
         Condition.valid_string(value, "value")
 
         cdef list split = value.split('-', maxsplit=2)
+
+        if len(split) < 3:
+            raise ValueError(f"The AccountId string value was malformed, was {value}")
+
         return AccountId(
             issuer=split[0],
             identifier=split[1],
-            account_type=account_type_from_string(split[2]))
+            account_type=account_type_from_string(split[2]),
+        )
 
     @staticmethod
-    def py_from_string(value: str) -> AccountId:
+    def from_string(value: str) -> AccountId:
         """
-        Return an account identifier from the given string value. Must be correctly
-        formatted with two valid strings either side of a hyphen '-'.
+        Return an account identifier from the given string value. Must be
+        correctly formatted with two valid strings either side of a hyphen.
 
         Example: "FXCM-02851908-DEMO".
 
@@ -558,7 +561,7 @@ cdef class AccountId(Identifier):
         AccountId
 
         """
-        return AccountId.from_string(value)
+        return AccountId.from_string_c(value)
 
 
 cdef class BracketOrderId(Identifier):
@@ -582,7 +585,7 @@ cdef class BracketOrderId(Identifier):
             If value is not a valid string or does not start with 'BO-'.
 
         """
-        Condition.true(value.startswith("BO-"), f"value must begin with \"BO-\", was {value}.")
+        Condition.true(value.startswith("BO-"), f"value must begin with \'BO-\', was {value}.")
         super().__init__(value)
 
 
@@ -607,7 +610,7 @@ cdef class ClientOrderId(Identifier):
             If value is not a valid string, or does not start with 'O-'.
 
         """
-        Condition.true(value.startswith("O-"), f"value must begin with \"O-\", was {value}.")
+        Condition.true(value.startswith("O-"), f"value must begin with \'O-\', was {value}.")
         super().__init__(value)
 
 

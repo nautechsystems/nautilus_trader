@@ -26,7 +26,6 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_from_string
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -72,7 +71,7 @@ cdef class BarSpecification:
         self.price_type = price_type
 
     @staticmethod
-    cdef BarSpecification from_string(str value):
+    cdef BarSpecification from_string_c(str value):
         """
         Return a bar specification parsed from the given string.
         String format example is '200-TICK-MID'.
@@ -94,7 +93,10 @@ cdef class BarSpecification:
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split = value.split('-', maxsplit=3)
+        cdef list split = value.split('-', maxsplit=2)
+
+        if len(split) < 3:
+            raise ValueError(f"The BarSpecification string value was malformed, was {value}")
 
         return BarSpecification(
             int(split[0]),
@@ -103,7 +105,7 @@ cdef class BarSpecification:
         )
 
     @staticmethod
-    def py_from_string(str value) -> BarSpecification:
+    def from_string(str value) -> BarSpecification:
         """
         Return a bar specification parsed from the given string.
 
@@ -126,7 +128,7 @@ cdef class BarSpecification:
             If value is not a valid string.
 
         """
-        return BarSpecification.from_string(value)
+        return BarSpecification.from_string_c(value)
 
     cdef str aggregation_string(self):
         """
@@ -263,7 +265,7 @@ cdef class BarType:
         self.spec = bar_spec
 
     @staticmethod
-    cdef BarType from_string(str value):
+    cdef BarType from_string_c(str value):
         """
         Return a bar type parsed from the given string.
 
@@ -285,19 +287,20 @@ cdef class BarType:
         Condition.valid_string(value, 'value')
 
         cdef list split = value.split('-', maxsplit=3)
-        cdef list symbol_split = split[0].split('.', maxsplit=1)
 
-        cdef Symbol symbol = Symbol(symbol_split[0], Venue(symbol_split[1]))
+        if len(split) < 4:
+            raise ValueError(f"The BarType string value was malformed, was {value}")
+
         cdef BarSpecification bar_spec = BarSpecification(
             int(split[1]),
             bar_aggregation_from_string(split[2]),
             price_type_from_string(split[3]),
         )
 
-        return BarType(symbol, bar_spec)
+        return BarType(Symbol.from_string_c(split[0]), bar_spec)
 
     @staticmethod
-    def py_from_string(str value) -> BarType:
+    def from_string(str value) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -316,7 +319,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_string(value)
+        return BarType.from_string_c(value)
 
     cdef bint is_time_aggregated(self) except *:
         """
@@ -482,7 +485,7 @@ cdef class Bar:
         self.checked = check
 
     @staticmethod
-    cdef Bar from_serializable_string(str value):
+    cdef Bar from_serializable_string_c(str value):
         """
         Return a bar parsed from the given string.
 
@@ -500,6 +503,9 @@ cdef class Bar:
 
         cdef list pieces = value.split(',', maxsplit=5)
 
+        if len(pieces) < 5:
+            raise ValueError(f"The Bar string value was malformed, was {value}")
+
         return Bar(
             Price(pieces[0]),
             Price(pieces[1]),
@@ -510,7 +516,7 @@ cdef class Bar:
         )
 
     @staticmethod
-    def py_from_serializable_string(str value) -> Bar:
+    def from_serializable_string(str value) -> Bar:
         """
         Python wrapper for the from_string method.
 
@@ -526,7 +532,7 @@ cdef class Bar:
         Bar
 
         """
-        return Bar.from_serializable_string(value)
+        return Bar.from_serializable_string_c(value)
 
     cpdef str to_string(self):
         """

@@ -58,7 +58,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         state = AccountState(
-            AccountId.py_from_string("BITMEX-1513111-SIMULATED"),
+            AccountId.from_string("BITMEX-1513111-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
