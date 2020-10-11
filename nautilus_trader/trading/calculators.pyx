@@ -43,9 +43,8 @@ cdef class ExchangeRateCalculator:
             dict ask_quotes
     ) except *:
         """
-        Return the calculated exchange rate for the given quote currency to the
-        given base currency for the given price type using the given dictionary of
-        bid and ask quotes.
+        Return the calculated exchange rate for the given price type using the
+        given dictionary of bid and ask quotes.
 
         Parameters
         ----------
@@ -77,7 +76,7 @@ cdef class ExchangeRateCalculator:
         Condition.equal(len(bid_quotes), len(ask_quotes), "len(bid_quotes)", "len(ask_quotes)")
 
         if from_currency == to_currency:
-            return 1.  # No exchange necessary
+            return 1.  # No conversion necessary
 
         if price_type == PriceType.BID:
             calculation_quotes = bid_quotes
@@ -123,7 +122,7 @@ cdef class ExchangeRateCalculator:
             exchange_rates[code_lhs][code_rhs] = quote
 
         # Generate possible currency pairs from all symbols
-        cdef list code_perms = list(permutations(codes, 2))
+        cdef set code_perms = set(permutations(codes, 2))
 
         # Calculate currency inverses
         for perm in code_perms:
@@ -138,10 +137,8 @@ cdef class ExchangeRateCalculator:
 
         cdef dict crosses = exchange_rates.get(from_currency.code)
         if not crosses:
-            raise ValueError(f"Cannot calculate exchange rate for "
-                             f"{from_currency.code}{to_currency.code} or "
-                             f"{to_currency.code}{from_currency.code} "
-                             f"(not enough data)")
+            # Not enough data
+            raise self._cannot_calculate_exception(from_currency.code, to_currency.code)
 
         cdef double xrate = crosses.get(to_currency.code, -1)
         if xrate >= 0:
@@ -173,18 +170,20 @@ cdef class ExchangeRateCalculator:
 
         crosses = exchange_rates.get(from_currency.code)
         if not crosses:
-            raise ValueError(f"Cannot calculate exchange rate for "
-                             f"{from_currency.code}{to_currency.code} or "
-                             f"{to_currency.code}{from_currency.code} "
-                             f"(not enough data)")
+            # Not enough data
+            raise self._cannot_calculate_exception(from_currency.code, to_currency.code)
 
         xrate = crosses.get(to_currency.code, -1)
         if xrate >= 0:
             return xrate
 
-        raise ValueError(f"Cannot calculate exchange rate for "
-                         f"{from_currency.code}{to_currency.code} or "
-                         f"{to_currency.code}{from_currency.code} "
+        # Not enough data
+        raise self._cannot_calculate_exception(from_currency.code, to_currency.code)
+
+    cdef inline object _cannot_calculate_exception(self, str from_code, str to_code):
+        return ValueError(f"Cannot calculate exchange rate for "
+                         f"{from_code}{to_code} or "
+                         f"{to_code}{from_code} "
                          f"(not enough data)")
 
 

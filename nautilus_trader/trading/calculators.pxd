@@ -30,6 +30,8 @@ cdef class ExchangeRateCalculator:
         dict ask_quotes
     ) except *
 
+    cdef inline object _cannot_calculate_exception(self, str from_code, str to_code)
+
 
 cdef class RolloverInterestCalculator:
     cdef ExchangeRateCalculator _exchange_calculator
