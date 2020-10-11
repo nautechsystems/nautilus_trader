@@ -22,7 +22,7 @@ cdef class Symbol(Identifier):
     cdef readonly Venue venue
 
     @staticmethod
-    cdef Symbol from_string(str value)
+    cdef Symbol from_string_c(str value)
 
 
 cdef class Venue(Identifier):
@@ -51,7 +51,7 @@ cdef class TraderId(Identifier):
     cdef readonly IdTag tag
 
     @staticmethod
-    cdef TraderId from_string(str value)
+    cdef TraderId from_string_c(str value)
 
 
 cdef class StrategyId(Identifier):
@@ -64,7 +64,7 @@ cdef class StrategyId(Identifier):
     cdef bint not_null(self) except *
 
     @staticmethod
-    cdef StrategyId from_string(str value)
+    cdef StrategyId from_string_c(str value)
 
 
 cdef class Issuer(Identifier):
@@ -79,7 +79,7 @@ cdef class AccountId(Identifier):
     cdef Venue issuer_as_venue(self)
 
     @staticmethod
-    cdef AccountId from_string(str value)
+    cdef AccountId from_string_c(str value)
 
 
 cdef class AccountNumber(Identifier):

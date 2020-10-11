@@ -102,7 +102,7 @@ class IdentifierTests(unittest.TestCase):
         symbol = Symbol("AUD/USD", Venue('FXCM'))
 
         # Act
-        result = Symbol.py_from_string(symbol.value)
+        result = Symbol.from_string(symbol.value)
 
         # Assert
         self.assertEqual(symbol, result)
@@ -118,7 +118,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(trader_id1, trader_id2)
         self.assertEqual("TESTER-000", trader_id1.value)
         self.assertEqual("TESTER", trader_id1.name)
-        self.assertEqual(trader_id1, TraderId.py_from_string("TESTER-000"))
+        self.assertEqual(trader_id1, TraderId.from_string("TESTER-000"))
 
     def test_strategy_identifier(self):
         # Arrange
@@ -131,7 +131,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(strategy_id1, strategy_id2)
         self.assertEqual("SCALPER-00", strategy_id1.value)
         self.assertEqual("SCALPER", strategy_id1.name)
-        self.assertEqual(strategy_id1, StrategyId.py_from_string('SCALPER-00'))
+        self.assertEqual(strategy_id1, StrategyId.from_string('SCALPER-00'))
 
     def test_account_identifier(self):
         # Arrange
@@ -144,4 +144,4 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(account_id1, account_id2)
         self.assertEqual("FXCM-02851908-DEMO", account_id1.value)
         self.assertEqual(Issuer("FXCM"), account_id1.issuer)
-        self.assertEqual(account_id1, AccountId.py_from_string("FXCM-02851908-DEMO"))
+        self.assertEqual(account_id1, AccountId.from_string("FXCM-02851908-DEMO"))
