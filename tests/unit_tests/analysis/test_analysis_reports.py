@@ -20,10 +20,10 @@ from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Price
@@ -41,10 +41,10 @@ class ReportProviderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=TestClock())
+            clock=TestClock(),
+        )
 
     def test_generate_orders_report(self):
         # Arrange

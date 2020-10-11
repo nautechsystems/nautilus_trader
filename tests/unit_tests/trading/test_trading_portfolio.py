@@ -23,9 +23,9 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.account import Account
@@ -45,9 +45,8 @@ class PortfolioTests(unittest.TestCase):
         uuid_factor = TestUUIDFactory()
         logger = TestLogger(self.clock)
         self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
             clock=TestClock(),
         )
 

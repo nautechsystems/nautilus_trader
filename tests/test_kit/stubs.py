@@ -18,7 +18,6 @@ from datetime import timedelta
 
 import pytz
 
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.core.uuid import uuid4
@@ -373,10 +372,8 @@ class TestStubs:
             generator.generate(TestStubs.symbol_audusd_fxcm())
 
         order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=LiveClock(),
         )
 
         order = order_factory.market(
@@ -403,9 +400,8 @@ class TestStubs:
             close_price = Price("1.0001")
 
         order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
         )
 
         order = order_factory.market(
