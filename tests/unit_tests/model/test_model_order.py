@@ -41,9 +41,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
+from nautilus_trader.model.order import Order
 from nautilus_trader.model.order import StopMarketOrder
-from nautilus_trader.model.order import flatten_side
-from nautilus_trader.model.order import opposite_side
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -67,8 +66,8 @@ class OrderTests(unittest.TestCase):
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
         # Act
-        result1 = opposite_side(OrderSide.BUY)
-        result2 = opposite_side(OrderSide.SELL)
+        result1 = Order.opposite_side(OrderSide.BUY)
+        result2 = Order.opposite_side(OrderSide.SELL)
 
         # Assert
         self.assertEqual(OrderSide.SELL, result1)
@@ -77,8 +76,8 @@ class OrderTests(unittest.TestCase):
     def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
         # Arrange
         # Act
-        result1 = flatten_side(PositionSide.LONG)
-        result2 = flatten_side(PositionSide.SHORT)
+        result1 = Order.flatten_side(PositionSide.LONG)
+        result2 = Order.flatten_side(PositionSide.SHORT)
 
         # Assert
         self.assertEqual(OrderSide.SELL, result1)

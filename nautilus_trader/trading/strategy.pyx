@@ -54,7 +54,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport flatten_side
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -1578,7 +1577,7 @@ cdef class TradingStrategy:
         # Create flattening order
         cdef MarketOrder order = self.order_factory.market(
             position.symbol,
-            flatten_side(position.side),
+            Order.flatten_side_c(position.side),
             position.quantity,
         )
 
