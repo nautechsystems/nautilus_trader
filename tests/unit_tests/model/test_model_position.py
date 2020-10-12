@@ -46,7 +46,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-BTCUSD_BINANCE = TestStubs.symbol_btcusd_binance()
+BTCUSD_BINANCE = TestStubs.symbol_btcusdt_binance()
 
 
 class PositionTests(unittest.TestCase):

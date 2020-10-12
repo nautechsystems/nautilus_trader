@@ -53,6 +53,7 @@ ZAR = Currency('ZAR', precision=2, currency_type=CurrencyType.FIAT)
 
 cdef dict _CURRENCY_TABLE = {
     'BTC': BTC,
+    'XBT': XBT,
     'ETH': ETH,
     'XRP': XRP,
     'BCH': BCH,

@@ -70,6 +70,10 @@ cdef class ExchangeRateCalculator:
         ValueError
             If price_type is UNDEFINED or LAST.
 
+        Notes
+        -----
+        If insufficient data to calculate exchange rate then will return 0.
+
         """
         Condition.not_none(bid_quotes, "bid_quotes")
         Condition.not_none(ask_quotes, "ask_quotes")
@@ -138,10 +142,10 @@ cdef class ExchangeRateCalculator:
         cdef dict crosses = exchange_rates.get(from_currency.code)
         if not crosses:
             # Not enough data
-            raise self._cannot_calculate_exception(from_currency.code, to_currency.code)
+            return 0
 
-        cdef double xrate = crosses.get(to_currency.code, -1)
-        if xrate >= 0:
+        cdef double xrate = crosses.get(to_currency.code, 0)
+        if xrate > 0:
             return xrate
 
         # Exchange rate not yet calculated
@@ -171,20 +175,9 @@ cdef class ExchangeRateCalculator:
         crosses = exchange_rates.get(from_currency.code)
         if not crosses:
             # Not enough data
-            raise self._cannot_calculate_exception(from_currency.code, to_currency.code)
+            return 0
 
-        xrate = crosses.get(to_currency.code, -1)
-        if xrate >= 0:
-            return xrate
-
-        # Not enough data
-        raise self._cannot_calculate_exception(from_currency.code, to_currency.code)
-
-    cdef inline object _cannot_calculate_exception(self, str from_code, str to_code):
-        return ValueError(f"Cannot calculate exchange rate for "
-                         f"{from_code}{to_code} or "
-                         f"{to_code}{from_code} "
-                         f"(not enough data)")
+        return crosses.get(to_currency.code, 0)
 
 
 cdef class RolloverInterestCalculator:
