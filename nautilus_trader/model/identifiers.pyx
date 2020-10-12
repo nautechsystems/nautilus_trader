@@ -74,8 +74,8 @@ cdef class Symbol(Identifier):
         """
         Condition.valid_string(value, "value")
 
-        cdef tuple partitioned = value.partition('.')
-        return Symbol(partitioned[0], Venue(partitioned[2]))
+        cdef tuple pieces = value.partition('.')
+        return Symbol(pieces[0], Venue(pieces[2]))
 
     @staticmethod
     def from_string(value: str) -> Symbol:
@@ -280,9 +280,9 @@ cdef class TraderId(Identifier):
         """
         Condition.valid_string(value, "value")
 
-        cdef tuple partitioned = value.partition('-')
+        cdef tuple pieces = value.partition('-')
 
-        return TraderId(name=partitioned[0], tag=partitioned[2])
+        return TraderId(name=pieces[0], tag=pieces[2])
 
     @staticmethod
     def from_string(value: str) -> TraderId:
@@ -414,8 +414,8 @@ cdef class StrategyId(Identifier):
         """
         Condition.valid_string(value, "value")
 
-        cdef tuple partitioned = value.partition('-')
-        return StrategyId(name=partitioned[0], tag=partitioned[2])
+        cdef tuple pieces = value.partition('-')
+        return StrategyId(name=pieces[0], tag=pieces[2])
 
     @staticmethod
     def from_string(value: str) -> StrategyId:
@@ -532,15 +532,15 @@ cdef class AccountId(Identifier):
         """
         Condition.valid_string(value, "value")
 
-        cdef list split = value.split('-', maxsplit=2)
+        cdef list pieces = value.split('-', maxsplit=2)
 
-        if len(split) < 3:
+        if len(pieces) < 3:
             raise ValueError(f"The AccountId string value was malformed, was {value}")
 
         return AccountId(
-            issuer=split[0],
-            identifier=split[1],
-            account_type=account_type_from_string(split[2]),
+            issuer=pieces[0],
+            identifier=pieces[1],
+            account_type=account_type_from_string(pieces[2]),
         )
 
     @staticmethod
@@ -591,8 +591,8 @@ cdef class BracketOrderId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     """
-    Represents a valid client order identifier. The identifier value must be unique at
-    the fund level.
+    Represents a valid client order identifier. The identifier value must be
+    unique at the fund level.
     """
 
     def __init__(self, str value):
@@ -611,6 +611,30 @@ cdef class ClientOrderId(Identifier):
 
         """
         Condition.true(value.startswith("O-"), f"value must begin with \'O-\', was {value}.")
+        super().__init__(value)
+
+
+cdef class ClientOrderLinkId(Identifier):
+    """
+    Represents a valid client order link identifier. The identifier value must
+    be unique at the fund level.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the ClientOrderId class.
+
+        Parameters
+        ----------
+        value : str
+            The client order link identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string, or does not start with 'O-'.
+
+        """
         super().__init__(value)
 
 
@@ -738,19 +762,19 @@ cdef class ExecutionId(Identifier):
         super().__init__(value)
 
 
-cdef class MatchId(Identifier):
+cdef class TradeMatchId(Identifier):
     """
-    Represents a valid trade match identifier.
+    Represents a valid and unique trade match identifier.
     """
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the MatchId class.
+        Initialize a new instance of the TradeMatchId class.
 
         Parameters
         ----------
         value : str
-            The execution identifier value.
+            The trade match identifier value.
 
         Raises
         ------

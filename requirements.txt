@@ -12,3 +12,4 @@ msgpack>=1.0.0
 matplotlib>=2.2.2
 flake8>=3.8.3
 pytest>=5.4.3
+parameterized>=0.7.4

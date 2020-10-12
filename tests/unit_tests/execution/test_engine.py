@@ -25,7 +25,6 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -54,10 +53,9 @@ class ExecutionEngineTests(unittest.TestCase):
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=self.trader_id.tag,
-            id_tag_strategy=IdTag("001"),
-            clock=self.clock,
+            clock=TestClock(),
         )
 
         self.portfolio = Portfolio(
@@ -94,7 +92,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=self.trader_id,
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger,

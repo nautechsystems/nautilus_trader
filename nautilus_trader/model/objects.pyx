@@ -183,10 +183,19 @@ cdef class Quantity(Fraction):
     """
     Represents a quantity with a non-negative value.
 
+    Capable of storing either a whole number (no decimal places) of “shares”
+    (securities denominated in whole units) or a decimal value containing
+    decimal places for non-share quantity asset classes (securities denominated
+    in fractional units).
+
     Attributes
     ----------
     precision : int
         The decimal precision of this object.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0/index.html#Qty
 
     """
 
@@ -202,7 +211,7 @@ cdef class Quantity(Fraction):
         Raises
         ------
         TypeError
-            If value is a float.
+            If value is a float (use the from_float method).
         ValueError
             If value is negative (< 0).
 
@@ -369,10 +378,18 @@ cdef class Price(Fraction):
     """
     Represents a price in a financial market.
 
+    The number of decimal places may vary. For certain asset classes prices may
+    be negative values. For example, prices for options strategies can be
+    negative under certain market conditions.
+
     Attributes
     ----------
     precision : int
         The decimal precision of the price.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/5.0/index.html#Qty
 
     """
 
@@ -383,14 +400,12 @@ cdef class Price(Fraction):
         Parameters
         ----------
         value : integer, string, decimal.Decimal or Fraction.
-            The value of the price (>= 0).
+            The value of the price.
 
         Raises
         ------
         TypeError
-            If value is a float.
-        ValueError
-            If value is negative (< 0).
+            If value is a float (use the from_float method).
 
         """
         Condition.not_none(value, "value")
@@ -400,9 +415,6 @@ cdef class Price(Fraction):
         super().__init__(value)
 
         self.precision = precision_from_string(str(value))
-
-        # Post Condition
-        Condition.true(self >= 0, f"price not positive, was {self}")
 
     def __str__(self) -> str:
         """

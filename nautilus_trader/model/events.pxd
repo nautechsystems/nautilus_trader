@@ -131,6 +131,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Symbol symbol
     cdef readonly OrderSide order_side
     cdef readonly Quantity filled_qty
+    cdef readonly Quantity cumulative_qty
     cdef readonly Quantity leaves_qty
     cdef readonly Price avg_price
     cdef readonly Money commission

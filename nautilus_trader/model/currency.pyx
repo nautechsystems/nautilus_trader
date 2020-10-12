@@ -19,6 +19,7 @@ from nautilus_trader.model.c_enums.currency_type cimport currency_type_to_string
 
 # Crypto currencies
 BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
+XBT = Currency('XBT', precision=8, currency_type=CurrencyType.CRYPTO)
 ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
 USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
 XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
@@ -52,6 +53,7 @@ ZAR = Currency('ZAR', precision=2, currency_type=CurrencyType.FIAT)
 
 cdef dict _CURRENCY_TABLE = {
     'BTC': BTC,
+    'XBT': XBT,
     'ETH': ETH,
     'XRP': XRP,
     'BCH': BCH,

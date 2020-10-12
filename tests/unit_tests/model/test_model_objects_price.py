@@ -30,12 +30,6 @@ class PriceTests(unittest.TestCase):
         # Assert
         self.assertRaises(TypeError, Price, None)
 
-    def test_initialized_with_negative_value_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(ValueError, Price, "-0.0000000000000000000000000000000000000000000000001")
-
     def test_from_float_with_negative_precision_argument_returns_zero_decimal(self):
         # Arrange
         # Act

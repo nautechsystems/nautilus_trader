@@ -40,12 +40,9 @@ cdef class Account:
 
         self._events = [event]
         self._portfolio = None
-        self._balance = None
+        self._balance = event.balance
         self._order_margin = Money(0, self.currency)
         self._position_margin = Money(0, self.currency)
-
-        # Update account
-        self.apply(event)
 
     def __eq__(self, Account other) -> bool:
         """
@@ -208,7 +205,8 @@ cdef class Account:
         Money or None
 
         """
-        Condition.not_none(self._portfolio, "self._portfolio")
+        if not self._portfolio:
+            return None
 
         return self._portfolio.unrealized_pnl(self.id.issuer_as_venue())
 
@@ -221,13 +219,17 @@ cdef class Account:
         Money or None
 
         """
-        Condition.not_none(self._portfolio, "self._portfolio")
-
-        cdef Money unrealized_pnl = self.unrealized_pnl()
-        if not unrealized_pnl:
+        if not self._portfolio:
             return None
 
-        return self._balance.add(self.unrealized_pnl())
+        if not self._balance:
+            return None
+
+        cdef Money unrealized_pnl = self.unrealized_pnl()
+        if unrealized_pnl is None:
+            return None
+
+        return Money(self._balance + unrealized_pnl, self.currency)
 
     cpdef Money margin_available(self):
         """
@@ -238,7 +240,8 @@ cdef class Account:
         Money or None
 
         """
-        Condition.not_none(self._portfolio, "self._portfolio")
+        if not self._portfolio:
+            return None
 
         cdef Money margin_balance = self.margin_balance()
         if not margin_balance:

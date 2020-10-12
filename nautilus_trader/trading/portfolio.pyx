@@ -248,14 +248,14 @@ cdef class Portfolio(PortfolioReadOnly):
         """
         Condition.not_none(event, "event")
 
-        self._log.debug(f"Updating {event.position}...")
-
         if isinstance(event, PositionOpened):
             self._handle_position_opened(event)
         elif isinstance(event, PositionModified):
             self._handle_position_modified(event)
         elif isinstance(event, PositionClosed):
             self._handle_position_closed(event)
+
+        self._log.debug(f"Updated {event.position}.")
 
         # TODO: Update position margin
 
@@ -364,14 +364,17 @@ cdef class Portfolio(PortfolioReadOnly):
             self._log.error(f"Cannot calculate unrealized PNL (no account registered for {venue}).")
             return None
 
-        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
-        cdef dict ask_quotes = self._bid_quotes.get(venue, {})
         cdef set positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            return Money(0, account.currency)
 
-        cdef QuoteTick last
+        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
+        cdef dict ask_quotes = self._ask_quotes.get(venue, {})
         cdef double pnl = 0.
         cdef double xrate = 1.
         cdef Position position
+        cdef QuoteTick last
+
         for position in positions_open:
             last = self._ticks.get(position.symbol)
             if not last:
@@ -385,8 +388,12 @@ cdef class Portfolio(PortfolioReadOnly):
                     to_currency=account.currency,
                     price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
                     bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes
+                    ask_quotes=ask_quotes,
                 )
+                if xrate == 0:
+                    self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
+                                    f"{position.base_currency}/{account.currency}).")
+                    return None
                 pnl += position.unrealized_pnl(last).as_double() * xrate
 
         return Money(pnl, account.currency)
@@ -412,10 +419,12 @@ cdef class Portfolio(PortfolioReadOnly):
             self._log.error(f"Cannot calculate open value (no account registered for {venue}).")
             return None
 
-        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
-        cdef dict ask_quotes = self._bid_quotes.get(venue, {})
         cdef set positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            return Money(0, account.currency)
 
+        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
+        cdef dict ask_quotes = self._ask_quotes.get(venue, {})
         cdef double open_value = 0.
         cdef double xrate = 1.
         cdef Position position
@@ -428,8 +437,12 @@ cdef class Portfolio(PortfolioReadOnly):
                     to_currency=account.currency,
                     price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
                     bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes
+                    ask_quotes=ask_quotes,
                 )
+                if xrate == 0:
+                    self._log.error(f"Cannot calculate open value (insufficient data for "
+                                    f"{position.base_currency}/{account.currency}).")
+                    return None
                 open_value += position.quantity.as_double() * xrate
 
         return Money(open_value, account.currency)

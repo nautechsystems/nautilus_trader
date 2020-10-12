@@ -22,8 +22,8 @@ from nautilus_trader.common.uuid cimport LiveUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -39,9 +39,8 @@ cdef class OrderFactory:
 
     def __init__(
             self,
+            TraderId trader_id not None,
             StrategyId strategy_id not None,
-            IdTag id_tag_trader not None,
-            IdTag id_tag_strategy not None,
             Clock clock=None,
             UUIDFactory uuid_factory=None,
             int initial_count=0,
@@ -51,12 +50,10 @@ cdef class OrderFactory:
 
         Parameters
         ----------
+        trader_id : TraderId
+            The trader identifier (only numerical tag sent to broker/exchange).
         strategy_id : StrategyId
-            The strategy identifier (not sent to broker/exchange).
-        id_tag_trader : IdTag
-            The order identifier tag for the trader.
-        id_tag_strategy : IdTag
-            The order identifier tag for the strategy.
+            The strategy identifier (only numerical tag sent to broker/exchange).
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory
@@ -76,12 +73,15 @@ cdef class OrderFactory:
             uuid_factory = LiveUUIDFactory()
         Condition.not_negative_int(initial_count, "initial_count")
 
-        self.strategy_id = strategy_id
         self._clock = clock
         self._uuid_factory = uuid_factory
+
+        self.trader_id = trader_id
+        self.strategy_id = strategy_id
+
         self._id_generator = OrderIdGenerator(
-            id_tag_trader=id_tag_trader,
-            id_tag_strategy=id_tag_strategy,
+            id_tag_trader=trader_id.tag,
+            id_tag_strategy=strategy_id.tag,
             clock=clock,
             initial_count=initial_count,
         )

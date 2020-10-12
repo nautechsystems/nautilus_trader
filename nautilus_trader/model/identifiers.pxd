@@ -94,6 +94,10 @@ cdef class ClientOrderId(Identifier):
     pass
 
 
+cdef class ClientOrderLinkId(Identifier):
+    pass
+
+
 cdef class OrderId(Identifier):
     pass
 
@@ -110,7 +114,7 @@ cdef class ExecutionId(Identifier):
     pass
 
 
-cdef class MatchId(Identifier):
+cdef class TradeMatchId(Identifier):
     pass
 
 

@@ -17,7 +17,6 @@ import unittest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -32,18 +31,17 @@ from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
+from nautilus_trader.model.order import Order
 from nautilus_trader.model.order import StopMarketOrder
-from nautilus_trader.model.order import flatten_side
-from nautilus_trader.model.order import opposite_side
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -57,18 +55,16 @@ class OrderTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
             clock=TestClock(),
-            uuid_factory=TestUUIDFactory(),
         )
 
     def test_get_opposite_side_returns_expected_sides(self):
         # Arrange
         # Act
-        result1 = opposite_side(OrderSide.BUY)
-        result2 = opposite_side(OrderSide.SELL)
+        result1 = Order.opposite_side(OrderSide.BUY)
+        result2 = Order.opposite_side(OrderSide.SELL)
 
         # Assert
         self.assertEqual(OrderSide.SELL, result1)
@@ -77,8 +73,8 @@ class OrderTests(unittest.TestCase):
     def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
         # Arrange
         # Act
-        result1 = flatten_side(PositionSide.LONG)
-        result2 = flatten_side(PositionSide.SHORT)
+        result1 = Order.flatten_side(PositionSide.LONG)
+        result2 = Order.flatten_side(PositionSide.SHORT)
 
         # Assert
         self.assertEqual(OrderSide.SELL, result1)
@@ -153,7 +149,7 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), order2.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), order2.cl_ord_id)
 
     def test_limit_order_can_create_expected_decimal_price(self):
         # Arrange
@@ -311,15 +307,15 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertFalse(bracket_order.has_take_profit)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.cl_ord_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(Quantity(100000), bracket_order.entry.quantity)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
         self.assertEqual(Price("0.99990"), bracket_order.stop_loss.price)
         self.assertEqual(TimeInForce.GTC, bracket_order.stop_loss.time_in_force)
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
-        self.assertEqual(BracketOrderId("BO-19700101-000000-001-001-1"), bracket_order.id)
+        self.assertEqual(BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id)
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
     def test_can_initialize_bracket_order_stop_with_take_profit(self):
@@ -342,9 +338,9 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
         self.assertTrue(bracket_order.has_take_profit)
         self.assertEqual(AUDUSD_FXCM, bracket_order.take_profit.symbol)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), bracket_order.entry.cl_ord_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-2"), bracket_order.stop_loss.cl_ord_id)
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-3"), bracket_order.take_profit.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-3"), bracket_order.take_profit.cl_ord_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
         self.assertEqual(OrderSide.SELL, bracket_order.take_profit.side)
         self.assertEqual(Quantity(100000), bracket_order.stop_loss.quantity)
@@ -356,28 +352,28 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, bracket_order.entry.expire_time)
         self.assertEqual(None, bracket_order.stop_loss.expire_time)
         self.assertEqual(None, bracket_order.take_profit.expire_time)
-        self.assertEqual(BracketOrderId("BO-19700101-000000-001-001-1"), bracket_order.id)
+        self.assertEqual(BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id)
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
-    # def test_bracket_order_str_and_repr(self):
-    #     # Arrange
-    #     # Act
-    #     entry_order = self.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #     )
-    #
-    #     bracket_order = self.order_factory.bracket(
-    #         entry_order,
-    #         Price("0.99990"),
-    #         Price("1.00010"),
-    #     )
+    def test_bracket_order_str_and_repr(self):
+        # Arrange
+        # Act
+        entry_order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
 
-        # Assert # TODO: Fix string formatting
-        # self.assertEqual("BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        # self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-001-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
-        # self.assertTrue(repr(bracket_order).endswith(">"))
+        bracket_order = self.order_factory.bracket(
+            entry_order,
+            Price("0.99990"),
+            Price("1.00010"),
+        )
+
+        # Assert
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
+        self.assertTrue(repr(bracket_order).endswith(">"))
 
     def test_can_apply_order_submitted_event_to_order(self):
         # Arrange
@@ -599,6 +595,7 @@ class OrderTests(unittest.TestCase):
             order.symbol,
             order.side,
             order.quantity,
+            order.quantity,
             Quantity(),
             Price("1.00001"),
             Money(0, USD),
@@ -647,6 +644,7 @@ class OrderTests(unittest.TestCase):
             StrategyId("S", "NULL"),
             order.symbol,
             order.side,
+            Quantity(50000),
             Quantity(50000),
             Quantity(50000),
             Price("0.999999"),
