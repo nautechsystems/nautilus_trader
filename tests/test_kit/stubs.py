@@ -50,6 +50,7 @@ from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -188,7 +189,7 @@ class TestStubs:
             Price("1.00001"),
             Quantity(100000),
             Maker.BUYER,
-            ExecutionId("123456"),
+            TradeMatchId("123456"),
             UNIX_EPOCH,
         )
 

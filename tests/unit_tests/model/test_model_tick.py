@@ -17,7 +17,7 @@ import unittest
 
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
@@ -96,7 +96,7 @@ class TickTests(unittest.TestCase):
             Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
-            ExecutionId("123456789"),
+            TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
 
@@ -133,7 +133,7 @@ class TickTests(unittest.TestCase):
             Price("1.00000"),
             Quantity(50000),
             Maker.BUYER,
-            ExecutionId("123456789"),
+            TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
 
