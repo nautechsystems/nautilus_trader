@@ -24,8 +24,8 @@ __author__ = "Nautech Systems"
 
 # Semantic Versioning (https://semver.org/)
 _MAJOR_VERSION = 1
-_MINOR_VERSION = 77
-_PATCH_VERSION = 10
+_MINOR_VERSION = 78
+_PATCH_VERSION = 0
 _PRE_RELEASE = ''
 
 __version__ = '.'.join([

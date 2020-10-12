@@ -26,8 +26,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Instrument:
     """
-    The base class for all instruments. Represents a tradeable financial market
-    instrument.
+    Represents a tradeable financial market instrument.
     """
 
     def __init__(
@@ -39,12 +38,20 @@ cdef class Instrument:
             Currency settlement_currency not None,
             int price_precision,
             int size_precision,
+            Decimal multiplier not None,
             Decimal tick_size not None,
             Quantity lot_size not None,
-            object min_trade_size not None,
-            object max_trade_size not None,
-            Decimal rollover_interest_buy not None,
-            Decimal rollover_interest_sell not None,
+            Quantity min_quantity,  # Can be None
+            Quantity max_quantity,  # Can be None
+            Money min_notional,     # Can be None
+            Money max_notional,     # Can be None
+            Decimal margin_initial not None,
+            Decimal margin_maintenance not None,
+            Decimal maker_fee not None,
+            Decimal taker_fee not None,
+            Decimal settlement_fee not None,
+            Decimal funding_long not None,
+            Decimal funding_short not None,
             datetime timestamp not None,
     ):
         """
@@ -68,28 +75,58 @@ cdef class Instrument:
             The trading size decimal precision.
         tick_size : Decimal
             The tick size.
+        multiplier : Decimal
+            The contract value multiplier.
         lot_size : Quantity
             The rounded lot unit size.
-        min_trade_size : Quantity or Money
-            The minimum possible trade size.
-        max_trade_size : Quantity or Money
-            The maximum possible trade size.
-        rollover_interest_buy : Decimal
-            The rollover interest for long positions.
-        rollover_interest_sell : Decimal
-            The rollover interest for short positions.
+        min_quantity : Quantity
+            The minimum possible order quantity.
+        max_quantity : Quantity or Money
+            The maximum possible order quantity.
+        min_notional : Money
+            The minimum possible order notional value.
+        max_notional : Money
+            The maximum possible order notional value.
+        margin_initial : Decimal
+            The initial margin requirement in percentage of order value.
+        margin_maintenance : Decimal
+            The maintenance margin in percentage of position value.
+        maker_fee : Decimal
+            The fee rate for liquidity makers as a percentage of order value.
+        taker_fee : Decimal
+            The fee rate for liquidity takers as a percentage of order value.
+        settlement_fee : Decimal
+            The fee rate for settlements as a percentage of order value.
+        funding_long : Decimal
+            The funding rate for long positions.
+        funding_short : Decimal
+            The funding rate for short positions.
         timestamp : datetime
             The timestamp the instrument was created/updated at.
+
+        Raises
+        ------
+        ValueError
+            If asset type is UNDEFINED.
+        ValueError
+            If price precision is negative (< 0).
+        ValueError
+            If size precision is negative (< 0).
+        ValueError
+            If tick size is not positive (> 0).
+        ValueError
+            If lot size is not positive (> 0).
 
         """
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
+        Condition.positive(tick_size, "tick_size")
+        Condition.positive(lot_size, "lot_size")
 
         # Determine standard/inverse/quanto
         cdef bint is_quanto = base_currency != quote_currency and base_currency != settlement_currency
         cdef bint is_inverse = not is_quanto and quote_currency == settlement_currency
-        cdef bint is_standard = not is_quanto and not is_inverse
 
         self.id = InstrumentId(symbol.value)
         self.symbol = symbol
@@ -99,16 +136,23 @@ cdef class Instrument:
         self.settlement_currency = settlement_currency
         self.is_quanto = is_quanto
         self.is_inverse = is_inverse
-        self.is_standard = is_standard
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.cost_precision = self.settlement_currency.precision
         self.tick_size = tick_size
+        self.multiplier = multiplier
         self.lot_size = lot_size
-        self.min_trade_size = min_trade_size
-        self.max_trade_size = max_trade_size
-        self.rollover_interest_buy = rollover_interest_buy
-        self.rollover_interest_sell = rollover_interest_sell
+        self.min_quantity = min_quantity
+        self.max_quantity = max_quantity
+        self.min_notional = min_notional
+        self.max_notional = max_notional
+        self.margin_initial = margin_initial
+        self.margin_maintenance = margin_maintenance
+        self.maker_fee = maker_fee
+        self.taker_fee = taker_fee
+        self.settlement_fee = settlement_fee
+        self.funding_long = funding_long
+        self.funding_short = funding_short
         self.timestamp = timestamp
 
     def __eq__(self, Instrument other) -> bool:

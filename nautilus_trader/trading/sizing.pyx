@@ -200,6 +200,6 @@ cdef class FixedRiskSizer(PositionSizer):
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
         # Limit size on max trade size
-        cdef double final_size = min(position_size_batched, self.instrument.max_trade_size.as_double())
+        cdef double final_size = min(position_size_batched, self.instrument.max_quantity.as_double())
 
         return Quantity.from_float_c(final_size, precision=self.instrument.size_precision)
