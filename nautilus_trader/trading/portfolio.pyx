@@ -16,6 +16,8 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport PositionClosed
@@ -145,15 +147,30 @@ cdef class Portfolio(PortfolioReadOnly):
 
         self._ticks[tick.symbol] = tick
 
-        cdef dict bid_quotes = self._bid_quotes.get(venue)
-        cdef dict ask_quotes = self._ask_quotes.get(venue)
-        if not bid_quotes:
-            self._bid_quotes[venue] = {tick.symbol.code: tick.bid.as_double()}
-            self._ask_quotes[venue] = {tick.symbol.code: tick.ask.as_double()}
-            return
+        cdef Instrument instrument = self._instruments.get(tick.symbol)
+        if not instrument:
+            self._log.error(f"No instrument for received tick symbol {tick.symbol}.")
+            return  # Cannot add quotes
 
-        bid_quotes[tick.symbol.code] = tick.bid.as_double()
-        ask_quotes[tick.symbol.code] = tick.ask.as_double()
+        cdef dict bid_quotes
+        cdef dict ask_quotes
+        if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
+            bid_quotes = self._bid_quotes.get(venue)
+            ask_quotes = self._ask_quotes.get(venue)
+            if not bid_quotes:
+                self._bid_quotes[venue] = {instrument.symbol_base_quote: tick.bid.as_double()}
+                self._ask_quotes[venue] = {instrument.symbol_base_quote: tick.ask.as_double()}
+                return  # Quotes updated
+
+            bid_quotes[instrument.symbol_base_quote] = tick.bid.as_double()
+            ask_quotes[instrument.symbol_base_quote] = tick.ask.as_double()
+
+    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
+        return instrument.asset_class == AssetClass.CRYPTO \
+               and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
+
+    cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
+        return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT
 
     cpdef void update_orders_working(self, set orders) except *:
         """
@@ -374,12 +391,19 @@ cdef class Portfolio(PortfolioReadOnly):
         cdef double xrate = 1.
         cdef Position position
         cdef QuoteTick last
+        cdef Instrument instrument
 
         for position in positions_open:
             last = self._ticks.get(position.symbol)
+            instrument = self._instruments.get(position.symbol)
             if not last:
-                self._log.error(f"Cannot calculate unrealized PNL (no quotes for {position.symbol}).")
-                return None
+                self._log.error(f"Cannot calculate unrealized PNL "
+                                f"(no quotes for {position.symbol}).")
+                return None  # Cannot calculate
+            if not instrument:
+                self._log.error(f"Cannot calculate unrealized PNL "
+                                f"(no instrument for {position.symbol}).")
+                return None  # Cannot calculate
             if position.base_currency == account.currency:
                 pnl += position.unrealized_pnl(last).as_double()
             else:
@@ -393,8 +417,8 @@ cdef class Portfolio(PortfolioReadOnly):
                 if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
                                     f"{position.base_currency}/{account.currency}).")
-                    return None
-                pnl += position.unrealized_pnl(last).as_double() * xrate
+                    return None  # Cannot calculate
+                pnl += position.unrealized_pnl(last) * instrument.multiplier * xrate
 
         return Money(pnl, account.currency)
 
@@ -428,7 +452,14 @@ cdef class Portfolio(PortfolioReadOnly):
         cdef double open_value = 0.
         cdef double xrate = 1.
         cdef Position position
+        cdef Instrument instrument
+
         for position in positions_open:
+            instrument = self._instruments.get(position.symbol)
+            if not instrument:
+                self._log.error(f"Cannot calculate open value "
+                                f"(no instrument for {position.symbol}).")
+                return None  # Cannot calculate
             if position.base_currency == account.currency:
                 open_value += position.quantity.as_double()
             else:
@@ -442,8 +473,8 @@ cdef class Portfolio(PortfolioReadOnly):
                 if xrate == 0:
                     self._log.error(f"Cannot calculate open value (insufficient data for "
                                     f"{position.base_currency}/{account.currency}).")
-                    return None
-                open_value += position.quantity.as_double() * xrate
+                    return None  # Cannot calculate
+                open_value += position.quantity * instrument.multiplier * xrate
 
         return Money(open_value, account.currency)
 
