@@ -591,8 +591,8 @@ cdef class BracketOrderId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     """
-    Represents a valid client order identifier. The identifier value must be unique at
-    the fund level.
+    Represents a valid client order identifier. The identifier value must be
+    unique at the fund level.
     """
 
     def __init__(self, str value):
@@ -611,6 +611,30 @@ cdef class ClientOrderId(Identifier):
 
         """
         Condition.true(value.startswith("O-"), f"value must begin with \'O-\', was {value}.")
+        super().__init__(value)
+
+
+cdef class ClientOrderLinkId(Identifier):
+    """
+    Represents a valid client order link identifier. The identifier value must
+    be unique at the fund level.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the ClientOrderId class.
+
+        Parameters
+        ----------
+        value : str
+            The client order link identifier value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string, or does not start with 'O-'.
+
+        """
         super().__init__(value)
 
 

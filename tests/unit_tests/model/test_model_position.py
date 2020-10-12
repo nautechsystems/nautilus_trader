@@ -279,6 +279,7 @@ class PositionTests(unittest.TestCase):
             order.symbol,
             OrderSide.SELL,
             order.quantity,
+            order.quantity,
             Quantity(),
             Price("1.00001"),
             Money(0, USD),

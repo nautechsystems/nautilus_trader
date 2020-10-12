@@ -602,6 +602,7 @@ cdef class ExecutionEngine:
             fill.symbol,
             fill.order_side,
             position.quantity,  # Fill original position quantity remaining
+            position.quantity,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
             Money(fill.commission.as_double() * fill_percent1, commission_currency),
@@ -637,6 +638,7 @@ cdef class ExecutionEngine:
             fill.symbol,
             fill.order_side,
             difference,  # Fill difference from original as above
+            difference,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
             Money(fill.commission.as_double() * fill_percent2, commission_currency),

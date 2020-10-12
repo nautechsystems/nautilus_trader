@@ -910,6 +910,7 @@ cdef class SimulatedMarket:
             order.symbol,
             order.side,
             order.quantity,
+            order.quantity,
             Quantity(),  # Not modeling partial fills just yet
             fill_price,
             commission,
