@@ -15,22 +15,24 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Instrument:
-    cdef readonly InstrumentId id
     cdef readonly Symbol symbol
+    cdef readonly AssetClass asset_class
     cdef readonly AssetType asset_type
     cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly Currency settlement_currency
+    cdef readonly str symbol_base_quote
     cdef readonly bint is_quanto
     cdef readonly bint is_inverse
     cdef readonly int price_precision
@@ -38,16 +40,19 @@ cdef class Instrument:
     cdef readonly int cost_precision
     cdef readonly Decimal tick_size
     cdef readonly Decimal multiplier
+    cdef readonly Decimal leverage
     cdef readonly Quantity lot_size
-    cdef readonly Quantity min_quantity
     cdef readonly Quantity max_quantity
-    cdef readonly Money min_notional
+    cdef readonly Quantity min_quantity
     cdef readonly Money max_notional
+    cdef readonly Money min_notional
+    cdef readonly Price max_price
+    cdef readonly Price min_price
     cdef readonly Decimal margin_initial
     cdef readonly Decimal margin_maintenance
     cdef readonly Decimal maker_fee
     cdef readonly Decimal taker_fee
     cdef readonly Decimal settlement_fee
-    cdef readonly Decimal funding_long
-    cdef readonly Decimal funding_short
+    cdef readonly Decimal funding_rate_long
+    cdef readonly Decimal funding_rate_short
     cdef readonly datetime timestamp

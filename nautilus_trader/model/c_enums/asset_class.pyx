@@ -13,46 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-
-
-# Crypto currencies
-cdef Currency BTC
-cdef Currency ETH
-cdef Currency USDT
-cdef Currency XRP
-cdef Currency BCH
-cdef Currency BNB
-cdef Currency DOT
-cdef Currency LINK
-cdef Currency LTC
-
-# Fiat currencies
-cdef Currency AUD
-cdef Currency CAD
-cdef Currency CHF
-cdef Currency CNY
-cdef Currency CNH
-cdef Currency CZK
-cdef Currency EUR
-cdef Currency GBP
-cdef Currency HKD
-cdef Currency JPY
-cdef Currency MXN
-cdef Currency NOK
-cdef Currency NZD
-cdef Currency RUB
-cdef Currency SEK
-cdef Currency TRY
-cdef Currency SGD
-cdef Currency USD
-cdef Currency ZAR
-
-
-cdef class Currency:
-    cdef readonly str code
-    cdef readonly int precision
-    cdef readonly CurrencyType currency_type
-
-    @staticmethod
-    cdef from_string_c(str code)
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass

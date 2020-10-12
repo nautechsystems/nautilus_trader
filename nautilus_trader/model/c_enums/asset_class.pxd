@@ -14,45 +14,40 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum AssetType:
+cpdef enum AssetClass:
     UNDEFINED = 0,  # Invalid value
-    SPOT = 1,
-    SWAP = 2,
-    FUTURE = 3,
-    FORWARD = 4,
-    CFD = 5,
-    OPTION = 6,
+    CRYPTO = 1,
+    FX = 2,
+    EQUITY = 3,
+    COMMODITY = 4,
+    BOND = 5
 
 
-cdef inline str asset_type_to_string(int value):
+cdef inline str asset_class_to_string(int value):
     if value == 1:
-        return 'SPOT'
+        return 'CRYPTO'
     elif value == 2:
-        return 'SWAP'
+        return 'FX'
     elif value == 3:
-        return 'FUTURE'
+        return 'EQUITY'
     elif value == 4:
-        return 'FORWARD'
+        return 'COMMODITY'
     elif value == 5:
-        return 'CFD'
-    elif value == 6:
-        return 'OPTION'
+        return 'BOND'
     else:
         return 'UNDEFINED'
 
 
-cdef inline AssetType asset_type_from_string(str value):
-    if value == 'SPOT':
-        return AssetType.SPOT
-    elif value == 'SWAP':
-        return AssetType.SWAP
-    elif value == 'FUTURE':
-        return AssetType.FUTURE
-    elif value == 'FORWARD':
-        return AssetType.FORWARD
-    elif value == 'CFD':
-        return AssetType.CFD
-    elif value == 'OPTION':
-        return AssetType.OPTION
+cdef inline AssetClass asset_class_from_string(str value):
+    if value == 'CRYPTO':
+        return AssetClass.CRYPTO
+    elif value == 'FX':
+        return AssetClass.FX
+    elif value == 'EQUITY':
+        return AssetClass.EQUITY
+    elif value == 'COMMODITY':
+        return AssetClass.COMMODITY
+    elif value == 'BOND':
+        return AssetClass.BOND
     else:
-        return AssetType.UNDEFINED
+        return AssetClass.UNDEFINED

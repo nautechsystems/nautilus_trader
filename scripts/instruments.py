@@ -6,5 +6,8 @@ exchange = 'bitmex'
 ccxt = getattr(ccxt, exchange.lower())()
 ccxt.load_markets()
 
-precision = [{k: m['precision']} for k, m in ccxt.markets.items()]
-print(json.dumps(precision, sort_keys=True, indent=4))
+# precisions = [{k: m['precision']} for k, m in ccxt.markets.items()]
+# print(json.dumps(precisions, sort_keys=True, indent=4))
+
+instruments = {k: m for k, m in ccxt.markets.items()}
+print(json.dumps(instruments['BTC/USD'], sort_keys=True, indent=4))

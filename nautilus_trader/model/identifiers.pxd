@@ -82,10 +82,6 @@ cdef class AccountId(Identifier):
     cdef AccountId from_string_c(str value)
 
 
-cdef class AccountNumber(Identifier):
-    pass
-
-
 cdef class BracketOrderId(Identifier):
     pass
 
@@ -115,8 +111,4 @@ cdef class ExecutionId(Identifier):
 
 
 cdef class TradeMatchId(Identifier):
-    pass
-
-
-cdef class InstrumentId(Identifier):
     pass
