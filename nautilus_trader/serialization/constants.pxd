@@ -53,6 +53,7 @@ cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT
 cdef str FILLED_QUANTITY
+cdef str CUMULATIVE_QUANTITY
 cdef str LEAVES_QUANTITY
 cdef str QUANTITY
 cdef str AVERAGE_PRICE
