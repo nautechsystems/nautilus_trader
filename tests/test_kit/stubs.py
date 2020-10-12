@@ -67,8 +67,8 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 class TestStubs:
 
     @staticmethod
-    def symbol_xbtusd_bitmex() -> Symbol:
-        return Symbol("XBT/USD", Venue('BITMEX'))
+    def symbol_btcusd_bitmex() -> Symbol:
+        return Symbol("BTC/USD", Venue('BITMEX'))
 
     @staticmethod
     def symbol_ethusd_bitmex() -> Symbol:

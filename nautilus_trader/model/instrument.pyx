@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
@@ -32,6 +31,7 @@ cdef class Instrument:
     def __init__(
             self,
             Symbol symbol not None,
+            AssetClass asset_class,
             AssetType asset_type,
             Currency base_currency not None,
             Currency quote_currency not None,
@@ -40,18 +40,21 @@ cdef class Instrument:
             int size_precision,
             Decimal multiplier not None,
             Decimal tick_size not None,
+            Decimal leverage not None,
             Quantity lot_size not None,
-            Quantity min_quantity,  # Can be None
             Quantity max_quantity,  # Can be None
-            Money min_notional,     # Can be None
+            Quantity min_quantity,  # Can be None
             Money max_notional,     # Can be None
+            Money min_notional,     # Can be None
+            Price max_price,        # Can be None
+            Price min_price,        # Can be None
             Decimal margin_initial not None,
             Decimal margin_maintenance not None,
             Decimal maker_fee not None,
             Decimal taker_fee not None,
             Decimal settlement_fee not None,
-            Decimal funding_long not None,
-            Decimal funding_short not None,
+            Decimal funding_rate_long not None,
+            Decimal funding_rate_short not None,
             datetime timestamp not None,
     ):
         """
@@ -61,6 +64,8 @@ cdef class Instrument:
         ----------
         symbol : Symbol
             The symbol.
+        asset_type : AssetClass
+            The asset class.
         asset_type : AssetType
             The asset type.
         base_currency : Currency
@@ -75,18 +80,24 @@ cdef class Instrument:
             The trading size decimal precision.
         tick_size : Decimal
             The tick size.
+        leverage : Decimal
+            The current leverage for the instrument.
         multiplier : Decimal
             The contract value multiplier.
         lot_size : Quantity
             The rounded lot unit size.
+        max_quantity : Quantity
+            The maximum possible order quantity.
         min_quantity : Quantity
             The minimum possible order quantity.
-        max_quantity : Quantity or Money
-            The maximum possible order quantity.
-        min_notional : Money
-            The minimum possible order notional value.
         max_notional : Money
             The maximum possible order notional value.
+        min_notional : Money
+            The minimum possible order notional value.
+        max_price : Price
+            The maximum possible printed price.
+        min_price : Price
+            The minimum possible printed price.
         margin_initial : Decimal
             The initial margin requirement in percentage of order value.
         margin_maintenance : Decimal
@@ -97,9 +108,9 @@ cdef class Instrument:
             The fee rate for liquidity takers as a percentage of order value.
         settlement_fee : Decimal
             The fee rate for settlements as a percentage of order value.
-        funding_long : Decimal
+        funding_rate_long : Decimal
             The funding rate for long positions.
-        funding_short : Decimal
+        funding_rate_short : Decimal
             The funding rate for short positions.
         timestamp : datetime
             The timestamp the instrument was created/updated at.
@@ -116,6 +127,8 @@ cdef class Instrument:
             If tick size is not positive (> 0).
         ValueError
             If lot size is not positive (> 0).
+        ValueError
+            If leverage is not positive (> 0).
 
         """
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
@@ -123,17 +136,19 @@ cdef class Instrument:
         Condition.not_negative_int(size_precision, 'volume_precision')
         Condition.positive(tick_size, "tick_size")
         Condition.positive(lot_size, "lot_size")
+        Condition.positive(leverage, "leverage")
 
         # Determine standard/inverse/quanto
         cdef bint is_quanto = base_currency != quote_currency and base_currency != settlement_currency
         cdef bint is_inverse = not is_quanto and quote_currency == settlement_currency
 
-        self.id = InstrumentId(symbol.value)
         self.symbol = symbol
+        self.asset_class = asset_class
         self.asset_type = asset_type
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.settlement_currency = settlement_currency
+        self.symbol_base_quote = f"{base_currency}/{quote_currency}"
         self.is_quanto = is_quanto
         self.is_inverse = is_inverse
         self.price_precision = price_precision
@@ -141,18 +156,21 @@ cdef class Instrument:
         self.cost_precision = self.settlement_currency.precision
         self.tick_size = tick_size
         self.multiplier = multiplier
+        self.leverage = leverage
         self.lot_size = lot_size
-        self.min_quantity = min_quantity
         self.max_quantity = max_quantity
-        self.min_notional = min_notional
+        self.min_quantity = min_quantity
         self.max_notional = max_notional
+        self.min_notional = min_notional
+        self.max_price = max_price
+        self.min_price = min_price
         self.margin_initial = margin_initial
         self.margin_maintenance = margin_maintenance
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
         self.settlement_fee = settlement_fee
-        self.funding_long = funding_long
-        self.funding_short = funding_short
+        self.funding_rate_long = funding_rate_long
+        self.funding_rate_short = funding_rate_short
         self.timestamp = timestamp
 
     def __eq__(self, Instrument other) -> bool:
@@ -169,7 +187,7 @@ cdef class Instrument:
         bool
 
         """
-        return self.id == other.id
+        return self.symbol == other.symbol
 
     def __ne__(self, Instrument other) -> bool:
         """
@@ -196,7 +214,7 @@ cdef class Instrument:
         int
 
         """
-        return hash(self.id.value)
+        return hash(self.symbol.value)
 
     def __str__(self) -> str:
         """
@@ -207,7 +225,7 @@ cdef class Instrument:
         str
 
         """
-        return f"{self.__class__.__name__}({self.symbol})"
+        return f"{self.__class__.__name__}({self.symbol.value})"
 
     def __repr__(self) -> str:
         """
