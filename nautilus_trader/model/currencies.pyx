@@ -17,6 +17,7 @@ from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 
 BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
+XBT = Currency('XBT', precision=8, currency_type=CurrencyType.CRYPTO)
 ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
 XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
 USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)

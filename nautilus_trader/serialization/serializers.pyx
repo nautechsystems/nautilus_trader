@@ -192,7 +192,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         super().__init__()
 
-        self.symbol_cache = ObjectCache(Symbol, Symbol.from_string)
+        self.symbol_cache = ObjectCache(Symbol, Symbol.from_string_c)
 
     cpdef bytes serialize(self, Order order):  # Can be None
         """
@@ -260,7 +260,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID].decode(UTF8))
-        cdef StrategyId strategy_id = StrategyId.from_string(unpacked[STRATEGY_ID].decode(UTF8))
+        cdef StrategyId strategy_id = StrategyId.from_string_c(unpacked[STRATEGY_ID].decode(UTF8))
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
         cdef OrderSide order_side = order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
         cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
@@ -591,6 +591,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[FILLED_QUANTITY] = event.filled_qty.to_string()
+            package[CUMULATIVE_QUANTITY] = event.cumulative_qty.to_string()
             package[LEAVES_QUANTITY] = event.leaves_qty.to_string()
             package[AVERAGE_PRICE] = event.avg_price.to_string()
             package[COMMISSION] = event.commission.to_string()
@@ -707,7 +708,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                Symbol.from_string(unpacked[SYMBOL].decode(UTF8)),
+                Symbol.from_string_c(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
                 Quantity(unpacked[QUANTITY].decode(UTF8)),
@@ -769,6 +770,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
+                Quantity(unpacked[CUMULATIVE_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Money(unpacked[COMMISSION].decode(UTF8), commission_currency),

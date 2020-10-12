@@ -49,10 +49,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cpdef OrderSide opposite_side(OrderSide side)
-cpdef OrderSide flatten_side(PositionSide side)
-
-
 cdef class Order:
     cdef list _execution_ids
     cdef list _events
@@ -76,6 +72,12 @@ cdef class Order:
     cdef readonly Price avg_price
     cdef readonly Decimal slippage
     cdef readonly UUID init_id
+
+    @staticmethod
+    cdef OrderSide opposite_side_c(OrderSide side)
+
+    @staticmethod
+    cdef OrderSide flatten_side_c(PositionSide side)
 
     cpdef OrderState state(self)
     cpdef Event last_event(self)

@@ -18,7 +18,6 @@ from datetime import timedelta
 
 import pytz
 
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.core.uuid import uuid4
@@ -47,11 +46,11 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import IdTag
-from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -76,8 +75,8 @@ class TestStubs:
         return Symbol("ETH/USD", Venue('BITMEX'))
 
     @staticmethod
-    def symbol_btcusd_binance() -> Symbol:
-        return Symbol("BTC/USD", Venue('BINANCE'))
+    def symbol_btcusdt_binance() -> Symbol:
+        return Symbol("BTC/USDT", Venue('BINANCE'))
 
     @staticmethod
     def symbol_ethusdt_binance() -> Symbol:
@@ -190,7 +189,7 @@ class TestStubs:
             Price("1.00001"),
             Quantity(100000),
             Maker.BUYER,
-            MatchId("123456"),
+            TradeMatchId("123456"),
             UNIX_EPOCH,
         )
 
@@ -282,6 +281,7 @@ class TestStubs:
             order.symbol,
             order.side,
             filled_qty,
+            Quantity(order.quantity - leaves_qty),
             leaves_qty,
             order.price if fill_price is None else fill_price,
             Money(commission, base_currency),
@@ -374,10 +374,8 @@ class TestStubs:
             generator.generate(TestStubs.symbol_audusd_fxcm())
 
         order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=LiveClock(),
         )
 
         order = order_factory.market(
@@ -404,9 +402,8 @@ class TestStubs:
             close_price = Price("1.0001")
 
         order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
         )
 
         order = order_factory.market(
@@ -424,6 +421,7 @@ class TestStubs:
             StrategyId("S", "1"),
             order.symbol,
             order.side,
+            order.quantity,
             order.quantity,
             Quantity(),
             close_price,
@@ -445,6 +443,7 @@ class TestStubs:
             StrategyId("S", "1"),
             order.symbol,
             OrderSide.BUY,
+            order.quantity,
             order.quantity,
             Quantity(),
             close_price,

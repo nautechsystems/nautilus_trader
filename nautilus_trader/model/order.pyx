@@ -92,50 +92,6 @@ cdef dict _ORDER_STATE_TABLE = {
 }
 
 
-cpdef inline OrderSide opposite_side(OrderSide side):
-    """
-    Return the opposite order side from the given side.
-
-    Parameters
-    ----------
-    side : OrderSide
-        The original order side.
-
-    Returns
-    -------
-    OrderSide
-
-    """
-    Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
-
-    return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
-
-
-cpdef inline OrderSide flatten_side(PositionSide side):
-    """
-    Return the order side needed to flatten a position from the given side.
-
-    Parameters
-    ----------
-    side : PositionSide
-        The position side to flatten.
-
-    Returns
-    -------
-    OrderSide
-
-    Raises
-    ------
-    ValueError
-        If side is UNDEFINED or FLAT.
-
-    """
-    Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
-    Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
-
-    return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
-
-
 cdef class Order:
     """
     The base class for all orders.
@@ -179,6 +135,162 @@ cdef class Order:
         self.init_id = event.id
 
         self._events.append(event)
+
+    def __eq__(self, Order other) -> bool:
+        """
+        Return a value indicating whether this object is equal to (==) the given
+        object.
+
+        Parameters
+        ----------
+        other : Order
+            The other order to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.cl_ord_id == other.cl_ord_id
+
+    def __ne__(self, Order other) -> bool:
+        """
+        Return a value indicating whether this object is not equal to (!=) the
+        given object.
+
+        Parameters
+        ----------
+        other : Order
+            The other order to equate.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.cl_ord_id != other.cl_ord_id
+
+    def __hash__(self) -> int:
+        """
+        Return the hash code of this object.
+
+        Returns
+        -------
+        int
+
+        """
+        return hash(self.cl_ord_id.value)
+
+    def __str__(self) -> str:
+        """
+        Return the string representation of this object.
+
+        Returns
+        -------
+        str
+
+        """
+        cdef str id_string = f"id={self.id.value}, " if self.id is not None else ""
+        return (f"{self.__class__.__name__}("
+                f"cl_ord_id={self.cl_ord_id.value}, "
+                f"{id_string}"
+                f"state={self._fsm.state_as_string()}, "
+                f"{self.status_string()})")
+
+    def __repr__(self) -> str:
+        """
+        Return the string representation of this object which includes the objects
+        location in memory.
+
+        Returns
+        -------
+        str
+
+        """
+        return f"<{str(self)} object at {id(self)}>"
+
+    @staticmethod
+    cdef OrderSide opposite_side_c(OrderSide side):
+        """
+        Return the opposite order side from the given side.
+
+        Parameters
+        ----------
+        side : OrderSide
+            The original order side.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
+
+        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
+
+    @staticmethod
+    def opposite_side(OrderSide side) -> OrderSide:
+        """
+        Return the opposite order side from the given side.
+
+        Parameters
+        ----------
+        side : OrderSide
+            The original order side.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return Order.opposite_side_c(side)
+
+    @staticmethod
+    cdef OrderSide flatten_side_c(PositionSide side):
+        """
+        Return the order side needed to flatten a position from the given side.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The position side to flatten.
+
+        Returns
+        -------
+        OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+
+        """
+        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
+        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
+
+        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
+
+    @staticmethod
+    def flatten_side(PositionSide side) -> OrderSide:
+        """
+        Return the order side needed to flatten a position from the given side.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The position side to flatten.
+
+        Returns
+        -------
+        OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+
+        """
+        return Order.flatten_side_c(side)
 
     cpdef OrderState state(self):
         """
@@ -278,77 +390,6 @@ cdef class Order:
 
         """
         return self._fsm.state in _COMPLETED_STATES
-
-    def __eq__(self, Order other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.cl_ord_id == other.cl_ord_id
-
-    def __ne__(self, Order other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.cl_ord_id != other.cl_ord_id
-
-    def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
-        return hash(self.cl_ord_id.value)
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        cdef str id_string = f"id={self.id.value}, " if self.id is not None else ""
-        return (f"{self.__class__.__name__}("
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"{id_string}"
-                f"state={self._fsm.state_as_string()}, "
-                f"{self.status_string()})")
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
     cpdef str status_string(self):
         """

@@ -20,6 +20,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -32,14 +33,21 @@ cdef class Instrument:
     cdef readonly Currency settlement_currency
     cdef readonly bint is_quanto
     cdef readonly bint is_inverse
-    cdef readonly bint is_standard
     cdef readonly int price_precision
     cdef readonly int size_precision
     cdef readonly int cost_precision
     cdef readonly Decimal tick_size
+    cdef readonly Decimal multiplier
     cdef readonly Quantity lot_size
-    cdef readonly object min_trade_size
-    cdef readonly object max_trade_size
-    cdef readonly Decimal rollover_interest_buy
-    cdef readonly Decimal rollover_interest_sell
+    cdef readonly Quantity min_quantity
+    cdef readonly Quantity max_quantity
+    cdef readonly Money min_notional
+    cdef readonly Money max_notional
+    cdef readonly Decimal margin_initial
+    cdef readonly Decimal margin_maintenance
+    cdef readonly Decimal maker_fee
+    cdef readonly Decimal taker_fee
+    cdef readonly Decimal settlement_fee
+    cdef readonly Decimal funding_long
+    cdef readonly Decimal funding_short
     cdef readonly datetime timestamp

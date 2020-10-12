@@ -754,20 +754,20 @@ cdef class SimulatedMarket:
 
     cdef void _process_order(self, Order order) except *:
         """
-        Work the given order.
+        Process the given order.
         """
         Condition.not_in(order.cl_ord_id, self._working_orders, "order.id", "working_orders")
 
         cdef Instrument instrument = self.instruments[order.symbol]
 
         # Check order size is valid or reject
-        if order.quantity > instrument.max_trade_size:
+        if order.quantity > instrument.max_quantity:
             self._reject_order(order, f"order quantity of {order.quantity} exceeds "
-                                      f"the maximum trade size of {instrument.max_trade_size}")
+                                      f"the maximum trade size of {instrument.max_quantity}")
             return  # Cannot accept order
-        if order.quantity < instrument.min_trade_size:
+        if order.quantity < instrument.min_quantity:
             self._reject_order(order, f"order quantity of {order.quantity} is less than "
-                                      f"the minimum trade size of {instrument.min_trade_size}")
+                                      f"the minimum trade size of {instrument.min_quantity}")
             return  # Cannot accept order
 
         cdef QuoteTick current_market = self._market.get(order.symbol)
@@ -909,6 +909,7 @@ cdef class SimulatedMarket:
             StrategyId.null(),
             order.symbol,
             order.side,
+            order.quantity,
             order.quantity,
             Quantity(),  # Not modeling partial fills just yet
             fill_price,

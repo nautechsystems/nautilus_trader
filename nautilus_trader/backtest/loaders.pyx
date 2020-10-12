@@ -25,6 +25,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.currency cimport ETH
 from nautilus_trader.model.currency cimport USD
 from nautilus_trader.model.currency cimport USDT
+from nautilus_trader.model.currency cimport XBT
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -108,39 +109,25 @@ cdef class InstrumentLoader:
         return Instrument(
             symbol=Symbol("XBT/USD", Venue('BITMEX')),
             asset_type=AssetType.CRYPTO,
-            base_currency=BTC,
+            base_currency=XBT,
             quote_currency=USD,
-            settlement_currency=BTC,
+            settlement_currency=XBT,
             price_precision=1,
             size_precision=0,
             tick_size=Decimal("0.5"),
+            multiplier=Decimal("1"),
             lot_size=Quantity(1),
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(1e7),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
-            timestamp=_UNIX_EPOCH,
-        )
-
-    @staticmethod
-    def ethxbt_bitmex() -> Instrument:
-        """
-        Return the BitMEX ETH/XBT perpetual contract for backtesting.
-        """
-        return Instrument(
-            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
-            asset_type=AssetType.CRYPTO,
-            base_currency=ETH,
-            quote_currency=BTC,
-            settlement_currency=BTC,
-            price_precision=5,
-            size_precision=0,
-            tick_size=Decimal("0.00001"),
-            lot_size=Quantity(1),
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(1e8),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            min_quantity=Quantity(1),
+            max_quantity=Quantity(1e7),
+            min_notional=Money(1.00, USD),
+            max_notional=None,
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.0250"),
+            taker_fee=Decimal("0.0750"),
+            settlement_fee=Decimal("0.0000"),
+            funding_long=Decimal("-0.0923"),
+            funding_short=Decimal("0.0923"),
             timestamp=_UNIX_EPOCH,
         )
 
@@ -154,17 +141,56 @@ cdef class InstrumentLoader:
             asset_type=AssetType.CRYPTO,
             base_currency=ETH,
             quote_currency=USD,
-            settlement_currency=BTC,
+            settlement_currency=XBT,
             price_precision=2,
             size_precision=0,
             tick_size=Decimal("0.05"),
+            multiplier=Decimal("1"),
             lot_size=Quantity(1),
-            min_trade_size=Quantity(1),
-            max_trade_size=Quantity(1e7),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            min_quantity=Quantity(1),
+            max_quantity=Quantity(10000000),
+            min_notional=Money(1.00, USD),
+            max_notional=None,
+            margin_initial=Decimal("2.00"),
+            margin_maintenance=Decimal("0.70"),
+            maker_fee=Decimal("-0.0250"),
+            taker_fee=Decimal("0.0750"),
+            settlement_fee=Decimal("0.0000"),
+            funding_long=Decimal("0.0000"),
+            funding_short=Decimal("0.0000"),
             timestamp=_UNIX_EPOCH,
         )
+
+    @staticmethod
+    def ethxbt_bitmex() -> Instrument:
+        """
+        Return the BitMEX ETH/XBT perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
+            asset_type=AssetType.CRYPTO,
+            base_currency=ETH,
+            quote_currency=XBT,
+            settlement_currency=XBT,
+            price_precision=5,
+            size_precision=0,
+            tick_size=Decimal("0.00001"),
+            lot_size=Quantity("1"),
+            multiplier=Decimal("1"),
+            min_quantity=Quantity(1),
+            max_quantity=Quantity(10000000),
+            min_notional=Money(1.00, USD),
+            max_notional=None,
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.0250"),
+            taker_fee=Decimal("0.0750"),
+            settlement_fee=Decimal("0.0000"),
+            funding_long=Decimal("-0.0923"),
+            funding_short=Decimal("0.0923"),
+            timestamp=_UNIX_EPOCH,
+        )
+
 
     @staticmethod
     def btcusdt_binance() -> Instrument:
@@ -180,11 +206,19 @@ cdef class InstrumentLoader:
             price_precision=2,
             size_precision=6,
             tick_size=Decimal("0.01"),
-            lot_size=Quantity(1),
-            min_trade_size=Money(10, USDT),
-            max_trade_size=Quantity("100"),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            lot_size=Quantity("1"),
+            multiplier=Decimal("1"),
+            min_quantity=Quantity(1),
+            max_quantity=Quantity(10000000),
+            min_notional=Money(10.00, USD),
+            max_notional=None,
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.0250"),
+            taker_fee=Decimal("0.0750"),
+            settlement_fee=Decimal("0.0000"),
+            funding_long=Decimal("-0.0923"),
+            funding_short=Decimal("0.0923"),
             timestamp=_UNIX_EPOCH,
         )
 
@@ -202,11 +236,19 @@ cdef class InstrumentLoader:
             price_precision=2,
             size_precision=5,
             tick_size=Decimal("0.01"),
-            lot_size=Quantity(1),
-            min_trade_size=Money(10, USDT),
-            max_trade_size=Quantity("100"),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            lot_size=Quantity("1"),
+            multiplier=Decimal("1"),
+            min_quantity=Quantity(1),
+            max_quantity=Quantity(10000000),
+            min_notional=Money(1.00, USD),
+            max_notional=None,
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.0250"),
+            taker_fee=Decimal("0.0750"),
+            settlement_fee=Decimal("0.0000"),
+            funding_long=Decimal("-0.0923"),
+            funding_short=Decimal("0.0923"),
             timestamp=_UNIX_EPOCH,
         )
 
@@ -248,9 +290,17 @@ cdef class InstrumentLoader:
             size_precision=0,
             tick_size=Decimal.from_float_c(1 / (10 ** price_precision), price_precision),
             lot_size=Quantity("1000"),
-            min_trade_size=Quantity("1"),
-            max_trade_size=Quantity("50000000"),
-            rollover_interest_buy=Decimal(),
-            rollover_interest_sell=Decimal(),
+            multiplier=Decimal("1"),
+            min_quantity=Quantity("1"),
+            max_quantity=Quantity("1e7"),
+            min_notional=Money(1000.00, USD),
+            max_notional=Money(50000000.00, USD),
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.0250"),
+            taker_fee=Decimal("0.0750"),
+            settlement_fee=Decimal("0.0000"),
+            funding_long=Decimal("-0.0923"),
+            funding_short=Decimal("0.0923"),
             timestamp=_UNIX_EPOCH,
         )

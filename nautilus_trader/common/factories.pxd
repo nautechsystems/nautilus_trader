@@ -22,6 +22,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -36,6 +37,7 @@ cdef class OrderFactory:
     cdef UUIDFactory _uuid_factory
     cdef OrderIdGenerator _id_generator
 
+    cdef readonly TraderId trader_id
     cdef readonly StrategyId strategy_id
 
     cpdef int count(self) except *

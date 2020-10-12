@@ -32,10 +32,10 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -46,7 +46,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-BTCUSD_BINANCE = TestStubs.symbol_btcusd_binance()
+BTCUSD_BINANCE = TestStubs.symbol_btcusdt_binance()
 
 
 class PositionTests(unittest.TestCase):
@@ -55,10 +55,10 @@ class PositionTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),
-            id_tag_trader=IdTag("001"),
-            id_tag_strategy=IdTag("001"),
-            clock=TestClock())
+            clock=TestClock(),
+        )
         print("\n")
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
@@ -89,7 +89,7 @@ class PositionTests(unittest.TestCase):
         position = Position(fill)
 
         # Assert
-        self.assertEqual(ClientOrderId("O-19700101-000000-001-001-1"), position.from_order)
+        self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), position.from_order)
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
         self.assertEqual(OrderSide.BUY, position.entry)
@@ -99,8 +99,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
         self.assertEqual({order.cl_ord_id}, position.cl_ord_ids())
-        self.assertEqual({ExecutionId("E-19700101-000000-001-001-1")}, position.execution_ids())
-        self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
+        self.assertEqual({ExecutionId("E-19700101-000000-000-001-1")}, position.execution_ids())
+        self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id())
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertTrue(position.is_long())
         self.assertFalse(position.is_short())
@@ -144,8 +144,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(1.00001, position.avg_open_price)
         self.assertEqual(1, position.event_count())
-        self.assertEqual({ExecutionId("E-19700101-000000-001-001-1")}, position.execution_ids())
-        self.assertEqual(ExecutionId("E-19700101-000000-001-001-1"), position.last_execution_id())
+        self.assertEqual({ExecutionId("E-19700101-000000-000-001-1")}, position.execution_ids())
+        self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id())
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertFalse(position.is_long())
         self.assertTrue(position.is_short())
@@ -278,6 +278,7 @@ class PositionTests(unittest.TestCase):
             StrategyId("S", "001"),
             order.symbol,
             OrderSide.SELL,
+            order.quantity,
             order.quantity,
             Quantity(),
             Price("1.00001"),
@@ -428,8 +429,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(2, position.event_count())
         self.assertEqual({order1.cl_ord_id, order2.cl_ord_id}, position.cl_ord_ids())
         self.assertEqual({
-            ExecutionId("E-19700101-000000-001-001-1"),
-            ExecutionId("E-19700101-000000-001-001-2")
+            ExecutionId("E-19700101-000000-000-001-1"),
+            ExecutionId("E-19700101-000000-000-001-2")
         },
             position.execution_ids(),
         )

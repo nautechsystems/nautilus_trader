@@ -25,10 +25,10 @@ cdef class IdentifierCache:
         """
         Initialize a new instance of the IdentifierCache class.
         """
-        self._cached_trader_ids = ObjectCache(TraderId, TraderId.from_string)
-        self._cached_account_ids = ObjectCache(AccountId, AccountId.from_string)
-        self._cached_strategy_ids = ObjectCache(StrategyId, StrategyId.from_string)
-        self._cached_symbols = ObjectCache(Symbol, Symbol.from_string)
+        self._cached_trader_ids = ObjectCache(TraderId, TraderId.from_string_c)
+        self._cached_account_ids = ObjectCache(AccountId, AccountId.from_string_c)
+        self._cached_strategy_ids = ObjectCache(StrategyId, StrategyId.from_string_c)
+        self._cached_symbols = ObjectCache(Symbol, Symbol.from_string_c)
 
     cpdef TraderId get_trader_id(self, str value):
         """

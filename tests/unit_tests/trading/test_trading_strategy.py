@@ -39,10 +39,10 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import MatchId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
@@ -338,7 +338,7 @@ class TradingStrategyTests(unittest.TestCase):
             Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
-            MatchId("123456789"),
+            TradeMatchId("123456789"),
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
         )
 

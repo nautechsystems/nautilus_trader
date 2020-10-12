@@ -913,6 +913,7 @@ cdef class OrderFilled(OrderEvent):
             Symbol symbol not None,
             OrderSide order_side,
             Quantity filled_qty not None,
+            Quantity cumulative_qty not None,
             Quantity leaves_qty not None,
             Price avg_price not None,
             Money commission not None,
@@ -945,11 +946,13 @@ cdef class OrderFilled(OrderEvent):
         order_side : OrderSide
             The execution order side.
         filled_qty : Quantity
-            The execution filled quantity.
+            The filled quantity for this execution.
+        cumulative_qty : Quantity
+            The total filled quantity for the order.
         leaves_qty : Quantity
-            The execution leaves quantity.
+            The quantity open for further execution.
         avg_price : Price
-            The execution average price.
+            The calculated average price of all fills on this order.
         liquidity_side : LiquiditySide
             The execution liquidity side.
         base_currency : Currency
@@ -980,6 +983,7 @@ cdef class OrderFilled(OrderEvent):
         self.symbol = symbol
         self.order_side = order_side
         self.filled_qty = filled_qty
+        self.cumulative_qty = cumulative_qty
         self.leaves_qty = leaves_qty
         self.avg_price = avg_price
         self.commission = commission
@@ -1025,6 +1029,7 @@ cdef class OrderFilled(OrderEvent):
             self.symbol,
             self.order_side,
             self.filled_qty,
+            self.cumulative_qty,
             self.leaves_qty,
             self.avg_price,
             self.commission,
