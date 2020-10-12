@@ -33,23 +33,23 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
 
-    def test_get_rate_when_no_currency_rate_raises(self):
+    def test_get_rate_when_no_currency_rate_returns_zero(self):
         # Arrange
         converter = ExchangeRateCalculator()
         bid_rates = {"AUDUSD": 0.80000}
         ask_rates = {"AUDUSD": 0.80010}
 
         # Act
-        # Assert
-        self.assertRaises(
-            ValueError,
-            converter.get_rate,
+        result = converter.get_rate(
             USD,
             JPY,
             PriceType.BID,
             bid_rates,
             ask_rates,
         )
+
+        # Assert
+        self.assertEqual(0, result)
 
     def test_get_rate(self):
         # Arrange
@@ -128,11 +128,12 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         converter = ExchangeRateCalculator()
         bid_rates = {
             "USDJPY": 110.100,
-            "AUDUSD": 0.80000
+            "AUDUSD": 0.80000,
         }
         ask_rates = {
             "USDJPY": 110.130,
-            "AUDUSD": 0.80010}
+            "AUDUSD": 0.80010,
+        }
 
         # Act
         result1 = converter.get_rate(
@@ -147,7 +148,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             JPY,
             PriceType.ASK,
             bid_rates,
-            ask_rates)
+            ask_rates,
+        )
 
         # Assert
         self.assertEqual(0.011353315168029064, result1)  # JPYAUD
@@ -165,7 +167,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             USD,
             PriceType.MID,
             bid_rates,
-            ask_rates)
+            ask_rates,
+        )
 
         # Assert
         self.assertEqual(0.009081414884438995, result)
@@ -182,7 +185,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
             JPY,
             PriceType.MID,
             bid_rates,
-            ask_rates)
+            ask_rates,
+        )
 
         # Assert
         self.assertEqual(110.115, result)

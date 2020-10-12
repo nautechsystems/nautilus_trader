@@ -74,8 +74,8 @@ class TestStubs:
         return Symbol("ETH/USD", Venue('BITMEX'))
 
     @staticmethod
-    def symbol_btcusd_binance() -> Symbol:
-        return Symbol("BTC/USD", Venue('BINANCE'))
+    def symbol_btcusdt_binance() -> Symbol:
+        return Symbol("BTC/USDT", Venue('BINANCE'))
 
     @staticmethod
     def symbol_ethusdt_binance() -> Symbol:

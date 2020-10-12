@@ -136,7 +136,6 @@ cdef class Order:
 
         self._events.append(event)
 
-
     def __eq__(self, Order other) -> bool:
         """
         Return a value indicating whether this object is equal to (==) the given
