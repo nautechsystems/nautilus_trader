@@ -55,6 +55,8 @@ cdef class Portfolio(PortfolioReadOnly):
     cpdef void register_account(self, Account account) except *
     cpdef void update_instrument(self, Instrument instrument) except *
     cpdef void update_tick(self, QuoteTick tick) except *
+    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *
+    cdef inline bint _is_fx_spot(self, Instrument instrument) except *
     cpdef void update_orders_working(self, set orders) except *
     cpdef void update_order(self, Order order) except *
     cpdef void update_positions(self, set positions) except *

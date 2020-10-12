@@ -681,6 +681,8 @@ cdef class DataEngine:
         self._instruments[instrument.symbol] = instrument
         self._log.info(f"Updated instrument {instrument.symbol}")
 
+        self._portfolio.update_instrument(instrument)
+
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
         cdef InstrumentHandler handler
         if instrument_handlers is not None:

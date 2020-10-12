@@ -186,7 +186,7 @@ cdef class InstrumentLoader:
             size_precision=3,
             tick_size=Decimal("0.00001"),
             lot_size=Quantity("1"),
-            multiplier=Decimal("1"),
+            multiplier=Decimal("0.00001"),
             leverage=leverage,
             max_quantity=Quantity(""),
             min_quantity=Quantity(1),
