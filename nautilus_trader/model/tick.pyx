@@ -24,8 +24,8 @@ from nautilus_trader.model.c_enums.maker cimport maker_from_string
 from nautilus_trader.model.c_enums.maker cimport maker_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -64,7 +64,8 @@ cdef class Tick:
 
     def __eq__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is equal to (==) the given object.
+        Return a value indicating whether this object is equal to (==) the given
+        object.
 
         Parameters
         ----------
@@ -80,7 +81,8 @@ cdef class Tick:
 
     def __ne__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is not equal to (!=) the given object.
+        Return a value indicating whether this object is not equal to (!=) the
+        given object.
 
         Parameters
         ----------
@@ -96,7 +98,8 @@ cdef class Tick:
 
     def __lt__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is less than (<) the given object.
+        Return a value indicating whether this object is less than (<) the given
+        object.
 
         Parameters
         ----------
@@ -112,7 +115,8 @@ cdef class Tick:
 
     def __le__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
+        Return a value indicating whether this object is less than or equal to
+        (<=) the given object.
 
         Parameters
         ----------
@@ -128,7 +132,8 @@ cdef class Tick:
 
     def __gt__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is greater than (>) the given object.
+        Return a value indicating whether this object is greater than (>) the
+        given object.
 
         Parameters
         ----------
@@ -144,7 +149,8 @@ cdef class Tick:
 
     def __ge__(self, Tick other) -> bool:
         """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
+        Return a value indicating whether this object is greater than or equal
+        to (>=) the given object.
 
         Parameters
         ----------
@@ -186,8 +192,8 @@ cdef class Tick:
 
     def __repr__(self) -> str:
         """
-        Return the string representation of this object which includes the objects
-        location in memory.
+        Return the string representation of this object which includes the
+        objects location in memory.
 
         Returns
         -------
@@ -297,7 +303,7 @@ cdef class QuoteTick(Tick):
 
         Returns
         -------
-        Tick
+        QuoteTick
 
         Raises
         ------
@@ -386,7 +392,7 @@ cdef class TradeTick(Tick):
             Price price not None,
             Quantity size not None,
             Maker maker,
-            ExecutionId execution_id not None,
+            TradeMatchId match_id not None,
             datetime timestamp not None,
     ):
         """
@@ -402,8 +408,8 @@ cdef class TradeTick(Tick):
             The size of the trade.
         maker : Maker
             The trade maker.
-        execution_id : ExecutionId
-            The execution identifier.
+        match_id : TradeMatchId
+            The trade match identifier.
         timestamp : datetime
             The tick timestamp (UTC).
 
@@ -413,7 +419,7 @@ cdef class TradeTick(Tick):
         self.price = price
         self.size = size
         self.maker = maker
-        self.execution_id = execution_id
+        self.match_id = match_id
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values):
@@ -429,7 +435,7 @@ cdef class TradeTick(Tick):
 
         Returns
         -------
-        Tick
+        TradeTick
 
         Raises
         ------
@@ -447,7 +453,7 @@ cdef class TradeTick(Tick):
             Price(pieces[0]),
             Quantity(pieces[1]),
             maker_from_string(pieces[2]),
-            ExecutionId(pieces[3]),
+            TradeMatchId(pieces[3]),
             datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
         )
 
@@ -465,7 +471,7 @@ cdef class TradeTick(Tick):
 
         Returns
         -------
-        Tick
+        TradeTick
 
         Raises
         ------
@@ -488,7 +494,7 @@ cdef class TradeTick(Tick):
                 f"{self.price.to_string()},"
                 f"{self.size.to_string()},"
                 f"{maker_to_string(self.maker)},"
-                f"{self.execution_id.to_string()},"
+                f"{self.match_id.to_string()},"
                 f"{format_iso8601(self.timestamp)}")
 
     cpdef str to_serializable_string(self):
@@ -503,5 +509,5 @@ cdef class TradeTick(Tick):
         return (f"{self.price.to_string()},"
                 f"{self.size.to_string()},"
                 f"{maker_to_string(self.maker)},"
-                f"{self.execution_id.to_string()},"
+                f"{self.match_id.to_string()},"
                 f"{long(self.timestamp.timestamp())}")

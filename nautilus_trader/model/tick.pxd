@@ -17,8 +17,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -48,7 +48,7 @@ cdef class TradeTick(Tick):
     cdef readonly Price price
     cdef readonly Quantity size
     cdef readonly Maker maker
-    cdef readonly ExecutionId execution_id
+    cdef readonly TradeMatchId match_id
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values)
