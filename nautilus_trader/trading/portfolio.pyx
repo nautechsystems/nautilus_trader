@@ -144,8 +144,11 @@ cdef class Portfolio(PortfolioReadOnly):
         Condition.not_none(tick, "tick")
 
         cdef Venue venue = tick.symbol.venue
-
+        cdef QuoteTick last = self._ticks.get(tick.symbol)
         self._ticks[tick.symbol] = tick
+
+        if last and tick.bid == last.bid and tick.ask == last.ask:
+            return  # Nothing further to update
 
         cdef Instrument instrument = self._instruments.get(tick.symbol)
         if not instrument:
