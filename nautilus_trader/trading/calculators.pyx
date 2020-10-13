@@ -135,14 +135,12 @@ cdef class ExchangeRateCalculator:
                 if perm[0] in exchange_rates[perm[1]]:
                     exchange_rates[perm[0]][perm[1]] = 1. / exchange_rates[perm[1]][perm[0]]
 
-        cdef dict crosses = exchange_rates.get(from_currency.code)
-        if not crosses:
-            # Not enough data
-            return 0
-
-        cdef double xrate = crosses.get(to_currency.code, 0)
-        if xrate > 0:
-            return xrate
+        cdef double xrate
+        cdef dict quotes = exchange_rates.get(from_currency.code)
+        if quotes:
+            xrate = quotes.get(to_currency.code, 0)
+            if xrate > 0:
+                return xrate
 
         # Exchange rate not yet calculated
         # Continue to calculate remaining exchange rates
@@ -168,12 +166,12 @@ cdef class ExchangeRateCalculator:
                     if perm[1] not in exchange_rates[perm[0]]:
                         exchange_rates[perm[0]][perm[1]] = common_rate1 / common_rate2
 
-        crosses = exchange_rates.get(from_currency.code)
-        if not crosses:
+        quotes = exchange_rates.get(from_currency.code)
+        if not quotes:
             # Not enough data
             return 0
 
-        return crosses.get(to_currency.code, 0)
+        return quotes.get(to_currency.code, 0)
 
 
 cdef class RolloverInterestCalculator:

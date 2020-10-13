@@ -213,15 +213,17 @@ class PortfolioTests(unittest.TestCase):
 
         position = Position(fill)
 
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
         self.portfolio.update_tick(last_ethusd)
         self.portfolio.update_tick(last_btcusd)
+        self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Act
-        result = self.portfolio.open_value(BITMEX)
+        result1 = self.portfolio.open_value(BITMEX)
+        result2 = self.portfolio.position_margin(BITMEX)
 
         # Assert
-        self.assertEqual(Money(3.58141152, BTC), result)
+        self.assertEqual(Money(3.58141152, BTC), result1)
+        self.assertEqual(Money(0.02775594, BTC), result2)
 
     def test_unrealized_pnl_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
@@ -380,8 +382,8 @@ class PortfolioTests(unittest.TestCase):
         result4 = self.portfolio.open_value(BINANCE)
 
         # Assert
-        self.assertEqual(Money(10816.00, USD), result1)
-        self.assertEqual(Money(200000.00, USD), result2)
+        self.assertEqual(Money(23808.10, USD), result1)
+        self.assertEqual(Money(210816.00, USD), result2)
         self.assertEqual(Money(0., BTC), result3)
         self.assertEqual(Money(0., BTC), result4)
 
@@ -431,16 +433,16 @@ class PortfolioTests(unittest.TestCase):
         )
 
         # Act
-        self.portfolio.update_position(TestStubs.event_position_modified(position))
         self.portfolio.update_tick(last_audusd)
+        self.portfolio.update_position(TestStubs.event_position_modified(position))
         result1 = self.portfolio.unrealized_pnl(FXCM)
         result2 = self.portfolio.open_value(FXCM)
         result3 = self.portfolio.unrealized_pnl(BINANCE)
         result4 = self.portfolio.open_value(BINANCE)
 
         # Assert
-        self.assertEqual(Money(-9749.50, USD), result1)
-        self.assertEqual(Money(50000.00, USD), result2)
+        self.assertEqual(Money(-7848.44, USD), result1)
+        self.assertEqual(Money(40250.50, USD), result2)
         self.assertEqual(Money(0., BTC), result3)
         self.assertEqual(Money(0., BTC), result4)
 
@@ -561,6 +563,8 @@ class PortfolioTests(unittest.TestCase):
         )
 
         # Act
+        self.portfolio.update_tick(last_audusd)
+        self.portfolio.update_tick(last_gbpusd)
         self.portfolio.update_position(TestStubs.event_position_opened(position1))
         self.portfolio.update_position(TestStubs.event_position_opened(position2))
         self.portfolio.update_position(TestStubs.event_position_opened(position3))
@@ -568,16 +572,13 @@ class PortfolioTests(unittest.TestCase):
         position3.apply(order4_filled)
         self.portfolio.update_position(TestStubs.event_position_closed(position3))
 
-        self.portfolio.update_tick(last_audusd)
-        self.portfolio.update_tick(last_gbpusd)
-
         result1 = self.portfolio.unrealized_pnl(FXCM)
         result2 = self.portfolio.open_value(FXCM)
         result3 = self.portfolio.unrealized_pnl(BINANCE)
         result4 = self.portfolio.open_value(BINANCE)
 
         # Assert
-        self.assertEqual(Money(-38998.00, USD), result1)
-        self.assertEqual(Money(200000.00, USD), result2)
+        self.assertEqual(Money(-31393.78, USD), result1)
+        self.assertEqual(Money(161002.00, USD), result2)
         self.assertEqual(Money(0, BTC), result3)
         self.assertEqual(Money(0, BTC), result4)
