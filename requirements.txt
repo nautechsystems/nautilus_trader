@@ -1,7 +1,7 @@
 cython>=0.29.21
 numpy>=1.19.1
 numpydoc>=1.1.0
-scipy>=1.5.0
+scipy==1.5.0
 pandas>=1.0.5
 empyrical>=0.5.3
 redis>=3.4.1
@@ -9,5 +9,5 @@ psutil>=5.7.0
 pytz>=2020.1
 ccxt>=1.35.72
 msgpack>=1.0.0
-pytest>=5.4.3
+pytest>=6.1.1
 parameterized>=0.7.4
