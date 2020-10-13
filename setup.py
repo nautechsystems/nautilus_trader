@@ -85,7 +85,7 @@ setup(
     python_requires=PYTHON_REQUIRES,
     requires=parse_requirements("requirements.txt", strip=True),
     install_requires=parse_requirements("requirements.txt"),
-    tests_require=parse_requirements("requirements.txt"),
+    tests_require=parse_requirements("requirements-test.txt"),
     packages=[module for module in setuptools.find_packages()],
     include_package_data=True,
     ext_modules=cythonize(
