@@ -468,7 +468,6 @@ cdef class Portfolio(PortfolioReadOnly):
                 bid_quotes=bid_quotes,
                 ask_quotes=ask_quotes,
             )
-
             if xrate == 0:
                 self._log.error(f"Cannot calculate open value (insufficient data for "
                                 f"{position.base_currency}/{account.currency}).")
@@ -495,8 +494,7 @@ cdef class Portfolio(PortfolioReadOnly):
         self._positions_open[venue] = positions_open
 
     cdef inline void _handle_position_modified(self, PositionModified event) except *:
-        cdef Venue venue = event.position.symbol.venue
-        cdef set positions_open = self._positions_open.get(venue)
+        pass  # Do nothing else so far (already calling update_position_margin())
 
     cdef inline void _handle_position_closed(self, PositionClosed event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -556,7 +554,7 @@ cdef class Portfolio(PortfolioReadOnly):
             notional = order.quantity * instrument.multiplier * xrate
 
             # Order margin
-            margin += notional * instrument.margin_initial / instrument.leverage
+            margin += notional / instrument.leverage * instrument.margin_initial
 
             # Fees on notional
             margin += notional * instrument.taker_fee * 2
@@ -611,7 +609,7 @@ cdef class Portfolio(PortfolioReadOnly):
             notional = position.quantity * instrument.multiplier * xrate
 
             # Position margin
-            margin += notional * instrument.margin_maintenance / instrument.leverage
+            margin += notional / instrument.leverage * instrument.margin_maintenance
 
             # Fees on notional
             margin += notional * instrument.taker_fee
