@@ -31,8 +31,18 @@ cdef class ExponentialMovingAverage(MovingAverage):
         """
         Initialize a new instance of the ExponentialMovingAverage class.
 
-        :param period: The rolling window period for the indicator (> 0).
-        :param price_type: The specified price type for extracting values from quote ticks (default=UNDEFINED).
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (> 0).
+        price_type : PriceType
+            The specified price type for extracting values from quote ticks (default=UNDEFINED).
+
+        Raises
+        ------
+        ValueError
+            If period is not positive (> 0).
+
         """
         Condition.positive_int(period, "period")
         super().__init__(period, params=[period], price_type=price_type)

@@ -1290,7 +1290,6 @@ cdef class DataEngine:
         """
         Condition.not_none(from_currency, "from_currency")
         Condition.not_none(to_currency, "to_currency")
-        # TODO: price_type not UNDEFINED or LAST
 
         return self._xrate_calculator.get_rate(
             from_currency=from_currency,

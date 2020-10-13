@@ -31,7 +31,7 @@ cdef class BacktestConfig:
             str exec_db_type not None="in-memory",
             bint exec_db_flush=True,
             bint frozen_account=False,
-            generate_position_ids=True,
+            bint generate_position_ids=True,
             int starting_capital=1000000,
             Currency account_currency not None=USD,
             str short_term_interest_csv_path not None="default",
@@ -47,26 +47,54 @@ cdef class BacktestConfig:
         """
         Initialize a new instance of the BacktestConfig class.
 
-        :param tick_capacity: The length for the data engines internal ticks deque (> 0).
-        :param bar_capacity: The length for the data engines internal bars deque (> 0).
-        :param exec_db_type: The type for the execution cache (can be the default 'in-memory' or redis).
-        :param exec_db_flush: If the execution cache should be flushed on each run.
-        :param frozen_account: If the account should be frozen for testing (no pnl applied).
-        :param starting_capital: The starting account capital (> 0).
-        :param account_currency: The currency for the account.
-        :param short_term_interest_csv_path: The path for the short term interest csv data (default='default').
-        :param bypass_logging: If logging should be bypassed.
-        :param level_console: The minimum log level for logging messages to the console.
-        :param level_file: The minimum log level for logging messages to the log file.
-        :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: The boolean flag indicating whether log messages should print.
-        :param log_thread: The boolean flag indicating whether log messages should log the thread.
-        :param log_to_file: The boolean flag indicating whether log messages should log to file.
-        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ValueError: If tick_capacity is not positive (> 0).
-        :raises ValueError: If bar_capacity is not positive (> 0).
-        :raises ValueError: If starting_capital is not positive (> 0).
-        :raises ValueError: If commission_rate is negative (< 0).
+        Parameters
+        ----------
+        tick_capacity : int
+            The length for the data engines internal ticks deque (> 0).
+        bar_capacity : int
+            The length for the data engines internal bars deque (> 0).
+        exec_db_type : str
+            The type for the execution cache (can be the default 'in-memory' or redis).
+        exec_db_flush : bool
+            If the execution cache should be flushed on each run.
+        frozen_account : bool
+            If the account should be frozen for testing (no pnl applied).
+        generate_position_ids : bool
+            If the simulated market should generate position identifiers.
+        starting_capital : int
+            The starting account capital (> 0).
+        account_currency : Currency
+            The currency for the account.
+        short_term_interest_csv_path : str
+            The path for the short term interest csv data (default='default').
+        bypass_logging : bool
+            If logging should be bypassed.
+        level_console : int
+            The minimum log level for logging messages to the console.
+        level_file  : int
+            The minimum log level for logging messages to the log file.
+        level_store : int
+            The minimum log level for storing log messages in memory.
+        console_prints : bool
+            The boolean flag indicating whether log messages should print.
+        log_thread : bool
+            The boolean flag indicating whether log messages should log the thread.
+        log_to_file : bool
+            The boolean flag indicating whether log messages should log to file.
+        log_file_path : str
+            The name of the log file (cannot be None if log_to_file is True).
+
+        Raises
+        ------
+        ValueError
+            If tick_capacity is not positive (> 0).
+        ValueError
+            If bar_capacity is not positive (> 0).
+        ValueError
+            If starting_capital is not positive (> 0).
+        ValueError
+            If commission_rate is negative (< 0).
+
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
         Condition.positive_int(bar_capacity, "bar_capacity")

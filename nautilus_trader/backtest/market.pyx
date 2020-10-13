@@ -190,7 +190,6 @@ cdef class SimulatedMarket:
     cpdef void register_client(self, ExecutionClient client) except *:
         """
         Register the given execution client with this market.
-
         """
         Condition.not_none(client, "client")
 
@@ -203,7 +202,6 @@ cdef class SimulatedMarket:
     cpdef void check_residuals(self) except *:
         """
         Check for any residual objects and log warnings if any are found.
-
         """
         for order_list in self._child_orders.values():
             for order in order_list:
@@ -241,7 +239,10 @@ cdef class SimulatedMarket:
         """
         Return the current time for the execution client.
 
-        :return: datetime.
+        Returns
+        -------
+        datetime
+
         """
         return self._clock.utc_now()
 
@@ -249,7 +250,9 @@ cdef class SimulatedMarket:
         """
         Set the fill model to be the given model.
 
-        :param fill_model: The fill model to set.
+        fill_model : FillModel
+            The fill model to set.
+
         """
         Condition.not_none(fill_model, "fill_model")
 
@@ -260,7 +263,11 @@ cdef class SimulatedMarket:
         Process the execution client with the given tick. Market dynamics are
         simulated against working orders.
 
-        :param tick: The tick data to process with.
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick data to process with.
+
         """
         Condition.not_none(tick, "tick")
 
@@ -753,9 +760,6 @@ cdef class SimulatedMarket:
         self._clean_up_child_orders(order.cl_ord_id)
 
     cdef void _process_order(self, Order order) except *:
-        """
-        Process the given order.
-        """
         Condition.not_in(order.cl_ord_id, self._working_orders, "order.id", "working_orders")
 
         cdef Instrument instrument = self.instruments[order.symbol]
