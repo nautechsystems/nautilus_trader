@@ -204,7 +204,6 @@ cdef class InstrumentLoader:
             timestamp=_UNIX_EPOCH,
         )
 
-
     @staticmethod
     def btcusdt_binance() -> Instrument:
         """
