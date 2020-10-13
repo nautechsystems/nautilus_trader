@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
+from libc.math cimport pow
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
@@ -136,7 +136,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._prior_value = self.value
 
         # Calculate smoothing constant (sc)
-        sc = np.power(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
+        sc = pow(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
 
         # Calculate AMA
         self.value = self._prior_value + sc * (value - self._prior_value)

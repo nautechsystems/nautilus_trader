@@ -482,7 +482,7 @@ cdef class Portfolio(PortfolioReadOnly):
 
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
         return instrument.asset_class == AssetClass.CRYPTO \
-               and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
+            and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
 
     cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
         return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT
