@@ -24,7 +24,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -448,7 +448,7 @@ cdef class SimulatedMarket:
         cdef QuoteTick market
         for position in open_positions:
             instrument = self.instruments[position.symbol]
-            if instrument.asset_type == AssetType.FOREX:
+            if instrument.asset_class == AssetClass.FX:
                 mid_price = mid_prices.get(instrument.symbol, 0.0)
                 if mid_price == 0.0:
                     market = self._market[instrument.symbol]

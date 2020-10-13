@@ -16,48 +16,43 @@
 
 cpdef enum AssetType:
     UNDEFINED = 0,  # Invalid value
-    FOREX = 1,
-    BOND = 2,
-    EQUITY = 3,
-    FUTURES = 4,
+    SPOT = 1,
+    SWAP = 2,
+    FUTURE = 3,
+    FORWARD = 4,
     CFD = 5,
     OPTION = 6,
-    CRYPTO = 7
 
 
 cdef inline str asset_type_to_string(int value):
     if value == 1:
-        return 'FOREX'
+        return 'SPOT'
     elif value == 2:
-        return 'BOND'
+        return 'SWAP'
     elif value == 3:
-        return 'EQUITY'
+        return 'FUTURE'
     elif value == 4:
-        return 'FUTURES'
+        return 'FORWARD'
     elif value == 5:
         return 'CFD'
     elif value == 6:
         return 'OPTION'
-    elif value == 7:
-        return 'CRYPTO'
     else:
         return 'UNDEFINED'
 
 
 cdef inline AssetType asset_type_from_string(str value):
-    if value == 'FOREX':
-        return AssetType.FOREX
-    elif value == 'BOND':
-        return AssetType.BOND
-    elif value == 'EQUITY':
-        return AssetType.EQUITY
-    elif value == 'FUTURES':
-        return AssetType.FUTURES
+    if value == 'SPOT':
+        return AssetType.SPOT
+    elif value == 'SWAP':
+        return AssetType.SWAP
+    elif value == 'FUTURE':
+        return AssetType.FUTURE
+    elif value == 'FORWARD':
+        return AssetType.FORWARD
     elif value == 'CFD':
         return AssetType.CFD
     elif value == 'OPTION':
         return AssetType.OPTION
-    elif value == 'CRYPTO':
-        return AssetType.CRYPTO
     else:
         return AssetType.UNDEFINED

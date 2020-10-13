@@ -19,6 +19,8 @@ Provides the C enums as Python enums for external use.
 isort:skip_file
 """
 
+from nautilus_trader.model.c_enums.asset_class import AssetClass              # noqa F401 (being used)
+from nautilus_trader.model.c_enums.asset_type import AssetType                # noqa F401 (being used)
 from nautilus_trader.model.c_enums.account_type import AccountType            # noqa F401 (being used)
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.component_state import ComponentState      # noqa F401 (being used)
@@ -32,5 +34,4 @@ from nautilus_trader.model.c_enums.order_state import OrderState              # 
 from nautilus_trader.model.c_enums.order_type import OrderType                # noqa F401 (being used)
 from nautilus_trader.model.c_enums.position_side import PositionSide          # noqa F401 (being used)
 from nautilus_trader.model.c_enums.price_type import PriceType                # noqa F401 (being used)
-from nautilus_trader.model.c_enums.asset_type import AssetType          # noqa F401 (being used)
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce           # noqa F401 (being used)

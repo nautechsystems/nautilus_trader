@@ -13,22 +13,41 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
 
-import os
+cpdef enum AssetClass:
+    UNDEFINED = 0,  # Invalid value
+    CRYPTO = 1,
+    FX = 2,
+    EQUITY = 3,
+    COMMODITY = 4,
+    BOND = 5
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+cdef inline str asset_class_to_string(int value):
+    if value == 1:
+        return 'CRYPTO'
+    elif value == 2:
+        return 'FX'
+    elif value == 3:
+        return 'EQUITY'
+    elif value == 4:
+        return 'COMMODITY'
+    elif value == 5:
+        return 'BOND'
+    else:
+        return 'UNDEFINED'
 
 
-__author__ = "Nautech Systems"
-
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 78
-_PATCH_VERSION = 3
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+cdef inline AssetClass asset_class_from_string(str value):
+    if value == 'CRYPTO':
+        return AssetClass.CRYPTO
+    elif value == 'FX':
+        return AssetClass.FX
+    elif value == 'EQUITY':
+        return AssetClass.EQUITY
+    elif value == 'COMMODITY':
+        return AssetClass.COMMODITY
+    elif value == 'BOND':
+        return AssetClass.BOND
+    else:
+        return AssetClass.UNDEFINED

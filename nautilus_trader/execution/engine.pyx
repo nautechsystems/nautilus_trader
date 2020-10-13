@@ -85,11 +85,6 @@ cdef class ExecutionEngine:
         logger : Logger
             The logger for the engine.
 
-        Raises
-        ------
-        ValueError
-            If trader_id is not equal to the database.trader_id.
-
         """
         self._clock = clock
         self._uuid_factory = uuid_factory
