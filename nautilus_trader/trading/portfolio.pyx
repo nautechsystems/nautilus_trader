@@ -143,7 +143,6 @@ cdef class Portfolio(PortfolioReadOnly):
         """
         Condition.not_none(tick, "tick")
 
-        cdef Venue venue = tick.symbol.venue
         cdef QuoteTick last = self._ticks.get(tick.symbol)
         self._ticks[tick.symbol] = tick
 
@@ -155,18 +154,19 @@ cdef class Portfolio(PortfolioReadOnly):
             self._log.error(f"No instrument for received tick symbol {tick.symbol}.")
             return  # Cannot add quotes
 
-        cdef dict bid_quotes
-        cdef dict ask_quotes
-        if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
-            bid_quotes = self._bid_quotes.get(venue)
-            ask_quotes = self._ask_quotes.get(venue)
-            if not bid_quotes:
-                self._bid_quotes[venue] = {instrument.symbol_base_quote: tick.bid.as_double()}
-                self._ask_quotes[venue] = {instrument.symbol_base_quote: tick.ask.as_double()}
-                return  # Quotes updated
+        cdef Venue venue = tick.symbol.venue
+        if not self._is_crypto_spot_or_swap(instrument) and not self._is_fx_spot(instrument):
+            return  # Nothing further to update
 
-            bid_quotes[instrument.symbol_base_quote] = tick.bid.as_double()
-            ask_quotes[instrument.symbol_base_quote] = tick.ask.as_double()
+        cdef dict bid_quotes = self._bid_quotes.get(venue)
+        cdef dict ask_quotes = self._ask_quotes.get(venue)
+        if not bid_quotes:
+            self._bid_quotes[venue] = {instrument.symbol_base_quote: tick.bid.as_double()}
+            self._ask_quotes[venue] = {instrument.symbol_base_quote: tick.ask.as_double()}
+            return  # Quotes updated
+
+        bid_quotes[instrument.symbol_base_quote] = tick.bid.as_double()
+        ask_quotes[instrument.symbol_base_quote] = tick.ask.as_double()
 
     cpdef void update_orders_working(self, set orders) except *:
         """

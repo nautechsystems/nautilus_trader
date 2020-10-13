@@ -9,7 +9,7 @@ on:
 jobs:
   build-test:
 
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
@@ -21,13 +21,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install setuptools wheel twine
-          sudo apt-get install libxml2-dev
-          sudo apt-get install libxslt-dev
           sudo apt-get install redis-server
           sudo redis-server --daemonize yes
       - name: Build
         run: |
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-test.txt
           python setup.py build_ext --inplace
       - name: Test
         run: |
