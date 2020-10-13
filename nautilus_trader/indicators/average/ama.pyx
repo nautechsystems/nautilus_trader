@@ -43,10 +43,17 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         Initialize a new instance of the AdaptiveMovingAverage class.
 
-        :param period_er: The period for the internal Efficiency Ratio (> 0).
-        :param period_alpha_fast: The period for the fast smoothing constant (> 0).
-        :param period_alpha_slow: The period for the slow smoothing constant (> 0 < alpha_fast).
-        :param price_type: The specified price type for extracting values from quote ticks (default=UNDEFINED).
+        Parameters
+        ----------
+        period_er : int
+            The period for the internal Efficiency Ratio (> 0).
+        period_alpha_fast : int
+            The period for the fast smoothing constant (> 0).
+        period_alpha_slow : int
+            The period for the slow smoothing constant (> 0 < alpha_fast).
+        price_type : PriceType
+            The specified price type for extracting values from quote ticks (default=UNDEFINED).
+
         """
         Condition.positive_int(period_er, "period_er")
         Condition.positive_int(period_alpha_fast, "period_alpha_fast")

@@ -174,14 +174,27 @@ cdef class BacktestDataEngine(DataEngine):
         """
         Initialize a new instance of the BacktestDataEngine class.
 
-        :param data: The data needed for the backtest data engine.
-        :param tick_capacity: The max length of the internal tick deques.
-        :param bar_capacity: The max length of the internal bar deques.
+        Parameters
+        ----------
+        data : BacktestDataContainer
+            The data needed for the backtest data engine.
+        tick_capacity : int
+            The max length of the internal tick deques.
+        bar_capacity : int
+            The max length of the internal bar deques.
+        portfolio : Portfolio
+        clock : TestClock
+            The clock for the component.
+        logger : Logger
+            The logger for the component.
 
-        :param clock: The clock for the component.
-        :param logger: The logger for the component.
-        :raises ValueError: If the tick_capacity is not positive (> 0).
-        :raises ValueError: If the bar_capacity is not positive (> 0).
+        Raises
+        ------
+        ValueError
+            If the tick_capacity is not positive (> 0).
+        ValueError
+            If the bar_capacity is not positive (> 0).
+
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
         Condition.positive_int(bar_capacity, "bar_capacity")
@@ -267,8 +280,13 @@ cdef class BacktestDataEngine(DataEngine):
         """
         Setup tick data for a backtest run.
 
-        :param start: The start datetime (UTC) for the run.
-        :param stop: The stop datetime (UTC) for the run.
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) for the run.
+        stop : datetime
+            The stop datetime (UTC) for the run.
+
         """
         Condition.not_none(start, "start")
         Condition.not_none(stop, "stop")
@@ -297,7 +315,10 @@ cdef class BacktestDataEngine(DataEngine):
         """
         Generate the next tick in the ordered data sequence.
 
-        :return: Tick.
+        Returns
+        -------
+        QuoteTick
+
         """
         cdef int symbol_indexer = self._symbols[self._index]
         cdef int price_precision = self._price_precisions[symbol_indexer]

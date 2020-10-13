@@ -161,7 +161,7 @@ cpdef inline double fast_std_with_mean(list values, double mean):
     """
     cdef int length = len(values)
     cdef double std_dev = 0.0
-
+    cdef int i
     for i in range(length):
         std_dev += pow(values[i] - mean, 2)
 
