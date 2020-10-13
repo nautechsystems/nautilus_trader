@@ -525,6 +525,7 @@ cdef class Portfolio(PortfolioReadOnly):
 
         cdef dict bid_quotes = self._bid_quotes.get(venue, {})
         cdef dict ask_quotes = self._ask_quotes.get(venue, {})
+        cdef double notional = 0
         cdef double margin = 0
         cdef double xrate = 1.
         cdef Order order
@@ -535,6 +536,9 @@ cdef class Portfolio(PortfolioReadOnly):
                 self._log.error(f"Cannot calculate order initial margin "
                                 f"(no instrument for {order.symbol}).")
                 continue  # Cannot calculate
+
+            if instrument.leverage == 1:
+                continue  # No margin necessary
 
             xrate = self._xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
@@ -548,15 +552,14 @@ cdef class Portfolio(PortfolioReadOnly):
                                 f"{instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
-            margin += order.quantity \
-                      * instrument.multiplier \
-                      * instrument.margin_initial \
-                      / instrument.leverage * xrate
+            # Calculate notional value
+            notional = order.quantity * instrument.multiplier * xrate
 
-            margin += order.quantity \
-                      * instrument.multiplier \
-                      * instrument.taker_fee * 2 \
-                      / instrument.leverage * xrate
+            # Order margin
+            margin += notional * instrument.margin_initial / instrument.leverage
+
+            # Fees on notional
+            margin += notional * instrument.taker_fee * 2
 
         cdef Money order_margin = Money(margin, account.currency)
         account.update_order_margin(order_margin)
@@ -577,6 +580,7 @@ cdef class Portfolio(PortfolioReadOnly):
 
         cdef dict bid_quotes = self._bid_quotes.get(venue, {})
         cdef dict ask_quotes = self._ask_quotes.get(venue, {})
+        cdef double notional
         cdef double margin = 0
         cdef double xrate = 1.
         cdef Position position
@@ -587,6 +591,9 @@ cdef class Portfolio(PortfolioReadOnly):
                 self._log.error(f"Cannot calculate position maintenance margin "
                                 f"(no instrument for {position.symbol}).")
                 continue  # Cannot calculate
+
+            if instrument.leverage == 1:
+                continue  # No margin necessary
 
             xrate = self._xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
@@ -600,18 +607,14 @@ cdef class Portfolio(PortfolioReadOnly):
                                 f"(insufficient data for {instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
+            # Calculate notional value
+            notional = position.quantity * instrument.multiplier * xrate
+
             # Position margin
-            margin += position.quantity \
-                      * instrument.multiplier \
-                      * instrument.margin_maintenance \
-                      / instrument.leverage * xrate
+            margin += notional * instrument.margin_maintenance / instrument.leverage
 
-
-            # Fees margin
-            margin += position.quantity \
-                      * instrument.multiplier \
-                      * instrument.taker_fee \
-                      / instrument.leverage * xrate
+            # Fees on notional
+            margin += notional * instrument.taker_fee
 
         cdef Money position_margin = Money(margin, account.currency)
         account.update_position_margin(position_margin)
