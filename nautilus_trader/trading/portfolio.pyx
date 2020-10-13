@@ -16,6 +16,8 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport PositionClosed
@@ -145,15 +147,23 @@ cdef class Portfolio(PortfolioReadOnly):
 
         self._ticks[tick.symbol] = tick
 
-        cdef dict bid_quotes = self._bid_quotes.get(venue)
-        cdef dict ask_quotes = self._ask_quotes.get(venue)
-        if not bid_quotes:
-            self._bid_quotes[venue] = {tick.symbol.code: tick.bid.as_double()}
-            self._ask_quotes[venue] = {tick.symbol.code: tick.ask.as_double()}
-            return
+        cdef Instrument instrument = self._instruments.get(tick.symbol)
+        if not instrument:
+            self._log.error(f"No instrument for received tick symbol {tick.symbol}.")
+            return  # Cannot add quotes
 
-        bid_quotes[tick.symbol.code] = tick.bid.as_double()
-        ask_quotes[tick.symbol.code] = tick.ask.as_double()
+        cdef dict bid_quotes
+        cdef dict ask_quotes
+        if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
+            bid_quotes = self._bid_quotes.get(venue)
+            ask_quotes = self._ask_quotes.get(venue)
+            if not bid_quotes:
+                self._bid_quotes[venue] = {instrument.symbol_base_quote: tick.bid.as_double()}
+                self._ask_quotes[venue] = {instrument.symbol_base_quote: tick.ask.as_double()}
+                return  # Quotes updated
+
+            bid_quotes[instrument.symbol_base_quote] = tick.bid.as_double()
+            ask_quotes[instrument.symbol_base_quote] = tick.ask.as_double()
 
     cpdef void update_orders_working(self, set orders) except *:
         """
@@ -171,9 +181,17 @@ cdef class Portfolio(PortfolioReadOnly):
 
         cdef Order order
         for order in orders:
-            self.update_order(order)
+            if order.symbol.venue not in self._orders_working:
+                self._orders_working[order.symbol.venue] = set()
+            if order.is_working():
+                self._orders_working[order.symbol.venue].add(order)
+                self._log.debug(f"Added working {order}")
 
         self._log.info(f"Updated {len(orders)} order(s) working.")
+
+        cdef Venue venue
+        for venue in self._orders_working.keys():
+            self._update_order_margin(venue)
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -199,7 +217,7 @@ cdef class Portfolio(PortfolioReadOnly):
         elif order.is_completed() and orders_working:
             orders_working.discard(order)
 
-        # TODO: Update order margin
+        self._update_order_margin(venue)
 
     cpdef void update_positions(self, set positions) except *:
         """
@@ -234,7 +252,9 @@ cdef class Portfolio(PortfolioReadOnly):
         self._log.info(f"Updated {open_count} position(s) open.")
         self._log.info(f"Updated {closed_count} position(s) closed.")
 
-        # TODO: Update position margin
+        cdef Venue venue
+        for venue in self._positions_open.keys():
+            self._update_position_margin(venue)
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -257,7 +277,7 @@ cdef class Portfolio(PortfolioReadOnly):
 
         self._log.debug(f"Updated {event.position}.")
 
-        # TODO: Update position margin
+        self._update_position_margin(event.position.symbol.venue)
 
     cpdef void reset(self) except *:
         """
@@ -371,30 +391,35 @@ cdef class Portfolio(PortfolioReadOnly):
         cdef dict bid_quotes = self._bid_quotes.get(venue, {})
         cdef dict ask_quotes = self._ask_quotes.get(venue, {})
         cdef double pnl = 0.
-        cdef double xrate = 1.
+        cdef double xrate
         cdef Position position
         cdef QuoteTick last
-
+        cdef Instrument instrument
         for position in positions_open:
             last = self._ticks.get(position.symbol)
+            instrument = self._instruments.get(position.symbol)
             if not last:
-                self._log.error(f"Cannot calculate unrealized PNL (no quotes for {position.symbol}).")
-                return None
-            if position.base_currency == account.currency:
-                pnl += position.unrealized_pnl(last).as_double()
-            else:
-                xrate = self._xrate_calculator.get_rate(
-                    from_currency=position.base_currency,
-                    to_currency=account.currency,
-                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                    bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes,
-                )
-                if xrate == 0:
-                    self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
-                                    f"{position.base_currency}/{account.currency}).")
-                    return None
-                pnl += position.unrealized_pnl(last).as_double() * xrate
+                self._log.error(f"Cannot calculate unrealized PNL "
+                                f"(no quotes for {position.symbol}).")
+                return None  # Cannot calculate
+            if not instrument:
+                self._log.error(f"Cannot calculate unrealized PNL "
+                                f"(no instrument for {position.symbol}).")
+                return None  # Cannot calculate
+
+            xrate = self._xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=account.currency,
+                price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+                bid_quotes=bid_quotes,
+                ask_quotes=ask_quotes,
+            )
+            if xrate == 0:
+                self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
+                                f"{position.base_currency}/{account.currency}).")
+                return None  # Cannot calculate
+
+            pnl += position.unrealized_pnl(last) * instrument.multiplier * xrate
 
         return Money(pnl, account.currency)
 
@@ -426,26 +451,39 @@ cdef class Portfolio(PortfolioReadOnly):
         cdef dict bid_quotes = self._bid_quotes.get(venue, {})
         cdef dict ask_quotes = self._ask_quotes.get(venue, {})
         cdef double open_value = 0.
-        cdef double xrate = 1.
+        cdef double xrate
         cdef Position position
+        cdef Instrument instrument
         for position in positions_open:
-            if position.base_currency == account.currency:
-                open_value += position.quantity.as_double()
-            else:
-                xrate = self._xrate_calculator.get_rate(
-                    from_currency=position.base_currency,
-                    to_currency=account.currency,
-                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                    bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes,
-                )
-                if xrate == 0:
-                    self._log.error(f"Cannot calculate open value (insufficient data for "
-                                    f"{position.base_currency}/{account.currency}).")
-                    return None
-                open_value += position.quantity.as_double() * xrate
+            instrument = self._instruments.get(position.symbol)
+            if not instrument:
+                self._log.error(f"Cannot calculate open value "
+                                f"(no instrument for {position.symbol}).")
+                return None  # Cannot calculate
+
+            xrate = self._xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=account.currency,
+                price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+                bid_quotes=bid_quotes,
+                ask_quotes=ask_quotes,
+            )
+
+            if xrate == 0:
+                self._log.error(f"Cannot calculate open value (insufficient data for "
+                                f"{position.base_currency}/{account.currency}).")
+                return None  # Cannot calculate
+
+            open_value += position.quantity * instrument.multiplier * xrate
 
         return Money(open_value, account.currency)
+
+    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
+        return instrument.asset_class == AssetClass.CRYPTO \
+               and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
+
+    cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
+        return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT
 
     cdef inline void _handle_position_opened(self, PositionOpened event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -473,3 +511,113 @@ cdef class Portfolio(PortfolioReadOnly):
         cdef set positions_closed = self._positions_closed.get(venue, set())
         positions_closed.add(position)
         self._positions_closed[venue] = positions_closed
+
+    cdef inline void _update_order_margin(self, Venue venue):
+        cdef Account account = self._accounts.get(venue)
+        if not account:
+            self._log.error(f"Cannot update order initial margin "
+                            f"(no account registered for {venue}).")
+            return  # Cannot calculate
+
+        cdef set working_orders = self._orders_working.get(venue)
+        if not working_orders:
+            return  # Nothing to calculate
+
+        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
+        cdef dict ask_quotes = self._ask_quotes.get(venue, {})
+        cdef double notional = 0
+        cdef double margin = 0
+        cdef double xrate = 1.
+        cdef Order order
+        cdef Instrument instrument
+        for order in working_orders:
+            instrument = self._instruments.get(order.symbol)
+            if not instrument:
+                self._log.error(f"Cannot calculate order initial margin "
+                                f"(no instrument for {order.symbol}).")
+                continue  # Cannot calculate
+
+            if instrument.leverage == 1:
+                continue  # No margin necessary
+
+            xrate = self._xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=account.currency,
+                price_type=PriceType.BID if order.side == OrderSide.SELL else PriceType.ASK,
+                bid_quotes=bid_quotes,
+                ask_quotes=ask_quotes,
+            )
+            if xrate == 0:
+                self._log.error(f"Cannot calculate order initial margin (insufficient data for "
+                                f"{instrument.base_currency}/{account.currency}).")
+                continue  # Cannot calculate
+
+            # Calculate notional value
+            notional = order.quantity * instrument.multiplier * xrate
+
+            # Order margin
+            margin += notional * instrument.margin_initial / instrument.leverage
+
+            # Fees on notional
+            margin += notional * instrument.taker_fee * 2
+
+        cdef Money order_margin = Money(margin, account.currency)
+        account.update_order_margin(order_margin)
+
+        self._log.info(f"Updated {venue} order initial margin to "
+                       f"{order_margin.to_string_formatted()}")
+
+    cdef inline void _update_position_margin(self, Venue venue):
+        cdef Account account = self._accounts.get(venue)
+        if not account:
+            self._log.error(f"Cannot update position maintenance margin "
+                            f"(no account registered for {venue}).")
+            return  # Cannot calculate
+
+        cdef set open_positions = self._positions_open.get(venue)
+        if not open_positions:
+            return  # Nothing to calculate
+
+        cdef dict bid_quotes = self._bid_quotes.get(venue, {})
+        cdef dict ask_quotes = self._ask_quotes.get(venue, {})
+        cdef double notional
+        cdef double margin = 0
+        cdef double xrate = 1.
+        cdef Position position
+        cdef Instrument instrument
+        for position in open_positions:
+            instrument = self._instruments.get(position.symbol)
+            if not instrument:
+                self._log.error(f"Cannot calculate position maintenance margin "
+                                f"(no instrument for {position.symbol}).")
+                continue  # Cannot calculate
+
+            if instrument.leverage == 1:
+                continue  # No margin necessary
+
+            xrate = self._xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=account.currency,
+                price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+                bid_quotes=bid_quotes,
+                ask_quotes=ask_quotes,
+            )
+            if xrate == 0:
+                self._log.error(f"Cannot calculate position maintenance margin "
+                                f"(insufficient data for {instrument.base_currency}/{account.currency}).")
+                continue  # Cannot calculate
+
+            # Calculate notional value
+            notional = position.quantity * instrument.multiplier * xrate
+
+            # Position margin
+            margin += notional * instrument.margin_maintenance / instrument.leverage
+
+            # Fees on notional
+            margin += notional * instrument.taker_fee
+
+        cdef Money position_margin = Money(margin, account.currency)
+        account.update_position_margin(position_margin)
+
+        self._log.info(f"Updated {venue} position maintenance margin to "
+                       f"{position_margin.to_string_formatted()}")

@@ -15,6 +15,7 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -23,14 +24,15 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currencies import XBT
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -45,11 +47,12 @@ FXCM = Venue("FXCM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-BTCUSDT_BINANCE = TestStubs.symbol_btcusdt_binance()
-XBTUSD_BITMEX = TestStubs.symbol_xbtusd_bitmex()
-ETHUSD_BITMEX = TestStubs.symbol_ethusd_bitmex()
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
+GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")))
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
+BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
+BTCUSD_BITMEX = InstrumentLoader.btcusd_bitmex(leverage=Decimal("10.0"))
+ETHUSD_BITMEX = InstrumentLoader.ethusd_bitmex(leverage=Decimal("10.0"))
 
 
 class PortfolioTests(unittest.TestCase):
@@ -78,6 +81,11 @@ class PortfolioTests(unittest.TestCase):
         self.account = Account(state)
         self.portfolio = Portfolio(self.clock, uuid_factor, logger)
         self.portfolio.register_account(self.account)
+        self.portfolio.update_instrument(AUDUSD_FXCM)
+        self.portfolio.update_instrument(GBPUSD_FXCM)
+        self.portfolio.update_instrument(BTCUSDT_BINANCE)
+        self.portfolio.update_instrument(BTCUSD_BITMEX)
+        self.portfolio.update_instrument(ETHUSD_BITMEX)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange
@@ -120,7 +128,7 @@ class PortfolioTests(unittest.TestCase):
     def test_opening_one_position_updates_portfolio(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSDT_BINANCE,
+            BTCUSDT_BINANCE.symbol,
             OrderSide.BUY,
             Quantity(10),
         )
@@ -135,7 +143,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            BTCUSDT_BINANCE,
+            BTCUSDT_BINANCE.symbol,
             Price("10500.05"),
             Price("10501.51"),
             Quantity("2.54"),
@@ -144,25 +152,24 @@ class PortfolioTests(unittest.TestCase):
         )
 
         position = Position(fill)
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
-        self.portfolio.update_tick(last)
 
         # Act
-        result1 = self.portfolio.open_value(BINANCE)
-        result2 = self.portfolio.unrealized_pnl(BINANCE)
+        self.portfolio.update_tick(last)
+        self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
-        self.assertEqual(Money(10., BTC), result1)
-        self.assertEqual(Money(0.00004762, BTC), result2)
+        self.assertEqual(Money(10., BTC), self.portfolio.open_value(BINANCE))
+        self.assertEqual(Money(0, BTC), self.portfolio.position_margin(BINANCE))
+        self.assertEqual(Money(0.00004762, BTC), self.portfolio.unrealized_pnl(BINANCE))
 
     def test_opening_one_position_when_account_in_different_base(self):
         # Arrange
         state = AccountState(
             AccountId.from_string("BITMEX-01234-SIMULATED"),
-            XBT,
-            Money(10., XBT),
-            Money(0., XBT),
-            Money(0., XBT),
+            BTC,
+            Money(10., BTC),
+            Money(0., BTC),
+            Money(0., BTC),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -171,7 +178,7 @@ class PortfolioTests(unittest.TestCase):
 
         self.portfolio.register_account(account)
         order = self.order_factory.market(
-            ETHUSD_BITMEX,
+            ETHUSD_BITMEX.symbol,
             OrderSide.BUY,
             Quantity(100),
         )
@@ -186,7 +193,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last_ethusd = QuoteTick(
-            ETHUSD_BITMEX,
+            ETHUSD_BITMEX.symbol,
             Price("376.05"),
             Price("377.10"),
             Quantity("16"),
@@ -194,8 +201,8 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        last_xbtusd = QuoteTick(
-            XBTUSD_BITMEX,
+        last_btcusd = QuoteTick(
+            BTCUSD_BITMEX.symbol,
             Price("10500.05"),
             Price("10501.51"),
             Quantity("2.54"),
@@ -205,25 +212,24 @@ class PortfolioTests(unittest.TestCase):
 
         position = Position(fill)
 
-        self.portfolio.update_position(TestStubs.event_position_opened(position))
         self.portfolio.update_tick(last_ethusd)
-        self.portfolio.update_tick(last_xbtusd)
+        self.portfolio.update_tick(last_btcusd)
 
         # Act
-        result = self.portfolio.open_value(BITMEX)
+        self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
-        # TODO: Currently incorrect for this contract (needs multiplier)
-        self.assertEqual(Money(3.58141152, XBT), result)
+        self.assertEqual(Money(3.58141152, BTC), self.portfolio.open_value(BITMEX))
+        self.assertEqual(Money(0.00519305, BTC), self.portfolio.position_margin(BITMEX))
 
     def test_unrealized_pnl_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
         state = AccountState(
             AccountId.from_string("BITMEX-01234-SIMULATED"),
-            XBT,
-            Money(10., XBT),
-            Money(0., XBT),
-            Money(0., XBT),
+            BTC,
+            Money(10., BTC),
+            Money(0., BTC),
+            Money(0., BTC),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -232,7 +238,7 @@ class PortfolioTests(unittest.TestCase):
 
         self.portfolio.register_account(account)
         order = self.order_factory.market(
-            ETHUSD_BITMEX,
+            ETHUSD_BITMEX.symbol,
             OrderSide.BUY,
             Quantity(100),
         )
@@ -260,10 +266,10 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         state = AccountState(
             AccountId.from_string("BITMEX-01234-SIMULATED"),
-            XBT,
-            Money(10., XBT),
-            Money(0., XBT),
-            Money(0., XBT),
+            BTC,
+            Money(10., BTC),
+            Money(0., BTC),
+            Money(0., BTC),
             uuid4(),
             UNIX_EPOCH,
         )
@@ -272,7 +278,7 @@ class PortfolioTests(unittest.TestCase):
 
         self.portfolio.register_account(account)
         order = self.order_factory.market(
-            ETHUSD_BITMEX,
+            ETHUSD_BITMEX.symbol,
             OrderSide.BUY,
             Quantity(100),
         )
@@ -287,7 +293,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last_ethusd = QuoteTick(
-            ETHUSD_BITMEX,
+            ETHUSD_BITMEX.symbol,
             Price("376.05"),
             Price("377.10"),
             Quantity("16"),
@@ -323,13 +329,13 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            GBPUSD_FXCM,
+            GBPUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -342,11 +348,8 @@ class PortfolioTests(unittest.TestCase):
         position_opened1 = TestStubs.event_position_opened(position1)
         position_opened2 = TestStubs.event_position_opened(position2)
 
-        self.portfolio.update_position(position_opened1)
-        self.portfolio.update_position(position_opened2)
-
         last_audusd = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("0.80501"),
             Price("0.80505"),
             Quantity(1),
@@ -355,7 +358,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last_gbpusd = QuoteTick(
-            GBPUSD_FXCM,
+            GBPUSD_FXCM.symbol,
             Price("1.30315"),
             Price("1.30317"),
             Quantity(1),
@@ -367,16 +370,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_tick(last_gbpusd)
 
         # Act
-        result1 = self.portfolio.unrealized_pnl(FXCM)
-        result2 = self.portfolio.open_value(FXCM)
-        result3 = self.portfolio.unrealized_pnl(BINANCE)
-        result4 = self.portfolio.open_value(BINANCE)
+        self.portfolio.update_position(position_opened1)
+        self.portfolio.update_position(position_opened2)
 
         # Assert
-        self.assertEqual(Money(10816.00, USD), result1)
-        self.assertEqual(Money(200000.00, USD), result2)
-        self.assertEqual(Money(0., BTC), result3)
-        self.assertEqual(Money(0., BTC), result4)
+        self.assertEqual(Money(23808.10, USD), self.portfolio.unrealized_pnl(FXCM))
+        self.assertEqual(Money(210816.00, USD), self.portfolio.open_value(FXCM))
+        self.assertEqual(Money(0., BTC), self.portfolio.unrealized_pnl(BINANCE))
+        self.assertEqual(Money(0., BTC), self.portfolio.open_value(BINANCE))
 
     def test_modifying_position_updates_portfolio(self):
         # Arrange
@@ -395,7 +396,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -406,7 +407,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(50000),
         )
@@ -415,7 +416,7 @@ class PortfolioTests(unittest.TestCase):
         position.apply(order2_filled)
 
         last_audusd = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("0.80501"),
             Price("0.80505"),
             Quantity(1),
@@ -424,18 +425,14 @@ class PortfolioTests(unittest.TestCase):
         )
 
         # Act
-        self.portfolio.update_position(TestStubs.event_position_modified(position))
         self.portfolio.update_tick(last_audusd)
-        result1 = self.portfolio.unrealized_pnl(FXCM)
-        result2 = self.portfolio.open_value(FXCM)
-        result3 = self.portfolio.unrealized_pnl(BINANCE)
-        result4 = self.portfolio.open_value(BINANCE)
+        self.portfolio.update_position(TestStubs.event_position_modified(position))
 
         # Assert
-        self.assertEqual(Money(-9749.50, USD), result1)
-        self.assertEqual(Money(50000.00, USD), result2)
-        self.assertEqual(Money(0., BTC), result3)
-        self.assertEqual(Money(0., BTC), result4)
+        self.assertEqual(Money(-7848.44, USD), self.portfolio.unrealized_pnl(FXCM))
+        self.assertEqual(Money(40250.50, USD), self.portfolio.open_value(FXCM))
+        self.assertEqual(Money(0., BTC), self.portfolio.unrealized_pnl(BINANCE))
+        self.assertEqual(Money(0., BTC), self.portfolio.open_value(BINANCE))
 
     def test_closing_position_updates_portfolio(self):
         # Arrange
@@ -454,7 +451,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -465,7 +462,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -475,16 +472,12 @@ class PortfolioTests(unittest.TestCase):
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_closed(position))
-        result1 = self.portfolio.unrealized_pnl(FXCM)
-        result2 = self.portfolio.open_value(FXCM)
-        result3 = self.portfolio.unrealized_pnl(BINANCE)
-        result4 = self.portfolio.open_value(BINANCE)
 
         # Assert
-        self.assertEqual(Money(0, USD), result1)
-        self.assertEqual(Money(0, USD), result2)
-        self.assertEqual(Money(0, BTC), result3)
-        self.assertEqual(Money(0, BTC), result4)
+        self.assertEqual(Money(0, USD), self.portfolio.unrealized_pnl(FXCM))
+        self.assertEqual(Money(0, USD), self.portfolio.open_value(FXCM))
+        self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl(BINANCE))
+        self.assertEqual(Money(0, BTC), self.portfolio.open_value(BINANCE))
 
     def test_several_positions_with_different_symbols_updates_portfolio(self):
         # Arrange
@@ -503,25 +496,25 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order3 = self.order_factory.market(
-            GBPUSD_FXCM,
+            GBPUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order4 = self.order_factory.market(
-            GBPUSD_FXCM,
+            GBPUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -536,7 +529,7 @@ class PortfolioTests(unittest.TestCase):
         position3 = Position(order3_filled)
 
         last_audusd = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("0.80501"),
             Price("0.80505"),
             Quantity(1),
@@ -545,7 +538,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last_gbpusd = QuoteTick(
-            GBPUSD_FXCM,
+            GBPUSD_FXCM.symbol,
             Price("1.30315"),
             Price("1.30317"),
             Quantity(1),
@@ -554,6 +547,8 @@ class PortfolioTests(unittest.TestCase):
         )
 
         # Act
+        self.portfolio.update_tick(last_audusd)
+        self.portfolio.update_tick(last_gbpusd)
         self.portfolio.update_position(TestStubs.event_position_opened(position1))
         self.portfolio.update_position(TestStubs.event_position_opened(position2))
         self.portfolio.update_position(TestStubs.event_position_opened(position3))
@@ -561,16 +556,9 @@ class PortfolioTests(unittest.TestCase):
         position3.apply(order4_filled)
         self.portfolio.update_position(TestStubs.event_position_closed(position3))
 
-        self.portfolio.update_tick(last_audusd)
-        self.portfolio.update_tick(last_gbpusd)
-
-        result1 = self.portfolio.unrealized_pnl(FXCM)
-        result2 = self.portfolio.open_value(FXCM)
-        result3 = self.portfolio.unrealized_pnl(BINANCE)
-        result4 = self.portfolio.open_value(BINANCE)
-
         # Assert
-        self.assertEqual(Money(-38998.00, USD), result1)
-        self.assertEqual(Money(200000.00, USD), result2)
-        self.assertEqual(Money(0, BTC), result3)
-        self.assertEqual(Money(0, BTC), result4)
+        self.assertEqual(Money(-31393.78, USD), self.portfolio.unrealized_pnl(FXCM))
+        self.assertEqual(Money(161002.00, USD), self.portfolio.open_value(FXCM))
+        self.assertEqual(Money(323.61, USD), self.portfolio.account(FXCM).position_margin())
+        self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl(BINANCE))
+        self.assertEqual(Money(0, BTC), self.portfolio.open_value(BINANCE))

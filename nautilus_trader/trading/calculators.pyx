@@ -87,9 +87,12 @@ cdef class ExchangeRateCalculator:
         elif price_type == PriceType.ASK:
             calculation_quotes = ask_quotes
         elif price_type == PriceType.MID:
-            calculation_quotes = {s: (bid_quotes[s] + ask_quotes[s]) / 2.0 for s in bid_quotes}  # type: {str, float}
+            calculation_quotes = {
+                s: (bid_quotes[s] + ask_quotes[s]) / 2.0 for s in bid_quotes
+            }  # type: {str, float}
         else:
-            raise ValueError(f"Cannot calculate exchange rate for price type {price_type_to_string(price_type)}")
+            raise ValueError(f"Cannot calculate exchange rate for price type "
+                             f"{price_type_to_string(price_type)}")
 
         cdef str symbol
         cdef double quote
@@ -102,16 +105,9 @@ cdef class ExchangeRateCalculator:
         # Build quote table
         for symbol, quote in calculation_quotes.items():
             # Get symbol codes
-            if '/' in symbol:
-                pieces = symbol.partition('/')
-                code_lhs = pieces[0]
-                code_rhs = pieces[2]
-            else:
-                if len(symbol) != 6:
-                    raise ValueError(f"Cannot parse symbol {symbol}")
-                code_lhs = symbol[:3]
-                code_rhs = symbol[-3:]
-
+            pieces = symbol.partition('/')
+            code_lhs = pieces[0]
+            code_rhs = pieces[2]
             codes.add(code_lhs)
             codes.add(code_rhs)
 
@@ -139,14 +135,12 @@ cdef class ExchangeRateCalculator:
                 if perm[0] in exchange_rates[perm[1]]:
                     exchange_rates[perm[0]][perm[1]] = 1. / exchange_rates[perm[1]][perm[0]]
 
-        cdef dict crosses = exchange_rates.get(from_currency.code)
-        if not crosses:
-            # Not enough data
-            return 0
-
-        cdef double xrate = crosses.get(to_currency.code, 0)
-        if xrate > 0:
-            return xrate
+        cdef double xrate
+        cdef dict quotes = exchange_rates.get(from_currency.code)
+        if quotes:
+            xrate = quotes.get(to_currency.code, 0)
+            if xrate > 0:
+                return xrate
 
         # Exchange rate not yet calculated
         # Continue to calculate remaining exchange rates
@@ -172,12 +166,12 @@ cdef class ExchangeRateCalculator:
                     if perm[1] not in exchange_rates[perm[0]]:
                         exchange_rates[perm[0]][perm[1]] = common_rate1 / common_rate2
 
-        crosses = exchange_rates.get(from_currency.code)
-        if not crosses:
+        quotes = exchange_rates.get(from_currency.code)
+        if not quotes:
             # Not enough data
             return 0
 
-        return crosses.get(to_currency.code, 0)
+        return quotes.get(to_currency.code, 0)
 
 
 cdef class RolloverInterestCalculator:
@@ -199,7 +193,10 @@ cdef class RolloverInterestCalculator:
 
         """
         if short_term_interest_csv_path == "default":
-            short_term_interest_csv_path = os.path.join(PACKAGE_ROOT + "/_internal/rates/", "short-term-interest.csv")
+            short_term_interest_csv_path = os.path.join(
+                PACKAGE_ROOT + "/_internal/rates/", "short-term-interest.csv"
+            )
+
         self._exchange_calculator = ExchangeRateCalculator()
 
         csv_rate_data = pd.read_csv(short_term_interest_csv_path)

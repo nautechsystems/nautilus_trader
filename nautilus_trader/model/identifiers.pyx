@@ -783,27 +783,3 @@ cdef class TradeMatchId(Identifier):
 
         """
         super().__init__(value)
-
-
-cdef class InstrumentId(Identifier):
-    """
-    Represents a valid instrument identifier. The identifier value must be
-    unique at the fund level.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the InstrumentId class.
-
-        Parameters
-        ----------
-        value : str
-            The instrument identifier value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        super().__init__(value)

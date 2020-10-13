@@ -18,7 +18,6 @@ from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 
 # Crypto currencies
 cdef Currency BTC
-cdef Currency XBT
 cdef Currency ETH
 cdef Currency USDT
 cdef Currency XRP

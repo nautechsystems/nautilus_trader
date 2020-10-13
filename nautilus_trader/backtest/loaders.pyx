@@ -19,18 +19,19 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport BTC
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.currency cimport ETH
 from nautilus_trader.model.currency cimport USD
 from nautilus_trader.model.currency cimport USDT
-from nautilus_trader.model.currency cimport XBT
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -102,92 +103,104 @@ cdef class InstrumentLoader:
     """
 
     @staticmethod
-    def xbtusd_bitmex() -> Instrument:
+    def btcusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX XBT/USD perpetual contract for backtesting.
+        Return the BitMEX BTC/USD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("XBT/USD", Venue('BITMEX')),
-            asset_type=AssetType.CRYPTO,
-            base_currency=XBT,
+            symbol=Symbol("BTC/USD", Venue('BITMEX')),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
+            base_currency=BTC,
             quote_currency=USD,
-            settlement_currency=XBT,
+            settlement_currency=BTC,
             price_precision=1,
             size_precision=0,
             tick_size=Decimal("0.5"),
             multiplier=Decimal("1"),
+            leverage=leverage,
             lot_size=Quantity(1),
-            min_quantity=Quantity(1),
-            max_quantity=Quantity(1e7),
-            min_notional=Money(1.00, USD),
-            max_notional=None,
-            margin_initial=Decimal("1.00"),
-            margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.0250"),
-            taker_fee=Decimal("0.0750"),
+            max_quantity=None,
+            min_quantity=None,
+            max_notional=Money("10000000.0", USD),
+            min_notional=Money("1.0", USD),
+            max_price=Price("1000000.0"),
+            min_price=Price("0.5"),
+            margin_initial=Decimal("0.01"),
+            margin_maintenance=Decimal("0.0035"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
             settlement_fee=Decimal("0.0000"),
-            funding_long=Decimal("-0.0923"),
-            funding_short=Decimal("0.0923"),
+            funding_rate_long=Decimal("-0.000923"),
+            funding_rate_short=Decimal("0.000923"),
             timestamp=_UNIX_EPOCH,
         )
 
     @staticmethod
-    def ethusd_bitmex() -> Instrument:
+    def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
         """
         return Instrument(
             symbol=Symbol("ETH/USD", Venue('BITMEX')),
-            asset_type=AssetType.CRYPTO,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
             base_currency=ETH,
             quote_currency=USD,
-            settlement_currency=XBT,
+            settlement_currency=BTC,
             price_precision=2,
             size_precision=0,
             tick_size=Decimal("0.05"),
             multiplier=Decimal("1"),
+            leverage=leverage,
             lot_size=Quantity(1),
-            min_quantity=Quantity(1),
-            max_quantity=Quantity(10000000),
-            min_notional=Money(1.00, USD),
+            max_quantity=Quantity("10000000.0"),
+            min_quantity=Quantity("1.0"),
             max_notional=None,
-            margin_initial=Decimal("2.00"),
-            margin_maintenance=Decimal("0.70"),
-            maker_fee=Decimal("-0.0250"),
-            taker_fee=Decimal("0.0750"),
+            min_notional=None,
+            max_price=Price("1000000.00"),
+            min_price=Price("0.05"),
+            margin_initial=Decimal("0.02"),
+            margin_maintenance=Decimal("0.007"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
             settlement_fee=Decimal("0.0000"),
-            funding_long=Decimal("0.0000"),
-            funding_short=Decimal("0.0000"),
+            funding_rate_long=Decimal("0.0000"),
+            funding_rate_short=Decimal("0.0000"),
             timestamp=_UNIX_EPOCH,
         )
 
     @staticmethod
-    def ethxbt_bitmex() -> Instrument:
+    def ethbtc_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX ETH/XBT perpetual contract for backtesting.
+        Return the BitMEX ETH/BTC perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
-            asset_type=AssetType.CRYPTO,
+            symbol=Symbol("ETH/BTC", Venue('BITMEX')),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
             base_currency=ETH,
-            quote_currency=XBT,
-            settlement_currency=XBT,
+            quote_currency=BTC,
+            settlement_currency=BTC,
             price_precision=5,
-            size_precision=0,
+            size_precision=3,
             tick_size=Decimal("0.00001"),
             lot_size=Quantity("1"),
-            multiplier=Decimal("1"),
+            multiplier=Decimal("0.00001"),
+            leverage=leverage,
+            max_quantity=Quantity(""),
             min_quantity=Quantity(1),
-            max_quantity=Quantity(10000000),
-            min_notional=Money(1.00, USD),
             max_notional=None,
+            min_notional=Money(1.00, USD),
+            max_price=Price("10.00"),
+            min_price=Price("0.05"),
             margin_initial=Decimal("1.00"),
             margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.0250"),
-            taker_fee=Decimal("0.0750"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
             settlement_fee=Decimal("0.0000"),
-            funding_long=Decimal("-0.0923"),
-            funding_short=Decimal("0.0923"),
+            funding_rate_long=Decimal("-0.0923"),
+            funding_rate_short=Decimal("0.0923"),
             timestamp=_UNIX_EPOCH,
         )
 
@@ -199,7 +212,8 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("BTC/USDT", Venue('BINANCE')),
-            asset_type=AssetType.CRYPTO,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SPOT,
             base_currency=BTC,
             quote_currency=USDT,
             settlement_currency=BTC,
@@ -208,17 +222,20 @@ cdef class InstrumentLoader:
             tick_size=Decimal("0.01"),
             lot_size=Quantity("1"),
             multiplier=Decimal("1"),
-            min_quantity=Quantity(1),
-            max_quantity=Quantity(10000000),
-            min_notional=Money(10.00, USD),
+            leverage=Decimal("1"),
+            max_quantity=Quantity("9000.0"),
+            min_quantity=Quantity("1e-06"),
             max_notional=None,
-            margin_initial=Decimal("1.00"),
-            margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.0250"),
-            taker_fee=Decimal("0.0750"),
-            settlement_fee=Decimal("0.0000"),
-            funding_long=Decimal("-0.0923"),
-            funding_short=Decimal("0.0923"),
+            min_notional=Money(10.00, USDT),
+            max_price=Price("1000000.0"),
+            min_price=Price("0.01"),
+            margin_initial=Decimal("0"),
+            margin_maintenance=Decimal("0"),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
+            settlement_fee=Decimal("0.000"),
+            funding_rate_long=Decimal("0"),
+            funding_rate_short=Decimal("0"),
             timestamp=_UNIX_EPOCH,
         )
 
@@ -229,7 +246,8 @@ cdef class InstrumentLoader:
         """
         return Instrument(
             symbol=Symbol("ETH/USDT", Venue('BINANCE')),
-            asset_type=AssetType.CRYPTO,
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SPOT,
             base_currency=ETH,
             quote_currency=USDT,
             settlement_currency=ETH,
@@ -238,17 +256,20 @@ cdef class InstrumentLoader:
             tick_size=Decimal("0.01"),
             lot_size=Quantity("1"),
             multiplier=Decimal("1"),
-            min_quantity=Quantity(1),
-            max_quantity=Quantity(10000000),
-            min_notional=Money(1.00, USD),
+            leverage=Decimal("1"),
+            max_quantity=Quantity("9000"),
+            min_quantity=Quantity("1e-05"),
             max_notional=None,
+            min_notional=Money(10.00, USDT),
+            max_price=Price("1000000.0"),
+            min_price=Price("0.01"),
             margin_initial=Decimal("1.00"),
             margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.0250"),
-            taker_fee=Decimal("0.0750"),
-            settlement_fee=Decimal("0.0000"),
-            funding_long=Decimal("-0.0923"),
-            funding_short=Decimal("0.0923"),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
+            settlement_fee=Decimal("0.000"),
+            funding_rate_long=Decimal("0"),
+            funding_rate_short=Decimal("0"),
             timestamp=_UNIX_EPOCH,
         )
 
@@ -282,25 +303,29 @@ cdef class InstrumentLoader:
 
         return Instrument(
             symbol=symbol,
-            asset_type=AssetType.FOREX,
+            asset_class=AssetClass.FX,
+            asset_type=AssetType.SPOT,
             base_currency=Currency.from_string_c(base_currency),
             quote_currency=Currency.from_string_c(quote_currency),
             settlement_currency=Currency.from_string_c(base_currency),
             price_precision=price_precision,
             size_precision=0,
             tick_size=Decimal.from_float_c(1 / (10 ** price_precision), price_precision),
-            lot_size=Quantity("1000"),
             multiplier=Decimal("1"),
-            min_quantity=Quantity("1"),
+            leverage=Decimal("100"),
+            lot_size=Quantity("1000"),
             max_quantity=Quantity("1e7"),
-            min_notional=Money(1000.00, USD),
+            min_quantity=Quantity("1000"),
+            max_price=None,
+            min_price=None,
             max_notional=Money(50000000.00, USD),
-            margin_initial=Decimal("1.00"),
-            margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.0250"),
-            taker_fee=Decimal("0.0750"),
+            min_notional=Money(1000.00, USD),
+            margin_initial=Decimal("0.0005"),
+            margin_maintenance=Decimal("0.001"),
+            maker_fee=Decimal("0.002"),
+            taker_fee=Decimal("0.002"),
             settlement_fee=Decimal("0.0000"),
-            funding_long=Decimal("-0.0923"),
-            funding_short=Decimal("0.0923"),
+            funding_rate_long=Decimal("0.0000"),
+            funding_rate_short=Decimal("0.0000"),
             timestamp=_UNIX_EPOCH,
         )
