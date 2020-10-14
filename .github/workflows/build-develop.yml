@@ -30,4 +30,4 @@ jobs:
       - name: Test
         run: |
           cd scripts
-          bash run_tests.sh
+          python run_tests.py

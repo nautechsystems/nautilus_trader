@@ -28,7 +28,7 @@ jobs:
       - name: Test
         run: |
           cd scripts
-          bash run_tests.sh
+          python run_tests.py
       - name: Publish Package
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
