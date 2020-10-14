@@ -14,11 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport basis_points_as_percentage
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.quicktions cimport Fraction
 
 
 cdef class PositionSizer:
@@ -60,12 +61,12 @@ cdef class PositionSizer:
 
     cpdef Quantity calculate(
             self,
-            Money equity,
-            double risk_bp,
             Price entry,
             Price stop_loss,
+            Money equity,
+            Decimal risk,
+            Decimal commission_rate=Decimal(),
             double exchange_rate=1.0,
-            double commission_rate_bp=0.0,
             double hard_limit=0.0,
             int units=1,
             int unit_batch_size=0,
@@ -73,19 +74,19 @@ cdef class PositionSizer:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef double _calculate_risk_ticks(self, Price entry, Price stop_loss) except *:
+    cdef Fraction _calculate_risk_ticks(self, Price entry, Price stop_loss):
         return abs(entry - stop_loss) / self.instrument.tick_size
 
-    cdef double _calculate_riskable_money(
+    cdef Fraction _calculate_riskable_money(
             self,
-            double equity,
-            double risk_bp,
-            double commission_rate_bp,
-    ) except *:
-        if equity <= 0:
-            return 0.0
-        cdef double risk_money = equity * basis_points_as_percentage(risk_bp)
-        cdef double commission = risk_money * basis_points_as_percentage(commission_rate_bp)
+            Money equity,
+            Decimal risk,
+            Decimal commission_rate,
+    ):
+        if int(equity) <= 0:
+            return Fraction()
+        cdef Fraction risk_money = equity * risk
+        cdef Fraction commission = risk_money * commission_rate * 2  # (round turn)
 
         return risk_money - commission
 
@@ -109,12 +110,12 @@ cdef class FixedRiskSizer(PositionSizer):
 
     cpdef Quantity calculate(
             self,
-            Money equity,
-            double risk_bp,
             Price entry,
             Price stop_loss,
+            Money equity,
+            Decimal risk,
+            Decimal commission_rate=Decimal(),
             double exchange_rate=1.0,
-            double commission_rate_bp=0.0,
             double hard_limit=0.0,
             int units=1,
             int unit_batch_size=0,
@@ -124,18 +125,18 @@ cdef class FixedRiskSizer(PositionSizer):
 
         Parameters
         ----------
-        equity : Money
-            The account equity.
-        risk_bp : double
-            The risk in basis points.
         entry : Price
             The entry price.
         stop_loss : Price
             The stop loss price.
+        equity : Money
+            The account equity.
+        risk : Decimal
+            The risk percentage.
         exchange_rate : double
             The exchange rate for the instrument quote currency vs account currency.
-        commission_rate_bp : double
-            The commission rate as basis points of notional transaction value (>= 0).
+        commission_rate : Decimal
+            The commission rate (>= 0).
         hard_limit : double
             The hard limit for the total quantity (>= 0) (0 = no hard limit).
         units : int
@@ -168,32 +169,32 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_none(equity, "equity")
         Condition.not_none(entry, "price_entry")
         Condition.not_none(stop_loss, "price_stop_loss")
-        Condition.positive(risk_bp, "risk_bp")
+        Condition.positive(risk, "risk")
         Condition.not_negative(exchange_rate, "xrate")
-        Condition.not_negative(commission_rate_bp, "commission_rate_bp")
+        Condition.not_negative(commission_rate, "commission_rate")
         Condition.positive_int(units, "units")
         Condition.not_negative_int(unit_batch_size, "unit_batch_size")
 
         if exchange_rate <= 0.0:
             return Quantity(0, precision=self.instrument.size_precision)
 
-        cdef double risk_points = self._calculate_risk_ticks(entry, stop_loss)
-        cdef double risk_money = self._calculate_riskable_money(equity.as_double(), risk_bp, commission_rate_bp)
+        cdef Fraction risk_points = self._calculate_risk_ticks(entry, stop_loss)
+        cdef Fraction risk_money = self._calculate_riskable_money(equity, risk, commission_rate)
 
-        if risk_points <= 0.0:
+        if risk_points <= 0:
             # Divide by zero protection
             return Quantity(0, precision=self.instrument.size_precision)
 
         # Calculate position size
-        cdef double tick_size = self.instrument.tick_size
+        cdef Decimal tick_size = self.instrument.tick_size
         cdef double position_size = ((risk_money / exchange_rate) / risk_points) / tick_size
 
         # Limit size on hard limit
-        if hard_limit > 0.0:
+        if hard_limit > 0:
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        cdef double position_size_batched = max(0.0, position_size / units)
+        cdef double position_size_batched = max(0, position_size / units)
 
         if unit_batch_size > 0:
             # Round position size to nearest unit batch size

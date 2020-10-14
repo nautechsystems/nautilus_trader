@@ -31,7 +31,6 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.trading.commission import GenericCommissionModel
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -82,8 +81,6 @@ if __name__ == "__main__":
         random_seed=None,
     )
 
-    commission_model = GenericCommissionModel()
-
     engine = BacktestEngine(
         data=data,
         strategies=strategies,
@@ -92,7 +89,6 @@ if __name__ == "__main__":
         generate_position_ids=False,
         config=config,
         fill_model=fill_model,
-        commission_model=commission_model,
     )
 
     input("Press Enter to continue...")

@@ -50,8 +50,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
-from nautilus_trader.trading.commission cimport CommissionModel
-from nautilus_trader.trading.commission cimport GenericCommissionModel
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -71,7 +69,6 @@ cdef class BacktestEngine:
             generate_position_ids,
             BacktestConfig config=None,
             FillModel fill_model=None,
-            CommissionModel commission_model=None,
     ):
         """
         Initialize a new instance of the BacktestEngine class.
@@ -98,8 +95,6 @@ cdef class BacktestEngine:
             config = BacktestConfig()
         if fill_model is None:
             fill_model = FillModel()
-        if commission_model is None:
-            commission_model = GenericCommissionModel()
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         self.trader_id = TraderId("BACKTESTER", "000")
@@ -203,7 +198,6 @@ cdef class BacktestEngine:
             instruments=data.instruments,
             config=config,
             fill_model=fill_model,
-            commission_model=commission_model,
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
             logger=self.test_logger,

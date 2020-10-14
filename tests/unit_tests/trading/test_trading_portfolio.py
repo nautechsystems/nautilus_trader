@@ -572,6 +572,6 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(-31393.78, USD), self.portfolio.unrealized_pnl_for_venue(FXCM))
         self.assertEqual(Money(161002.00, USD), self.portfolio.open_value(FXCM))
-        self.assertEqual(Money(323.61, USD), self.portfolio.account(FXCM).position_margin())
+        self.assertEqual(Money(164.22, USD), self.portfolio.account(FXCM).position_margin())
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
         self.assertEqual(Money(0, BTC), self.portfolio.open_value(BINANCE))

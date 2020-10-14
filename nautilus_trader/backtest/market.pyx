@@ -26,6 +26,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
@@ -69,7 +70,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
-from nautilus_trader.trading.commission cimport CommissionModel
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
@@ -87,7 +87,6 @@ cdef class SimulatedMarket:
             ExecutionCache exec_cache not None,
             dict instruments not None: {Symbol, Instrument},
             BacktestConfig config not None,
-            CommissionModel commission_model not None,
             FillModel fill_model not None,
             TestClock clock not None,
             TestUUIDFactory uuid_factory not None,
@@ -108,8 +107,6 @@ cdef class SimulatedMarket:
             The instruments needed for the backtest.
         config : BacktestConfig
             The backtest configuration.
-        commission_model : CommissionModel
-            The commission model for the backtest.
         fill_model : FillModel
             The fill model for the backtest.
         clock : TestClock
@@ -149,7 +146,6 @@ cdef class SimulatedMarket:
         self.account_balance_activity_day = Money(0, self.account_currency)
 
         self.xrate_calculator = ExchangeRateCalculator()
-        self.commission_model = commission_model
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
         self.rollover_spread = 0.0  # Bank + Broker spread markup
         self.total_commissions = Money(0, self.account_currency)
@@ -896,12 +892,14 @@ cdef class SimulatedMarket:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.symbol]
-        cdef Money commission = self.commission_model.calculate(
-            symbol=order.symbol,
-            filled_qty=order.quantity,
-            base_currency=instrument.base_currency,
-            liquidity_side=liquidity_side
-        )
+        cdef Money commission
+        if liquidity_side == LiquiditySide.MAKER:
+            commission = Money(order.quantity * instrument.maker_fee, instrument.base_currency)
+        elif liquidity_side == LiquiditySide.TAKER:
+            commission = Money(order.quantity * instrument.taker_fee, instrument.base_currency)
+        else:
+            raise RuntimeError(f"Cannot calculate commission "
+                               f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")
 
         # Generate event
         cdef OrderFilled filled = OrderFilled(

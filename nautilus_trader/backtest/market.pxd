@@ -50,7 +50,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
-from nautilus_trader.trading.commission cimport CommissionModel
 
 
 cdef class SimulatedMarket:
@@ -75,7 +74,6 @@ cdef class SimulatedMarket:
     cdef readonly Money account_balance_start_day
     cdef readonly Money account_balance_activity_day
     cdef readonly ExchangeRateCalculator xrate_calculator
-    cdef readonly CommissionModel commission_model
     cdef readonly RolloverInterestCalculator rollover_calculator
     cdef readonly double rollover_spread
     cdef readonly Money total_commissions

@@ -50,7 +50,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.trading.commission import GenericCommissionModel
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.strategies import TestStrategy1
@@ -113,7 +112,6 @@ class TradingStrategyTests(unittest.TestCase):
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
-            commission_model=GenericCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger,
