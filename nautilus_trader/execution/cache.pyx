@@ -32,7 +32,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionCache(ExecutionCacheReadOnly):
     """
-    Provides a cache for the execution engine.
+    Provides a cache for the `ExecutionEngine`.
     """
 
     def __init__(
@@ -565,7 +565,9 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
             self._log.warning(f"Residual {position}")
 
     cpdef void reset(self) except *:
-        # Reset the execution cache by clearing all stateful values
+        """
+        Reset the cache by clearing all stateful values.
+        """
         self._log.debug(f"Resetting...")
 
         self._cached_accounts.clear()
@@ -689,7 +691,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         """
         return self.positions_open_count() == 0
 
-    # -- Account queries ----------------------------------------------------
+    # -- Account queries -------------------------------------------------------
     cpdef Account account(self, AccountId account_id):
         """
         Return the account matching the given identifier (if found).

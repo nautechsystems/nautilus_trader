@@ -173,8 +173,6 @@ cdef class BacktestEngine:
 
         self.data_engine = BacktestDataEngine(
             data=data,
-            tick_capacity=config.tick_capacity,
-            bar_capacity=config.bar_capacity,
             portfolio=self.portfolio,
             clock=self.test_clock,
             logger=self.test_logger,

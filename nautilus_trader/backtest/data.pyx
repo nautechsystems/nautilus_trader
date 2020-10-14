@@ -165,8 +165,6 @@ cdef class BacktestDataEngine(DataEngine):
     def __init__(
             self,
             BacktestDataContainer data not None,
-            int tick_capacity,
-            int bar_capacity,
             Portfolio portfolio not None,
             TestClock clock not None,
             Logger logger not None
@@ -178,29 +176,14 @@ cdef class BacktestDataEngine(DataEngine):
         ----------
         data : BacktestDataContainer
             The data needed for the backtest data engine.
-        tick_capacity : int
-            The max length of the internal tick deques.
-        bar_capacity : int
-            The max length of the internal bar deques.
         portfolio : Portfolio
         clock : TestClock
             The clock for the component.
         logger : Logger
             The logger for the component.
 
-        Raises
-        ------
-        ValueError
-            If the tick_capacity is not positive (> 0).
-        ValueError
-            If the bar_capacity is not positive (> 0).
-
         """
-        Condition.positive_int(tick_capacity, "tick_capacity")
-        Condition.positive_int(bar_capacity, "bar_capacity")
         super().__init__(
-            tick_capacity=tick_capacity,
-            bar_capacity=bar_capacity,
             portfolio=portfolio,
             clock=clock,
             uuid_factory=TestUUIDFactory(),
@@ -227,7 +210,8 @@ cdef class BacktestDataEngine(DataEngine):
         self.execution_resolutions = []
 
         timing_start_total = datetime.utcnow()
-        for symbol, instrument in self._instruments.items():
+        for instrument in self.cache.instruments():
+            symbol = instrument.symbol
             self._log.info(f"Preparing {symbol} data...")
             timing_start = datetime.utcnow()
 
@@ -478,7 +462,7 @@ cdef class BacktestDataEngine(DataEngine):
 
         self._log.info(f"Requesting instrument for {symbol}...")
 
-        callback(self._instruments[symbol])
+        callback(self.cache.instrument(symbol))
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
@@ -492,7 +476,7 @@ cdef class BacktestDataEngine(DataEngine):
 
         self._log.info(f"Requesting all instruments for the {venue} venue ...")
 
-        callback(self.instruments())
+        callback(self.cache.instruments())
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """

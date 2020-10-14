@@ -69,8 +69,6 @@ class TraderTests(unittest.TestCase):
 
         data_engine = BacktestDataEngine(
             data=data,
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=clock,
             logger=logger,

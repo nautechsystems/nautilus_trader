@@ -121,7 +121,7 @@ class EMACross(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.bar_count(self.bar_type)}]...")
+                          f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC

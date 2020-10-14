@@ -47,8 +47,8 @@ cdef class ExecutionEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef PositionIdGenerator _pos_id_generator
-    cdef dict _exec_clients
-    cdef dict _registered_strategies
+    cdef dict _clients
+    cdef dict _strategies
 
     cdef readonly TraderId trader_id
     cdef readonly ExecutionCache cache
