@@ -22,7 +22,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.account cimport Account
 
 
-cdef class ExecutionCacheReadOnly:
+cdef class ExecutionCacheFacade:
     """
     Provides a read-only facade for an execution cache.
     """

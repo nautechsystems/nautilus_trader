@@ -364,7 +364,7 @@ cdef class SimulatedMarket:
                         continue  # Continue loop to next order
 
             # Check for order expiry
-            if order.expire_time is not None and time_now >= order.expire_time:
+            if order.expire_time and time_now >= order.expire_time:
                 if order.cl_ord_id in self._working_orders:  # Order may have been removed since loop started
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
@@ -384,7 +384,7 @@ cdef class SimulatedMarket:
 
         cdef PositionSide side
         cdef Money pnl = Money(0, self.account_currency)
-        if position is not None and position.entry != event.order_side:
+        if position and position.entry != event.order_side:
             if position.entry == OrderSide.BUY:
                 side = PositionSide.LONG
             elif position.entry == OrderSide.SELL:
@@ -936,9 +936,9 @@ cdef class SimulatedMarket:
                     self._process_order(child_order)
             del self._child_orders[order.cl_ord_id]
 
-        if position is not None and position.is_closed():
+        if position and position.is_closed():
             oco_orders = self._position_oco_orders.get(position.id)
-            if oco_orders is not None:
+            if oco_orders:
                 for order in self._position_oco_orders[position.id]:
                     if order.is_working():
                         self._cancel_order(order)

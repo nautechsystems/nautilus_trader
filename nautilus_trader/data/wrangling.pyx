@@ -73,8 +73,8 @@ cdef class TickDataWrangler:
         if data_ticks is not None and len(data_ticks) > 0:
             self._data_ticks = as_utc_index(data_ticks)
         else:
-            Condition.true(data_bars_bid is not None, "data_bars_bid is not None")
-            Condition.true(data_bars_ask is not None, "data_bars_ask is not None")
+            Condition.not_none(data_bars_bid, "data_bars_bid")
+            Condition.not_none(data_bars_ask, "data_bars_ask")
             self._data_bars_bid = data_bars_bid
             self._data_bars_ask = data_bars_ask
 
