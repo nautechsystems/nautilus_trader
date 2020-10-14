@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 
 cdef class BacktestExecClient(ExecutionClient):
     """
-    Provides an execution client for the BacktestEngine.
+    Provides an execution client for the `BacktestEngine`.
     """
 
     def __init__(
