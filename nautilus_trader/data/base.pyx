@@ -90,10 +90,10 @@ cdef class DataCacheReadOnly:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef double get_xrate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=PriceType.MID,
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=PriceType.MID,
     ) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

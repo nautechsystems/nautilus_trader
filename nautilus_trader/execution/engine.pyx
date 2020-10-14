@@ -243,14 +243,25 @@ cdef class ExecutionEngine:
             self._pos_id_generator.set_count(symbol, count)
             self._log.info(f"Set position count {symbol} to {count}")
 
-    cpdef void flush_db(self) except *:
+    cpdef void connect(self) except *:
         """
-        Flush the execution database which permanently removes all persisted data.
-
-        WARNING: Permanent data loss.
-
+        Connect all execution clients.
         """
-        self.cache.flush_db()
+        self._log.info("Connecting all clients...")
+
+        cdef ExecutionClient client
+        for client in self._clients:
+            client.connect()
+
+    cpdef void disconnect(self) except *:
+        """
+        Disconnect all execution clients.
+        """
+        self._log.info("Disconnecting all clients...")
+
+        cdef ExecutionClient client
+        for client in self._clients:
+            client.disconnect()
 
     cpdef void execute(self, Command command) except *:
         """
@@ -297,6 +308,25 @@ cdef class ExecutionEngine:
 
         self.command_count = 0
         self.event_count = 0
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose all execution clients.
+        """
+        self._log.info("Disposing all clients...")
+
+        cdef ExecutionClient client
+        for client in self._clients:
+            client.dispose()
+
+    cpdef void flush_db(self) except *:
+        """
+        Flush the execution database which permanently removes all persisted data.
+
+        WARNING: Permanent data loss.
+
+        """
+        self.cache.flush_db()
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 

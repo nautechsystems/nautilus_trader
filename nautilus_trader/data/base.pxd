@@ -42,10 +42,10 @@ cdef class DataCacheReadOnly:
     cpdef bint has_bars(self, BarType bar_type) except *
 
     cpdef double get_xrate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=*,
+        self,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=*,
     ) except *
 
     cdef readonly int tick_capacity
