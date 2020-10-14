@@ -14,9 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.quicktions cimport Fraction
 
 
 cdef class PositionSizer:
@@ -25,24 +27,24 @@ cdef class PositionSizer:
     cpdef void update_instrument(self, Instrument instrument) except *
     cpdef Quantity calculate(
         self,
-        Money equity,
-        double risk_bp,
         Price entry,
         Price stop_loss,
+        Money equity,
+        Decimal risk,
+        Decimal commission_rate=*,
         double exchange_rate=*,
-        double commission_rate_bp=*,
         double hard_limit=*,
         int units=*,
         int unit_batch_size=*,
     )
 
-    cdef double _calculate_risk_ticks(self, Price entry, Price stop_loss) except *
-    cdef double _calculate_riskable_money(
+    cdef Fraction _calculate_risk_ticks(self, Price entry, Price stop_loss)
+    cdef Fraction _calculate_riskable_money(
         self,
-        double equity,
-        double risk_bp,
-        double commission_rate_bp,
-    ) except *
+        Money equity,
+        Decimal risk,
+        Decimal commission_rate,
+    )
 
 
 cdef class FixedRiskSizer(PositionSizer):
