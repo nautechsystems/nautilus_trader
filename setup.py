@@ -60,12 +60,6 @@ compiler_directives = {
     "linetrace": LINE_TRACING,   # See above
 }
 
-# Cython kwargs
-cython_kwargs = {}
-
-if IS_POSIX:
-    cython_kwargs["nthreads"] = CPU_COUNT
-
 # ------------------------------------------------------------------------------
 
 
@@ -101,8 +95,8 @@ setup(
     ext_modules=cythonize(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives,
+        nthreads=CPU_COUNT if IS_POSIX else 1,
         build_dir="build",
-        **cython_kwargs,
     ),
     cmdclass={"build_ext": build_ext},
     options={"build_ext": {"inplace": True, "force": False, "parallel": CPU_COUNT}},

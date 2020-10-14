@@ -53,10 +53,10 @@ cdef class Condition:
             return  # Check passed
 
         cdef str msg = f"The condition predicate \'{description}\' was False"
-        if ex_type is None or type(ex_type) != type(Exception):
-            raise ValueError(msg)
-        else:
+        if type(ex_type) == type(Exception):
             raise ex_type(msg)
+        else:
+            raise ValueError(msg)
 
     @staticmethod
     cdef void false(bint predicate, str description, ex_type=None) except *:

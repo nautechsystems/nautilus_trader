@@ -34,10 +34,8 @@ is written mostly in Python with optional additional C-inspired syntax.
 > https://cython.org
 
 To run code or tests from the source code, first compile the C extensions for the package.
-Note the optional `parallel` flag, the value can be the number of cpus you would
-like to allocate to the compilation.
 
-    $ python setup.py build_ext --inplace --parallel=<cpu_count>
+    $ python setup.py build_ext --inplace
 
 ## Features
 
@@ -79,8 +77,6 @@ Unfortunately the Community edition will not interpret Cython syntax.
 > https://www.jetbrains.com/pycharm/
 
 To run code or tests from the source code, first compile the C extensions for the package.
-Note the optional `parallel` flag, the value can be the number of cpus you would
-like to allocate to the compilation.
 
     $ python setup.py build_ext --inplace
 
