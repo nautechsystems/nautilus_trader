@@ -19,7 +19,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.data.cache cimport DataCacheReadOnly
+from nautilus_trader.data.cache cimport DataCacheFacade
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -39,7 +39,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.trading.portfolio cimport PortfolioReadOnly
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy:
@@ -48,9 +48,9 @@ cdef class TradingStrategy:
     cdef readonly Clock clock
     cdef readonly UUIDFactory uuid_factory
     cdef readonly LoggerAdapter log
-    cdef readonly DataCacheReadOnly data
+    cdef readonly DataCacheFacade data
     cdef readonly ExecutionCacheFacade execution
-    cdef readonly PortfolioReadOnly portfolio
+    cdef readonly PortfolioFacade portfolio
     cdef readonly OrderFactory order_factory
 
     cdef list _indicators

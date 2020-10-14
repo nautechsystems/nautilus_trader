@@ -115,13 +115,13 @@ cdef class Account:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef void register_portfolio(self, PortfolioReadOnly portfolio):
+    cpdef void register_portfolio(self, PortfolioFacade portfolio):
         """
         Register the given portfolio with the account.
 
         Parameters
         ----------
-        portfolio : PortfolioReadOnly
+        portfolio : PortfolioFacade
             The portfolio to register
 
         """

@@ -33,9 +33,9 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class PortfolioReadOnly:
+cdef class PortfolioFacade:
     """
-    Provides a read-only facade for a trading portfolio.
+    Provides a read-only facade for a `Portfolio`.
     """
     cpdef Account account(self, Venue venue):
         # Abstract method
@@ -64,7 +64,7 @@ cdef class PortfolioReadOnly:
 
 # TODO: Refactor duplication throughout calculation methods
 
-cdef class Portfolio(PortfolioReadOnly):
+cdef class Portfolio(PortfolioFacade):
     """
     Provides a trading portfolio.
     """
@@ -317,7 +317,7 @@ cdef class Portfolio(PortfolioReadOnly):
 
         Returns
         -------
-        AccountReadOnly or None
+        Account or None
 
         """
         Condition.not_none(venue, "venue")

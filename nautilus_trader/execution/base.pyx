@@ -24,7 +24,7 @@ from nautilus_trader.trading.account cimport Account
 
 cdef class ExecutionCacheFacade:
     """
-    Provides a read-only facade for an execution cache.
+    Provides a read-only facade for an `ExecutionCache`.
     """
 
     # -- Trading queries -------------------------------------------------------

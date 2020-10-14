@@ -30,7 +30,7 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class PortfolioReadOnly:
+cdef class PortfolioFacade:
     cpdef Account account(self, Venue venue)
     cpdef Money order_margin(self, Venue venue)
     cpdef Money position_margin(self, Venue venue)
@@ -39,7 +39,7 @@ cdef class PortfolioReadOnly:
     cpdef Money open_value(self, Venue venue)
 
 
-cdef class Portfolio(PortfolioReadOnly):
+cdef class Portfolio(PortfolioFacade):
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
