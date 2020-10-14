@@ -24,9 +24,9 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.constants cimport *
 
 
-cdef class DataCacheReadOnly:
+cdef class DataCacheFacade:
     """
-    Provides a read-only facade for a data cache.
+    Provides a read-only facade for a `DataCache`.
     """
 
     cpdef list symbols(self):

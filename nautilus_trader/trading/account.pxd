@@ -18,7 +18,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.trading.portfolio cimport PortfolioReadOnly
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class Account:
@@ -26,13 +26,13 @@ cdef class Account:
     cdef Money _balance
     cdef Money _order_margin
     cdef Money _position_margin
-    cdef PortfolioReadOnly _portfolio
+    cdef PortfolioFacade _portfolio
 
     cdef readonly AccountId id
     cdef readonly AccountType account_type
     cdef readonly Currency currency
 
-    cpdef void register_portfolio(self, PortfolioReadOnly portfolio)
+    cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *
     cpdef void update_order_margin(self, Money margin) except *
     cpdef void update_position_margin(self, Money margin) except *

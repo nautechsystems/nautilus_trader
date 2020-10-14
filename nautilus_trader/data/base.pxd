@@ -24,7 +24,7 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.constants cimport *
 
 
-cdef class DataCacheReadOnly:
+cdef class DataCacheFacade:
     cpdef list symbols(self)
     cpdef list instruments(self)
     cpdef list quote_ticks(self, Symbol symbol)

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.data.base cimport DataCacheReadOnly
+from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.instrument cimport Instrument
@@ -24,7 +24,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class DataCache(DataCacheReadOnly):
+cdef class DataCache(DataCacheFacade):
     cdef LoggerAdapter _log
 
     cdef dict _instruments

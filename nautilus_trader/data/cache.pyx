@@ -19,7 +19,7 @@ from typing import List
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.data.base cimport DataCacheReadOnly
+from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -32,7 +32,7 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class DataCache(DataCacheReadOnly):
+cdef class DataCache(DataCacheFacade):
     """
     Provides a cache for the `DataEngine`.
     """
