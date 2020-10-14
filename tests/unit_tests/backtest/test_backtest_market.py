@@ -77,15 +77,16 @@ class SimulatedMarketTests(unittest.TestCase):
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
+
         self.data_engine.set_use_previous_close(False)
 
         self.analyzer = PerformanceAnalyzer()

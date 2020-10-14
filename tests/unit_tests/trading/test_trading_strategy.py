@@ -74,8 +74,6 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
@@ -213,7 +211,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_get_tick_count_for_unknown_symbol_returns_zero(self):
         # Arrange
         # Act
-        result = self.strategy.quote_tick_count(AUDUSD_FXCM)
+        result = self.strategy.data.quote_tick_count(AUDUSD_FXCM)
 
         # Assert
         self.assertEqual(0, result)
@@ -222,14 +220,14 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(KeyError, self.strategy.quote_ticks, AUDUSD_FXCM)
+        self.assertRaises(KeyError, self.strategy.data.quote_ticks, AUDUSD_FXCM)
 
     def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
 
         # Act
-        result = self.strategy.bar_count(bar_type)
+        result = self.strategy.data.bar_count(bar_type)
 
         # Assert
         self.assertEqual(0, result)
@@ -240,7 +238,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, self.strategy.bars, bar_type)
+        self.assertRaises(KeyError, self.strategy.data.bars, bar_type)
 
     def test_bars(self):
         # Arrange
@@ -257,7 +255,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.handle_bar(bar_type, bar)
 
         # Act
-        result = self.strategy.bars(bar_type)
+        result = self.strategy.data.bars(bar_type)
 
         # Assert
         self.assertTrue(bar, result[0])
@@ -268,7 +266,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(KeyError, self.strategy.bar, unknown_bar_type, 0)
+        self.assertRaises(KeyError, self.strategy.data.bar, unknown_bar_type, 0)
 
     def test_getting_bar_at_out_of_range_index_raises_exception(self):
         # Arrange
@@ -286,7 +284,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(IndexError, self.strategy.bar, bar_type, -2)
+        self.assertRaises(IndexError, self.strategy.data.bar, bar_type, -2)
 
     def test_get_bar(self):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -302,7 +300,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.handle_bar(bar_type, bar)
 
         # Act
-        result = self.strategy.bar(bar_type, 0)
+        result = self.strategy.data.bar(bar_type, 0)
 
         # Assert
         self.assertEqual(bar, result)
@@ -310,7 +308,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_getting_tick_with_unknown_tick_type_raises_exception(self):
         # Act
         # Assert
-        self.assertRaises(KeyError, self.strategy.quote_tick, AUDUSD_FXCM, 0)
+        self.assertRaises(KeyError, self.strategy.data.quote_tick, AUDUSD_FXCM, 0)
 
     def test_get_quote_tick(self):
         tick = QuoteTick(
@@ -325,7 +323,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.strategy.quote_tick(tick.symbol, 0)
+        result = self.strategy.data.quote_tick(tick.symbol, 0)
 
         # Assert
         self.assertEqual(tick, result)
@@ -343,7 +341,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.handle_trade_tick(tick)
 
         # Act
-        result = self.strategy.trade_tick(tick.symbol, 0)
+        result = self.strategy.data.trade_tick(tick.symbol, 0)
 
         # Assert
         self.assertEqual(tick, result)

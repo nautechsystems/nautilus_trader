@@ -48,7 +48,6 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -89,7 +88,7 @@ cdef class TradingStrategy:
         self.clock = None          # Initialized when registered with a trader
         self.uuid_factory = None   # Initialized when registered with a trader
         self.log = None            # Initialized when registered with a trader
-        # self.data = None         # Initialized when registered with the data engine
+        self.data = None           # Initialized when registered with the data engine
         self.execution = None      # Initialized when registered with the execution engine
         self.portfolio = None      # Initialized when registered with the execution engine
         self.order_factory = None  # Initialized when registered with a trader
@@ -359,6 +358,7 @@ cdef class TradingStrategy:
         Condition.not_none(engine, "engine")
 
         self._data_engine = engine
+        self.data = engine.cache
 
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *:
         """
@@ -697,7 +697,7 @@ cdef class TradingStrategy:
             symbol=symbol,
             from_datetime=None,
             to_datetime=None,
-            limit=self._data_engine.tick_capacity,
+            limit=self.data.tick_capacity,
             callback=self.handle_quote_ticks,
         )
 
@@ -718,7 +718,7 @@ cdef class TradingStrategy:
             symbol=symbol,
             from_datetime=None,
             to_datetime=None,
-            limit=self._data_engine.tick_capacity,
+            limit=self.data.tick_capacity,
             callback=self.handle_trade_ticks)
 
     cpdef void request_bars(self, BarType bar_type) except *:
@@ -738,7 +738,7 @@ cdef class TradingStrategy:
             bar_type=bar_type,
             from_datetime=None,
             to_datetime=None,
-            limit=self._data_engine.bar_capacity,
+            limit=self.data.bar_capacity,
             callback=self.handle_bars)
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
@@ -868,299 +868,6 @@ cdef class TradingStrategy:
 
         self._data_engine.unsubscribe_instrument(symbol, self.handle_data)
         self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
-
-    cpdef list symbols(self):
-        """
-        Return a list of all instrument symbols held by the data engine.
-
-        Returns
-        -------
-        List[Instrument]
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.symbols()
-
-    cpdef list instruments(self):
-        """
-        Return a dictionary of all instruments for the given venue (if any).
-
-        Returns
-        -------
-        Dict[Symbol, Instrument]
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.instruments()
-
-    cpdef list quote_ticks(self, Symbol symbol):
-        """
-        Return the quote ticks for the given symbol (returns a copy of the internal deque).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks to get.
-
-        Returns
-        -------
-        List[QuoteTick]
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.quote_ticks(symbol)
-
-    cpdef list trade_ticks(self, Symbol symbol):
-        """
-        Return the trade ticks for the given symbol (returns a copy of the internal deque).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks to get.
-
-        Returns
-        -------
-        List[TradeTick]
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.trade_ticks(symbol)
-
-    cpdef list bars(self, BarType bar_type):
-        """
-        Return the bars for the given bar type (returns a copy of the internal deque).
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to get.
-
-        Returns
-        -------
-        List[Bar]
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.bars(bar_type)
-
-    cpdef Instrument instrument(self, Symbol symbol):
-        """
-        Return the instrument corresponding to the given symbol (if found).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol of the instrument to return.
-
-        Returns
-        -------
-        Instrument or None
-
-        """
-        Condition.not_none(self._data_engine, "data_client")
-
-        return self._data_engine.instrument(symbol)
-
-    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
-        """
-        Return the quote tick for the given symbol at the given index or last if no index specified.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the tick to get.
-        index : int
-            The optional index for the tick to get.
-
-        Returns
-        -------
-        QuoteTick
-
-        Raises
-        ------
-        IndexError
-            If tick index is out of range.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.quote_tick(symbol, index)
-
-    cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
-        """
-        Return the trade tick for the given symbol at the given index or last if no index specified.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the tick to get.
-        index : int, optional
-            The index for the tick to get.
-
-        Returns
-        -------
-        TradeTick
-
-        Raises
-        ------
-        IndexError
-            If tick index is out of range.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.trade_tick(symbol, index)
-
-    cpdef Bar bar(self, BarType bar_type, int index=0):
-        """
-        Return the bar for the given bar type at the given index or last if no index specified.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to get.
-        index : int, optional
-            The index for the bar to get.
-
-        Returns
-        -------
-        Bar
-
-        Raises
-        ------
-        IndexError
-            If the bar index is out of range.
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.bar(bar_type, index)
-
-    cpdef int quote_tick_count(self, Symbol symbol) except *:
-        """
-        Return the count of quote ticks held by the strategy for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.quote_tick_count(symbol)
-
-    cpdef int trade_tick_count(self, Symbol symbol) except *:
-        """
-        Return the count of trade ticks held by the strategy for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.trade_tick_count(symbol)
-
-    cpdef int bar_count(self, BarType bar_type) except *:
-        """
-        Return the count of bars held by the strategy for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to count.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.bar_count(bar_type)
-
-    cpdef bint has_quote_ticks(self, Symbol symbol) except *:
-        """
-        Return a value indicating whether the strategy has quote ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.has_quote_ticks(symbol)
-
-    cpdef bint has_trade_ticks(self, Symbol symbol) except *:
-        """
-        Return a value indicating whether the strategy has trade ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.has_trade_ticks(symbol)
-
-    cpdef bint has_bars(self, BarType bar_type) except *:
-        """
-        Return a value indicating whether the strategy has bars for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the bars.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data client")
-
-        return self._data_engine.has_bars(bar_type)
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 

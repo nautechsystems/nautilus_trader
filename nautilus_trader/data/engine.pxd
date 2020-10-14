@@ -20,18 +20,16 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
+from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.serialization.constants cimport *
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -41,24 +39,17 @@ cdef class DataEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef Portfolio _portfolio
-    cdef ExchangeRateCalculator _xrate_calculator
+
     cdef dict _clients
     cdef bint _use_previous_close
 
-    cdef dict _instruments
     cdef dict _instrument_handlers
-    cdef dict _bid_quotes
-    cdef dict _ask_quotes
-    cdef dict _quote_ticks
-    cdef dict _trade_ticks
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
-    cdef dict _bars
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
 
-    cdef readonly int tick_capacity
-    cdef readonly int bar_capacity
+    cdef readonly DataCache cache
 
     cpdef void set_use_previous_close(self, bint setting)
     cpdef void connect(self) except *
@@ -109,6 +100,13 @@ cdef class DataEngine:
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef list registered_venues(self)
 
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_instruments(self)
+    cpdef list subscribed_quote_ticks(self)
+    cpdef list subscribed_trade_ticks(self)
+    cpdef list subscribed_bars(self)
+
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *
@@ -120,37 +118,7 @@ cdef class DataEngine:
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
 
-# -- QUERY METHODS ---------------------------------------------------------------------------------
-
-    cpdef list subscribed_instruments(self)
-    cpdef list subscribed_quote_ticks(self)
-    cpdef list subscribed_trade_ticks(self)
-    cpdef list subscribed_bars(self)
-
-    cpdef list symbols(self)
-    cpdef list instruments(self)
-    cpdef list quote_ticks(self, Symbol symbol)
-    cpdef list trade_ticks(self, Symbol symbol)
-    cpdef list bars(self, BarType bar_type)
-    cpdef Instrument instrument(self, Symbol symbol)
-    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
-    cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
-    cpdef Bar bar(self, BarType bar_type, int index=*)
-    cpdef int quote_tick_count(self, Symbol symbol) except *
-    cpdef int trade_tick_count(self, Symbol symbol) except *
-    cpdef int bar_count(self, BarType bar_type) except *
-    cpdef bint has_quote_ticks(self, Symbol symbol) except *
-    cpdef bint has_trade_ticks(self, Symbol symbol) except *
-    cpdef bint has_bars(self, BarType bar_type) except *
-
-    cpdef double get_xrate(
-        self,
-        Currency from_currency,
-        Currency to_currency,
-        PriceType price_type=*,
-    ) except *
-
-# ------------------------------------------------------------------------------------------------ #
+# --------------------------------------------------------------------------------------------------
 
     cdef void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef void _stop_generating_bars(self, BarType bar_type, handler) except *
