@@ -47,13 +47,13 @@ cdef class Portfolio(PortfolioReadOnly):
 
     cdef dict _instruments
     cdef dict _ticks
-    cdef dict _bid_quotes
-    cdef dict _ask_quotes
     cdef dict _accounts
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
-    cdef dict _unrealized_pnls
+    cdef dict _unrealized_pnls_symbol
+    cdef dict _unrealized_pnls_venue
+    cdef dict _xrate_symbols
 
     cpdef void register_account(self, Account account) except *
     cpdef void update_instrument(self, Instrument instrument) except *
@@ -64,6 +64,7 @@ cdef class Portfolio(PortfolioReadOnly):
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
+    cdef inline tuple _build_quote_table(self, Venue venue)
     cdef inline set _symbols_open_for_venue(self, Venue venue)
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *
     cdef inline bint _is_fx_spot(self, Instrument instrument) except *
