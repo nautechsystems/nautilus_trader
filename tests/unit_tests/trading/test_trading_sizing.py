@@ -17,6 +17,7 @@ import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -38,10 +39,10 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Act
         result = self.sizer.calculate(
-            equity,
-            10,  # 0.1%
-            Price("1.00100"),
-            Price("1.00000"),
+            entry=Price("1.00100"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 0.1%
             exchange_rate=1.0,
             unit_batch_size=1000,
         )
@@ -55,10 +56,10 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Act
         result = self.sizer.calculate(
-            equity,
-            10,   # 0.1%
-            Price("110.010"),
-            Price("110.000"),
+            entry=Price("110.010"),
+            stop_loss=Price("110.000"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 1%
             exchange_rate=0.01,
         )
 
@@ -71,10 +72,10 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Act
         result = self.sizer.calculate(
-            equity,
-            100,   # 1%
-            Price("3.00000"),
-            Price("1.00000"),
+            entry=Price("3.00000"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.01"),  # 1%
             unit_batch_size=1000,
         )
 
@@ -87,10 +88,10 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Act
         result = self.sizer.calculate(
-            equity,
-            100,   # 1%
-            Price("1.00010"),
-            Price("1.00000"),
+            entry=Price("1.00010"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.01"),  # 1%
             hard_limit=500000,
             units=1,
             unit_batch_size=1000,
@@ -105,10 +106,10 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Act
         result = self.sizer.calculate(
-            equity,
-            10,   # 0.1%
-            Price("1.00010"),
-            Price("1.00000"),
+            entry=Price("1.00010"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 0.1%
             units=3,
             unit_batch_size=1000,
         )
@@ -122,10 +123,10 @@ class FixedRiskSizerTests(unittest.TestCase):
 
         # Act
         result = self.sizer.calculate(
-            equity,
-            10,   # 0.1%
-            Price("1.00087"),
-            Price("1.00000"),
+            entry=Price("1.00087"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 0.1%
             units=4,
             unit_batch_size=25000,
         )
@@ -133,21 +134,22 @@ class FixedRiskSizerTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity(275000), result)
 
-    def test_calculate_for_usdjpy(self):
+    def test_calculate_for_usdjpy_with_commission(self):
         # Arrange
         sizer = FixedRiskSizer(InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()))
         equity = Money(1000000, USD)
 
         # Act
         result = sizer.calculate(
-            equity,
-            10,   # 0.1%
-            Price("107.703"),
-            Price("107.403"),
+            entry=Price("107.703"),
+            stop_loss=Price("107.403"),
+            equity=equity,
+            risk=Decimal("0.01"),  # 1%
+            commission_rate=Decimal("0.0002"),
             exchange_rate=0.0093,
             units=1,
             unit_batch_size=1000,
         )
 
         # Assert
-        self.assertEqual(Quantity(358000), result)
+        self.assertEqual(Quantity(3582000), result)

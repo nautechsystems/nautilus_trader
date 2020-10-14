@@ -30,15 +30,30 @@ cdef class MovingAverageFactory:
     """
 
     @staticmethod
-    def create(int period,
-               object ma_type: MovingAverageType,
-               **kwargs) -> MovingAverage:
+    def create(
+        int period,
+        object ma_type: MovingAverageType,
+        **kwargs
+    ) -> MovingAverage:
         """
         Create a moving average indicator corresponding to the given ma_type.
 
-        :param period: The period of the moving average (> 0).
-        :param ma_type: The moving average type.
-        :return: The moving average indicator.
+        Parameters
+        ----------
+        period : int
+            The period of the moving average (> 0).
+        ma_type : MovingAverageType
+            The moving average type.
+
+        Returns
+        -------
+        MovingAverage
+
+        Raises
+        ------
+        ValueError
+            If period is not positive (> 0).
+
         """
         Condition.positive(period, "period")
 

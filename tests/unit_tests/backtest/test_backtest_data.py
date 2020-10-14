@@ -52,8 +52,6 @@ class BacktestDataEngineTests(unittest.TestCase):
 
         client = BacktestDataEngine(
             data=self.data,
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=portfolio,
             clock=self.test_clock,
             logger=TestLogger(self.test_clock),

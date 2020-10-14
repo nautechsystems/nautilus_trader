@@ -19,6 +19,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.data.cache cimport DataCacheReadOnly
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -31,7 +32,6 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -48,7 +48,7 @@ cdef class TradingStrategy:
     cdef readonly Clock clock
     cdef readonly UUIDFactory uuid_factory
     cdef readonly LoggerAdapter log
-    # cdef readonly DataCacheReadOnly data
+    cdef readonly DataCacheReadOnly data
     cdef readonly ExecutionCacheReadOnly execution
     cdef readonly PortfolioReadOnly portfolio
     cdef readonly OrderFactory order_factory
@@ -120,22 +120,6 @@ cdef class TradingStrategy:
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-
-    cpdef list symbols(self)
-    cpdef list instruments(self)
-    cpdef list quote_ticks(self, Symbol symbol)
-    cpdef list trade_ticks(self, Symbol symbol)
-    cpdef list bars(self, BarType bar_type)
-    cpdef Instrument instrument(self, Symbol symbol)
-    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
-    cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
-    cpdef Bar bar(self, BarType bar_type, int index=*)
-    cpdef int quote_tick_count(self, Symbol symbol) except *
-    cpdef int trade_tick_count(self, Symbol symbol) except *
-    cpdef int bar_count(self, BarType bar_type) except *
-    cpdef bint has_quote_ticks(self, Symbol symbol) except *
-    cpdef bint has_trade_ticks(self, Symbol symbol) except *
-    cpdef bint has_bars(self, BarType bar_type) except *
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 

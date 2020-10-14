@@ -26,7 +26,6 @@ from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -35,6 +34,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
@@ -47,7 +47,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.trading.commission import MakerTakerCommissionModel
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import TestStrategy1
@@ -78,15 +77,16 @@ class SimulatedMarketTests(unittest.TestCase):
         self.portfolio = Portfolio(
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
 
         self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
-            logger=self.logger)
+            logger=self.logger,
+        )
+
         self.data_engine.set_use_previous_close(False)
 
         self.analyzer = PerformanceAnalyzer()
@@ -116,7 +116,6 @@ class SimulatedMarketTests(unittest.TestCase):
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=FillModel(),
-            commission_model=MakerTakerCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger,
@@ -250,7 +249,6 @@ class SimulatedMarketTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(6, strategy.object_storer.count)
-        print(strategy.object_storer.get_store())
         self.assertTrue(isinstance(strategy.object_storer.get_store()[5], OrderWorking))
 
     def test_modify_stop_order(self):
@@ -333,7 +331,6 @@ class SimulatedMarketTests(unittest.TestCase):
             instruments={self.usdjpy.symbol: self.usdjpy},
             config=self.config,
             fill_model=fill_model,
-            commission_model=MakerTakerCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger,
@@ -469,20 +466,17 @@ class SimulatedMarketTests(unittest.TestCase):
         strategy.submit_order(top_up_order, position_id)
         strategy.submit_order(reduce_order, position_id)
 
-        commission_percent = basis_points_as_percentage(7.5)
         account_event1 = strategy.object_storer.get_store()[3]
         account_event2 = strategy.object_storer.get_store()[7]
         account_event3 = strategy.object_storer.get_store()[11]
 
-        position = self.exec_engine.cache.positions_open()[0]
-        expected_commission = position.quantity * commission_percent
         account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
 
         # Assert
-        self.assertEqual(account_event1.commission.as_double(), order.filled_qty * commission_percent)
-        self.assertEqual(account_event2.commission.as_double(), top_up_order.filled_qty * commission_percent)
-        self.assertEqual(account_event3.commission.as_double(), reduce_order.filled_qty * commission_percent)
-        self.assertTrue(1000000 - expected_commission == account.balance().as_double())
+        self.assertEqual(Money(2.00, USD), account_event1.commission)
+        self.assertEqual(Money(2.00, USD), account_event2.commission)
+        self.assertEqual(Money(1.00, USD), account_event3.commission)
+        self.assertTrue(Money(999995.00, USD), account.balance())
 
     def test_realized_pnl_contains_commission(self):
         # Arrange
@@ -510,7 +504,8 @@ class SimulatedMarketTests(unittest.TestCase):
         position = self.exec_engine.cache.positions_open()[0]
 
         # Assert
-        self.assertEqual(Money(75.00, USD), position.commission)
+        self.assertEqual(Money(2.00, USD), position.realized_pnl)
+        self.assertEqual(Money(2.00, USD), position.commission)
 
     def test_commission_maker_taker_order(self):
         # Arrange
@@ -538,7 +533,6 @@ class SimulatedMarketTests(unittest.TestCase):
             Price("80.001"))
 
         # Act
-
         strategy.submit_order(order_market)
         strategy.submit_order(order_limit)
 
@@ -552,10 +546,11 @@ class SimulatedMarketTests(unittest.TestCase):
         )  # Fill the limit order
 
         # Assert
+        # TODO: Use an instrument with different maker and taker fees
         self.assertEqual(LiquiditySide.TAKER, strategy.object_storer.get_store()[3].liquidity_side)
         self.assertEqual(LiquiditySide.MAKER, strategy.object_storer.get_store()[8].liquidity_side)
-        self.assertEqual(75, strategy.object_storer.get_store()[3].commission.as_double())
-        self.assertEqual(-25, strategy.object_storer.get_store()[8].commission.as_double())
+        self.assertEqual(Money(2.00, USD), strategy.object_storer.get_store()[3].commission)
+        self.assertEqual(Money(2.00, USD), strategy.object_storer.get_store()[8].commission)
 
     def test_unrealized_pnl(self):
         # Arrange
@@ -602,61 +597,60 @@ class SimulatedMarketTests(unittest.TestCase):
         position = self.exec_engine.cache.positions_open()[0]
         self.assertEqual(Money(5555.37, USD), position.unrealized_pnl(reduce_quote))
 
-    # TODO: Position flip behaviour needs to be implemented
-    # def test_position_dir_change(self):
-    #     # Arrange
-    #     strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-    #     strategy.register_trader(
-    #         self.trader_id,
-    #         self.clock,
-    #         self.uuid_factory,
-    #         self.logger)
-    #     self.data_engine.register_strategy(strategy)
-    #     self.exec_engine.register_strategy(strategy)
-    #     strategy.start()
-    #
-    #     open_quote = QuoteTick(
-    #         self.usdjpy.symbol,
-    #         Price(90.002, 3),
-    #         Price(90.003, 3),
-    #         Quantity(1),
-    #         Quantity(1),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     self.market.process_tick(open_quote)  # Prepare market
-    #     order_open = strategy.order_factory.market(
-    #         USDJPY_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #     )
-    #
-    #     # Act 1
-    #     strategy.submit_order(order_open)
-    #
-    #     reduce_quote = QuoteTick(
-    #         self.usdjpy.symbol,
-    #         Price(100.003, 3),
-    #         Price(100.003, 3),
-    #         Quantity(1),
-    #         Quantity(1),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     self.market.process_tick(reduce_quote)
-    #
-    #     order_reduce = strategy.order_factory.market(
-    #         USDJPY_FXCM,
-    #         OrderSide.SELL,
-    #         Quantity(150000),
-    #     )
-    #
-    #     # Act 2
-    #     strategy.submit_order(order_reduce)
-    #
-    #     # Assert
-    #     position = [p for p in strategy.positions_open().values()][0]
-    #     self.assertEqual(position.side, PositionSide.SHORT)
-    #     self.assertEqual(position.quantity, order_reduce.quantity.sub(order_open.quantity))
-    #     self.assertEqual(position.unrealized_points(reduce_quote), -10.0)
-    #     self.assertEqual(position.unrealized_pnl(reduce_quote).as_double(), -500000.0)
+    def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
+        # Arrange
+        strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.uuid_factory,
+            self.logger)
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+        strategy.start()
+
+        open_quote = QuoteTick(
+            self.usdjpy.symbol,
+            Price("90.002"),
+            Price("90.003"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        self.market.process_tick(open_quote)  # Prepare market
+        order_open = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        # Act 1
+        strategy.submit_order(order_open)
+
+        reduce_quote = QuoteTick(
+            self.usdjpy.symbol,
+            Price("100.003"),
+            Price("100.003"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        self.market.process_tick(reduce_quote)
+
+        order_reduce = strategy.order_factory.market(
+            USDJPY_FXCM,
+            OrderSide.SELL,
+            Quantity(150000),
+        )
+
+        # Act 2
+        strategy.submit_order(order_reduce, position_id=PositionId("B-USD/JPY-1"))
+
+        # Assert
+        position_open = strategy.execution.positions_open()[0]
+        position_closed = strategy.execution.positions_closed()[0]
+        self.assertEqual(PositionSide.SHORT, position_open.side)
+        self.assertEqual(Quantity(50000), position_open.quantity)
+        self.assertEqual(Money(11112.74, USD), position_closed.realized_pnl)

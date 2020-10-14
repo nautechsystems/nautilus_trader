@@ -47,8 +47,8 @@ cdef class ExecutionEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef PositionIdGenerator _pos_id_generator
-    cdef dict _exec_clients
-    cdef dict _registered_strategies
+    cdef dict _clients
+    cdef dict _strategies
 
     cdef readonly TraderId trader_id
     cdef readonly ExecutionCache cache
@@ -70,11 +70,14 @@ cdef class ExecutionEngine:
     cpdef void load_cache(self) except *
     cpdef void integrity_check(self) except *
     cpdef void _set_position_symbol_counts(self) except *
-    cpdef void flush_db(self) except *
+    cpdef void connect(self) except *
+    cpdef void disconnect(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
+    cpdef void dispose(self) except *
+    cpdef void flush_db(self) except *
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
@@ -91,7 +94,6 @@ cdef class ExecutionEngine:
     cdef void _handle_event(self, Event event) except *
     cdef inline void _handle_account_event(self, AccountState event) except *
     cdef inline void _handle_position_event(self, PositionEvent event) except *
-
     cdef inline void _handle_order_event(self, OrderEvent event) except *
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef inline void _handle_order_fill(self, OrderFilled event) except *

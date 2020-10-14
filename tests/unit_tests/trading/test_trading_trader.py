@@ -36,7 +36,6 @@ from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.trading.commission import GenericCommissionModel
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.data import TestDataProvider
@@ -70,8 +69,6 @@ class TraderTests(unittest.TestCase):
 
         data_engine = BacktestDataEngine(
             data=data,
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=clock,
             logger=logger,
@@ -100,7 +97,6 @@ class TraderTests(unittest.TestCase):
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
-            commission_model=GenericCommissionModel(),
             clock=clock,
             uuid_factory=TestUUIDFactory(),
             logger=logger,

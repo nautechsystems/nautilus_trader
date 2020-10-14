@@ -39,10 +39,20 @@ cdef class WeightedMovingAverage(MovingAverage):
         """
         Initialize a new instance of the SimpleMovingAverage class.
 
-        :param period: The rolling window period for the indicator (> 0).
-        :param weights: The weights for the moving average calculation
-        (if not None then = period).
-        :param price_type: The specified price type for extracting values from quote ticks (default=UNDEFINED).
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (> 0).
+        weights : iterable
+            The weights for the moving average calculation (if not None then = period).
+        price_type : PriceType
+            The specified price type for extracting values from quote ticks (default=UNDEFINED).
+
+        Raises
+        ------
+        ValueError
+            If period is not positive (> 0).
+
         """
         Condition.positive_int(period, "period")
         if weights is not None:

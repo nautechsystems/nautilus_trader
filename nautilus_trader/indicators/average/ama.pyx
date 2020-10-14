@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
+from libc.math cimport pow
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
@@ -43,10 +43,17 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         Initialize a new instance of the AdaptiveMovingAverage class.
 
-        :param period_er: The period for the internal Efficiency Ratio (> 0).
-        :param period_alpha_fast: The period for the fast smoothing constant (> 0).
-        :param period_alpha_slow: The period for the slow smoothing constant (> 0 < alpha_fast).
-        :param price_type: The specified price type for extracting values from quote ticks (default=UNDEFINED).
+        Parameters
+        ----------
+        period_er : int
+            The period for the internal Efficiency Ratio (> 0).
+        period_alpha_fast : int
+            The period for the fast smoothing constant (> 0).
+        period_alpha_slow : int
+            The period for the slow smoothing constant (> 0 < alpha_fast).
+        price_type : PriceType
+            The specified price type for extracting values from quote ticks (default=UNDEFINED).
+
         """
         Condition.positive_int(period_er, "period_er")
         Condition.positive_int(period_alpha_fast, "period_alpha_fast")
@@ -129,7 +136,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._prior_value = self.value
 
         # Calculate smoothing constant (sc)
-        sc = np.power(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
+        sc = pow(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
 
         # Calculate AMA
         self.value = self._prior_value + sc * (value - self._prior_value)
