@@ -20,6 +20,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -33,7 +34,8 @@ cdef class PortfolioReadOnly:
     cpdef Account account(self, Venue venue)
     cpdef Money order_margin(self, Venue venue)
     cpdef Money position_margin(self, Venue venue)
-    cpdef Money unrealized_pnl(self, Venue venue)
+    cpdef Money unrealized_pnl_for_venue(self, Venue venue)
+    cpdef Money unrealized_pnl_for_symbol(self, Symbol symbol)
     cpdef Money open_value(self, Venue venue)
 
 
@@ -51,6 +53,7 @@ cdef class Portfolio(PortfolioReadOnly):
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
+    cdef dict _unrealized_pnls
 
     cpdef void register_account(self, Account account) except *
     cpdef void update_instrument(self, Instrument instrument) except *
@@ -61,6 +64,7 @@ cdef class Portfolio(PortfolioReadOnly):
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
+    cdef inline set _symbols_open_for_venue(self, Venue venue)
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *
     cdef inline bint _is_fx_spot(self, Instrument instrument) except *
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
@@ -68,3 +72,4 @@ cdef class Portfolio(PortfolioReadOnly):
     cdef inline void _handle_position_closed(self, PositionClosed event) except *
     cdef inline void _update_order_margin(self, Venue venue)
     cdef inline void _update_position_margin(self, Venue venue)
+    cdef Money _calculate_unrealized_pnl(self, Symbol symbol)
