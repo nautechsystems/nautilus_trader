@@ -148,7 +148,6 @@ cdef class Instrument:
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.settlement_currency = settlement_currency
-        self.symbol_base_quote = f"{base_currency}/{quote_currency}"
         self.is_quanto = is_quanto
         self.is_inverse = is_inverse
         self.price_precision = price_precision
