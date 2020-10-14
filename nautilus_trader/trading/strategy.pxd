@@ -21,7 +21,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.data.cache cimport DataCacheReadOnly
 from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
+from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
@@ -49,7 +49,7 @@ cdef class TradingStrategy:
     cdef readonly UUIDFactory uuid_factory
     cdef readonly LoggerAdapter log
     cdef readonly DataCacheReadOnly data
-    cdef readonly ExecutionCacheReadOnly execution
+    cdef readonly ExecutionCacheFacade execution
     cdef readonly PortfolioReadOnly portfolio
     cdef readonly OrderFactory order_factory
 

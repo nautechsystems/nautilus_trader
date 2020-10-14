@@ -98,7 +98,7 @@ cdef class BarBuilder:
         """
         Condition.not_none(tick, "tick")
 
-        if self.last_update is not None and tick.timestamp < self.last_update:
+        if self.last_update and tick.timestamp < self.last_update:
             return  # Previously handled tick
 
         self._update(
