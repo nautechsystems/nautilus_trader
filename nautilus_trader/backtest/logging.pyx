@@ -42,17 +42,36 @@ cdef class TestLogger(Logger):
         """
         Initialize a new instance of the TestLogger class.
 
-        :param clock: The clock for the logger.
-        :param name: The name of the logger.
-        :param level_console: The minimum log level for logging messages to the console.
-        :param level_file: The minimum log level for logging messages to the log file.
-        :param level_store: The minimum log level for storing log messages in memory.
-        :param console_prints: If log messages should print to the console.
-        :param log_thread: If log messages should include the thread.
-        :param log_to_file: If log messages should write to the log file.
-        :param log_file_path: The name of the log file (cannot be None if log_to_file is True).
-        :raises ValueError: If name is not a valid string.
-        :raises ValueError: If log_file_path is not a valid string.
+        Parameters
+        ----------
+        clock : Clock
+            The clock for the logger.
+        name : str
+            The name of the logger.
+        bypass_logging : bool
+            If logging should be entirely bypasses.
+        level_console : LogLevel
+            The minimum log level for logging messages to the console.
+        level_file : LogLevel
+            The minimum log level for logging messages to the log file.
+        level_store : LogLevel
+            The minimum log level for storing log messages in memory.
+        console_prints : bool
+            If log messages should print to the console.
+        log_thread : bool
+            If log messages should include the thread.
+        log_to_file : bool
+            If log messages should write to the log file.
+        log_file_path : str
+            The name of the log file (cannot be None if log_to_file is True).
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        ValueError
+            If log_file_path is not a valid string.
+
         """
         if log_file_path is "":
             log_file_path = "log/"
@@ -73,7 +92,11 @@ cdef class TestLogger(Logger):
         """
         Log the given log message.
 
-        :param message: The log message to log.
+        Parameters
+        ----------
+        message : LogMessage
+            The message to log.
+
         """
         Condition.not_none(message, "message")
 

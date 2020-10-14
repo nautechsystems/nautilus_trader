@@ -58,8 +58,6 @@ class DataEngineTests(unittest.TestCase):
         )
 
         self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
@@ -80,7 +78,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.data_engine.get_xrate(JPY, USD)
+        result = self.data_engine.cache.get_xrate(JPY, USD)
 
         # Assert
         self.assertEqual(0.009025266685348969, result)
@@ -99,7 +97,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.handle_quote_tick(tick)
 
         # Act
-        result = self.data_engine.get_xrate(AUD, USD)
+        result = self.data_engine.cache.get_xrate(AUD, USD)
 
         # Assert
         self.assertEqual(0.80005, result)

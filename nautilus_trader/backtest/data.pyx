@@ -165,8 +165,6 @@ cdef class BacktestDataEngine(DataEngine):
     def __init__(
             self,
             BacktestDataContainer data not None,
-            int tick_capacity,
-            int bar_capacity,
             Portfolio portfolio not None,
             TestClock clock not None,
             Logger logger not None
@@ -174,20 +172,18 @@ cdef class BacktestDataEngine(DataEngine):
         """
         Initialize a new instance of the BacktestDataEngine class.
 
-        :param data: The data needed for the backtest data engine.
-        :param tick_capacity: The max length of the internal tick deques.
-        :param bar_capacity: The max length of the internal bar deques.
+        Parameters
+        ----------
+        data : BacktestDataContainer
+            The data needed for the backtest data engine.
+        portfolio : Portfolio
+        clock : TestClock
+            The clock for the component.
+        logger : Logger
+            The logger for the component.
 
-        :param clock: The clock for the component.
-        :param logger: The logger for the component.
-        :raises ValueError: If the tick_capacity is not positive (> 0).
-        :raises ValueError: If the bar_capacity is not positive (> 0).
         """
-        Condition.positive_int(tick_capacity, "tick_capacity")
-        Condition.positive_int(bar_capacity, "bar_capacity")
         super().__init__(
-            tick_capacity=tick_capacity,
-            bar_capacity=bar_capacity,
             portfolio=portfolio,
             clock=clock,
             uuid_factory=TestUUIDFactory(),
@@ -214,7 +210,8 @@ cdef class BacktestDataEngine(DataEngine):
         self.execution_resolutions = []
 
         timing_start_total = datetime.utcnow()
-        for symbol, instrument in self._instruments.items():
+        for instrument in self.cache.instruments():
+            symbol = instrument.symbol
             self._log.info(f"Preparing {symbol} data...")
             timing_start = datetime.utcnow()
 
@@ -267,8 +264,13 @@ cdef class BacktestDataEngine(DataEngine):
         """
         Setup tick data for a backtest run.
 
-        :param start: The start datetime (UTC) for the run.
-        :param stop: The stop datetime (UTC) for the run.
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) for the run.
+        stop : datetime
+            The stop datetime (UTC) for the run.
+
         """
         Condition.not_none(start, "start")
         Condition.not_none(stop, "stop")
@@ -297,7 +299,10 @@ cdef class BacktestDataEngine(DataEngine):
         """
         Generate the next tick in the ordered data sequence.
 
-        :return: Tick.
+        Returns
+        -------
+        QuoteTick
+
         """
         cdef int symbol_indexer = self._symbols[self._index]
         cdef int price_precision = self._price_precisions[symbol_indexer]
@@ -457,7 +462,7 @@ cdef class BacktestDataEngine(DataEngine):
 
         self._log.info(f"Requesting instrument for {symbol}...")
 
-        callback(self._instruments[symbol])
+        callback(self.cache.instrument(symbol))
 
     cpdef void request_instruments(self, Venue venue, callback: callable) except *:
         """
@@ -471,7 +476,7 @@ cdef class BacktestDataEngine(DataEngine):
 
         self._log.info(f"Requesting all instruments for the {venue} venue ...")
 
-        callback(self.instruments())
+        callback(self.cache.instruments())
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         """

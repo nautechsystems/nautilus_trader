@@ -90,8 +90,8 @@ cdef class ExecutionEngine:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
         self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
-        self._exec_clients = {}           # type: {Venue, ExecutionClient}
-        self._registered_strategies = {}  # type: {StrategyId, TradingStrategy}
+        self._clients = {}     # type: {Venue, ExecutionClient}
+        self._strategies = {}  # type: {StrategyId, TradingStrategy}
 
         self.trader_id = database.trader_id
         self.cache = ExecutionCache(database, logger)
@@ -113,9 +113,9 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(exec_client, "exec_client")
-        Condition.not_in(exec_client.venue, self._exec_clients, "exec_client.venue", "_exec_clients")
+        Condition.not_in(exec_client.venue, self._clients, "exec_client.venue", "_clients")
 
-        self._exec_clients[exec_client.venue] = exec_client
+        self._clients[exec_client.venue] = exec_client
         self._log.info(f"Registered execution client for the {exec_client.venue} venue.")
 
     cpdef void deregister_client(self, ExecutionClient exec_client) except *:
@@ -129,9 +129,9 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(exec_client, "exec_client")
-        Condition.is_in(exec_client.venue, self._exec_clients, "exec_client.venue", "_exec_clients")
+        Condition.is_in(exec_client.venue, self._clients, "exec_client.venue", "_clients")
 
-        del self._exec_clients[exec_client.venue]
+        del self._clients[exec_client.venue]
         self._log.info(f"De-registered execution client for the {exec_client.venue} venue.")
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
@@ -150,10 +150,10 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(strategy, "strategy")
-        Condition.not_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
+        Condition.not_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
 
         strategy.register_execution_engine(self)
-        self._registered_strategies[strategy.id] = strategy
+        self._strategies[strategy.id] = strategy
         self._log.info(f"Registered strategy {strategy}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
@@ -172,9 +172,9 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(strategy, "strategy")
-        Condition.is_in(strategy.id, self._registered_strategies, "strategy.id", "registered_strategies")
+        Condition.is_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
 
-        del self._registered_strategies[strategy.id]
+        del self._strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
 
     cpdef set registered_venues(self):
@@ -186,7 +186,7 @@ cdef class ExecutionEngine:
         Set[StrategyId]
 
         """
-        return set(self._exec_clients.keys())
+        return set(self._clients.keys())
 
     cpdef set registered_strategies(self):
         """
@@ -197,7 +197,7 @@ cdef class ExecutionEngine:
         Set[StrategyId]
 
         """
-        return set(self._registered_strategies.keys())
+        return set(self._strategies.keys())
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -243,14 +243,25 @@ cdef class ExecutionEngine:
             self._pos_id_generator.set_count(symbol, count)
             self._log.info(f"Set position count {symbol} to {count}")
 
-    cpdef void flush_db(self) except *:
+    cpdef void connect(self) except *:
         """
-        Flush the execution database which permanently removes all persisted data.
-
-        WARNING: Permanent data loss.
-
+        Connect all execution clients.
         """
-        self.cache.flush_db()
+        self._log.info("Connecting all clients...")
+
+        cdef ExecutionClient client
+        for client in self._clients:
+            client.connect()
+
+    cpdef void disconnect(self) except *:
+        """
+        Disconnect all execution clients.
+        """
+        self._log.info("Disconnecting all clients...")
+
+        cdef ExecutionClient client
+        for client in self._clients:
+            client.disconnect()
 
     cpdef void execute(self, Command command) except *:
         """
@@ -290,13 +301,32 @@ cdef class ExecutionEngine:
         """
         Reset the execution engine by clearing all stateful values.
         """
-        for client in self._exec_clients.values():
+        for client in self._clients.values():
             client.reset()
         self.cache.reset()
         self._pos_id_generator.reset()
 
         self.command_count = 0
         self.event_count = 0
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose all execution clients.
+        """
+        self._log.info("Disposing all clients...")
+
+        cdef ExecutionClient client
+        for client in self._clients:
+            client.dispose()
+
+    cpdef void flush_db(self) except *:
+        """
+        Flush the execution database which permanently removes all persisted data.
+
+        WARNING: Permanent data loss.
+
+        """
+        self.cache.flush_db()
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
@@ -316,7 +346,7 @@ cdef class ExecutionEngine:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -338,7 +368,7 @@ cdef class ExecutionEngine:
         client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -373,7 +403,7 @@ cdef class ExecutionEngine:
         client.submit_bracket_order(command)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -388,7 +418,7 @@ cdef class ExecutionEngine:
         client.modify_order(command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
-        cdef ExecutionClient client = self._exec_clients.get(command.venue)
+        cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
             self._log.warning(f"Cannot execute {command} "
                               f"(venue {command.venue} not registered).")
@@ -679,7 +709,7 @@ cdef class ExecutionEngine:
                             f"{strategy_id.to_string(with_class=True)} not found.")
             return  # Cannot send to strategy
 
-        cdef TradingStrategy strategy = self._registered_strategies.get(strategy_id)
+        cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
             self._log.error(f"Cannot send event {event} to strategy, "
                             f"{strategy_id.to_string(with_class=True)} not registered.")

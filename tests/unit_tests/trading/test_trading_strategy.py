@@ -34,7 +34,6 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import ComponentState
-from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -42,15 +41,11 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.trading.commission import GenericCommissionModel
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.strategies import TestStrategy1
@@ -75,8 +70,6 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.data_engine = DataEngine(
-            tick_capacity=1000,
-            bar_capacity=1000,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
@@ -113,7 +106,6 @@ class TradingStrategyTests(unittest.TestCase):
             instruments={usdjpy.symbol: usdjpy},
             config=BacktestConfig(),
             fill_model=FillModel(),
-            commission_model=GenericCommissionModel(),
             clock=self.clock,
             uuid_factory=TestUUIDFactory(),
             logger=self.logger,
@@ -195,14 +187,6 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(StrategyId("TradingStrategy", "001"), self.strategy.id)
 
-    def test_get_current_time(self):
-        # Arrange
-        # Act
-        result = self.strategy.clock.utc_now()
-
-        # Assert
-        self.assertEqual(pytz.utc, result.tzinfo)
-
     def test_initialization(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -211,144 +195,6 @@ class TradingStrategyTests(unittest.TestCase):
         # Act
         # Assert
         self.assertFalse(strategy.indicators_initialized())
-
-    def test_get_tick_count_for_unknown_symbol_returns_zero(self):
-        # Arrange
-        # Act
-        result = self.strategy.quote_tick_count(AUDUSD_FXCM)
-
-        # Assert
-        self.assertEqual(0, result)
-
-    def test_get_ticks_for_unknown_symbol_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(KeyError, self.strategy.quote_ticks, AUDUSD_FXCM)
-
-    def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        # Act
-        result = self.strategy.bar_count(bar_type)
-
-        # Assert
-        self.assertEqual(0, result)
-
-    def test_get_bars_for_unknown_bar_type_raises_exception(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        # Act
-        # Assert
-        self.assertRaises(KeyError, self.strategy.bars, bar_type)
-
-    def test_bars(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
-        )
-
-        self.data_engine.handle_bar(bar_type, bar)
-
-        # Act
-        result = self.strategy.bars(bar_type)
-
-        # Assert
-        self.assertTrue(bar, result[0])
-
-    def test_getting_bar_for_unknown_bar_type_raises_exception(self):
-        # Arrange
-        unknown_bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        # Act
-        # Assert
-        self.assertRaises(KeyError, self.strategy.bar, unknown_bar_type, 0)
-
-    def test_getting_bar_at_out_of_range_index_raises_exception(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
-        )
-
-        self.data_engine.handle_bar(bar_type, bar)
-
-        # Act
-        # Assert
-        self.assertRaises(IndexError, self.strategy.bar, bar_type, -2)
-
-    def test_get_bar(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
-        )
-
-        self.data_engine.handle_bar(bar_type, bar)
-
-        # Act
-        result = self.strategy.bar(bar_type, 0)
-
-        # Assert
-        self.assertEqual(bar, result)
-
-    def test_getting_tick_with_unknown_tick_type_raises_exception(self):
-        # Act
-        # Assert
-        self.assertRaises(KeyError, self.strategy.quote_tick, AUDUSD_FXCM, 0)
-
-    def test_get_quote_tick(self):
-        tick = QuoteTick(
-            AUDUSD_FXCM,
-            Price("1.00000"),
-            Price("1.00001"),
-            Quantity(1),
-            Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
-        )
-
-        self.data_engine.handle_quote_tick(tick)
-
-        # Act
-        result = self.strategy.quote_tick(tick.symbol, 0)
-
-        # Assert
-        self.assertEqual(tick, result)
-
-    def test_get_trade_tick(self):
-        tick = TradeTick(
-            AUDUSD_FXCM,
-            Price("1.00000"),
-            Quantity(10000),
-            Maker.BUYER,
-            TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
-        )
-
-        self.data_engine.handle_trade_tick(tick)
-
-        # Act
-        result = self.strategy.trade_tick(tick.symbol, 0)
-
-        # Assert
-        self.assertEqual(tick, result)
 
     def test_start_strategy(self):
         # Arrange

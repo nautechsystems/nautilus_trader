@@ -17,7 +17,6 @@ import cython
 
 from cpython.datetime cimport datetime
 
-from collections import deque
 from typing import List
 
 from nautilus_trader.common.clock cimport Clock
@@ -53,8 +52,6 @@ cdef class DataEngine:
 
     def __init__(
             self,
-            int tick_capacity,
-            int bar_capacity,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -65,10 +62,6 @@ cdef class DataEngine:
 
         Parameters
         ----------
-        tick_capacity : int
-            The length for the internal ticks deque per symbol (> 0).
-        bar_capacity : int
-            The length for the internal bars deque per symbol (> 0).
         portfolio : int
             The portfolio to register to receive quote ticks.
         clock : Clock
@@ -78,40 +71,24 @@ cdef class DataEngine:
         logger : Logger
             The logger for the component.
 
-        Raises
-        ------
-        ValueError
-            If tick_capacity is not positive (> 0).
-        ValueError
-            If bar_capacity is not positive (> 0).
-
         """
-        Condition.positive_int(tick_capacity, "tick_capacity")
-        Condition.positive_int(bar_capacity, "bar_capacity")
-
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._portfolio = portfolio
-        self._xrate_calculator = ExchangeRateCalculator()
 
         self._use_previous_close = True
-        self.tick_capacity = tick_capacity  # Per symbol
-        self.bar_capacity = bar_capacity    # Per symbol
-
         self._clients = {}              # type: {Venue, DataClient}
 
-        # Cached data
-        self._instruments = {}          # type: {Symbol, Instrument}
+        self.cache = DataCache(logger)
+
+        # Handlers
         self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
-        self._bid_quotes = {}           # type: {Symbol, float}
-        self._ask_quotes = {}           # type: {Symbol, float}
-        self._quote_ticks = {}          # type: {Symbol, [QuoteTick]}
-        self._trade_ticks = {}          # type: {Symbol, [TradeTick]}
         self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
         self._trade_tick_handlers = {}  # type: {Symbol, [TradeTickHandler]}
-        self._bars = {}                 # type: {BarType, [Bar]}
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
+
+        # Aggregators
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
 
         self._log.info("Initialized.")
@@ -161,15 +138,10 @@ cdef class DataEngine:
         for client in self._clients:
             client.reset()
 
-        self._instruments.clear()
+        self.cache.reset()
         self._instrument_handlers.clear()
-        self._bid_quotes.clear()
-        self._ask_quotes.clear()
-        self._quote_ticks.clear()
-        self._trade_ticks.clear()
         self._quote_tick_handlers.clear()
         self._trade_tick_handlers.clear()
-        self._bars.clear()
         self._bar_aggregators.clear()
         self._bar_handlers.clear()
 
@@ -666,6 +638,52 @@ cdef class DataEngine:
         """
         return list(self._clients.keys())
 
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_quote_ticks(self):
+        """
+        Return the quote tick symbols subscribed to.
+
+        Returns
+        -------
+        List[Symbol]
+
+        """
+        return list(self._quote_tick_handlers.keys())
+
+    cpdef list subscribed_trade_ticks(self):
+        """
+        Return the trade tick symbols subscribed to.
+
+        Returns
+        -------
+        List[Symbol]
+
+        """
+        return list(self._trade_tick_handlers.keys())
+
+    cpdef list subscribed_bars(self):
+        """
+        Return the bar types subscribed to.
+
+        Returns
+        -------
+        List[BarType]
+
+        """
+        return list(self._bar_handlers.keys())
+
+    cpdef list subscribed_instruments(self):
+        """
+        Return the instruments subscribed to.
+
+        Returns
+        -------
+        List[Symbol]
+
+        """
+        return list(self._instrument_handlers.keys())
+
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
@@ -678,8 +696,7 @@ cdef class DataEngine:
             The received instrument to handle.
 
         """
-        self._instruments[instrument.symbol] = instrument
-        self._log.info(f"Updated instrument {instrument.symbol}")
+        self.cache.add_instrument(instrument)
 
         self._portfolio.update_instrument(instrument)
 
@@ -717,28 +734,7 @@ cdef class DataEngine:
         """
         Condition.not_none(tick, "tick")
 
-        cdef Symbol symbol = tick.symbol
-
-        # Update latest quotes
-        # TODO: Handle the case of same symbol over different venues
-        self._bid_quotes[symbol.code] = tick.bid.as_double()
-        self._ask_quotes[symbol.code] = tick.ask.as_double()
-
-        # Update ticks and spreads
-        ticks = self._quote_ticks.get(symbol)
-
-        if ticks is None:
-            # The symbol was not registered
-            ticks = deque(maxlen=self.tick_capacity)
-            self._quote_ticks[symbol] = ticks
-
-        cdef int ticks_length = len(ticks)
-        if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
-            if ticks_length < self.tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
-                ticks.append(tick)
-            return  # Tick previously handled
-
-        ticks.appendleft(tick)
+        self.cache.add_quote_tick(tick)
 
         if not send_to_handlers:
             return
@@ -747,7 +743,7 @@ cdef class DataEngine:
         self._portfolio.update_tick(tick)
 
         # Send to all registered tick handlers for that symbol
-        cdef list tick_handlers = self._quote_tick_handlers.get(symbol)
+        cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
         cdef QuoteTickHandler handler
         if tick_handlers is not None:
             for handler in tick_handlers:
@@ -795,27 +791,13 @@ cdef class DataEngine:
 
         cdef Symbol symbol = tick.symbol
 
-        # Update ticks
-        ticks = self._trade_ticks.get(symbol)
-
-        if ticks is None:
-            # The symbol was not registered
-            ticks = deque(maxlen=self.tick_capacity)
-            self._trade_ticks[symbol] = ticks
-
-        cdef int ticks_length = len(ticks)
-        if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
-            if ticks_length < self.tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
-                ticks.append(tick)
-            return  # Tick previously handled
-
-        ticks.appendleft(tick)
+        self.cache.add_trade_tick(tick)
 
         if not send_to_handlers:
             return
 
         # Send to all registered tick handlers for that symbol
-        cdef list tick_handlers = self._trade_tick_handlers.get(symbol)
+        cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
         cdef TradeTickHandler handler
         if tick_handlers is not None:
             for handler in tick_handlers:
@@ -864,21 +846,7 @@ cdef class DataEngine:
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(bar, "bar")
 
-        # Update ticks
-        bars = self._bars.get(bar_type)
-
-        if bars is None:
-            # The bar type was not registered
-            bars = deque(maxlen=self.bar_capacity)
-            self._bars[bar_type] = bars
-
-        cdef int bars_length = len(bars)
-        if bars_length > 0 and bar.timestamp <= bars[0].timestamp:
-            if bars_length < self.bar_capacity and bar.timestamp > bars[bars_length - 1].timestamp:
-                bars.append(bar)
-            return  # Bar previously handled
-
-        bars.appendleft(bar)
+        self.cache.add_bar(bar_type, bar)
 
         if not send_to_handlers:
             return
@@ -917,388 +885,6 @@ cdef class DataEngine:
         cdef int i
         for i in range(length):
             self.handle_bar(bar_type, bars[i], send_to_handlers=False)
-
-# -- QUERY METHODS ---------------------------------------------------------------------------------
-
-    cpdef list subscribed_quote_ticks(self):
-        """
-        Return the quote tick symbols subscribed to.
-
-        Returns
-        -------
-        List[Symbol]
-
-        """
-        return list(self._quote_tick_handlers.keys())
-
-    cpdef list subscribed_trade_ticks(self):
-        """
-        Return the trade tick symbols subscribed to.
-
-        Returns
-        -------
-        List[Symbol]
-
-        """
-        return list(self._trade_tick_handlers.keys())
-
-    cpdef list subscribed_bars(self):
-        """
-        Return the bar types subscribed to.
-
-        Returns
-        -------
-        List[BarType]
-
-        """
-        return list(self._bar_handlers.keys())
-
-    cpdef list subscribed_instruments(self):
-        """
-        Return the instruments subscribed to.
-
-        Returns
-        -------
-        List[Symbol]
-
-        """
-        return list(self._instrument_handlers.keys())
-
-    cpdef list symbols(self):
-        """
-        Return all instrument symbols held by the data engine.
-
-        Returns
-        -------
-        List[Symbol]
-        """
-        return list(self._instruments.keys())
-
-    cpdef list instruments(self):
-        """
-        Return all instruments for the given venue.
-
-        Returns
-        -------
-        List[Instrument]
-
-        """
-        return list(self._instruments)
-
-    cpdef list quote_ticks(self, Symbol symbol):
-        """
-        Return the quote ticks for the given symbol (returns a shallow copy of the internal deque).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks to get.
-
-        Returns
-        -------
-        List[QuoteTick]
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
-
-        return list(self._quote_ticks[symbol])
-
-    cpdef list trade_ticks(self, Symbol symbol):
-        """
-        Return the trade ticks for the given symbol (returns a shallow copy of the internal deque).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks to get.
-
-        Returns
-        -------
-        List[TradeTick]
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
-
-        return list(self._trade_ticks[symbol])
-
-    cpdef list bars(self, BarType bar_type):
-        """
-        Return the bars for the given bar type (returns a shallow copy of the internal deque).
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to get.
-
-        Returns
-        -------
-        List[Bar]
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.is_in(bar_type, self._bars, "bar_type", "bars")
-
-        return list(self._bars[bar_type])
-
-    cpdef Instrument instrument(self, Symbol symbol):
-        """
-        Return the instrument corresponding to the given symbol (if found).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol of the instrument to return.
-
-        Returns
-        -------
-        Instrument
-
-        Raises
-        ------
-        ValueError
-            If instrument is not found.
-
-        """
-        Condition.is_in(symbol, self._instruments, "symbol", "instruments")
-
-        return self._instruments[symbol]
-
-    cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
-        """
-        Return the quote tick for the given symbol at the given index or last if no index specified.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the tick to get.
-        index : int, optional
-            The index for the tick to get.
-
-        Returns
-        -------
-        QuoteTick
-
-        Raises
-        ------
-        ValueError
-            If the data engines quote ticks does not contain the symbol.
-        IndexError
-            If tick index is out of range.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
-
-        return self._quote_ticks[symbol][index]
-
-    cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
-        """
-        Return the trade tick for the given symbol at the given index or last if no index specified.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the tick to get.
-        index : int
-            The optional index for the tick to get.
-
-        Returns
-        -------
-        TradeTick
-
-        Raises
-        ------
-        ValueError
-            If the data engines trade ticks does not contain the symbol.
-        IndexError
-            If tick index is out of range.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
-
-        return self._trade_ticks[symbol][index]
-
-    cpdef Bar bar(self, BarType bar_type, int index=0):
-        """
-        Return the bar for the given bar type at the given index or last if no index specified.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to get.
-        index : int
-            The optional index for the bar to get.
-
-        Returns
-        -------
-        Bar
-
-        Raises
-        ------
-        ValueError
-            If the data engines bars does not contain the bar type.
-        IndexError
-            If bar index is out of range.
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.is_in(bar_type, self._bars, "bar_type", "bars")
-
-        return self._bars[bar_type][index]
-
-    cpdef int quote_tick_count(self, Symbol symbol) except *:
-        """
-        Return the count of quote ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
-
-    cpdef int trade_tick_count(self, Symbol symbol) except *:
-        """
-        Return the count of trade ticks for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
-
-    cpdef int bar_count(self, BarType bar_type) except *:
-        """
-        Return the count of bars for the given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type to count.
-
-        Returns
-        -------
-        int
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-
-        return len(self._bars[bar_type]) if bar_type in self._bars else 0
-
-    cpdef bint has_quote_ticks(self, Symbol symbol) except *:
-        """
-        Return a value indicating whether the data engine has quote ticks for
-        the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
-
-    cpdef bint has_trade_ticks(self, Symbol symbol) except *:
-        """
-        Return a value indicating whether the data engine has trade ticks for
-        the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the ticks.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-
-        return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
-
-    cpdef bint has_bars(self, BarType bar_type) except *:
-        """
-        Return a value indicating whether the data engine has bars for the given
-        bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for the bars.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-
-        return bar_type in self._bars and len(self._bars[bar_type]) > 0
-
-    cpdef double get_xrate(
-            self,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=PriceType.MID,
-    ) except *:
-        """
-        Return the calculated exchange rate for the given currencies.
-
-        Parameters
-        ----------
-        from_currency : Currency
-            The currency to convert from.
-        to_currency : Currency
-            The currency to convert to.
-        price_type : PriceType
-            The price type for the exchange rate (default=MID).
-
-        Returns
-        -------
-        double
-
-        Raises
-        ------
-        ValueError
-            If price_type is UNDEFINED or LAST.
-
-        """
-        Condition.not_none(from_currency, "from_currency")
-        Condition.not_none(to_currency, "to_currency")
-        # TODO: price_type not UNDEFINED or LAST
-
-        return self._xrate_calculator.get_rate(
-            from_currency=from_currency,
-            to_currency=to_currency,
-            price_type=price_type,
-            bid_quotes=self._bid_quotes,
-            ask_quotes=self._ask_quotes,
-        )
 
 # ------------------------------------------------------------------------------------------------ #
 
@@ -1359,7 +945,6 @@ cdef class DataEngine:
         """
         if symbol not in self._quote_tick_handlers:
             # Setup handlers
-            self._quote_ticks[symbol] = deque(maxlen=self.tick_capacity)  # type: [QuoteTick]
             self._quote_tick_handlers[symbol] = []                        # type: [QuoteTickHandler]
             self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
@@ -1378,7 +963,6 @@ cdef class DataEngine:
         """
         if symbol not in self._trade_tick_handlers:
             # Setup handlers
-            self._trade_ticks[symbol] = deque(maxlen=self.tick_capacity)  # type: [TradeTick]
             self._trade_tick_handlers[symbol] = []                        # type: [TradeTickHandler]
             self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
@@ -1397,7 +981,6 @@ cdef class DataEngine:
         """
         if bar_type not in self._bar_handlers:
             # Setup handlers
-            self._bars[bar_type] = deque(maxlen=self.tick_capacity)  # type: [Bar]
             self._bar_handlers[bar_type] = []                        # type: [BarHandler]
             self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
@@ -1541,9 +1124,7 @@ cdef class DataEngine:
     cdef void _reset(self) except *:
         # Reset the class to its initial state
         self._clock.cancel_all_timers()
-        self._instruments.clear()
         self._instrument_handlers.clear()
-        self._quote_ticks.clear()
         self._quote_tick_handlers.clear()
         self._bar_aggregators.clear()
         self._bar_handlers.clear()

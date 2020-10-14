@@ -204,7 +204,6 @@ cdef class InstrumentLoader:
             timestamp=_UNIX_EPOCH,
         )
 
-
     @staticmethod
     def btcusdt_binance() -> Instrument:
         """
@@ -320,10 +319,10 @@ cdef class InstrumentLoader:
             min_price=None,
             max_notional=Money(50000000.00, USD),
             min_notional=Money(1000.00, USD),
-            margin_initial=Decimal("0.0005"),
-            margin_maintenance=Decimal("0.001"),
-            maker_fee=Decimal("0.002"),
-            taker_fee=Decimal("0.002"),
+            margin_initial=Decimal("0.5"),
+            margin_maintenance=Decimal("0.1"),
+            maker_fee=Decimal("0.00002"),
+            taker_fee=Decimal("0.00002"),
             settlement_fee=Decimal("0.0000"),
             funding_rate_long=Decimal("0.0000"),
             funding_rate_short=Decimal("0.0000"),
