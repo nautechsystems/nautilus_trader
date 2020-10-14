@@ -208,7 +208,7 @@ cdef class Account:
         if not self._portfolio:
             return None
 
-        return self._portfolio.unrealized_pnl(self.id.issuer_as_venue())
+        return self._portfolio.unrealized_pnl_for_venue(self.id.issuer_as_venue())
 
     cpdef Money margin_balance(self):
         """
