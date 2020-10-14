@@ -191,14 +191,6 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(StrategyId("TradingStrategy", "001"), self.strategy.id)
 
-    def test_get_current_time(self):
-        # Arrange
-        # Act
-        result = self.strategy.clock.utc_now()
-
-        # Assert
-        self.assertEqual(pytz.utc, result.tzinfo)
-
     def test_initialization(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
