@@ -39,6 +39,7 @@ cdef class BidAskMinMax(Indicator):
             The symbol for inbound ticks.
         lookback : timedelta
             The look back duration in time.
+
         """
         self.symbol = symbol
         self.lookback = lookback
@@ -54,6 +55,7 @@ cdef class BidAskMinMax(Indicator):
         ----------
         tick : QuoteTick
             Incoming quote tick to process
+
         """
         self.bids.add_price(tick.timestamp, tick.bid)
         self.asks.add_price(tick.timestamp, tick.ask)
@@ -84,11 +86,14 @@ cdef class WindowedMinMaxPrices:
         ----------
         lookback : timedelta
             The look back duration in time.
+
         """
         self.lookback = lookback
+
         # Set the min/max marks as None until we have data
         self.min_price = None
         self.max_price = None
+
         # Initialize the deques
         self._min_prices = deque()
         self._max_prices = deque()
@@ -97,6 +102,14 @@ cdef class WindowedMinMaxPrices:
         """
         Given a price at a UTC timestamp, insert it into the structures and
         update our running min/max values.
+
+        Parameters
+        ----------
+        ts : datetime
+            The timestamp for the price.
+        price : Price
+            The price to add.
+
         """
         Condition.true(is_datetime_utc(ts), "`ts` is a tz-aware UTC")
 
@@ -114,7 +127,11 @@ cdef class WindowedMinMaxPrices:
         self.max_price = max([p[1] for p in self._max_prices])
 
     cpdef void reset(self):
-        """Reset the class to like-new."""
+        """Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
+        """
         # Set the min/max marks as None until we have data
         self.min_price = None
         self.max_price = None

@@ -29,7 +29,16 @@ cdef class OnBalanceVolume(Indicator):
         """
         Initialize a new instance of the OnBalanceVolume class.
 
-        :param period: The period for the indicator, zero indicates no window (>= 0).
+        Parameters
+        ----------
+        period : int
+            The period for the indicator, zero indicates no window (>= 0).
+
+        Raises
+        ------
+        ValueError
+            If period is negative (< 0).
+
         """
         Condition.not_negative(period, "period")
         super().__init__(params=[period])
@@ -42,7 +51,11 @@ cdef class OnBalanceVolume(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -61,9 +74,15 @@ cdef class OnBalanceVolume(Indicator):
         """
         Update the indicator with the given raw values.
 
-        :param open_price: The high price.
-        :param close_price: The low price.
-        :param volume: The close price.
+        Parameters
+        ----------
+        open_price : double
+            The high price.
+        close_price : double
+            The low price.
+        volume : double
+            The close price.
+
         """
         if close_price > open_price:
             self._obv.append(volume)
@@ -82,7 +101,10 @@ cdef class OnBalanceVolume(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._obv.clear()

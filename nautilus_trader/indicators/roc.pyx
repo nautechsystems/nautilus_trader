@@ -31,8 +31,18 @@ cdef class RateOfChange(Indicator):
         """
         Initialize a new instance of the RateOfChange class.
 
-        :param period: The period for the indicator (> 1).
-        :param use_log: Use log returns for value calculation.
+        Parameters
+        ----------
+        period : int
+            The period for the indicator.
+        use_log : bool
+            Use log returns for value calculation.
+
+        Raises
+        ------
+        ValueError
+            If the period is not > 1.
+
         """
         Condition.true(period > 1, "period > 1")
 
@@ -46,7 +56,11 @@ cdef class RateOfChange(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -56,7 +70,11 @@ cdef class RateOfChange(Indicator):
         """
         Update the indicator with the given price.
 
-        :param price: The update price.
+        Parameters
+        ----------
+        price : double
+            The update price.
+
         """
         self._prices.append(price)
 
@@ -72,7 +90,10 @@ cdef class RateOfChange(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._prices.clear()

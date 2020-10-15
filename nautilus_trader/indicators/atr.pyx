@@ -38,19 +38,32 @@ cdef class AverageTrueRange(Indicator):
         """
         Initialize a new instance of the AverageTrueRange class.
 
-        :param period: The rolling window period for the indicator (> 0).
-        :param ma_type: The moving average type for the indicator (cannot be None).
-        :param use_previous: The boolean flag indicating whether previous price values should be used.
-        (note: only applicable for update(). update_mid() will need to use previous price.
-        :param value_floor: The floor (minimum) output value for the indicator (>= 0).
-        :param check_inputs: If the input values should be checked.
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (> 0).
+        ma_type : MovingAverageType
+            The moving average type for the indicator (cannot be None).
+        use_previous : bool
+            The boolean flag indicating whether previous price values should be used.
+            (note: only applicable for `update()`. `update_mid()` will need to
+            use previous price.
+        value_floor : double
+            The floor (minimum) output value for the indicator (>= 0).
+        check_inputs : bool
+            If the input values should be checked.
+
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(value_floor, "value_floor")
-        super().__init__(params=[period,
-                                 ma_type.name,
-                                 use_previous,
-                                 value_floor])
+        super().__init__(
+            params=[
+                period,
+                ma_type.name,
+                use_previous,
+                value_floor,
+            ],
+        )
 
         self.period = period
         self._moving_average = MovingAverageFactory.create(self.period, ma_type)
@@ -63,7 +76,11 @@ cdef class AverageTrueRange(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -78,9 +95,15 @@ cdef class AverageTrueRange(Indicator):
         """
         Update the indicator with the given raw values.
 
-        :param high: The high price.
-        :param low: The low price.
-        :param close: The close price.
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        close : double
+            The close price.
+
         """
         # Calculate average
         if self._use_previous:
@@ -114,7 +137,10 @@ cdef class AverageTrueRange(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._moving_average.reset()

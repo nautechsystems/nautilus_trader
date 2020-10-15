@@ -19,9 +19,10 @@ from nautilus_trader.model.bar cimport Bar
 
 
 cdef class KeltnerPosition(Indicator):
-    cdef int _period
     cdef KeltnerChannel _kc
 
+    cdef readonly int period
+    cdef readonly double k_multiplier
     cdef readonly double value
 
     cpdef void handle_bar(self, Bar bar) except *

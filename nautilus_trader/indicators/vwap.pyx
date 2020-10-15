@@ -42,7 +42,11 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -61,9 +65,15 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         """
         Update the indicator with the given raw values.
 
-        :param price: The update price.
-        :param volume: The update volume.
-        :param timestamp: The current timestamp.
+        Parameters
+        ----------
+        price : double
+            The update price.
+        volume : double
+            The update volume.
+        timestamp : datetime
+            The current timestamp.
+
         """
         # On a new day reset the indicator
         if timestamp.day != self._day:
@@ -86,7 +96,10 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._day = 0
