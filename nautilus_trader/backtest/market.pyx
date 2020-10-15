@@ -218,6 +218,7 @@ cdef class SimulatedMarket:
         self.account_balance_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
+        self._generate_account_reset_event()
 
         self._market.clear()
         self._working_orders.clear()
