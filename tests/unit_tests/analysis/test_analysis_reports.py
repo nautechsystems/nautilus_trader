@@ -25,7 +25,6 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
@@ -53,7 +52,8 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(1500000),
-            Price("0.80010"))
+            Price("0.80010"),
+        )
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
@@ -63,7 +63,8 @@ class ReportProviderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(1500000),
-            Price("0.80000"))
+            Price("0.80000"),
+        )
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))
@@ -90,7 +91,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
-        self.assertEqual(Decimal("0.80011"), report.iloc[0]["avg_price"])
+        self.assertEqual(0.80011, report.iloc[0]["avg_price"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
         self.assertEqual("None", report.iloc[1]["avg_price"])
 
@@ -141,7 +142,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("BUY", report.iloc[0]["side"])
         self.assertEqual("LIMIT", report.iloc[0]["type"])
         self.assertEqual(1500000, report.iloc[0]["quantity"])
-        self.assertEqual(Decimal("0.80011"), report.iloc[0]["avg_price"])
+        self.assertEqual(0.80011, report.iloc[0]["avg_price"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
 
     def test_generate_trades_report(self):
@@ -163,8 +164,8 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
         self.assertEqual("SELL", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
-        self.assertEqual(Decimal("1.0001"), report.iloc[0]["avg_open_price"])
-        self.assertEqual(Decimal("1.0001"), report.iloc[0]["avg_close_price"])
+        self.assertEqual(1.0001, report.iloc[0]["avg_open_price"])
+        self.assertEqual(1.0001, report.iloc[0]["avg_close_price"])
         self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["opened_time"])
         self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["closed_time"])
         self.assertEqual(0, report.iloc[0]["realized_points"])
