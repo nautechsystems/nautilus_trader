@@ -58,6 +58,8 @@ cdef class DataCache(DataCacheFacade):
         # Capacities
         self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
         self.bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
+        Condition.positive_int(self.tick_capacity, "tick_capacity")
+        Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Cached data
         self._instruments = {}  # type: {Symbol, Instrument}
