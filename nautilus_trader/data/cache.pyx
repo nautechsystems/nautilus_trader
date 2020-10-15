@@ -37,7 +37,7 @@ cdef class DataCache(DataCacheFacade):
     Provides a cache for the `DataEngine`.
     """
 
-    def __init__(self, Logger logger not None):
+    def __init__(self, Logger logger not None, dict config=None):
         """
         Initialize a new instance of the DataEngine class.
 
@@ -45,14 +45,19 @@ cdef class DataCache(DataCacheFacade):
         ----------
         logger : Logger
             The logger for the component.
+        config : dict, optional
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Capacities
-        self.tick_capacity = 1000   # Per symbol
-        self.bar_capacity = 1000    # Per symbol
+        self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
+        self.bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
 
         # Cached data
         self._instruments = {}  # type: {Symbol, Instrument}
@@ -65,54 +70,6 @@ cdef class DataCache(DataCacheFacade):
         self._log.info("Initialized.")
 
 # -- COMMANDS ---------------------------------------------------------------------------------------
-
-    cpdef void set_tick_capacity(self, int capacity) except *:
-        """
-        Set the internal tick cache capacity to the given value.
-
-        Parameters
-        ----------
-        capacity : int
-            The capacity to set.
-
-        Raises
-        ------
-        ValueError
-            If capacity is not position (> 0).
-
-        """
-        Condition.positive_int(capacity, "capacity")
-
-        if self._quote_ticks or self._trade_ticks:
-            self._log.error("Cannot reset capacity when ticks already cached.")
-            return
-
-        self.tick_capacity = capacity
-        self._log.info(f"Reset tick capacity to {capacity}.")
-
-    cpdef void set_bar_capacity(self, int capacity) except *:
-        """
-        Set the internal bar cache capacity to the given value.
-
-        Parameters
-        ----------
-        capacity : int
-            The capacity to set.
-
-        Raises
-        ------
-        ValueError
-            If capacity is not position (> 0).
-
-        """
-        Condition.positive_int(capacity, "capacity")
-
-        if self._bars:
-            self._log.error("Cannot reset capacity when bars already cached.")
-            return
-
-        self.bar_capacity = capacity
-        self._log.info(f"Reset bar capacity to {capacity}.")
 
     cpdef void reset(self) except *:
         """

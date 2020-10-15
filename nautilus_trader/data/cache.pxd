@@ -35,8 +35,6 @@ cdef class DataCache(DataCacheFacade):
     cdef dict _bars
     cdef ExchangeRateCalculator _xrate_calculator
 
-    cpdef void set_tick_capacity(self, int capacity) except *
-    cpdef void set_bar_capacity(self, int capacity) except *
     cpdef void reset(self) except *
 
     cpdef void add_instrument(self, Instrument instrument) except *
