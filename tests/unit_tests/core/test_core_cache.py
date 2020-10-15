@@ -15,6 +15,8 @@
 
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.core.cache import ObjectCache
 from nautilus_trader.model.identifiers import Symbol
 
@@ -30,6 +32,21 @@ class ObjectCacheTests(unittest.TestCase):
         self.assertEqual(str, cache.type_key)
         self.assertEqual(Symbol, cache.type_value)
         self.assertEqual([], cache.keys())
+
+    @parameterized.expand([
+        [None, TypeError],
+        ["", ValueError],
+        [" ", ValueError],
+        ["  ", ValueError],
+        [1234, TypeError],
+    ])
+    def test_get_given_none_raises_value_error(self, value, ex):
+        # Arrange
+        cache = ObjectCache(Symbol, Symbol.from_string)
+
+        # Act
+        # Assert
+        self.assertRaises(ex, cache.get, value)
 
     def test_get_from_empty_cache(self):
         # Arrange
@@ -58,6 +75,16 @@ class ObjectCacheTests(unittest.TestCase):
         self.assertEqual(symbol, str(result1))
         self.assertEqual(id(result1), id(result2))
         self.assertEqual(["AUD/USD.FXCM"], cache.keys())
+
+    def test_keys_when_cache_empty_returns_empty_list(self):
+        # Arrange
+        cache = ObjectCache(Symbol, Symbol.from_string)
+
+        # Act
+        result = cache.keys()
+
+        # Assert
+        self.assertEqual([], result)
 
     def test_clear_cache(self):
         # Arrange
