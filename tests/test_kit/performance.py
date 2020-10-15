@@ -23,8 +23,21 @@ _MILLISECONDS_IN_SECOND = 1000
 _MICROSECONDS_IN_SECOND = 1000000
 
 
-def get_size_of(obj):
-    """Return the size of the given object in memory."""
+def get_size_of(obj) -> int:
+    """
+    Return the size of the given object in memory.
+
+    Parameters
+    ----------
+    obj : object
+        The object to measure for space complexity.
+
+    Returns
+    -------
+    int
+        The object size in bytes.
+
+    """
     marked = {id(obj)}
     obj_q = [obj]
     size = 0

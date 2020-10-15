@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-[darglint]
-docstring_style=numpy
-
 [flake8]
 filename = *.py, *.pyx, *.pxd
 exclude = .eggs, *.egg, build
-ignore = E225, E252, E999, D100, D101, D104, D102, D200, D400, S322, DAR101, DAR201, DAR202
+ignore = E225, E252, E999, D100, D101, D102, D104, D200
 max-complexity = 10
 max-line-length = 150
 
@@ -31,9 +28,8 @@ max-line-length = 150
 
 # Documentation ignores (will be addressed)
 # -----------------------------------------
-# D100 Missing docstring in public module
-# D101 Missing docstring in public class
-# D104 Missing docstring in public package
+# D100 Missing docstring in public module (todo: picks up entire test suite)
+# D101 Missing docstring in public class  (todo: picks up entire test suite)
+# D102 Missing docstring in public class  (todo: picks up entire test suite)
+# D104 Missing docstring in public package (todo to complete)
 # D200 One-line docstring should fit on one line with quotes (conflicts with Codacy)
-# D201 Missing "Returns" in Docstring
-# D400 First line should end with a period

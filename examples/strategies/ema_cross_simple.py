@@ -39,7 +39,7 @@ class EMACross(TradingStrategy):
             bar_spec: BarSpecification,
             fast_ema: int=10,
             slow_ema: int=20,
-            extra_id_tag: str='',
+            extra_id_tag: str="",
     ):
         """
         Initialize a new instance of the EMACross class.
@@ -54,11 +54,13 @@ class EMACross(TradingStrategy):
             The fast EMA period.
         slow_ema : int
             The slow EMA period.
-        extra_id_tag : str, optional
+        extra_id_tag : str
             An additional order identifier tag.
 
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        if extra_id_tag is None:
+            extra_id_tag = ""
+        super().__init__(order_id_tag=symbol.code.replace('/', "") + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -152,6 +154,11 @@ class EMACross(TradingStrategy):
         """
         Users simple buy method (example).
 
+        Parameters
+        ----------
+        quantity : int
+            The quantity for the sell order.
+
         """
         order = self.order_factory.market(
             symbol=self.symbol,
@@ -164,6 +171,11 @@ class EMACross(TradingStrategy):
     def sell(self, quantity: int):
         """
         Users simple sell method (example).
+
+        Parameters
+        ----------
+        quantity : int
+            The quantity for the sell order.
 
         """
         order = self.order_factory.market(
@@ -216,6 +228,10 @@ class EMACross(TradingStrategy):
         Actions to be performed when the strategy is saved.
 
         Create and return a state dictionary of values to be saved.
+
+        Returns
+        -------
+        dict
 
         Notes
         -----
