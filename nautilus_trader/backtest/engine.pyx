@@ -394,6 +394,7 @@ cdef class BacktestEngine:
         self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()
+        self.market.reset()
         self.logger.clear_log_store()
         self.test_logger.clear_log_store()
 
