@@ -91,7 +91,7 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
-    input("Press Enter to continue...")
+    input("Press Enter to continue...")  # noqa (always Python 3)
 
     start = datetime(2013, 2, 1, 0, 0, 0, 0)
     stop = datetime(2013, 3, 1, 0, 0, 0, 0)
