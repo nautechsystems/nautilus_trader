@@ -51,7 +51,6 @@ cdef class DataEngine:
 
     cdef readonly DataCache cache
 
-    cpdef void set_use_previous_close(self, bint setting)
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *

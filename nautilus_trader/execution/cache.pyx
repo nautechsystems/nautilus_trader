@@ -16,7 +16,7 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
+from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -30,7 +30,7 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionCache(ExecutionCacheReadOnly):
+cdef class ExecutionCache(ExecutionCacheFacade):
     """
     Provides a cache for the `ExecutionEngine`.
     """
@@ -139,7 +139,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         cdef Order order
         for cl_ord_id, order in self._cached_orders.items():
             # 1- Build _index_order_position -> {ClientOrderId, PositionId}
-            if order.position_id is not None:
+            if order.position_id:
                 self._index_order_position[cl_ord_id] = order.position_id
 
             # 2- Build _index_order_strategy -> {ClientOrderId, StrategyId}
@@ -174,7 +174,7 @@ cdef class ExecutionCache(ExecutionCacheReadOnly):
         cdef Position position
         for position_id, position in self._cached_positions.items():
             # 1- Build _index_position_strategy -> {PositionId, StrategyId}
-            if position_id.strategy_id is not None:
+            if position_id.strategy_id:
                 self._index_position_strategy[position_id] = position.strategy_id
 
             # 2- Build _index_position_orders -> {PositionId, {ClientOrderId}}

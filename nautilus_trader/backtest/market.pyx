@@ -364,7 +364,7 @@ cdef class SimulatedMarket:
                         continue  # Continue loop to next order
 
             # Check for order expiry
-            if order.expire_time is not None and time_now >= order.expire_time:
+            if order.expire_time and time_now >= order.expire_time:
                 if order.cl_ord_id in self._working_orders:  # Order may have been removed since loop started
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
@@ -384,7 +384,7 @@ cdef class SimulatedMarket:
 
         cdef PositionSide side
         cdef Money pnl = Money(0, self.account_currency)
-        if position is not None and position.entry != event.order_side:
+        if position and position.entry != event.order_side:
             if position.entry == OrderSide.BUY:
                 side = PositionSide.LONG
             elif position.entry == OrderSide.SELL:
@@ -400,7 +400,7 @@ cdef class SimulatedMarket:
                 xrate=xrate,
             )
 
-        cdef Money commission_for_account = Money(event.commission.as_double() * xrate, self.account_currency)
+        cdef Money commission_for_account = Money(event.commission * xrate, self.account_currency)
         self.total_commissions = self.total_commissions.add(commission_for_account)
         pnl = pnl.sub(commission_for_account)
 
@@ -467,7 +467,7 @@ cdef class SimulatedMarket:
                     bid_quotes=self._build_current_bid_rates(),
                     ask_quotes=self._build_current_ask_rates(),
                 )
-                rollover = mid_price * position.quantity.as_double() * interest_rate * xrate
+                rollover = mid_price * position.quantity * interest_rate * xrate
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
 
@@ -556,7 +556,7 @@ cdef class SimulatedMarket:
         cdef Order order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
-        if command.quantity.as_double() == 0.0:
+        if command.quantity == 0:
             self._cancel_reject_order(
                 order,
                 "modify order",
@@ -936,9 +936,9 @@ cdef class SimulatedMarket:
                     self._process_order(child_order)
             del self._child_orders[order.cl_ord_id]
 
-        if position is not None and position.is_closed():
+        if position and position.is_closed():
             oco_orders = self._position_oco_orders.get(position.id)
-            if oco_orders is not None:
+            if oco_orders:
                 for order in self._position_oco_orders[position.id]:
                     if order.is_working():
                         self._cancel_order(order)
@@ -975,8 +975,7 @@ cdef class SimulatedMarket:
     cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
-
-        if order.state() != OrderState.WORKING:
+        if order.is_completed():
             self._log.debug(f"Cannot reject order, state was already {order.state_as_string()}.")
             return
 
@@ -995,7 +994,7 @@ cdef class SimulatedMarket:
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
-        if order.state() != OrderState.WORKING:
+        if order.is_completed():
             self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
             return
 
@@ -1013,7 +1012,7 @@ cdef class SimulatedMarket:
         self.exec_client.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
-        if order.state() != OrderState.WORKING:
+        if order.is_completed():
             self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
             return
 

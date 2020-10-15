@@ -99,20 +99,6 @@ cdef class FiniteStateMachine:
 
         self.state = next_state
 
-    cpdef void force_set(self, int state) except *:
-        """
-        Force the FSM state to the given state.
-
-        Parameters
-        ----------
-        state : int (C Enum)
-            The state to set.
-
-        """
-        Condition.not_none(state, "state")
-
-        self.state = state
-
     cpdef str state_as_string(self):
         """
         Return the state as a string.

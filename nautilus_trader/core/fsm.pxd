@@ -26,5 +26,4 @@ cdef class FiniteStateMachine:
     cdef readonly int state
 
     cpdef void trigger(self, int trigger) except *
-    cpdef void force_set(self, int state) except *
     cpdef str state_as_string(self)

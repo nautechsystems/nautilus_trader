@@ -250,13 +250,13 @@ cdef class Quantity(Fraction):
         """
         return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
 
-    cdef inline Quantity add(self, Quantity other):
+    cdef inline Quantity add(self, Fraction other):
         """
         Add the other quantity to this quantity.
 
         Parameters
         ----------
-        other : Quantity
+        other : Fraction
             The quantity to add.
 
         Returns
@@ -266,7 +266,7 @@ cdef class Quantity(Fraction):
         """
         return Quantity(self + other)
 
-    cdef inline Quantity sub(self, Quantity other):
+    cdef inline Quantity sub(self, Fraction other):
         """
         Subtract the other quantity from this quantity.
 

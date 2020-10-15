@@ -32,7 +32,6 @@ cdef class Instrument:
     cdef readonly Currency base_currency
     cdef readonly Currency quote_currency
     cdef readonly Currency settlement_currency
-    cdef readonly str symbol_base_quote
     cdef readonly bint is_quanto
     cdef readonly bint is_inverse
     cdef readonly int price_precision

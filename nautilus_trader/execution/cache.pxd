@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.execution.base cimport ExecutionCacheReadOnly
+from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -28,7 +28,7 @@ from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionCache(ExecutionCacheReadOnly):
+cdef class ExecutionCache(ExecutionCacheFacade):
     cdef LoggerAdapter _log
     cdef ExecutionDatabase _database
     cdef dict _cached_accounts

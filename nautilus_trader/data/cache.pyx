@@ -19,7 +19,7 @@ from typing import List
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.data.base cimport DataCacheReadOnly
+from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -32,12 +32,12 @@ from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-cdef class DataCache(DataCacheReadOnly):
+cdef class DataCache(DataCacheFacade):
     """
     Provides a cache for the `DataEngine`.
     """
 
-    def __init__(self, Logger logger not None):
+    def __init__(self, Logger logger not None, dict config=None):
         """
         Initialize a new instance of the DataEngine class.
 
@@ -45,14 +45,21 @@ cdef class DataCache(DataCacheReadOnly):
         ----------
         logger : Logger
             The logger for the component.
+        config : dict, optional
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Capacities
-        self.tick_capacity = 1000   # Per symbol
-        self.bar_capacity = 1000    # Per symbol
+        self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
+        self.bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
+        Condition.positive_int(self.tick_capacity, "tick_capacity")
+        Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Cached data
         self._instruments = {}  # type: {Symbol, Instrument}
@@ -65,54 +72,6 @@ cdef class DataCache(DataCacheReadOnly):
         self._log.info("Initialized.")
 
 # -- COMMANDS ---------------------------------------------------------------------------------------
-
-    cpdef void set_tick_capacity(self, int capacity) except *:
-        """
-        Set the internal tick cache capacity to the given value.
-
-        Parameters
-        ----------
-        capacity : int
-            The capacity to set.
-
-        Raises
-        ------
-        ValueError
-            If capacity is not position (> 0).
-
-        """
-        Condition.positive_int(capacity, "capacity")
-
-        if self._quote_ticks or self._trade_ticks:
-            self._log.error("Cannot reset capacity when ticks already cached.")
-            return
-
-        self.tick_capacity = capacity
-        self._log.info(f"Reset tick capacity to {capacity}.")
-
-    cpdef void set_bar_capacity(self, int capacity) except *:
-        """
-        Set the internal bar cache capacity to the given value.
-
-        Parameters
-        ----------
-        capacity : int
-            The capacity to set.
-
-        Raises
-        ------
-        ValueError
-            If capacity is not position (> 0).
-
-        """
-        Condition.positive_int(capacity, "capacity")
-
-        if self._bars:
-            self._log.error("Cannot reset capacity when bars already cached.")
-            return
-
-        self.bar_capacity = capacity
-        self._log.info(f"Reset bar capacity to {capacity}.")
 
     cpdef void reset(self) except *:
         """

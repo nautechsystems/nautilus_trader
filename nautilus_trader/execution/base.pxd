@@ -24,7 +24,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
-cdef class ExecutionCacheReadOnly:
+cdef class ExecutionCacheFacade:
 
     # -- Trading queries -------------------------------------------------------
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *

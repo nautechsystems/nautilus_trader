@@ -98,7 +98,7 @@ cdef class BarBuilder:
         """
         Condition.not_none(tick, "tick")
 
-        if self.last_update is not None and tick.timestamp < self.last_update:
+        if self.last_update and tick.timestamp < self.last_update:
             return  # Previously handled tick
 
         self._update(
@@ -269,10 +269,12 @@ cdef class TickBarAggregator(BarAggregator):
             The logger for the aggregator.
 
         """
-        super().__init__(bar_type=bar_type,
-                         handler=handler,
-                         logger=logger,
-                         use_previous_close=False)
+        super().__init__(
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
+            use_previous_close=False,
+        )
 
         self.step = bar_type.spec.step
 
@@ -348,10 +350,12 @@ cdef class TimeBarAggregator(BarAggregator):
             The logger for the aggregator.
 
         """
-        super().__init__(bar_type=bar_type,
-                         handler=handler,
-                         logger=logger,
-                         use_previous_close=use_previous_close)
+        super().__init__(
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
+            use_previous_close=use_previous_close,
+        )
 
         self._clock = clock
         self.interval = self._get_interval()

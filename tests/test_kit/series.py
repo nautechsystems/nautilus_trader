@@ -27,11 +27,22 @@ class SeriesGenerator(object):
         """
         Generate a series with a heaviside step function.
 
-        :param initial: The initial starting value (>= 0).
-        :param magnitude: The step function magnitude (>= 0).
-        :param count_pre: The number of elements prior to the step (>= 0).
-        :param count_post: The number of elements after the step (>= 0).
-        :return: The step function series.
+        Parameters
+        ----------
+        initial : float
+            The initial starting value (>= 0).
+        magnitude : float
+            The step function magnitude (>= 0).
+        count_pre : int
+            The number of elements prior to the step (>= 0).
+        count_post : int
+            The number of elements after the step (>= 0).
+
+        Returns
+        -------
+        np.array
+            The step function series.
+
         """
         return np.append(
             np.full(max(count_pre, 1), initial, dtype=np.float64),
@@ -48,11 +59,22 @@ class SeriesGenerator(object):
         """
         Generate a series with a spike function.
 
-        :param initial: The initial starting value (>= 0).
-        :param magnitude: The spike magnitude (>= 0).
-        :param count_pre: The number of elements prior to the spike (>= 0).
-        :param count_post: The number of elements after the spike (>= 0).
-        :return: The spike function series.
+        Parameters
+        ----------
+        initial : float
+            The initial starting value (>= 0).
+        magnitude : float
+            The spike magnitude (>= 0).
+        count_pre : int
+            The number of elements prior to the spike (>= 0).
+        count_post : int
+            The number of elements after the spike (>= 0).
+
+        Returns
+        -------
+        np.array
+            The spike function series.
+
         """
         return np.append(
             np.append(
@@ -70,10 +92,20 @@ class SeriesGenerator(object):
         """
         Generate a horizontally asymptotic series.
 
-        :param initial: The initial starting value (> 0).
-        :param decay: The decay rate (> 0).
-        :param length: The number of elements in the returned series (> 0).
-        :return: The horizontally asymptotic series.
+        Parameters
+        ----------
+        initial : float
+            The initial starting value (> 0).
+        decay : float
+            The decay rate (> 0).
+        length : int
+            The number of elements in the returned series (> 0).
+
+        Returns
+        -------
+        np.array
+            The horizontally asymptotic series.
+
         """
         series = [initial]
         for _i in range(length - 1):
@@ -89,10 +121,20 @@ class SeriesGenerator(object):
         """
         Generate a sine wave series.
 
-        :param initial: The initial starting value (> 0).
-        :param magnitude: The sine wave magnitude (> 0).
-        :param length: The number of elements in the returned series (> 0).
-        :return: The sine wave series.
+        Parameters
+        ----------
+        initial : float
+            The initial starting value (> 0).
+        magnitude : float
+            The sine wave magnitude (> 0).
+        length : int
+            The number of elements in the returned series (> 0).
+
+        Returns
+        -------
+        np.array
+            The sine wave series.
+
         """
         return np.sin(2 * np.pi * np.arange(length) / (length / 2)) * magnitude + initial
 
@@ -104,9 +146,18 @@ class SeriesGenerator(object):
         """
         Generate a sawtooth signal series [-1.0, 1.0].
 
-        :param frequency: The frequency of oscillations (> 0).
-        :param length: The number of elements in the returned series (> 0).
-        :return: The sawtooth series.
+        Parameters
+        ----------
+        frequency : float
+            The frequency of oscillations (> 0).
+        length : int
+            The number of elements in the returned series (> 0).
+
+        Returns
+        -------
+        np.array
+            The sawtooth series.
+
         """
         t = np.linspace(0., frequency, length)
         return np.array(signal.sawtooth(2 * np.pi * 5 * t))
@@ -120,10 +171,20 @@ class SeriesGenerator(object):
         """
         Generate a white noise series.
 
-        :param mu: The mu of the gaussian distribution.
-        :param sigma: The sigma of the gaussian distribution.
-        :param length: The number of elements in the returned series (> 0).
-        :return: The white noise series.
+        Parameters
+        ----------
+        mu : float
+            The mu of the gaussian distribution.
+        sigma : float
+            The sigma of the gaussian distribution.
+        length : int
+            The number of elements in the returned series (> 0).
+
+        Returns
+        -------
+        np.array
+            The white noise series.
+
         """
         return np.array([gauss(mu, sigma) for _i in range(length)], dtype=np.float64)
 
@@ -131,14 +192,25 @@ class SeriesGenerator(object):
     def random_walk(
             volatility: float=0.1,
             delta_t: float=1 / (365 * 24 * 60),
-            length: int=60 * 24 * 15) -> np.array:
+            length: int=60 * 24 * 15,
+    ) -> np.array:
         """
         Generate a random walk series.
 
-        :param volatility: The volatility for the series (>= 0).
-        :param delta_t: The unit of time (> 0).
-        :param length: The number of elements in the returned series (> 0).
-        :return: The random walk series.
+        Parameters
+        ----------
+        volatility : float
+            The volatility for the series (>= 0).
+        delta_t : float
+            The unit of time (> 0).
+        length : int
+            The number of elements in the returned series (> 0).
+
+        Returns
+        -------
+        np.array
+            The random walk series.
+
         """
         return np.exp(np.random.normal(0, volatility, size=length) * np.sqrt(delta_t)).cumprod()
 
@@ -146,7 +218,7 @@ class SeriesGenerator(object):
 class BatterySeries:
 
     @staticmethod
-    def create(length=4000) -> np.array:
+    def create(length: int=4000) -> np.array:
         """
         Create a 'battery series'.
 
@@ -154,7 +226,16 @@ class BatterySeries:
         dive, then a spike, then a step, the a sine wave and finally a high
         volatility random walk.
 
-        :return: The battery series.
+        Parameters
+        ----------
+        length : int
+            The length of the series.
+
+        Returns
+        -------
+        np.array
+            The battery series.
+
         """
         horizontal_asymptote = SeriesGenerator.horizontal_asymptote(initial=1.0)
         spike_function = SeriesGenerator.spike_function(count_post=1000)
