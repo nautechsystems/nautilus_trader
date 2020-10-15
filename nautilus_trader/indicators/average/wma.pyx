@@ -125,7 +125,10 @@ cdef class WeightedMovingAverage(MovingAverage):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_ma()
         self._inputs.clear()

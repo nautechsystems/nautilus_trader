@@ -35,9 +35,24 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
-        :param fast_period: The period for the fast moving average (> 0).
-        :param slow_period: The period for the slow moving average (> 0 & > fast_sma).
-        :param ma_type: The moving average type for the calculations.
+        Parameters
+        ----------
+        fast_period : int
+            The period for the fast moving average (> 0).
+        slow_period : int
+            The period for the slow moving average (> 0 & > fast_sma).
+        ma_type : MovingAverageType
+            The moving average type for the calculations.
+
+        Raises
+        ------
+        ValueError
+            If fast_period is not positive (> 0).
+        ValueError
+            If slow_period is not positive (> 0).
+        ValueError
+            If fast_period is not < slow_period.
+
         """
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
@@ -60,7 +75,11 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -70,7 +89,11 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         """
         Update the indicator with the given close price.
 
-        :param close: The close price.
+        Parameters
+        ----------
+        close : double
+            The close price.
+
         """
         self._fast_ma.update_raw(close)
         self._slow_ma.update_raw(close)
@@ -84,7 +107,10 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._fast_ma.reset()
