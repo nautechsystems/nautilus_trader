@@ -74,9 +74,8 @@ class TradingStrategyTests(unittest.TestCase):
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
+            config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
-
-        self.data_engine.set_use_previous_close(False)
 
         self.analyzer = PerformanceAnalyzer()
 

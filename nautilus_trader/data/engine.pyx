@@ -56,6 +56,7 @@ cdef class DataEngine:
             Clock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
+            dict config=None,
     ):
         """
         Initialize a new instance of the DataEngine class.
@@ -70,15 +71,20 @@ cdef class DataEngine:
             The UUID factory for the component.
         logger : Logger
             The logger for the component.
+        config : dict, option
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._portfolio = portfolio
-
-        self._use_previous_close = True
         self._clients = {}              # type: {Venue, DataClient}
+
+        self._use_previous_close = config.get('use_previous_close', True)
 
         self.cache = DataCache(logger)
 
@@ -92,21 +98,7 @@ cdef class DataEngine:
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
 
         self._log.info("Initialized.")
-
-    cpdef void set_use_previous_close(self, bint setting):
-        """
-        Set if bar aggregators should use the previous closing price.
-        This should be set to False for backtesting to ensure generated bars
-        match the historical data.
-
-        Parameters
-        ----------
-        setting : bool
-            The value to set.
-
-        """
-        self._use_previous_close = setting
-        self._log.info(f"Set `use_previous_close` to {setting}.")
+        self._log.info(f"use_previous_close={self._use_previous_close}")
 
     cpdef void connect(self) except *:
         """

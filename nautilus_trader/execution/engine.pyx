@@ -67,7 +67,8 @@ cdef class ExecutionEngine:
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            Logger logger not None
+            Logger logger not None,
+            dict config=None,
     ):
         """
         Initialize a new instance of the ExecutionEngine class.
@@ -84,8 +85,13 @@ cdef class ExecutionEngine:
             The uuid_factory for the engine.
         logger : Logger
             The logger for the engine.
+        config : dict, option
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
