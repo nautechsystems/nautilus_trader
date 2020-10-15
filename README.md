@@ -34,7 +34,6 @@ is written mostly in Python with optional additional C-inspired syntax.
 > https://cython.org
 
 To run code or tests from the source code, first compile the C extensions for the package.
-Note that initial compilation may take several minutes due to the quantity of extensions (over 100).
 
     $ python setup.py build_ext --inplace
 
@@ -77,8 +76,7 @@ Unfortunately the Community edition will not interpret Cython syntax.
 
 > https://www.jetbrains.com/pycharm/
 
-To run the tests, first compile the C extensions for the package. Note that
-initial compilation may take several minutes due to the quantity of extensions.
+To run code or tests from the source code, first compile the C extensions for the package.
 
     $ python setup.py build_ext --inplace
 

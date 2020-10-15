@@ -14,11 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+from typing import List
 
 from setuptools import Extension
 
 
-def parse_requirements(requirements_txt_path: str, strip: bool=False) -> [str]:
+def parse_requirements(requirements_txt_path: str, strip: bool=False) -> List[str]:
     """
     Return a list of requirement strings.
 
@@ -31,7 +32,7 @@ def parse_requirements(requirements_txt_path: str, strip: bool=False) -> [str]:
 
     Returns
     -------
-    list of str
+    List[str]
 
     """
     with open(requirements_txt_path) as fp:
@@ -41,7 +42,7 @@ def parse_requirements(requirements_txt_path: str, strip: bool=False) -> [str]:
         return requirements
 
 
-def scan_directories(directories: list) -> list:
+def scan_directories(directories: List[str]) -> List[str]:
     """
     Return a list of all file names by recursive scan of the given directories.
 
@@ -52,7 +53,7 @@ def scan_directories(directories: list) -> list:
 
     Returns
     -------
-    list of str
+    List[str]
         The list of file name strings.
 
     """
@@ -64,7 +65,7 @@ def scan_directories(directories: list) -> list:
     return file_names
 
 
-def get_files(directory: str, files: list=None) -> list:
+def get_files(directory: str, files: List[str]=None) -> List[str]:
     """
     Return a list of all file names in the given directory.
 
@@ -74,12 +75,12 @@ def get_files(directory: str, files: list=None) -> list:
     ----------
     directory : str
         The top level directory path.
-    files : list of str
+    files : List[str]
         The current list of files.
 
     Returns
     -------
-    list of str
+    List[str]
         The list of file name strings.
 
     """
@@ -95,7 +96,7 @@ def get_files(directory: str, files: list=None) -> list:
     return files
 
 
-def find_files(extension: str, directories: list) -> list:
+def find_files(extension: str, directories: List[str]) -> List[str]:
     """
     Return a list of all file names with the given extension by recursive scan.
 
@@ -103,12 +104,13 @@ def find_files(extension: str, directories: list) -> list:
     ----------
     extension : str
         The extension to match.
-    directories : list of str
+    directories : List[str]
         The directory paths to scan.
 
     Returns
     -------
-    list of str
+    List[str]
+        The list of file name strings.
 
     """
     files = []
@@ -118,16 +120,18 @@ def find_files(extension: str, directories: list) -> list:
     return files
 
 
-def make_extensions(directories: list) -> list:
+def make_extensions(directories: List[str]) -> List[Extension]:
     """
     Return a list of C extensions.
 
-    directories : list of str
+    Parameters
+    ----------
+    directories : List[str]
         The directories to search for extensions.
 
     Returns
     -------
-    list of Extension
+    List[Extension]
 
     """
     extensions = []

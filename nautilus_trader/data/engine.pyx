@@ -56,6 +56,7 @@ cdef class DataEngine:
             Clock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
+            dict config=None,
     ):
         """
         Initialize a new instance of the DataEngine class.
@@ -70,15 +71,20 @@ cdef class DataEngine:
             The UUID factory for the component.
         logger : Logger
             The logger for the component.
+        config : dict, option
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._portfolio = portfolio
-
-        self._use_previous_close = True
         self._clients = {}              # type: {Venue, DataClient}
+
+        self._use_previous_close = config.get('use_previous_close', True)
 
         self.cache = DataCache(logger)
 
@@ -92,21 +98,7 @@ cdef class DataEngine:
         self._bar_handlers = {}         # type: {BarType, [BarHandler]}
 
         self._log.info("Initialized.")
-
-    cpdef void set_use_previous_close(self, bint setting):
-        """
-        Set if bar aggregators should use the previous closing price.
-        This should be set to False for backtesting to ensure generated bars
-        match the historical data.
-
-        Parameters
-        ----------
-        setting : bool
-            The value to set.
-
-        """
-        self._use_previous_close = setting
-        self._log.info(f"Set `use_previous_close` to {setting}.")
+        self._log.info(f"use_previous_close={self._use_previous_close}")
 
     cpdef void connect(self) except *:
         """
@@ -702,7 +694,7 @@ cdef class DataEngine:
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
         cdef InstrumentHandler handler
-        if instrument_handlers is not None:
+        if instrument_handlers:
             for handler in instrument_handlers:
                 handler.handle(instrument)
 
@@ -745,7 +737,7 @@ cdef class DataEngine:
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
         cdef QuoteTickHandler handler
-        if tick_handlers is not None:
+        if tick_handlers:
             for handler in tick_handlers:
                 handler.handle(tick)
 
@@ -799,7 +791,7 @@ cdef class DataEngine:
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
         cdef TradeTickHandler handler
-        if tick_handlers is not None:
+        if tick_handlers:
             for handler in tick_handlers:
                 handler.handle(tick)
 
@@ -854,7 +846,7 @@ cdef class DataEngine:
         # Send to all registered bar handlers for that bar type
         cdef list bar_handlers = self._bar_handlers.get(bar_type)
         cdef BarHandler handler
-        if bar_handlers is not None:
+        if bar_handlers:
             for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 

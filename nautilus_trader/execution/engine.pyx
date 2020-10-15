@@ -31,7 +31,6 @@ from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -51,6 +50,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.quicktions cimport Fraction
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -67,7 +67,8 @@ cdef class ExecutionEngine:
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
-            Logger logger not None
+            Logger logger not None,
+            dict config=None,
     ):
         """
         Initialize a new instance of the ExecutionEngine class.
@@ -84,8 +85,13 @@ cdef class ExecutionEngine:
             The uuid_factory for the engine.
         logger : Logger
             The logger for the engine.
+        config : dict, option
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
@@ -612,9 +618,8 @@ cdef class ExecutionEngine:
             difference = position.quantity.sub(fill.filled_qty)
 
         # Split commission between two positions
-        cdef double fill_percent1 = position.quantity.as_double() / fill.filled_qty.as_double()
-        cdef double fill_percent2 = 1. - fill_percent1
-        cdef Currency commission_currency = fill.commission.currency
+        cdef Fraction fill_percent1 = position.quantity / fill.filled_qty
+        cdef Fraction fill_percent2 = 1 - fill_percent1
 
         # Split fill to close original position
         cdef OrderFilled fill_split1 = OrderFilled(
@@ -630,7 +635,7 @@ cdef class ExecutionEngine:
             position.quantity,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
-            Money(fill.commission.as_double() * fill_percent1, commission_currency),
+            Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,
@@ -666,7 +671,7 @@ cdef class ExecutionEngine:
             difference,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
-            Money(fill.commission.as_double() * fill_percent2, commission_currency),
+            Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,

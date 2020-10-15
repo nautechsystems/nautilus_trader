@@ -188,9 +188,8 @@ cdef class BacktestDataEngine(DataEngine):
             clock=clock,
             uuid_factory=TestUUIDFactory(),
             logger=logger,
+            config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
-
-        self.set_use_previous_close(False)  # To correctly reproduce historical data bars
 
         # Check data integrity
         data.check_integrity()

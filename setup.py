@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
@@ -31,7 +33,8 @@ DESCRIPTION = "A high-performance algorithmic trading platform and event-driven 
 URL = "https://github.com/nautechsystems/nautilus_trader"
 PYTHON_REQUIRES = ">=3.6.8"
 DIRECTORIES_TO_CYTHONIZE = [PACKAGE_NAME]
-
+IS_POSIX = os.name == "posix"
+CPU_COUNT = os.cpu_count()
 
 # ------------------------------------------------------------------------------
 # Cython (edit here only)
@@ -54,8 +57,9 @@ compiler_directives = {
     "embedsignature": True,      # If docstrings should be embedded into C signatures
     "emit_code_comments": True,  # If comments should be emitted to generated C code
     "profile": PROFILE_HOOKS,    # See above
-    "linetrace": LINE_TRACING    # See above
+    "linetrace": LINE_TRACING,   # See above
 }
+
 # ------------------------------------------------------------------------------
 
 
@@ -91,8 +95,10 @@ setup(
     ext_modules=cythonize(
         module_list=make_extensions(DIRECTORIES_TO_CYTHONIZE),
         compiler_directives=compiler_directives,
-        build_dir="build"),
+        nthreads=CPU_COUNT if IS_POSIX else 1,
+        build_dir="build",
+    ),
     cmdclass={"build_ext": build_ext},
-    options={"build_ext": {"inplace": True, "force": False}},
+    options={"build_ext": {"inplace": True, "force": False, "parallel": CPU_COUNT}},
     zip_safe=False  # Allows cimport of pxd files
 )

@@ -250,7 +250,7 @@ cpdef inline str format_bytes(double size):
     return f"{round(size, 2):,} {POWER_LABELS[n]}"
 
 
-cpdef inline str pad_string(str string, int length, str pad=" "):
+cpdef inline str pad_string(str string, int final_length, str pad=" "):
     """
     Return the given string front padded.
 
@@ -258,8 +258,8 @@ cpdef inline str pad_string(str string, int length, str pad=" "):
     ----------
     string : str
         The string to pad.
-    length : int
-        The length to pad to.
+    final_length : int
+        The final length to pad to.
     pad : str
         The padding character.
 
@@ -269,10 +269,10 @@ cpdef inline str pad_string(str string, int length, str pad=" "):
 
     """
     Condition.not_none(string, "string")
-    Condition.not_negative_int(length, "length")
+    Condition.not_negative_int(final_length, "length")
     Condition.not_none(pad, "pad")
 
-    return ((length - len(string)) * pad) + string
+    return ((final_length - len(string)) * pad) + string
 
 
 # Closures in cpdef functions not yet supported (21/6/19)

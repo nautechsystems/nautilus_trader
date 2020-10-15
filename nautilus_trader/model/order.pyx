@@ -190,7 +190,7 @@ cdef class Order:
         str
 
         """
-        cdef str id_string = f"id={self.id.value}, " if self.id is not None else ""
+        cdef str id_string = f"id={self.id.value}, " if self.id else ""
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"
@@ -434,7 +434,7 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(self.cl_ord_id, event.cl_ord_id, "id", "event.order_id")
-        if self.account_id is not None:
+        if self.account_id:
             Condition.equal(self.account_id, event.account_id, "account_id", "event.account_id")
 
         # Update events

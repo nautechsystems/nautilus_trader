@@ -21,6 +21,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -34,7 +35,15 @@ class PyStrategy(TradingStrategy):
     """
 
     def __init__(self, bar_type: BarType):
-        """Initialize a new instance of the PyStrategy class."""
+        """
+        Initialize a new instance of the PyStrategy class.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the strategy.
+
+        """
         super().__init__(order_id_tag="001")
 
         self.bar_type = bar_type
@@ -55,11 +64,15 @@ class EmptyStrategy(TradingStrategy):
     An empty strategy which does nothing.
     """
 
-    def __init__(self, order_id_tag):
+    def __init__(self, order_id_tag: str):
         """
         Initialize a new instance of the EmptyStrategy class.
 
-        :param order_id_tag: The order_id tag for the strategy (should be unique at trader level).
+        Parameters
+        ----------
+        order_id_tag : str
+            The order_id tag for the strategy (should be unique at trader level).
+
         """
         super().__init__(order_id_tag=order_id_tag)
 
@@ -69,8 +82,18 @@ class TickTock(TradingStrategy):
     A strategy to test correct sequencing of tick data and timers.
     """
 
-    def __init__(self, instrument, bar_type):
-        """Initialize a new instance of the TickTock class."""
+    def __init__(self, instrument: Instrument, bar_type: BarType):
+        """
+        Initialize a new instance of the TickTock class.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the strategy.
+        bar_type : BarType
+            The bar type for the strategy.
+
+        """
         super().__init__(order_id_tag="000")
 
         self.instrument = instrument
@@ -115,9 +138,17 @@ class TestStrategy1(TradingStrategy):
 
     __test__ = False
 
-    def __init__(self, bar_type, id_tag_strategy="001"):
-        """Initialize a new instance of the TestStrategy1 class."""
-        super().__init__(order_id_tag=id_tag_strategy)
+    def __init__(self, bar_type: BarType):
+        """
+        Initialize a new instance of the TestStrategy1 class.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the strategy.
+
+        """
+        super().__init__(order_id_tag="001")
 
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
@@ -197,7 +228,7 @@ class EMACross(TradingStrategy):
             bar_spec: BarSpecification,
             fast_ema: int=10,
             slow_ema: int=20,
-            extra_id_tag: str='',
+            extra_id_tag: str="",
     ):
         """
         Initialize a new instance of the EMACross class.
@@ -212,11 +243,13 @@ class EMACross(TradingStrategy):
             The fast EMA period.
         slow_ema : int
             The slow EMA period.
-        extra_id_tag : str, optional
+        extra_id_tag : str
             An additional order identifier tag.
 
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        if extra_id_tag is None:
+            extra_id_tag = ""
+        super().__init__(order_id_tag=symbol.code.replace('/', "") + extra_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -309,6 +342,12 @@ class EMACross(TradingStrategy):
     def buy(self, quantity: int):
         """
         Users simple buy method (example).
+
+        Parameters
+        ----------
+        quantity : int
+            The quantity for the buy order.
+
         """
         order = self.order_factory.market(
             symbol=self.symbol,
@@ -321,6 +360,12 @@ class EMACross(TradingStrategy):
     def sell(self, quantity: int):
         """
         Users simple sell method (example).
+
+        Parameters
+        ----------
+        quantity : int
+            The quantity for the sell order.
+
         """
         order = self.order_factory.market(
             symbol=self.symbol,
@@ -374,6 +419,10 @@ class EMACross(TradingStrategy):
         Actions to be performed when the strategy is saved.
 
         Create and return a state dictionary of values to be saved.
+
+        Returns
+        -------
+        dict
 
         Notes
         -----

@@ -15,10 +15,25 @@
 
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.core.types import ValidString
 
 
 class ValidStringTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [None, TypeError],
+        ["", ValueError],
+        [" ", ValueError],
+        ["  ", ValueError],
+        [1234, TypeError],
+    ])
+    def test_instantiate_given_various_invalid_values_raises_exception(self, value, ex):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ex, ValidString, value)
 
     def test_equality(self):
         # Arrange

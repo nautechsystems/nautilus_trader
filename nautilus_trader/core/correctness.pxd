@@ -14,6 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 
+cdef inline Exception make_exception(ex_default, ex_type, msg):
+    if type(ex_type) == type(Exception):
+        return ex_type(msg)
+    else:
+        return ex_default(msg)
+
+
 cdef class Condition:
 
     @staticmethod
