@@ -27,6 +27,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
+from nautilus_trader.model.objects cimport Fraction
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -54,10 +55,10 @@ cdef class Position:
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
     cdef readonly timedelta open_duration
-    cdef readonly double avg_open_price
-    cdef readonly double avg_close_price
-    cdef readonly double realized_points
-    cdef readonly double realized_return
+    cdef readonly Decimal avg_open_price
+    cdef readonly Decimal avg_close_price
+    cdef readonly Decimal realized_points
+    cdef readonly Decimal realized_return
     cdef readonly Money realized_pnl
     cdef readonly Money commission
     cdef readonly QuoteTick last_tick
@@ -83,10 +84,10 @@ cdef class Position:
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline double _calculate_cost(self, double avg_price, Quantity total_quantity) except *
-    cdef inline double _calculate_avg_price(self, double price_open, Quantity quantity_open, OrderFilled event) except *
-    cdef inline double _calculate_avg_open_price(self, OrderFilled event) except *
-    cdef inline double _calculate_avg_close_price(self, OrderFilled event) except *
-    cdef inline double _calculate_points(self, double open_price, double close_price) except *
-    cdef inline double _calculate_return(self, double open_price, double close_price) except *
-    cdef inline Money _calculate_pnl(self, double open_price, double close_price, Quantity filled_qty)
+    cdef inline Fraction _calculate_cost(self, Fraction avg_price, Quantity total_quantity)
+    cdef inline Fraction _calculate_avg_price(self, Fraction price_open, Quantity quantity_open, OrderFilled event)
+    cdef inline Fraction _calculate_avg_open_price(self, OrderFilled event)
+    cdef inline Fraction _calculate_avg_close_price(self, OrderFilled event)
+    cdef inline Fraction _calculate_points(self, Fraction open_price, Fraction close_price)
+    cdef inline Fraction _calculate_return(self, Fraction open_price, Fraction close_price)
+    cdef inline Money _calculate_pnl(self, Fraction open_price, Fraction close_price, Quantity filled_qty)

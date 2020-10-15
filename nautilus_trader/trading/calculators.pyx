@@ -75,9 +75,10 @@ cdef class ExchangeRateCalculator:
         If insufficient data to calculate exchange rate then will return 0.
 
         """
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
         Condition.not_none(bid_quotes, "bid_quotes")
         Condition.not_none(ask_quotes, "ask_quotes")
-        Condition.equal(len(bid_quotes), len(ask_quotes), "len(bid_quotes)", "len(ask_quotes)")
         Condition.true(price_type != PriceType.UNDEFINED and price_type != PriceType.LAST, "price_type not UNDEFINED or LAST")
 
         if from_currency == to_currency:

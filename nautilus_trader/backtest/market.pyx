@@ -467,7 +467,7 @@ cdef class SimulatedMarket:
                     bid_quotes=self._build_current_bid_rates(),
                     ask_quotes=self._build_current_ask_rates(),
                 )
-                rollover = mid_price * position.quantity.as_double() * interest_rate * xrate
+                rollover = mid_price * position.quantity * interest_rate * xrate
                 # Apply any bank and broker spread markup (basis points)
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
 
@@ -975,8 +975,7 @@ cdef class SimulatedMarket:
     cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
-
-        if order.state() != OrderState.WORKING:
+        if order.is_completed():
             self._log.debug(f"Cannot reject order, state was already {order.state_as_string()}.")
             return
 
@@ -995,7 +994,7 @@ cdef class SimulatedMarket:
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
-        if order.state() != OrderState.WORKING:
+        if order.is_completed():
             self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
             return
 
@@ -1013,7 +1012,7 @@ cdef class SimulatedMarket:
         self.exec_client.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
-        if order.state() != OrderState.WORKING:
+        if order.is_completed():
             self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
             return
 
