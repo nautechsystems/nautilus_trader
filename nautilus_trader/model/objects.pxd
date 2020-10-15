@@ -32,8 +32,8 @@ cdef class Decimal(Fraction):
 cdef class Quantity(Fraction):
     cdef readonly int precision
 
-    cdef inline Quantity add(self, Quantity other)
-    cdef inline Quantity sub(self, Quantity other)
+    cdef inline Quantity add(self, Fraction other)
+    cdef inline Quantity sub(self, Fraction other)
 
     @staticmethod
     cdef inline Quantity from_float_c(double value, int precision)
