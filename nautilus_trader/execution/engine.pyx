@@ -51,6 +51,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.quicktions cimport Fraction
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -618,9 +619,8 @@ cdef class ExecutionEngine:
             difference = position.quantity.sub(fill.filled_qty)
 
         # Split commission between two positions
-        cdef double fill_percent1 = position.quantity.as_double() / fill.filled_qty.as_double()
-        cdef double fill_percent2 = 1. - fill_percent1
-        cdef Currency commission_currency = fill.commission.currency
+        cdef Fraction fill_percent1 = position.quantity / fill.filled_qty
+        cdef Fraction fill_percent2 = 1 - fill_percent1
 
         # Split fill to close original position
         cdef OrderFilled fill_split1 = OrderFilled(
@@ -636,7 +636,7 @@ cdef class ExecutionEngine:
             position.quantity,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
-            Money(fill.commission.as_double() * fill_percent1, commission_currency),
+            Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,
@@ -672,7 +672,7 @@ cdef class ExecutionEngine:
             difference,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
-            Money(fill.commission.as_double() * fill_percent2, commission_currency),
+            Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,

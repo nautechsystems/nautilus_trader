@@ -400,7 +400,7 @@ cdef class SimulatedMarket:
                 xrate=xrate,
             )
 
-        cdef Money commission_for_account = Money(event.commission.as_double() * xrate, self.account_currency)
+        cdef Money commission_for_account = Money(event.commission * xrate, self.account_currency)
         self.total_commissions = self.total_commissions.add(commission_for_account)
         pnl = pnl.sub(commission_for_account)
 
@@ -556,7 +556,7 @@ cdef class SimulatedMarket:
         cdef Order order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
-        if command.quantity.as_double() == 0.0:
+        if command.quantity == 0:
             self._cancel_reject_order(
                 order,
                 "modify order",
