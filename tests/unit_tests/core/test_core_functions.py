@@ -16,6 +16,7 @@
 import unittest
 
 import numpy as np
+from parameterized import parameterized
 
 from nautilus_trader.core.functions import basis_points_as_percentage
 from nautilus_trader.core.functions import fast_mean
@@ -98,15 +99,19 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual(0.0, result1)
         self.assertAlmostEqual(0.000002, result2)
 
-    def test_pad_string(self):
+    @parameterized.expand([
+        ["1234", 4, "1234"],
+        ["1234", 5, " 1234"],
+        ["1234", 6, "  1234"],
+        ["1234", 3, "1234"],
+    ])
+    def test_pad_string(self, original, final_length, expected):
         # Arrange
-        test_string = "1234"
-
         # Act
-        result = pad_string(test_string, 5)
+        result = pad_string(original, final_length=final_length)
 
         # Assert
-        self.assertEqual(" 1234", result)
+        self.assertEqual(expected, result)
 
     def test_format_bytes(self):
         # Arrange
