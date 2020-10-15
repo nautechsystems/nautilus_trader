@@ -474,7 +474,6 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("=================================================================")
     logger.info(f"nautilus-trader {__version__}")
     logger.info(f"python {python_version()}")
-    logger.info(f"cython {cython.__version__}")
     logger.info(f"numpy {np.__version__}")
     logger.info(f"scipy {scipy.__version__}")
     logger.info(f"pandas {pd.__version__}")
