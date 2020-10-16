@@ -191,7 +191,7 @@ cdef class SimulatedMarket:
 
         self.exec_client = client
 
-        cdef AccountState initial_event = self._generate_account_reset_event()
+        cdef AccountState initial_event = self._generate_account_event()
         self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
 
@@ -218,7 +218,7 @@ cdef class SimulatedMarket:
         self.account_balance_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
-        self._generate_account_reset_event()
+        self._generate_account_event()
 
         self._market.clear()
         self._working_orders.clear()
@@ -633,20 +633,9 @@ cdef class SimulatedMarket:
         self._executions_count += 1
         return ExecutionId(f"E-{self._executions_count}")
 
-    cdef AccountState _generate_account_reset_event(self):
-        return AccountState(
-            account_id=self.exec_client.account_id,
-            currency=self.account_currency,
-            balance=self.starting_capital,
-            margin_balance=self.starting_capital,
-            margin_available=self.starting_capital,
-            event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now(),
-        )
-
     cdef AccountState _generate_account_event(self):
         return AccountState(
-            account_id=self.account.id,
+            account_id=self.exec_client.account_id,
             currency=self.account_currency,
             balance=self.account_balance,
             margin_balance=self.account_balance,    # TODO: Placeholder
