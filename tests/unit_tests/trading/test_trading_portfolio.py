@@ -51,7 +51,7 @@ AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
 GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")))
 USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
 BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
-BTCUSD_BITMEX = InstrumentLoader.btcusd_bitmex(leverage=Decimal("10.0"))
+BTCUSD_BITMEX = InstrumentLoader.xbtusd_bitmex(leverage=Decimal("10.0"))
 ETHUSD_BITMEX = InstrumentLoader.ethusd_bitmex(leverage=Decimal("10.0"))
 
 
@@ -210,7 +210,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             ETHUSD_BITMEX.symbol,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity(10000),
         )
 
         fill = TestStubs.event_order_filled(
@@ -228,7 +228,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
-        self.assertEqual(Money(3.58141152, BTC), self.portfolio.open_value(BITMEX))
+        self.assertEqual(Money(0.13544898, BTC), self.portfolio.open_value(BITMEX))
         self.assertEqual(Money(0.00519305, BTC), self.portfolio.position_margin(BITMEX))
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_venue(BITMEX))
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_symbol(BTCUSD_BITMEX.symbol))
