@@ -103,12 +103,12 @@ cdef class InstrumentLoader:
     """
 
     @staticmethod
-    def btcusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+    def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX BTC/USD perpetual contract for backtesting.
+        Return the BitMEX XBT/USD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("BTC/USD", Venue('BITMEX')),
+            symbol=Symbol("XBT/USD", Venue('BITMEX')),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=BTC,
@@ -117,7 +117,7 @@ cdef class InstrumentLoader:
             price_precision=1,
             size_precision=0,
             tick_size=Decimal("0.5"),
-            multiplier=Decimal("1"),
+            multiplier=Decimal("0.00008703"),  # TODO: This has to be dynamic?
             leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=None,
@@ -151,7 +151,7 @@ cdef class InstrumentLoader:
             price_precision=2,
             size_precision=0,
             tick_size=Decimal("0.05"),
-            multiplier=Decimal("1"),
+            multiplier=Decimal("0.00037820"),
             leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=Quantity("10000000.0"),

@@ -464,6 +464,6 @@ cdef class Position:
 
     cdef inline Money _calculate_pnl(self, Fraction opened_price, Fraction closed_price, Quantity filled_qty):
         return Money(
-            self._calculate_points(opened_price, closed_price) / opened_price * filled_qty,
+            self._calculate_return(opened_price, closed_price) * filled_qty,
             self.base_currency,
         )

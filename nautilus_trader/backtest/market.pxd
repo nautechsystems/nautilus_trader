@@ -78,8 +78,9 @@ cdef class SimulatedMarket:
     cdef readonly double rollover_spread
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
-    cdef readonly FillModel fill_model
     cdef readonly bint generate_position_ids
+
+    cdef public FillModel fill_model
 
     cdef dict _market
     cdef dict _slippages
@@ -117,7 +118,6 @@ cdef class SimulatedMarket:
     cdef OrderId _generate_order_id(self, Symbol symbol)
     cdef ExecutionId _generate_execution_id(self)
     cdef AccountState _generate_account_event(self)
-    cdef AccountState _generate_account_reset_event(self)
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *
