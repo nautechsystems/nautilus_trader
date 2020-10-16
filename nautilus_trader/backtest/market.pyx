@@ -762,11 +762,11 @@ cdef class SimulatedMarket:
         cdef Instrument instrument = self.instruments[order.symbol]
 
         # Check order size is valid or reject
-        if order.quantity > instrument.max_quantity:
+        if instrument.max_quantity and order.quantity > instrument.max_quantity:
             self._reject_order(order, f"order quantity of {order.quantity} exceeds "
                                       f"the maximum trade size of {instrument.max_quantity}")
             return  # Cannot accept order
-        if order.quantity < instrument.min_quantity:
+        if instrument.min_quantity and order.quantity < instrument.min_quantity:
             self._reject_order(order, f"order quantity of {order.quantity} is less than "
                                       f"the minimum trade size of {instrument.min_quantity}")
             return  # Cannot accept order
@@ -895,9 +895,15 @@ cdef class SimulatedMarket:
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef Money commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission = Money(order.quantity * instrument.maker_fee, instrument.base_currency)
+            commission = Money(
+                order.quantity * instrument.multiplier * instrument.maker_fee,
+                instrument.base_currency,
+            )
         elif liquidity_side == LiquiditySide.TAKER:
-            commission = Money(order.quantity * instrument.taker_fee, instrument.base_currency)
+            commission = Money(
+                order.quantity * instrument.multiplier * instrument.taker_fee,
+                instrument.base_currency,
+            )
         else:
             raise RuntimeError(f"Cannot calculate commission "
                                f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")

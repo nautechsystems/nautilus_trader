@@ -78,8 +78,9 @@ cdef class SimulatedMarket:
     cdef readonly double rollover_spread
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
-    cdef readonly FillModel fill_model
     cdef readonly bint generate_position_ids
+
+    cdef public FillModel fill_model
 
     cdef dict _market
     cdef dict _slippages
