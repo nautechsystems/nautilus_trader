@@ -34,8 +34,18 @@ cdef class RelativeStrengthIndex(Indicator):
         """
         Initialize a new instance of the RelativeStrengthIndex class.
 
-        :param ma_type: The moving average type for average gain/loss.
-        :param period: The rolling window period for the indicator (> 0).
+        Parameters
+        ----------
+        ma_type : int
+            The moving average type for average gain/loss.
+        period : MovingAverageType
+            The rolling window period for the indicator.
+
+        Raises
+        ------
+        ValueError
+            If the period is not positive (> 0).
+
         """
         Condition.positive_int(period, "period")
         super().__init__(params=[period, ma_type.name])
@@ -51,7 +61,11 @@ cdef class RelativeStrengthIndex(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -61,7 +75,11 @@ cdef class RelativeStrengthIndex(Indicator):
         """
         Update the indicator with the given value.
 
-        :param value: The update value.
+        Parameters
+        ----------
+        value : double
+            The update value.
+
         """
         # Check if first input
         if not self.has_inputs:
@@ -96,7 +114,10 @@ cdef class RelativeStrengthIndex(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._average_gain.reset()

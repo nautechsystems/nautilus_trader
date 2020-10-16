@@ -31,7 +31,16 @@ cdef class EfficiencyRatio(Indicator):
         """
         Initialize a new instance of the EfficiencyRatio class.
 
-        :param period: The rolling window period for the indicator (>= 2).
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (>= 2).
+
+        Raises
+        ------
+        ValueError
+            If the period is not >= 2.
+
         """
         Condition.true(period >= 2, "period >= 2")
         super().__init__(params=[period])
@@ -45,7 +54,11 @@ cdef class EfficiencyRatio(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -55,7 +68,11 @@ cdef class EfficiencyRatio(Indicator):
         """
         Update the indicator with the given price.
 
-        :param price: The update price.
+        Parameters
+        ----------
+        price : double
+            The update price.
+
         """
         self._inputs.append(price)
 
@@ -81,7 +98,10 @@ cdef class EfficiencyRatio(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._inputs.clear()

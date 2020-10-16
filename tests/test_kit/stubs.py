@@ -139,6 +139,10 @@ class TestStubs:
         return BarType(TestStubs.symbol_usdjpy_fxcm(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
+    def bartype_btcusdt_binance_1min_bid() -> BarType:
+        return BarType(TestStubs.symbol_btcusdt_binance(), TestStubs.bar_spec_1min_bid())
+
+    @staticmethod
     def bar_5decimal() -> Bar:
         return Bar(
             Price("1.00002"),

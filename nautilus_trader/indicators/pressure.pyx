@@ -38,9 +38,22 @@ cdef class Pressure(Indicator):
         """
         Initialize a new instance of the Pressure class.
 
-        :param period: The period for the indicator (> 0).
-        :param ma_type: The moving average type for the calculations.
-        :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0.).
+        Parameters
+        ----------
+        period : int
+            The period for the indicator (> 0).
+        ma_type : MovingAverageType
+            The moving average type for the calculations.
+        atr_floor : double
+            The ATR floor (minimum) output value for the indicator (>= 0.).
+
+        Raises
+        ------
+        ValueError
+            If period is not positive (> 0).
+        ValueError
+            If atr_floor is negative (< 0).
+
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(atr_floor, "atr_floor")
@@ -62,7 +75,11 @@ cdef class Pressure(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -83,10 +100,17 @@ cdef class Pressure(Indicator):
         """
         Update the indicator with the given raw values.
 
-        :param high: The high price.
-        :param low: The low price.
-        :param close: The close price.
-        :param volume: The close price.
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        close : double
+            The close price.
+        volume : double
+            The volume.
+
         """
         self._atr.update_raw(high, low, close)
         self._average_volume.update_raw(volume)
@@ -111,7 +135,10 @@ cdef class Pressure(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._atr.reset()

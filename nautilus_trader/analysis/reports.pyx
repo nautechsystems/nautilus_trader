@@ -154,8 +154,7 @@ cdef class ReportProvider:
             "side": order_side_to_string(order.side),
             "type": order_type_to_string(order.type),
             "quantity": order.quantity,
-            "avg_price": "None" if order.avg_price is None
-            else order.avg_price,
+            "avg_price": "None" if order.avg_price is None else order.avg_price.as_double(),
             "slippage": order.slippage.as_double(),
             "timestamp": order.last_event().timestamp,
         }
@@ -169,10 +168,10 @@ cdef class ReportProvider:
             "opened_time": position.opened_time,
             "closed_time": position.closed_time,
             "duration": position.open_duration,
-            "avg_open_price": position.avg_open_price,
-            "avg_close_price": position.avg_close_price,
-            "realized_points": position.realized_points,
-            "realized_return": position.realized_return,
+            "avg_open_price": position.avg_open_price.as_double(),
+            "avg_close_price": position.avg_close_price.as_double(),
+            "realized_points": position.realized_points.as_double(),
+            "realized_return": position.realized_return.as_double(),
             "realized_pnl": position.realized_pnl.as_double(),
             "currency": position.base_currency.code,
         }

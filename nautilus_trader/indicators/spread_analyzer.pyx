@@ -94,7 +94,7 @@ cdef class SpreadAnalyzer(Indicator):
 
     cpdef void reset(self):
         """
-        Reset the analyzer.
+        Reset the indicator.
 
         All stateful values are reset to their initial value.
 

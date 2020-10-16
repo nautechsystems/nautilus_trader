@@ -191,7 +191,7 @@ cdef class SimulatedMarket:
 
         self.exec_client = client
 
-        cdef AccountState initial_event = self._generate_account_reset_event()
+        cdef AccountState initial_event = self._generate_account_event()
         self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
 
@@ -218,6 +218,7 @@ cdef class SimulatedMarket:
         self.account_balance_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
+        self._generate_account_event()
 
         self._market.clear()
         self._working_orders.clear()
@@ -632,20 +633,9 @@ cdef class SimulatedMarket:
         self._executions_count += 1
         return ExecutionId(f"E-{self._executions_count}")
 
-    cdef AccountState _generate_account_reset_event(self):
-        return AccountState(
-            account_id=self.exec_client.account_id,
-            currency=self.account_currency,
-            balance=self.starting_capital,
-            margin_balance=self.starting_capital,
-            margin_available=self.starting_capital,
-            event_id=self._uuid_factory.generate(),
-            event_timestamp=self._clock.utc_now(),
-        )
-
     cdef AccountState _generate_account_event(self):
         return AccountState(
-            account_id=self.account.id,
+            account_id=self.exec_client.account_id,
             currency=self.account_currency,
             balance=self.account_balance,
             margin_balance=self.account_balance,    # TODO: Placeholder
@@ -761,11 +751,11 @@ cdef class SimulatedMarket:
         cdef Instrument instrument = self.instruments[order.symbol]
 
         # Check order size is valid or reject
-        if order.quantity > instrument.max_quantity:
+        if instrument.max_quantity and order.quantity > instrument.max_quantity:
             self._reject_order(order, f"order quantity of {order.quantity} exceeds "
                                       f"the maximum trade size of {instrument.max_quantity}")
             return  # Cannot accept order
-        if order.quantity < instrument.min_quantity:
+        if instrument.min_quantity and order.quantity < instrument.min_quantity:
             self._reject_order(order, f"order quantity of {order.quantity} is less than "
                                       f"the minimum trade size of {instrument.min_quantity}")
             return  # Cannot accept order
@@ -894,9 +884,15 @@ cdef class SimulatedMarket:
         cdef Instrument instrument = self.instruments[order.symbol]
         cdef Money commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission = Money(order.quantity * instrument.maker_fee, instrument.base_currency)
+            commission = Money(
+                order.quantity * instrument.multiplier * instrument.maker_fee,
+                instrument.base_currency,
+            )
         elif liquidity_side == LiquiditySide.TAKER:
-            commission = Money(order.quantity * instrument.taker_fee, instrument.base_currency)
+            commission = Money(
+                order.quantity * instrument.multiplier * instrument.taker_fee,
+                instrument.base_currency,
+            )
         else:
             raise RuntimeError(f"Cannot calculate commission "
                                f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")

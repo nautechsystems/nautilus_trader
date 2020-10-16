@@ -43,12 +43,21 @@ cdef class KeltnerChannel(Indicator):
         """
         Initialize a new instance of the KeltnerChannel class.
 
-        :param period: The rolling window period for the indicator (> 0).
-        :param k_multiplier: The multiplier for the ATR (> 0).
-        :param ma_type: The moving average type for the middle band (cannot be None).
-        :param ma_type_atr: The moving average type for the internal ATR (cannot be None).
-        :param use_previous: The boolean flag indicating whether previous price values should be used.
-        :param atr_floor: The ATR floor (minimum) output value for the indicator (>= 0).
+        Parameters
+        ----------
+        period : int
+            The rolling window period for the indicator (> 0).
+        k_multiplier : double
+            The multiplier for the ATR (> 0).
+        ma_type : MovingAverageType
+            The moving average type for the middle band (cannot be None).
+        ma_type_atr : MovingAverageType
+            The moving average type for the internal ATR (cannot be None).
+        use_previous : bool
+            The boolean flag indicating whether previous price values should be used.
+        atr_floor : double
+            The ATR floor (minimum) output value for the indicator (>= 0).
+
         """
         Condition.positive_int(period, "period")
         Condition.positive(k_multiplier, "k_multiplier")
@@ -60,7 +69,7 @@ cdef class KeltnerChannel(Indicator):
                 ma_type.name,
                 ma_type_atr.name,
                 use_previous,
-                atr_floor
+                atr_floor,
             ]
         )
 
@@ -76,7 +85,11 @@ cdef class KeltnerChannel(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -95,9 +108,15 @@ cdef class KeltnerChannel(Indicator):
         """
         Update the indicator with the given raw value.
 
-        :param high: The high price.
-        :param low: The low price.
-        :param close: The close price.
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        close : double
+            The close price.
+
         """
         cdef double typical_price = (high + low + close) / 3.0
 
@@ -116,7 +135,10 @@ cdef class KeltnerChannel(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._moving_average.reset()

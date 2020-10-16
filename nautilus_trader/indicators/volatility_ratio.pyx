@@ -38,15 +38,34 @@ cdef class VolatilityRatio(Indicator):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
 
-        :param fast_period: The period for the fast ATR (> 0).
-        :param slow_period: The period for the slow ATR (> 0 & > fast_period).
-        :param ma_type: The moving average type for the ATR calculations.
-        :param use_previous: The boolean flag indicating whether previous price values should be used.
-        :param value_floor: The floor (minimum) output value for the indicator (>= 0).
+        Parameters
+        ----------
+        fast_period : int
+            The period for the fast ATR (> 0).
+        slow_period : int
+            The period for the slow ATR (> 0 & > fast_period).
+        ma_type : MovingAverageType
+            The moving average type for the ATR calculations.
+        use_previous : bool
+            The boolean flag indicating whether previous price values should be used.
+        value_floor : double
+            The floor (minimum) output value for the indicator (>= 0).
+
+        Raises
+        ------
+        ValueError
+            If fast_period is not positive (> 0).
+        ValueError
+            If slow_period is not positive (> 0).
+        ValueError
+            If fast_period is not < slow_period.
+        ValueError
+            If value_floor is negative (< 0).
+
         """
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
-        Condition.true(slow_period > fast_period, "slow_period > fast_period")
+        Condition.true(fast_period < slow_period, "fast_period < slow_period")
         Condition.not_negative(value_floor, "value_floor")
         super().__init__(
             params=[
@@ -54,7 +73,7 @@ cdef class VolatilityRatio(Indicator):
                 slow_period,
                 ma_type.name,
                 use_previous,
-                value_floor
+                value_floor,
             ]
         )
 
@@ -68,7 +87,11 @@ cdef class VolatilityRatio(Indicator):
         """
         Update the indicator with the given bar.
 
-        :param bar: The update bar.
+        Parameters
+        ----------
+        bar : Bar
+            The update bar.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -87,9 +110,15 @@ cdef class VolatilityRatio(Indicator):
         """
         Update the indicator with the given raw value.
 
-        :param high: The high price.
-        :param low: The low price.
-        :param close: The close price.
+        Parameters
+        ----------
+        high : double
+            The high price.
+        low : double
+            The low price.
+        close : double
+            The close price.
+
         """
         self._atr_fast.update_raw(high, low, close)
         self._atr_slow.update_raw(high, low, close)
@@ -108,7 +137,10 @@ cdef class VolatilityRatio(Indicator):
 
     cpdef void reset(self) except *:
         """
-        Reset the indicator by clearing all stateful values.
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+
         """
         self._reset_base()
         self._atr_fast.reset()
