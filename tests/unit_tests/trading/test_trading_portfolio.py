@@ -229,7 +229,7 @@ class PortfolioTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(0.13544898, BTC), self.portfolio.open_value(BITMEX))
-        self.assertEqual(Money(0.00519305, BTC), self.portfolio.position_margin(BITMEX))
+        self.assertEqual(Money(0.00019640, BTC), self.portfolio.position_margin(BITMEX))
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_venue(BITMEX))
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_symbol(BTCUSD_BITMEX.symbol))
 

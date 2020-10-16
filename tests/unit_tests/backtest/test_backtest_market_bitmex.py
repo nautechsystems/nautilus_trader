@@ -134,8 +134,8 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
             XBTUSD_BITMEX.symbol,
             Price("11493.70"),
             Price("11493.75"),
-            Quantity(1000000),
-            Quantity(1000000),
+            Quantity(1500000),
+            Quantity(1500000),
             UNIX_EPOCH,
         )
 
@@ -163,8 +163,8 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
             XBTUSD_BITMEX.symbol,
             Price("11493.60"),
             Price("11493.65"),
-            Quantity(1000000),
-            Quantity(1000000),
+            Quantity(1500000),
+            Quantity(1500000),
             UNIX_EPOCH,
         )
 
@@ -174,5 +174,5 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[3].liquidity_side)
         self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[8].liquidity_side)
-        self.assertEqual(Money('0.00652725', BTC), self.strategy.object_storer.get_store()[3].commission)
-        self.assertEqual(Money('-0.00217575', BTC), self.strategy.object_storer.get_store()[8].commission)
+        self.assertEqual(Money(0.00652725, BTC), self.strategy.object_storer.get_store()[3].commission)
+        self.assertEqual(Money(-0.00217575, BTC), self.strategy.object_storer.get_store()[8].commission)
