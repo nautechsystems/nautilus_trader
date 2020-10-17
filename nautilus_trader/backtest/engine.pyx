@@ -22,9 +22,9 @@ from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataContainer
 from nautilus_trader.backtest.data cimport BacktestDataEngine
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
-from nautilus_trader.backtest.market cimport SimulatedMarket
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
@@ -188,7 +188,7 @@ cdef class BacktestEngine:
 
         self.exec_engine.load_cache()
 
-        self.market = SimulatedMarket(
+        self.exchange = SimulatedExchange(
             venue=venue,
             oms_type=oms_type,
             generate_position_ids=True,
@@ -202,14 +202,14 @@ cdef class BacktestEngine:
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.market,
+            market=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
             logger=self.test_logger,
         )
 
         self.exec_engine.register_client(self.exec_client)
-        self.market.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -307,7 +307,7 @@ cdef class BacktestEngine:
 
         # Setup new fill model
         if fill_model is not None:
-            self.market.change_fill_model(fill_model)
+            self.exchange.change_fill_model(fill_model)
 
         # Setup new strategies
         if strategies is not None:
@@ -327,7 +327,7 @@ cdef class BacktestEngine:
         while self.data_engine.has_data:
             tick = self.data_engine.generate_tick()
             self._advance_time(tick.timestamp)
-            self.market.process_tick(tick)
+            self.exchange.process_tick(tick)
             self.data_engine.process_tick(tick)
             self.iteration += 1
         # ---------------------------------------------------------------------#
@@ -394,7 +394,7 @@ cdef class BacktestEngine:
         self.exec_engine.reset()
         self.exec_client.reset()
         self.trader.reset()
-        self.market.reset()
+        self.exchange.reset()
         self.logger.clear_log_store()
         self.test_logger.clear_log_store()
 
@@ -434,7 +434,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         for resolution in self.data_engine.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
-        if self.market.frozen_account:
+        if self.exchange.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
             self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string_formatted()}")
@@ -461,13 +461,13 @@ cdef class BacktestEngine:
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")
         self.log.info(f"Total orders: {self.exec_engine.cache.orders_total_count():,}")
         self.log.info(f"Total positions: {self.exec_engine.cache.positions_total_count():,}")
-        if self.market.frozen_account:
+        if self.exchange.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         account_balance_starting = self.config.starting_capital.to_string_formatted()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.market.account_balance.to_string_formatted(), account_starting_length)
-        commissions_total = pad_string(self.market.total_commissions.to_string_formatted(), account_starting_length)
-        rollover_interest = pad_string(self.market.total_rollover.to_string_formatted(), account_starting_length)
+        account_balance_ending = pad_string(self.exchange.account_balance.to_string_formatted(), account_starting_length)
+        commissions_total = pad_string(self.exchange.total_commissions.to_string_formatted(), account_starting_length)
+        rollover_interest = pad_string(self.exchange.total_rollover.to_string_formatted(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
         self.log.info(f"Account balance (ending):   {account_balance_ending}")
         self.log.info(f"Commissions (total):        {commissions_total}")
@@ -479,7 +479,7 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info("Calculating statistics...")
         self.log.info("")
-        self.analyzer.calculate_statistics(self.market.account, self.exec_engine.cache.positions())
+        self.analyzer.calculate_statistics(self.exchange.account, self.exec_engine.cache.positions())
 
-        for statistic in self.analyzer.get_performance_stats_formatted(self.market.account.currency):
+        for statistic in self.analyzer.get_performance_stats_formatted(self.exchange.account.currency):
             self.log.info(statistic)

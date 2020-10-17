@@ -440,30 +440,40 @@ cdef class Position:
         cdef Quantity close_quantity = Quantity(self._sell_quantity) if self.side == PositionSide.LONG else self._buy_quantity
         return self._calculate_avg_price(self.avg_close_price, close_quantity, event)
 
-    cdef inline Fraction _calculate_avg_price(self, Fraction price_open, Quantity quantity_open, OrderFilled event):
-        cdef Fraction start_cost = self._calculate_cost(price_open, quantity_open)
+    cdef inline Fraction _calculate_avg_price(
+        self,
+        Fraction open_price,
+        Quantity open_quantity,
+        OrderFilled event,
+    ):
+        cdef Fraction start_cost = self._calculate_cost(open_price, open_quantity)
         cdef Fraction event_cost = self._calculate_cost(event.avg_price, event.filled_qty)
-        cdef Fraction cumulative_quantity = quantity_open + event.filled_qty
+        cdef Fraction cumulative_quantity = open_quantity + event.filled_qty
         return (start_cost + event_cost) / cumulative_quantity
 
-    cdef inline Fraction _calculate_points(self, Fraction opened_price, Fraction closed_price):
+    cdef inline Fraction _calculate_points(self, Fraction open_price, Fraction close_price):
         if self.side == PositionSide.LONG:
-            return closed_price - opened_price
+            return close_price - open_price
         elif self.side == PositionSide.SHORT:
-            return opened_price - closed_price
+            return open_price - close_price
         else:
             return Decimal()  # FLAT
 
-    cdef inline Fraction _calculate_return(self, Fraction opened_price, Fraction closed_price):
+    cdef inline Fraction _calculate_return(self, Fraction open_price, Fraction close_price):
         if self.side == PositionSide.LONG:
-            return (closed_price - opened_price) / opened_price
+            return (close_price - open_price) / open_price
         elif self.side == PositionSide.SHORT:
-            return (opened_price - closed_price) / opened_price
+            return (open_price - close_price) / open_price
         else:
             return Decimal()  # FLAT
 
-    cdef inline Money _calculate_pnl(self, Fraction opened_price, Fraction closed_price, Quantity filled_qty):
+    cdef inline Money _calculate_pnl(
+        self,
+        Fraction open_price,
+        Fraction close_price,
+        Quantity filled_qty,
+    ):
         return Money(
-            self._calculate_return(opened_price, closed_price) * filled_qty,
+            self._calculate_return(open_price, close_price) * filled_qty,
             self.base_currency,
         )

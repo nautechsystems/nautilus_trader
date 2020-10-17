@@ -17,10 +17,13 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport position_side_from_string
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.quicktions cimport Fraction
 
 
 cdef class Instrument:
@@ -56,6 +59,7 @@ cdef class Instrument:
             Decimal funding_rate_long not None,
             Decimal funding_rate_short not None,
             datetime timestamp not None,
+            dict info = None,
     ):
         """
         Initialize a new instance of the Instrument class.
@@ -114,6 +118,8 @@ cdef class Instrument:
             The funding rate for short positions.
         timestamp : datetime
             The timestamp the instrument was created/updated at.
+        info : dict, optional
+            For more detailed and exchange specific instrument information.
 
         Raises
         ------
@@ -131,6 +137,8 @@ cdef class Instrument:
             If leverage is not positive (> 0).
 
         """
+        if info is None:
+            info = {}
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
@@ -138,18 +146,14 @@ cdef class Instrument:
         Condition.positive(lot_size, "lot_size")
         Condition.positive(leverage, "leverage")
 
-        # Determine standard/inverse/quanto
-        cdef bint is_quanto = base_currency != quote_currency and base_currency != settlement_currency
-        cdef bint is_inverse = not is_quanto and quote_currency == settlement_currency
-
         self.symbol = symbol
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.base_currency = base_currency
         self.quote_currency = quote_currency
         self.settlement_currency = settlement_currency
-        self.is_quanto = is_quanto
-        self.is_inverse = is_inverse
+        self.is_inverse = info.get("is_inverse", False)
+        self.is_quanto = info.get("is_quanto", False)
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.cost_precision = self.settlement_currency.precision
@@ -237,3 +241,65 @@ cdef class Instrument:
 
         """
         return f"<{str(self)} object at {id(self)}>"
+
+    cpdef Money calculate_pnl(
+        self,
+        PositionSide side,
+        Fraction open_price,
+        Fraction close_price,
+        Quantity quantity,
+        double xrate=1.,
+    ):
+        """
+        Calculate the PNL from the given parameters.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The side of the trade.
+        open_price : Fraction
+            The average open price of the trade.
+        close_price : Fraction
+            The average close price of the trade.
+        quantity : Quantity
+            The quantity
+        xrate : double
+            The exchange rate between the base currency and the settlement
+            currency (only applicable for quanto instruments, else ignored).
+
+        Returns
+        -------
+        Money
+            In the settlement currency for the instrument.
+
+        """
+        cdef Fraction return_percentage = self._calculate_return(
+            side,
+            open_price,
+            close_price,
+        )
+
+        cdef Fraction pnl = return_percentage * quantity * self.multiplier
+
+        if self.is_inverse:
+            pnl *= (1 / close_price)
+        elif self.is_quanto:
+            pnl *= xrate
+
+        return Money(pnl, self.settlement_currency)
+
+    cdef inline Fraction _calculate_return(
+        self,
+        PositionSide side,
+        Fraction open_price,
+        Fraction close_price,
+    ):
+        if side == PositionSide.LONG:
+            return (close_price - open_price) / open_price
+        elif side == PositionSide.SHORT:
+            return (open_price - close_price) / open_price
+        elif side == PositionSide.FLAT:
+            return Decimal()
+        else:
+            raise ValueError(f"Cannot calculate return "
+                             f"(position side was {position_side_from_string(side)}).")

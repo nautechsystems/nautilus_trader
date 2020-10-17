@@ -66,6 +66,7 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.quicktions cimport Fraction
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -74,9 +75,9 @@ from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 
-cdef class SimulatedMarket:
+cdef class SimulatedExchange:
     """
-    Provides a simulated financial market.
+    Provides a simulated financial market exchange.
     """
 
     def __init__(
@@ -93,7 +94,7 @@ cdef class SimulatedMarket:
             TestLogger logger not None,
     ):
         """
-        Initialize a new instance of the SimulatedMarket class.
+        Initialize a new instance of the SimulatedExchange class.
 
         Parameters
         ----------
@@ -373,18 +374,8 @@ cdef class SimulatedMarket:
     cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *:
         Condition.not_none(event, "event")
 
-        cdef double xrate = 1.
-        if instrument.base_currency != self.account_currency:
-            xrate = self.xrate_calculator.get_rate(
-                from_currency=instrument.base_currency,
-                to_currency=self.account.currency,
-                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-                bid_quotes=self._build_current_bid_rates(),
-                ask_quotes=self._build_current_ask_rates(),
-            )
-
         cdef PositionSide side
-        cdef Money pnl = Money(0, self.account_currency)
+
         if position and position.entry != event.order_side:
             if position.entry == OrderSide.BUY:
                 side = PositionSide.LONG
@@ -392,14 +383,36 @@ cdef class SimulatedMarket:
                 side = PositionSide.SHORT
             else:
                 raise RuntimeError(f"Invalid entry direction")
+        else:
+            return  # Nothing to adjust
 
-            pnl = self.calculate_pnl(
-                side=side,
-                open_price=position.avg_open_price,
-                close_price=event.avg_price.as_double(),
-                quantity=event.filled_qty,
-                xrate=xrate,
+        cdef double xrate = 1.
+        if instrument.is_quanto:
+            xrate = self.xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=instrument.settlement_currency,
+                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
+                bid_quotes=self._build_current_bid_rates(),
+                ask_quotes=self._build_current_ask_rates(),
             )
+
+        cdef Money pnl = instrument.calculate_pnl(
+            side=side,
+            open_price=position.avg_open_price,
+            close_price=event.avg_price,
+            quantity=event.filled_qty,
+            xrate=xrate,
+        )
+
+        if pnl.currency != self.account_currency:
+            xrate = self.xrate_calculator.get_rate(
+                from_currency=pnl.currency,
+                to_currency=self.account.currency,
+                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
+                bid_quotes=self._build_current_bid_rates(),
+                ask_quotes=self._build_current_ask_rates(),
+            )
+            pnl = Money(pnl * xrate, self.account.currency)
 
         cdef Money commission_for_account = Money(event.commission * xrate, self.account_currency)
         self.total_commissions = self.total_commissions.add(commission_for_account)
@@ -460,7 +473,8 @@ cdef class SimulatedMarket:
                     mid_prices[instrument.symbol] = mid_price
                 interest_rate = self.rollover_calculator.calc_overnight_rate(
                     position.symbol,
-                    timestamp)
+                    timestamp,
+                )
                 xrate = self.xrate_calculator.get_rate(
                     from_currency=instrument.quote_currency,
                     to_currency=self.account.currency,
@@ -882,15 +896,25 @@ cdef class SimulatedMarket:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.symbol]
+        cdef Fraction inversion = Fraction(1)
+        cdef QuoteTick last
+        if instrument.is_inverse:
+            last = self._market.get(instrument.symbol)
+            if not last:
+                self._log.error(f"Cannot calculate pnl "
+                                f"(no quotes for {instrument.symbol}).")
+
+            inversion = 1 / fill_price
+
         cdef Money commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = Money(
-                order.quantity * instrument.multiplier * instrument.maker_fee,
+                order.quantity * inversion * instrument.multiplier * instrument.maker_fee,
                 instrument.base_currency,
             )
         elif liquidity_side == LiquiditySide.TAKER:
             commission = Money(
-                order.quantity * instrument.multiplier * instrument.taker_fee,
+                order.quantity * inversion * instrument.multiplier * instrument.taker_fee,
                 instrument.base_currency,
             )
         else:
