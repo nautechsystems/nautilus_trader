@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.logging cimport TestLogger
-from nautilus_trader.backtest.market cimport SimulatedMarket
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -32,7 +32,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(
             self,
-            SimulatedMarket market not None,
+            SimulatedExchange market not None,
             AccountId account_id not None,
             ExecutionEngine engine not None,
             TestLogger logger not None):
@@ -41,7 +41,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         Parameters
         ----------
-        market : SimulatedMarket
+        market : SimulatedExchange
             The simulated market for the backtest.
         account_id : AccountId
             The account identifier for the client.

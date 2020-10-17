@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.backtest.market cimport SimulatedMarket
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.execution.client cimport ExecutionClient
 
 
 cdef class BacktestExecClient(ExecutionClient):
-    cdef SimulatedMarket _market
+    cdef SimulatedExchange _market
