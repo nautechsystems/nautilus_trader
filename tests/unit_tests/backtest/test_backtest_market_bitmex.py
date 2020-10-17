@@ -17,10 +17,10 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
@@ -92,7 +92,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         )
 
         self.config = BacktestConfig()
-        self.market = SimulatedMarket(
+        self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -106,14 +106,14 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.market,
+            market=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
             logger=self.logger,
         )
 
         self.exec_engine.register_client(self.exec_client)
-        self.market.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
 
         self.strategy = TestStrategy1(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
         self.strategy.register_trader(
@@ -139,7 +139,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        self.market.process_tick(quote1)  # Prepare market
+        self.exchange.process_tick(quote1)  # Prepare market
         self.portfolio.update_tick(quote1)
 
         order_market = self.strategy.order_factory.market(
@@ -168,11 +168,11 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        self.market.process_tick(quote2)  # Fill the limit order
+        self.exchange.process_tick(quote2)  # Fill the limit order
         self.portfolio.update_tick(quote2)
 
         # Assert
         self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[3].liquidity_side)
         self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[8].liquidity_side)
-        self.assertEqual(Money(0.00652725, BTC), self.strategy.object_storer.get_store()[3].commission)
-        self.assertEqual(Money(-0.00217575, BTC), self.strategy.object_storer.get_store()[8].commission)
+        self.assertEqual(Money(0.00652529, BTC), self.strategy.object_storer.get_store()[3].commission)
+        self.assertEqual(Money(-0.00217511, BTC), self.strategy.object_storer.get_store()[8].commission)

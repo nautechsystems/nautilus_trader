@@ -117,7 +117,7 @@ cdef class InstrumentLoader:
             price_precision=1,
             size_precision=0,
             tick_size=Decimal("0.5"),
-            multiplier=Decimal("0.00008703"),  # TODO: This has to be dynamic?
+            multiplier=Decimal("1"),
             leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=None,
@@ -131,9 +131,10 @@ cdef class InstrumentLoader:
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             settlement_fee=Decimal("0.0000"),
-            funding_rate_long=Decimal("-0.000923"),
-            funding_rate_short=Decimal("0.000923"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal("0.003321"),
             timestamp=_UNIX_EPOCH,
+            info={"is_inverse": True},
         )
 
     @staticmethod
@@ -151,7 +152,7 @@ cdef class InstrumentLoader:
             price_precision=2,
             size_precision=0,
             tick_size=Decimal("0.05"),
-            multiplier=Decimal("0.00037820"),
+            multiplier=Decimal("1"),
             leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=Quantity("10000000.0"),
@@ -164,19 +165,20 @@ cdef class InstrumentLoader:
             margin_maintenance=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            settlement_fee=Decimal("0.0000"),
-            funding_rate_long=Decimal("0.0000"),
-            funding_rate_short=Decimal("0.0000"),
+            settlement_fee=Decimal(),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal("0.000897"),
             timestamp=_UNIX_EPOCH,
+            info={"is_inverse": True},
         )
 
     @staticmethod
-    def ethbtc_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+    def ethxbt_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX ETH/BTC perpetual contract for backtesting.
+        Return the BitMEX ETH/XBT perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/BTC", Venue('BITMEX')),
+            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=ETH,
@@ -198,10 +200,11 @@ cdef class InstrumentLoader:
             margin_maintenance=Decimal("0.35"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            settlement_fee=Decimal("0.0000"),
-            funding_rate_long=Decimal("-0.0923"),
-            funding_rate_short=Decimal("0.0923"),
+            settlement_fee=Decimal(),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal(),
             timestamp=_UNIX_EPOCH,
+            info={"is_quanto": True},
         )
 
     @staticmethod
@@ -228,13 +231,13 @@ cdef class InstrumentLoader:
             min_notional=Money(10.00, USDT),
             max_price=Price("1000000.0"),
             min_price=Price("0.01"),
-            margin_initial=Decimal("0"),
-            margin_maintenance=Decimal("0"),
+            margin_initial=Decimal(),
+            margin_maintenance=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            settlement_fee=Decimal("0.000"),
-            funding_rate_long=Decimal("0"),
-            funding_rate_short=Decimal("0"),
+            settlement_fee=Decimal(),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal(),
             timestamp=_UNIX_EPOCH,
         )
 

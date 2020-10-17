@@ -19,8 +19,8 @@ from cpython.datetime cimport timedelta
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data cimport BacktestDataEngine
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
-from nautilus_trader.backtest.market cimport SimulatedMarket
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -40,7 +40,7 @@ cdef class BacktestEngine:
     cdef readonly BacktestConfig config
     cdef readonly BacktestDataEngine data_engine
     cdef readonly BacktestExecClient exec_client
-    cdef readonly SimulatedMarket market
+    cdef readonly SimulatedExchange exchange
     cdef readonly ExecutionEngine exec_engine
     cdef readonly LoggerAdapter log
     cdef readonly Logger logger

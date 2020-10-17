@@ -19,6 +19,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -27,6 +28,7 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
@@ -480,6 +482,8 @@ cdef class Portfolio(PortfolioFacade):
         cdef double xrate
         cdef Position position
         cdef Instrument instrument
+        cdef QuoteTick last
+        cdef Price inversion_price
         for position in positions_open:
             instrument = self._instruments.get(position.symbol)
             if not instrument:
@@ -499,6 +503,14 @@ cdef class Portfolio(PortfolioFacade):
                 return None  # Cannot calculate
 
             open_value += position.quantity * instrument.multiplier * xrate
+            if instrument.is_inverse:
+                last = self._ticks.get(position.symbol)
+                if not last:
+                    self._log.error(f"Cannot calculate unrealized PNL "
+                                f"(no quotes for {position.symbol}).")
+                    return None         # Cannot calculate
+                inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
+                open_value *= (1 / inversion_price)
 
         return Money(open_value, account.currency)
 
@@ -582,6 +594,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef double xrate = 1.
         cdef Order order
         cdef Instrument instrument
+        cdef Price inversion_price
         for order in working_orders:
             instrument = self._instruments.get(order.symbol)
             if not instrument:
@@ -593,7 +606,7 @@ cdef class Portfolio(PortfolioFacade):
                 continue  # No margin necessary
 
             xrate = self._xrate_calculator.get_rate(
-                from_currency=instrument.base_currency,
+                from_currency=instrument.settlement_currency,
                 to_currency=account.currency,
                 price_type=PriceType.BID if order.side == OrderSide.SELL else PriceType.ASK,
                 bid_quotes=bid_quotes,
@@ -606,12 +619,21 @@ cdef class Portfolio(PortfolioFacade):
 
             # Calculate notional value
             notional = order.quantity * instrument.multiplier * xrate
+            if instrument.is_inverse:
+                last = self._ticks.get(order.symbol)
+                if not last:
+                    self._log.error(f"Cannot calculate order margin "
+                                    f"(no quotes for {order.symbol}).")
+                    continue  # Cannot calculate
+                inversion_price = last.bid if order.side == OrderSide.SELL else last.ask
+                notional *= (1 / inversion_price)
 
             # Order margin
             margin += notional / instrument.leverage * instrument.margin_initial
 
             # Fees on notional
             margin += notional * instrument.taker_fee * 2
+
 
         cdef Money order_margin = Money(margin, account.currency)
         account.update_order_margin(order_margin)
@@ -639,6 +661,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef double xrate = 1.
         cdef Position position
         cdef Instrument instrument
+        cdef Price inversion_price
         for position in open_positions:
             instrument = self._instruments.get(position.symbol)
             if not instrument:
@@ -663,6 +686,14 @@ cdef class Portfolio(PortfolioFacade):
 
             # Calculate notional value
             notional = position.quantity * instrument.multiplier * xrate
+            if instrument.is_inverse:
+                last = self._ticks.get(position.symbol)
+                if not last:
+                    self._log.error(f"Cannot calculate position margin "
+                                    f"(no quotes for {position.symbol}).")
+                    continue  # Cannot calculate
+                inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
+                notional *= (1 / inversion_price)
 
             # Position margin
             margin += notional / instrument.leverage * instrument.margin_maintenance
@@ -706,6 +737,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef double pnl = 0
         cdef double xrate = 0
         cdef Position position
+        cdef Price inversion_price
         for position in positions_open:
             if position.symbol != symbol:
                 continue  # Nothing to calculate
@@ -723,5 +755,8 @@ cdef class Portfolio(PortfolioFacade):
                 return None  # Cannot calculate
 
             pnl += position.unrealized_pnl(last) * instrument.multiplier * xrate
+            inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
+            if instrument.is_inverse:
+                pnl *= (1 / inversion_price)
 
         return Money(pnl, account.currency)

@@ -19,10 +19,10 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.data import BacktestDataEngine
+from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
@@ -89,7 +89,7 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.market = SimulatedMarket(
+        self.market = SimulatedExchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
