@@ -17,10 +17,10 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
-from nautilus_trader.backtest.market import SimulatedMarket
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
@@ -94,7 +94,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         )
 
         self.config = BacktestConfig()
-        self.market = SimulatedMarket(
+        self.exchange = SimulatedExchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -108,14 +108,14 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.market,
+            market=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
             logger=self.logger,
         )
 
         self.exec_engine.register_client(self.exec_client)
-        self.market.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
 
         self.strategy = TestStrategy1(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.strategy.register_trader(
@@ -132,7 +132,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         # Arrange
         self.strategy.start()
 
-        self.market.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))  # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))  # Prepare market
         order = self.strategy.order_factory.market(
             USDJPY_FXCM.symbol,
             OrderSide.BUY,
@@ -153,7 +153,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         order = self.strategy.order_factory.limit(
@@ -177,7 +177,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         entry_order = self.strategy.order_factory.market(
@@ -205,7 +205,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         entry_order = self.strategy.order_factory.stop(
@@ -234,7 +234,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         order = self.strategy.order_factory.stop(
@@ -260,7 +260,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         entry_order = self.strategy.order_factory.market(
@@ -293,12 +293,12 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             random_seed=None,
         )
 
-        self.market.fill_model = fill_model
+        self.exchange.fill_model = fill_model
         self.strategy.start()
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         order = self.strategy.order_factory.market(
@@ -339,7 +339,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         order = self.strategy.order_factory.stop(
@@ -362,7 +362,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         order = self.strategy.order_factory.market(
@@ -409,7 +409,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
 
-        self.market.process_tick(tick)  # Prepare market
+        self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
         order = self.strategy.order_factory.market(
@@ -431,7 +431,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.start()
 
         open_quote = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
-        self.market.process_tick(open_quote)  # Prepare market
+        self.exchange.process_tick(open_quote)  # Prepare market
         self.portfolio.update_tick(open_quote)
 
         order_open = self.strategy.order_factory.market(
@@ -451,7 +451,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        self.market.process_tick(reduce_quote)
+        self.exchange.process_tick(reduce_quote)
         self.portfolio.update_tick(reduce_quote)
 
         order_reduce = self.strategy.order_factory.market(
@@ -481,7 +481,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        self.market.process_tick(open_quote)  # Prepare market
+        self.exchange.process_tick(open_quote)  # Prepare market
         self.portfolio.update_tick(open_quote)
 
         order_open = self.strategy.order_factory.market(
@@ -502,7 +502,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        self.market.process_tick(reduce_quote)
+        self.exchange.process_tick(reduce_quote)
         self.portfolio.update_tick(reduce_quote)
 
         order_reduce = self.strategy.order_factory.market(

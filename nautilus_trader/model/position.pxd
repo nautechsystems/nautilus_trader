@@ -85,7 +85,7 @@ cdef class Position:
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
     cdef inline Fraction _calculate_cost(self, Fraction avg_price, Quantity total_quantity)
-    cdef inline Fraction _calculate_avg_price(self, Fraction price_open, Quantity quantity_open, OrderFilled event)
+    cdef inline Fraction _calculate_avg_price(self, Fraction open_price, Quantity open_quantity, OrderFilled event)
     cdef inline Fraction _calculate_avg_open_price(self, OrderFilled event)
     cdef inline Fraction _calculate_avg_close_price(self, OrderFilled event)
     cdef inline Fraction _calculate_points(self, Fraction open_price, Fraction close_price)

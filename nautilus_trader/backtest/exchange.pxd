@@ -52,7 +52,7 @@ from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
-cdef class SimulatedMarket:
+cdef class SimulatedExchange:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
