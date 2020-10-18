@@ -507,7 +507,7 @@ cdef class Portfolio(PortfolioFacade):
                 last = self._ticks.get(position.symbol)
                 if last is None:
                     self._log.error(f"Cannot calculate unrealized PNL "
-                                f"(no quotes for {position.symbol}).")
+                                    f"(no quotes for {position.symbol}).")
                     return None         # Cannot calculate
                 inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
                 open_value *= (1 / inversion_price)
@@ -633,7 +633,6 @@ cdef class Portfolio(PortfolioFacade):
 
             # Fees on notional
             margin += notional * instrument.taker_fee * 2
-
 
         cdef Money order_margin = Money(margin, account.currency)
         account.update_order_margin(order_margin)

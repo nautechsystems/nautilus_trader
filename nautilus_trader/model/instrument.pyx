@@ -59,7 +59,7 @@ cdef class Instrument:
             Decimal funding_rate_long not None,
             Decimal funding_rate_short not None,
             datetime timestamp not None,
-            dict info = None,
+            dict info=None,
     ):
         """
         Initialize a new instance of the Instrument class.
