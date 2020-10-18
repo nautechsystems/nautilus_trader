@@ -639,6 +639,7 @@ cdef class ExecutionEngine:
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,
+            fill.is_inverse,
             fill.execution_time,
             fill.id,
             fill.timestamp,
@@ -675,6 +676,7 @@ cdef class ExecutionEngine:
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,
+            fill.is_inverse,
             fill.execution_time,
             self._uuid_factory.generate(),  # New event identifier
             fill.timestamp,

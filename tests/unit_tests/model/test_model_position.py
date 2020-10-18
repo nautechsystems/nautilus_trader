@@ -291,6 +291,7 @@ class PositionTests(unittest.TestCase):
             LiquiditySide.TAKER,
             AUD,
             USD,
+            False,
             UNIX_EPOCH + timedelta(minutes=1),
             uuid4(),
             UNIX_EPOCH,
