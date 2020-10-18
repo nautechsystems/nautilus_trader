@@ -376,7 +376,7 @@ cdef class SimulatedExchange:
 
         cdef PositionSide side
 
-        if position and position.entry != event.order_side:
+        if position is not None and position.entry != event.order_side:
             if position.entry == OrderSide.BUY:
                 side = PositionSide.LONG
             elif position.entry == OrderSide.SELL:

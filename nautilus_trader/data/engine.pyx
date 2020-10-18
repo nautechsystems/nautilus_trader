@@ -737,7 +737,7 @@ cdef class DataEngine:
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
         cdef QuoteTickHandler handler
-        if tick_handlers:
+        if tick_handlers is not None:
             for handler in tick_handlers:
                 handler.handle(tick)
 
@@ -791,7 +791,7 @@ cdef class DataEngine:
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
         cdef TradeTickHandler handler
-        if tick_handlers:
+        if tick_handlers is not None:
             for handler in tick_handlers:
                 handler.handle(tick)
 
@@ -846,7 +846,7 @@ cdef class DataEngine:
         # Send to all registered bar handlers for that bar type
         cdef list bar_handlers = self._bar_handlers.get(bar_type)
         cdef BarHandler handler
-        if bar_handlers:
+        if bar_handlers is not None:
             for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 
