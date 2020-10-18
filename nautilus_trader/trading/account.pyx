@@ -205,7 +205,7 @@ cdef class Account:
         Money or None
 
         """
-        if not self._portfolio:
+        if self._portfolio is None:
             return None
 
         return self._portfolio.unrealized_pnl_for_venue(self.id.issuer_as_venue())
@@ -219,10 +219,10 @@ cdef class Account:
         Money or None
 
         """
-        if not self._portfolio:
+        if self._portfolio is None:
             return None
 
-        if not self._balance:
+        if self._balance is None:
             return None
 
         cdef Money unrealized_pnl = self.unrealized_pnl()
@@ -240,11 +240,11 @@ cdef class Account:
         Money or None
 
         """
-        if not self._portfolio:
+        if self._portfolio is None:
             return None
 
         cdef Money margin_balance = self.margin_balance()
-        if not margin_balance:
+        if margin_balance is None:
             return None
 
         return Money(margin_balance - self._order_margin - self._position_margin, self.currency)

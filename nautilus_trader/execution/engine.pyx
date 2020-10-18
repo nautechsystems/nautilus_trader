@@ -496,7 +496,7 @@ cdef class ExecutionEngine:
             return  # Sent to strategy
 
         cdef Order order = self.cache.order(event.cl_ord_id)
-        if not order:
+        if order is None:
             self._log.warning(f"Cannot apply event {event} to any order, "
                               f"{event.cl_ord_id.to_string(with_class=True)} "
                               f"not found in cache.")
@@ -521,7 +521,7 @@ cdef class ExecutionEngine:
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
-        if not strategy_id:
+        if strategy_id is None:
             self._log.error(f"Cannot process event {event}, "
                             f"{strategy_id.to_string(with_class=True)} "
                             f"not found.")

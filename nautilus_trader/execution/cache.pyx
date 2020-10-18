@@ -139,7 +139,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef Order order
         for cl_ord_id, order in self._cached_orders.items():
             # 1- Build _index_order_position -> {ClientOrderId, PositionId}
-            if order.position_id:
+            if order.position_id is not None:
                 self._index_order_position[cl_ord_id] = order.position_id
 
             # 2- Build _index_order_strategy -> {ClientOrderId, StrategyId}
@@ -174,7 +174,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef Position position
         for position_id, position in self._cached_positions.items():
             # 1- Build _index_position_strategy -> {PositionId, StrategyId}
-            if position_id.strategy_id:
+            if position.strategy_id is not None:
                 self._index_position_strategy[position_id] = position.strategy_id
 
             # 2- Build _index_position_orders -> {PositionId, {ClientOrderId}}
@@ -188,7 +188,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_symbol_positions[position.symbol].add(position_id)
 
             # 4- Build _index_strategy_positions -> {StrategyId, {PositionId}}
-            if position.strategy_id not in self._index_strategy_positions:
+            if position.strategy_id is not None and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
             self._index_strategy_positions[position.strategy_id].add(position.strategy_id)
 
@@ -219,7 +219,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         cdef dict state = self._database.load_strategy(strategy.id)
 
-        if state:
+        if state is not None:
             strategy.load(state)
             for key, value in state.items():
                 self._log.debug(f"Loading {strategy.id.to_string(with_class=True)}) state (key='{key}', value={value})...")
@@ -755,9 +755,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set query = None
 
         # Build potential query set
-        if symbol:
+        if symbol is not None:
             query = self._index_symbol_orders.get(symbol, set())
-        if strategy_id:
+        if strategy_id is not None:
             if not query:
                 query = self._index_strategy_orders.get(strategy_id, set())
             else:
@@ -769,9 +769,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef set query = None
 
         # Build potential query set
-        if symbol:
+        if symbol is not None:
             query = self._index_symbol_positions.get(symbol, set())
-        if strategy_id:
+        if strategy_id is not None:
             if not query:
                 query = self._index_strategy_positions.get(strategy_id, set())
             else:
