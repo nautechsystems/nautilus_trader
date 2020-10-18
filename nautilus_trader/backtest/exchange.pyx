@@ -895,14 +895,17 @@ cdef class SimulatedExchange:
             position_id = position.id
 
         # Calculate commission
-        cdef Instrument instrument = self.instruments[order.symbol]
+        cdef Instrument instrument = self.instruments.get(order.symbol)
+        if instrument is None:
+            raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
+
         cdef Fraction inversion = Fraction(1)
         cdef QuoteTick last
         if instrument.is_inverse:
             last = self._market.get(instrument.symbol)
-            if not last:
-                self._log.error(f"Cannot calculate pnl "
-                                f"(no quotes for {instrument.symbol}).")
+            if last is None:
+                raise RuntimeError(f"Cannot calculate pnl "
+                                   f"(no quotes for {instrument.symbol}).")
 
             inversion = 1 / fill_price
 
@@ -937,8 +940,9 @@ cdef class SimulatedExchange:
             fill_price,
             commission,
             liquidity_side,
-            self.instruments[order.symbol].base_currency,
-            self.instruments[order.symbol].quote_currency,
+            instrument.base_currency,
+            instrument.quote_currency,
+            instrument.is_inverse,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),

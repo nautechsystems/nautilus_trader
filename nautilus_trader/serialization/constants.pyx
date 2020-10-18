@@ -73,6 +73,7 @@ MARGIN_CALL_STATUS = 'MarginCallStatus'
 
 BASE_CURRENCY = 'BaseCurrency'
 QUOTE_CURRENCY = 'QuoteCurrency'
+IS_INVERSE = 'IsInverse'
 COMMISSION_CURRENCY = 'CommissionCurrency'
 ASSET_TYPE = 'AssetType'
 PRICE_PRECISION = 'PricePrecision'

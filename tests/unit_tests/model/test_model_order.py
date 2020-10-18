@@ -602,6 +602,7 @@ class OrderTests(unittest.TestCase):
             LiquiditySide.MAKER,
             USD,
             USD,
+            False,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -652,6 +653,7 @@ class OrderTests(unittest.TestCase):
             LiquiditySide.MAKER,
             USD,
             USD,
+            False,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)

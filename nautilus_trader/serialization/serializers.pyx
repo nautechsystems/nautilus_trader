@@ -599,6 +599,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
             package[BASE_CURRENCY] = event.base_currency.code
             package[QUOTE_CURRENCY] = event.quote_currency.code
+            package[IS_INVERSE] = str(event.is_inverse)
             package[EXECUTION_TIME] = convert_datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
@@ -777,6 +778,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
                 Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
                 Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
+                unpacked[IS_INVERSE].decode(UTF8) == "True",
                 convert_string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,
