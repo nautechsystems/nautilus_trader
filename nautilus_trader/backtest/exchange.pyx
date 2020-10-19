@@ -524,10 +524,10 @@ cdef class SimulatedExchange:
         )
 
     cdef void _adjust_account(
-            self,
-            OrderFilled event,
-            Position position,
-            Instrument instrument,
+        self,
+        OrderFilled event,
+        Position position,
+        Instrument instrument,
     ) except *:
         # xrate is from instrument.base_currency to instrument.settlement_currency
         Condition.not_none(event, "event")
@@ -544,8 +544,8 @@ cdef class SimulatedExchange:
             pnl = instrument.calculate_pnl(
                 side=Position.side_from_order_side_c(event.order_side),
                 quantity=event.filled_qty,
-                open_price=position.avg_open_price,
-                close_price=event.avg_price,
+                avg_open=position.avg_open_price,
+                avg_close=event.avg_price,
             )
 
         if instrument.base_currency != self.account_currency:
