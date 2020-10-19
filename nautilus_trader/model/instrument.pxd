@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
@@ -64,6 +65,29 @@ cdef class Instrument:
         Fraction open_price,
         Fraction close_price,
         Quantity quantity,
+    )
+
+    cpdef Money calculate_pnl_for_settlement(
+        self,
+        PositionSide side,
+        Fraction open_price,
+        Fraction close_price,
+        Quantity quantity,
+        double xrate=*,
+    )
+
+    cpdef Money calculate_commission(
+        self,
+        Quantity quantity,
+        Price avg_price,
+        LiquiditySide liquidity_side,
+    )
+
+    cpdef Money calculate_commission_for_settlement(
+        self,
+        Quantity quantity,
+        Price avg_price,
+        LiquiditySide liquidity_side,
         double xrate=*,
     )
 

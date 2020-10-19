@@ -17,6 +17,7 @@ from datetime import datetime
 from datetime import timedelta
 import unittest
 
+from parameterized import parameterized
 import pytz
 
 from nautilus_trader.common.clock import TestClock
@@ -61,6 +62,24 @@ class PositionTests(unittest.TestCase):
             clock=TestClock(),
         )
         print("\n")
+
+    def test_side_from_order_side_given_undefined_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, Position.side_from_order_side, OrderSide.UNDEFINED)
+
+    @parameterized.expand([
+        [OrderSide.BUY, PositionSide.LONG],
+        [OrderSide.SELL, PositionSide.SHORT],
+    ])
+    def test_side_from_order_side_given_valid_sides_returns_expected_side(self, order_side, expected):
+        # Arrange
+        # Act
+        position_side = Position.side_from_order_side(order_side)
+
+        # Assert
+        self.assertEqual(expected, position_side)
 
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange

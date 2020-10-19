@@ -23,7 +23,6 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -40,7 +39,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
@@ -103,9 +101,6 @@ cdef class SimulatedExchange:
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
-    cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *
-    cpdef Money calculate_pnl(self, PositionSide side, double open_price, double close_price, Quantity quantity, double xrate)
-    cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
@@ -118,6 +113,8 @@ cdef class SimulatedExchange:
     cdef OrderId _generate_order_id(self, Symbol symbol)
     cdef ExecutionId _generate_execution_id(self)
     cdef AccountState _generate_account_event(self)
+    cdef void _adjust_account(self, OrderFilled event, Position position, Instrument instrument, double xrate_base_settlement) except *
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
     cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *

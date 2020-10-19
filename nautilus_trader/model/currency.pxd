@@ -55,4 +55,4 @@ cdef class Currency:
     cdef readonly CurrencyType currency_type
 
     @staticmethod
-    cdef from_string_c(str code)
+    cdef Currency from_string_c(str code)
