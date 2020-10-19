@@ -74,10 +74,10 @@ cdef class Order:
     cdef readonly UUID init_id
 
     @staticmethod
-    cdef OrderSide opposite_side_c(OrderSide side)
+    cdef inline OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef OrderSide flatten_side_c(PositionSide side)
+    cdef inline OrderSide flatten_side_c(PositionSide side) except *
 
     cpdef OrderState state(self)
     cpdef Event last_event(self)

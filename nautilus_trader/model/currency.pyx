@@ -215,7 +215,7 @@ cdef class Currency:
         return _CURRENCY_TABLE.get(code)
 
     @staticmethod
-    cdef from_string_c(str code):
+    cdef Currency from_string_c(str code):
         """
         Return a currency from the given string (if found).
 
