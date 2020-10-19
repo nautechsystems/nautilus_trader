@@ -26,6 +26,7 @@ from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Instrument:
@@ -59,6 +60,12 @@ cdef class Instrument:
     cdef readonly Decimal funding_rate_short
     cdef readonly datetime timestamp
 
+    cpdef Money calculate_open_value(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        QuoteTick last)
+
     cpdef Money calculate_pnl(
         self,
         PositionSide side,
@@ -67,33 +74,9 @@ cdef class Instrument:
         Fraction close_price,
     )
 
-    cpdef Money calculate_pnl_for_settlement(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Fraction open_price,
-        Fraction close_price,
-        double xrate=*,
-    )
-
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
         Fraction avg_price,
         LiquiditySide liquidity_side,
-    )
-
-    cpdef Money calculate_commission_for_settlement(
-        self,
-        Quantity quantity,
-        Fraction avg_price,
-        LiquiditySide liquidity_side,
-        double xrate=*,
-    )
-
-    cdef inline Fraction _calculate_return(
-        self,
-        PositionSide side,
-        Fraction open_price,
-        Fraction close_price,
     )

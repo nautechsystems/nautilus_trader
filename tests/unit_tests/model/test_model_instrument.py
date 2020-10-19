@@ -18,6 +18,7 @@ import unittest
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
@@ -26,11 +27,13 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class InstrumentTests(unittest.TestCase):
 
-    def test_calculate_pnl_given_position_side_undefined_raises_value_error(self):
+    def test_calculate_pnl_given_position_side_undefined_or_flat_raises_value_error(self):
         # Arrange
         instrument = InstrumentLoader.btcusdt_binance()
 
@@ -45,20 +48,58 @@ class InstrumentTests(unittest.TestCase):
             Price("10500.00"),
         )
 
-    def test_calculate_pnl_given_position_side_flat_returns_zero(self):
-        # Arrange
-        instrument = InstrumentLoader.btcusdt_binance()
-
-        # Act
-        pnl = instrument.calculate_pnl(
+        self.assertRaises(
+            ValueError,
+            instrument.calculate_pnl,
             PositionSide.FLAT,
             Quantity(10),
             Price("10500.00"),
-            Price("10510.00"),
+            Price("10500.00"),
+        )
+
+    def test_calculate_open_value(self):
+        # Arrange
+        instrument = InstrumentLoader.btcusdt_binance()
+
+        last = QuoteTick(
+            instrument.symbol,
+            Price("11493.60"),
+            Price("11493.65"),
+            Quantity("19.3"),
+            Quantity("1.43"),
+            UNIX_EPOCH,
+        )
+        # Act
+        pnl = instrument.calculate_open_value(
+            PositionSide.LONG,
+            Quantity(10),
+            last
         )
 
         # Assert
-        self.assertEqual(Money(0, BTC), pnl)
+        self.assertEqual(Money(10.00000000, BTC), pnl)
+
+    def test_calculate_open_value_for_inverse(self):
+        # Arrange
+        instrument = InstrumentLoader.xbtusd_bitmex()
+
+        last = QuoteTick(
+            instrument.symbol,
+            Price("11493.60"),
+            Price("11493.65"),
+            Quantity(55000),
+            Quantity(12500),
+            UNIX_EPOCH,
+        )
+        # Act
+        pnl = instrument.calculate_open_value(
+            PositionSide.LONG,
+            Quantity(100000),
+            last
+        )
+
+        # Assert
+        self.assertEqual(Money(8.70049419, BTC), pnl)
 
     def test_calculate_pnl_for_long_position_win(self):
         # Arrange
@@ -120,7 +161,7 @@ class InstrumentTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(-0.16238095, BTC), pnl)
 
-    def test_calculate_pnl_for_inverse_instrument(self):
+    def test_calculate_pnl_for_inverse1(self):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex()
 
@@ -135,21 +176,20 @@ class InstrumentTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(-0.15217745, BTC), pnl)
 
-    def test_calculate_pnl_for_settlement_with_inverse_quanto(self):
+    def test_calculate_pnl_for_inverse2(self):
         # Arrange
         instrument = InstrumentLoader.ethusd_bitmex()
 
         # Act
-        pnl = instrument.calculate_pnl_for_settlement(
+        pnl = instrument.calculate_pnl(
             PositionSide.SHORT,
             Quantity(100000),
             Price("375.95"),
             Price("365.50"),
-            1 / 30.6718,
         )
 
         # Assert
-        self.assertEqual(Money(0.24794740, BTC), pnl)
+        self.assertEqual(Money(7.60499302, ETH), pnl)
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange
@@ -179,7 +219,7 @@ class InstrumentTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(30.00, AUD), commission)
 
-    def test_calculate_commission_for_taker(self):
+    def test_calculate_commission_crypto_taker(self):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex()
 
@@ -193,22 +233,7 @@ class InstrumentTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(0.00654993, BTC), commission)
 
-    def test_calculate_commission_for_settlement_crypto(self):
-        # Arrange
-        instrument = InstrumentLoader.ethusd_bitmex()
-
-        # Act
-        commission = instrument.calculate_commission_for_settlement(
-            Quantity(10000),
-            Price("375.95"),
-            LiquiditySide.MAKER,
-            1 / 30.6718,
-        )
-
-        # Assert
-        self.assertEqual(Money(-0.00021681, BTC), commission)
-
-    def test_calculate_commission_for_settlement_fx(self):
+    def test_calculate_commission_fx_taker(self):
         # Arrange
         instrument = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("IDEALPRO")))
 
