@@ -544,9 +544,9 @@ cdef class SimulatedExchange:
             # Calculate PNL
             pnl = instrument.calculate_pnl_for_settlement(
                 side=Position.side_from_order_side_c(event.order_side),
+                quantity=event.filled_qty,
                 open_price=position.avg_open_price,
                 close_price=event.avg_price,
-                quantity=event.filled_qty,
                 xrate=xrate_base_settlement,
             )
 

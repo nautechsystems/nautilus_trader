@@ -753,9 +753,11 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{position.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
-            pnl += position.unrealized_pnl(last) * instrument.multiplier * xrate
-            inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
-            if instrument.is_inverse:
-                pnl *= (1 / inversion_price)
+            pnl += instrument.calculate_pnl(
+                position.side,
+                position.quantity,
+                position.avg_open_price,
+                last.bid if position.side == PositionSide.LONG else last.ask,
+            ) * xrate
 
         return Money(pnl, account.currency)
