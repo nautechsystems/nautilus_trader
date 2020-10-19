@@ -60,18 +60,35 @@ cdef class Instrument:
     cdef readonly Decimal funding_rate_short
     cdef readonly datetime timestamp
 
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price)
+    cpdef Money calculate_position_margin(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        QuoteTick last,
+    )
+
     cpdef Money calculate_open_value(
         self,
         PositionSide side,
         Quantity quantity,
-        QuoteTick last)
+        QuoteTick last,
+    )
+
+    cpdef Money calculate_unrealized_pnl(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        Fraction open_price,
+        QuoteTick last,
+    )
 
     cpdef Money calculate_pnl(
         self,
         PositionSide side,
         Quantity quantity,
-        Fraction open_price,
-        Fraction close_price,
+        Fraction avg_open,
+        Fraction avg_close,
     )
 
     cpdef Money calculate_commission(
@@ -80,3 +97,7 @@ cdef class Instrument:
         Fraction avg_price,
         LiquiditySide liquidity_side,
     )
+
+    cdef inline Fraction _calculate_notional(self, Quantity quantity, Fraction close_price)
+    cdef inline Fraction _invert_if_inverse(self, Fraction notional, Fraction close_price)
+    cdef inline Price _get_close_price(self, PositionSide side, QuoteTick last)

@@ -277,19 +277,139 @@ cdef class Instrument:
         """
         return f"<{str(self)} object at {id(self)}>"
 
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price):
+        """
+        Calculate the order margin from the given parameters.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+
+        Returns
+        -------
+        Money
+            In the instrument base currency.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        if self.leverage == 1:
+            return Money(0, self.base_currency)  # No margin necessary
+
+        cdef Fraction notional = self._calculate_notional(quantity, price)
+
+        cdef Fraction margin = notional / self.leverage * self.margin_initial
+        margin += notional * self.taker_fee * 2
+
+        return Money(margin, self.base_currency)
+
+    cpdef Money calculate_position_margin(
+            self,
+            PositionSide side,
+            Quantity quantity,
+            QuoteTick last,
+    ):
+        """
+        Calculate the position margin from the given parameters.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The currency position side.
+        quantity : Quantity
+            The currency position quantity.
+        last : QuoteTick
+            The last quote tick.
+
+        Returns
+        -------
+        Money
+            In the base currency for the instrument.
+
+        Raises
+        ------
+        ValueError
+            If last.symbol != self.symbol
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(last, "last")
+        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+
+        if self.leverage == 1:
+            return Money(0, self.base_currency)  # No margin necessary
+
+        cdef Price close_price = self._get_close_price(side, last)
+        cdef Fraction notional = self._calculate_notional(quantity, close_price)
+
+        cdef Fraction margin = notional / self.leverage * self.margin_maintenance
+        margin += notional * self.taker_fee
+
+        return Money(margin, self.base_currency)
+
     cpdef Money calculate_open_value(
         self,
         PositionSide side,
         Quantity quantity,
-        QuoteTick last):
+        QuoteTick last,
+    ):
         """
 
         Parameters
         ----------
         side : PositionSide
             The currency position side.
-        quantity
-        last
+        quantity : Quantity
+            The open quantity.
+        last : QuoteTick
+            The last quote tick.
+
+        Returns
+        -------
+        Money
+            In the instrument base currency.
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+        ValueError
+            If last.symbol != self.symbol
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(last, "last")
+        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+
+        cdef Price close_price = self._get_close_price(side, last)
+        cdef Fraction notional = self._calculate_notional(quantity, close_price)
+
+        return Money(notional, self.base_currency)
+
+    cpdef Money calculate_unrealized_pnl(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        Fraction avg_open,
+        QuoteTick last,
+    ):
+        """
+        Calculate the unrealized PNL from the given parameters.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The side of the trade.
+        quantity : Quantity
+            The quantity
+        avg_open : Fraction
+            The average open price of the trade.
+        last : QuoteTick
+            The last quote tick.
 
         Returns
         -------
@@ -303,33 +423,27 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
+        Condition.not_none(avg_open, "avg_open")
         Condition.not_none(last, "last")
 
-        cdef Fraction close_price
-        if side == PositionSide.LONG:
-            close_price = last.bid
-        elif side == PositionSide.SHORT:
-            close_price = last.ask
-        else:
-            raise ValueError(f"Cannot calculate open value "
-                             f"(position side was {position_side_to_string(side)}).")
+        cdef Price close_price = self._get_close_price(side, last)
 
-        cdef Fraction value = quantity * self.multiplier
-
-        if self.is_inverse:
-            value *= (1 / close_price)
-
-        return Money(value, self.base_currency)
+        return self.calculate_pnl(
+            side,
+            quantity,
+            avg_open,
+            close_price,
+        )
 
     cpdef Money calculate_pnl(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Fraction open_price,
-        Fraction close_price,
+            self,
+            PositionSide side,
+            Quantity quantity,
+            Fraction avg_open,
+            Fraction avg_close,
     ):
         """
-        Calculate the PNL from the given parameters.
+        Calculate the unrealized PNL from the given parameters.
 
         Parameters
         ----------
@@ -337,9 +451,9 @@ cdef class Instrument:
             The side of the trade.
         quantity : Quantity
             The quantity
-        open_price : Fraction
+        avg_open : Fraction
             The average open price of the trade.
-        close_price : Fraction
+        avg_close : Fraction
             The average close price of the trade.
 
         Returns
@@ -354,21 +468,20 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.not_none(open_price, "open_price")
-        Condition.not_none(close_price, "close_price")
+        Condition.not_none(avg_open, "avg_open")
+        Condition.not_none(avg_close, "avg_close")
 
         if side == PositionSide.LONG:
-            return_percentage = (close_price - open_price) / open_price
+            return_percentage = (avg_close - avg_open) / avg_open
         elif side == PositionSide.SHORT:
-            return_percentage = (open_price - close_price) / open_price
+            return_percentage = (avg_open - avg_close) / avg_open
         else:
             raise ValueError(f"Cannot calculate PNL "
                              f"(position side was {position_side_to_string(side)}).")
 
         cdef Fraction pnl = return_percentage * quantity * self.multiplier
 
-        if self.is_inverse:
-            pnl *= (1 / close_price)
+        pnl = self._invert_if_inverse(pnl, avg_close)
 
         return Money(pnl, self.base_currency)
 
@@ -379,8 +492,8 @@ cdef class Instrument:
         LiquiditySide liquidity_side,
     ):
         """
-        Calculate the commission generated by transacting the given quantity
-        with the given liquidity side.
+        Calculate the commission generated from a transaction with the given
+        parameters.
 
         Parameters
         ----------
@@ -406,10 +519,7 @@ cdef class Instrument:
         Condition.not_none(quantity, "quantity")
         Condition.not_none(avg_price, "avg_price")
 
-        cdef Fraction notional = quantity * self.multiplier
-
-        if self.is_inverse:
-            notional *= (1 / avg_price)
+        cdef Fraction notional = self._calculate_notional(quantity, avg_price)
 
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * self.maker_fee
@@ -422,3 +532,23 @@ cdef class Instrument:
         commission += commission * self.settlement_fee
 
         return Money(commission, self.base_currency)
+
+    cdef inline Fraction _calculate_notional(self, Quantity quantity, Fraction close_price):
+        cdef Fraction notional = quantity * self.multiplier
+
+        return self._invert_if_inverse(notional, close_price)
+
+    cdef inline Fraction _invert_if_inverse(self, Fraction notional, Fraction close_price):
+        if self.is_inverse:
+            return notional * (1 / close_price)
+        else:
+            return notional
+
+    cdef inline Price _get_close_price(self, PositionSide side, QuoteTick last):
+        if side == PositionSide.LONG:
+            return last.bid
+        elif side == PositionSide.SHORT:
+            return last.ask
+        else:
+            raise ValueError(f"Cannot calculate open value "
+                             f"(position side was {position_side_to_string(side)}).")

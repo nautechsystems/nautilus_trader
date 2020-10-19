@@ -26,7 +26,7 @@ from nautilus_trader.trading.account cimport Account
 
 cdef class ExecutionCacheFacade:
 
-# -- TRADE QUERIES ---------------------------------------------------------------------------------
+# -- TRADE QUERIES ---------------------------------------------------------------------------------  # noqa
 
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
