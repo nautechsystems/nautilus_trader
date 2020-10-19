@@ -528,7 +528,6 @@ cdef class SimulatedExchange:
             OrderFilled event,
             Position position,
             Instrument instrument,
-            double xrate_base_settlement,
     ) except *:
         # xrate is from instrument.base_currency to instrument.settlement_currency
         Condition.not_none(event, "event")
@@ -538,21 +537,20 @@ cdef class SimulatedExchange:
 
         # Initialize commission and PNL
         cdef Money commission = event.commission
-        cdef Money pnl = Money(0, self.account_currency)
+        cdef Money pnl = Money(0, instrument.base_currency)
 
         if position is not None and position.entry != event.order_side:
             # Calculate PNL
-            pnl = instrument.calculate_pnl_for_settlement(
+            pnl = instrument.calculate_pnl(
                 side=Position.side_from_order_side_c(event.order_side),
                 quantity=event.filled_qty,
                 open_price=position.avg_open_price,
                 close_price=event.avg_price,
-                xrate=xrate_base_settlement,
             )
 
-        if instrument.settlement_currency != self.account_currency:
+        if instrument.base_currency != self.account_currency:
             # Convert to account currency
-            xrate_settlement_account = self.xrate_calculator.get_rate(
+            xrate_base_account = self.xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
                 to_currency=instrument.settlement_currency,
                 price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
@@ -560,8 +558,8 @@ cdef class SimulatedExchange:
                 ask_quotes=self._build_current_ask_rates(),
             )
 
-            commission = Money(event.commission * xrate_settlement_account, self.account_currency)
-            pnl = Money(pnl * xrate_settlement_account, self.account_currency)
+            commission = Money(event.commission * xrate_base_account, self.account_currency)
+            pnl = Money(pnl * xrate_base_account, self.account_currency)
 
         # Final PNL
         pnl = pnl.sub(commission)
@@ -872,19 +870,10 @@ cdef class SimulatedExchange:
         if instrument is None:
             raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
 
-        cdef double xrate_base_settlement = self.xrate_calculator.get_rate(
-            from_currency=instrument.base_currency,
-            to_currency=instrument.settlement_currency,
-            price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
-            bid_quotes=self._build_current_bid_rates(),
-            ask_quotes=self._build_current_ask_rates(),
-        )
-
-        cdef Money commission = instrument.calculate_commission_for_settlement(
+        cdef Money commission = instrument.calculate_commission(
             order.quantity,
             fill_price,
             liquidity_side,
-            xrate_base_settlement,
         )
 
         # Generate event
@@ -911,7 +900,7 @@ cdef class SimulatedExchange:
             self._clock.utc_now(),
         )
 
-        self._adjust_account(filled, position, instrument, xrate_base_settlement)
+        self._adjust_account(filled, position, instrument)
 
         self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)
