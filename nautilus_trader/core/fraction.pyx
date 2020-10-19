@@ -14,9 +14,10 @@
 # This source code originally found at https://github.com/scoder/quicktions/blob/master/src/quicktions.pyx
 # The following modifications have been made;
 # - flake8: noqa at top of file
-# - Move cdef _numerator to quicktions.pxd
-# - Move cdef _denominator to quicktions.pxd
-# - Move cdef Py_hash_t _hash to quicktions.pxd
+# - change filename to fraction.pyx
+# - Move cdef _numerator to fraction.pxd
+# - Move cdef _denominator to fraction.pxd
+# - Move cdef Py_hash_t _hash to fraction.pxd
 # - rename @classmethod def from_float to _from_float
 # - rename @classmethod def from_decimal to _from_decimal
 # - change __str__ and __repr__ to return a decimalized string only

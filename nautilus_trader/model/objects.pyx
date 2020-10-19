@@ -21,9 +21,9 @@ from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fraction cimport Fraction
 from nautilus_trader.core.functions cimport precision_from_string
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.quicktions cimport Fraction
 
 
 cdef class Decimal(Fraction):

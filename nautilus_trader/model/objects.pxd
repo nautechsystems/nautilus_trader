@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.fraction cimport Fraction
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.quicktions cimport Fraction
 
 
 cdef class Decimal(Fraction):

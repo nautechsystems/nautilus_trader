@@ -18,10 +18,10 @@ import unittest
 
 from parameterized import parameterized
 
+from nautilus_trader.core.fraction import Fraction
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.quicktions import Fraction
 
 
 class MoneyTests(unittest.TestCase):
