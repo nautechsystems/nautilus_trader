@@ -27,7 +27,8 @@ cdef class ExecutionCacheFacade:
     Provides a read-only facade for an `ExecutionCache`.
     """
 
-    # -- Trading queries -------------------------------------------------------
+# -- TRADE QUERIES ---------------------------------------------------------------------------------
+
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -44,7 +45,8 @@ cdef class ExecutionCacheFacade:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- Account queries -------------------------------------------------------
+# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
+
     cpdef Account account(self, AccountId account_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -57,7 +59,8 @@ cdef class ExecutionCacheFacade:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- Identifier queries ----------------------------------------------------
+# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
+
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -86,7 +89,8 @@ cdef class ExecutionCacheFacade:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- Order queries ---------------------------------------------------------
+# -- ORDER QUERIES ---------------------------------------------------------------------------------
+
     cpdef Order order(self, ClientOrderId cl_ord_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -103,7 +107,8 @@ cdef class ExecutionCacheFacade:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- Position queries ------------------------------------------------------
+# -- POSITION QUERIES ------------------------------------------------------------------------------
+
     cpdef Position position(self, PositionId position_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -180,7 +185,8 @@ cdef class ExecutionCacheFacade:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- Strategy queries ------------------------------------------------------
+# -- STRATEGY QUERIES ------------------------------------------------------------------------------
+
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")

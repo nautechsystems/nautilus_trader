@@ -26,18 +26,21 @@ from nautilus_trader.trading.account cimport Account
 
 cdef class ExecutionCacheFacade:
 
-    # -- Trading queries -------------------------------------------------------
+# -- TRADE QUERIES ---------------------------------------------------------------------------------
+
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=*) except *
     cpdef bint is_flat(self, Symbol symbol=*, StrategyId strategy_id=*) except *
     cpdef bint is_completely_flat(self) except *
 
-    # -- Account queries -------------------------------------------------------
+# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
+
     cpdef Account account(self, AccountId account_id)
     cpdef Account account_for_venue(self, Venue venue)
     cpdef AccountId account_id(self, Venue venue)
 
-    # -- Identifier queries ----------------------------------------------------
+# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
+
     cpdef set order_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set order_working_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set order_completed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
@@ -46,7 +49,8 @@ cdef class ExecutionCacheFacade:
     cpdef set position_closed_ids(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef set strategy_ids(self)
 
-    # -- Order queries ---------------------------------------------------------
+# -- ORDER QUERIES ---------------------------------------------------------------------------------
+
     cpdef Order order(self, ClientOrderId cl_ord_id)
     cpdef list orders(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
@@ -58,7 +62,8 @@ cdef class ExecutionCacheFacade:
     cpdef int orders_working_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
     cpdef int orders_completed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
 
-    # -- Position queries ------------------------------------------------------
+# -- POSITION QUERIES ------------------------------------------------------------------------------
+
     cpdef Position position(self, PositionId position_id)
     cpdef PositionId position_id(self, ClientOrderId cl_ord_id)
     cpdef list positions(self, Symbol symbol=*, StrategyId strategy_id=*)
@@ -73,6 +78,7 @@ cdef class ExecutionCacheFacade:
     cpdef int positions_open_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
     cpdef int positions_closed_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *
 
-    # -- Strategy queries ------------------------------------------------------
+# -- STRATEGY QUERIES ------------------------------------------------------------------------------
+
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id)
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id)

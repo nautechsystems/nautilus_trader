@@ -57,7 +57,6 @@ cdef class DataEngine:
     cpdef void dispose(self) except *
     cpdef void update_instruments(self, Venue venue) except *
     cpdef void update_instruments_all(self) except *
-    cpdef void _internal_update_instruments(self, list instruments) except *
     cpdef void request_instrument(self, Symbol symbol, callback) except *
     cpdef void request_instruments(self, Venue venue, callback) except *
     cpdef void request_quote_ticks(
@@ -119,6 +118,7 @@ cdef class DataEngine:
 
 # --------------------------------------------------------------------------------------------------
 
+    cdef void _internal_update_instruments(self, list instruments) except *
     cdef void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef void _stop_generating_bars(self, BarType bar_type, handler) except *
     cdef void _add_quote_tick_handler(self, Symbol symbol, handler) except *

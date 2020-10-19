@@ -7,6 +7,7 @@ redis>=3.4.1
 empyrical>=0.5.5
 psutil>=5.7.2
 pytz>=2020.1
+uvloop>=0.14.0
 ccxt>=1.35.72
 pytest>=6.1.1
 parameterized>=0.7.4

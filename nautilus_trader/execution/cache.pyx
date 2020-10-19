@@ -608,22 +608,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_strategies.clear()
         self._log.info(f"Indexes cleared.")
 
-# -- QUERIES ---------------------------------------------------------------------------------------
+# -- TRADE QUERIES ---------------------------------------------------------------------------------
 
-    cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
-        cdef list positions = self.positions_open(symbol, strategy_id)
-        cdef Decimal net_quantity = Decimal()
-
-        cdef Position position
-        for position in positions:
-            if position.is_long():
-                net_quantity = Decimal(net_quantity + position.quantity)
-            elif position.is_short():
-                net_quantity = Decimal(net_quantity - position.quantity)
-
-        return net_quantity
-
-    # -- Trading queries ----------------------------------------------------
     cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
         """
         Return a value indicating whether the execution engine is net long a
@@ -691,7 +677,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         return self.positions_open_count() == 0
 
-    # -- Account queries -------------------------------------------------------
+# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
+
     cpdef Account account(self, AccountId account_id):
         """
         Return the account matching the given identifier (if found).
@@ -750,7 +737,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._index_venue_account.get(venue)
 
-    # -- Identifier queries ----------------------------------------------------
+# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
+
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id):
         cdef set query = None
 
@@ -930,7 +918,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         return self._index_strategies.copy()
 
-    # -- Order queries ---------------------------------------------------------
+# -- ORDER QUERIES ---------------------------------------------------------------------------------
+
     cpdef Order order(self, ClientOrderId cl_ord_id):
         """
         Return the order matching the given identifier (if found).
@@ -1025,7 +1014,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return orders_completed
 
-    # -- Position queries ------------------------------------------------------
+# -- POSITION QUERIES ------------------------------------------------------------------------------
+
     cpdef Position position(self, PositionId position_id):
         """
         Return the position associated with the given identifier (if found).
@@ -1407,7 +1397,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         return len(self.position_closed_ids(symbol, strategy_id))
 
-    # -- Strategy queries ------------------------------------------------------
+# -- STRATEGY QUERIES ------------------------------------------------------------------------------
+
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id):
         """
         Return the strategy identifier associated with the given identifier (if found).
@@ -1443,3 +1434,16 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._index_position_strategy.get(position_id)
+
+    cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
+        cdef list positions = self.positions_open(symbol, strategy_id)
+        cdef Decimal net_quantity = Decimal()
+
+        cdef Position position
+        for position in positions:
+            if position.is_long():
+                net_quantity = Decimal(net_quantity + position.quantity)
+            elif position.is_short():
+                net_quantity = Decimal(net_quantity - position.quantity)
+
+        return net_quantity

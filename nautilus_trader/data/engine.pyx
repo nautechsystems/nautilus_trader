@@ -164,12 +164,6 @@ cdef class DataEngine:
         for client in self._clients.values():
             client.request_instruments(self._internal_update_instruments)
 
-    cpdef void _internal_update_instruments(self, list instruments) except *:
-        # Handle all instruments individually
-        cdef Instrument instrument
-        for instrument in instruments:
-            self.handle_instrument(instrument)
-
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
         Request the latest instrument data for the given symbol.
@@ -879,6 +873,12 @@ cdef class DataEngine:
             self.handle_bar(bar_type, bars[i], send_to_handlers=False)
 
 # ------------------------------------------------------------------------------------------------ #
+
+    cdef void _internal_update_instruments(self, list instruments) except *:
+        # Handle all instruments individually
+        cdef Instrument instrument
+        for instrument in instruments:
+            self.handle_instrument(instrument)
 
     cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
