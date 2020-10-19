@@ -43,8 +43,8 @@ cdef class Instrument:
             Currency settlement_currency not None,
             int price_precision,
             int size_precision,
-            Decimal multiplier not None,
             Decimal tick_size not None,
+            Decimal multiplier not None,
             Decimal leverage not None,
             Quantity lot_size not None,
             Quantity max_quantity,  # Can be None
@@ -86,10 +86,10 @@ cdef class Instrument:
             The trading size decimal precision.
         tick_size : Decimal
             The tick size.
-        leverage : Decimal
-            The current leverage for the instrument.
         multiplier : Decimal
             The contract value multiplier.
+        leverage : Decimal
+            The current leverage for the instrument.
         lot_size : Quantity
             The rounded lot unit size.
         max_quantity : Quantity
@@ -126,27 +126,60 @@ cdef class Instrument:
         Raises
         ------
         ValueError
-            If asset type is UNDEFINED.
+            If asset_class is UNDEFINED.
         ValueError
-            If price precision is negative (< 0).
+            If asset_type is UNDEFINED.
         ValueError
-            If size precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If tick size is not positive (> 0).
+            If size_precision is negative (< 0).
+        ValueError
+            If tick_size is not positive (> 0).
+        ValueError
+            If multiplier is not positive (> 0).
+        ValueError
+            If leverage is not positive (> 0).
         ValueError
             If lot size is not positive (> 0).
         ValueError
-            If leverage is not positive (> 0).
+            If max_quantity is not positive (> 0).
+        ValueError
+            If min_quantity is negative (< 0).
+        ValueError
+            If max_notional is not positive (> 0).
+        ValueError
+            If min_notional is negative (< 0).
+        ValueError
+            If max_price is not positive (> 0).
+        ValueError
+            If min_price is negative (< 0).
 
         """
         if info is None:
             info = {}
+        Condition.not_equal(asset_class, AssetClass.UNDEFINED, 'asset_class', 'UNDEFINED')
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
         Condition.positive(tick_size, "tick_size")
-        Condition.positive(lot_size, "lot_size")
+        Condition.positive(multiplier, "multiplier")
         Condition.positive(leverage, "leverage")
+        Condition.positive(lot_size, "lot_size")
+        if max_quantity:
+            Condition.positive(max_quantity, "max_quantity")
+        if min_quantity:
+            Condition.not_negative(min_quantity, "min_quantity")
+        if max_notional:
+            Condition.positive(max_notional, "max_notional")
+        if min_notional:
+            Condition.not_negative(min_notional, "min_notional")
+        if max_price:
+            Condition.positive(max_price, "max_price")
+        if min_price:
+            Condition.not_negative(min_price, "min_price")
+        Condition.not_negative(margin_initial, "margin_initial")
+        Condition.not_negative(margin_maintenance, "margin_maintenance")
+        Condition.not_negative(margin_maintenance, "margin_maintenance")
 
         self.symbol = symbol
         self.asset_class = asset_class
@@ -247,9 +280,9 @@ cdef class Instrument:
     cpdef Money calculate_pnl(
         self,
         PositionSide side,
+        Quantity quantity,
         Fraction open_price,
         Fraction close_price,
-        Quantity quantity,
     ):
         """
         Calculate the PNL from the given parameters.
@@ -258,12 +291,12 @@ cdef class Instrument:
         ----------
         side : PositionSide
             The side of the trade.
+        quantity : Quantity
+            The quantity
         open_price : Fraction
             The average open price of the trade.
         close_price : Fraction
             The average close price of the trade.
-        quantity : Quantity
-            The quantity
 
         Returns
         -------
@@ -287,9 +320,10 @@ cdef class Instrument:
     cpdef Money calculate_pnl_for_settlement(
             self,
             PositionSide side,
+            Quantity quantity,
             Fraction open_price,
             Fraction close_price,
-            Quantity quantity,
+
             double xrate=1.,
     ):
         """
@@ -299,12 +333,12 @@ cdef class Instrument:
         ----------
         side : PositionSide
             The side of the trade.
+        quantity : Quantity
+            The quantity
         open_price : Fraction
             The average open price of the trade.
         close_price : Fraction
             The average close price of the trade.
-        quantity : Quantity
-            The quantity
         xrate : double
             The exchange rate between the base currency and the settlement
             currency.
@@ -317,9 +351,9 @@ cdef class Instrument:
         """
         cdef Money pnl = self.calculate_pnl(
             side,
+            quantity,
             open_price,
             close_price,
-            quantity,
         )
 
         return Money(pnl * xrate, self.settlement_currency)
@@ -327,7 +361,7 @@ cdef class Instrument:
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        Price avg_price,
+        Fraction avg_price,
         LiquiditySide liquidity_side,
     ):
         """
@@ -370,7 +404,7 @@ cdef class Instrument:
     cpdef Money calculate_commission_for_settlement(
             self,
             Quantity quantity,
-            Price avg_price,
+            Fraction avg_price,
             LiquiditySide liquidity_side,
             double xrate=1.,
     ):
@@ -382,7 +416,7 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The quantity for the transaction.
-        avg_price : Price
+        avg_price : Fraction
             The average price transaction (only applicable for inverse
             instruments, else ignored).
         liquidity_side : LiquiditySide

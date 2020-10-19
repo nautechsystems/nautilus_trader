@@ -62,31 +62,31 @@ cdef class Instrument:
     cpdef Money calculate_pnl(
         self,
         PositionSide side,
+        Quantity quantity,
         Fraction open_price,
         Fraction close_price,
-        Quantity quantity,
     )
 
     cpdef Money calculate_pnl_for_settlement(
         self,
         PositionSide side,
+        Quantity quantity,
         Fraction open_price,
         Fraction close_price,
-        Quantity quantity,
         double xrate=*,
     )
 
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        Price avg_price,
+        Fraction avg_price,
         LiquiditySide liquidity_side,
     )
 
     cpdef Money calculate_commission_for_settlement(
         self,
         Quantity quantity,
-        Price avg_price,
+        Fraction avg_price,
         LiquiditySide liquidity_side,
         double xrate=*,
     )
