@@ -524,5 +524,5 @@ cdef class LiveClock(Clock):
 
     cdef void _handle_time_event(self, TimeEvent event) except *:
         handler = self._handlers.get(event.name)
-        if handler:
+        if handler is not None:
             handler(event)

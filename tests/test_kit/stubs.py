@@ -262,6 +262,7 @@ class TestStubs:
             leaves_qty=None,
             base_currency=USD,
             quote_currency=JPY,
+            is_inverse=False,
             commission=0,
     ) -> OrderFilled:
         if position_id is None:
@@ -292,6 +293,7 @@ class TestStubs:
             LiquiditySide.TAKER,
             base_currency,   # Stub event
             quote_currency,  # Stub event
+            is_inverse,      # Stub event
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -431,8 +433,9 @@ class TestStubs:
             close_price,
             Money(0, USD),
             LiquiditySide.TAKER,
-            USD,  # Stub event
-            USD,  # Stub event
+            USD,    # Stub event
+            USD,    # Stub event
+            False,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),
@@ -453,8 +456,9 @@ class TestStubs:
             close_price,
             Money(0, USD),
             LiquiditySide.TAKER,
-            USD,  # Stub event
-            USD,  # Stub event
+            USD,    # Stub event
+            USD,    # Stub event
+            False,  # Stub event
             UNIX_EPOCH + timedelta(minutes=5),
             uuid4(),
             UNIX_EPOCH + timedelta(minutes=5),

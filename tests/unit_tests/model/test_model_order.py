@@ -15,6 +15,8 @@
 
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
@@ -60,25 +62,42 @@ class OrderTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-    def test_get_opposite_side_returns_expected_sides(self):
+    def test_opposite_side_given_undefined_raises_value_error(self):
         # Arrange
         # Act
-        result1 = Order.opposite_side(OrderSide.BUY)
-        result2 = Order.opposite_side(OrderSide.SELL)
-
         # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
+        self.assertRaises(ValueError, Order.opposite_side, OrderSide.UNDEFINED)
 
-    def test_get_flatten_side_with_long_or_short_position_side_returns_expected_sides(self):
+    def test_flatten_side_given_undefined_or_flat_raises_value_error(self):
         # Arrange
         # Act
-        result1 = Order.flatten_side(PositionSide.LONG)
-        result2 = Order.flatten_side(PositionSide.SHORT)
+        # Assert
+        self.assertRaises(ValueError, Order.flatten_side, PositionSide.UNDEFINED)
+        self.assertRaises(ValueError, Order.flatten_side, PositionSide.FLAT)
+
+    @parameterized.expand([
+        [OrderSide.BUY, OrderSide.SELL],
+        [OrderSide.SELL, OrderSide.BUY],
+    ])
+    def test_opposite_side_returns_expected_sides(self, side, expected):
+        # Arrange
+        # Act
+        result = Order.opposite_side(side)
 
         # Assert
-        self.assertEqual(OrderSide.SELL, result1)
-        self.assertEqual(OrderSide.BUY, result2)
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        [PositionSide.LONG, OrderSide.SELL],
+        [PositionSide.SHORT, OrderSide.BUY],
+    ])
+    def test_flatten_side_returns_expected_sides(self, side, expected):
+        # Arrange
+        # Act
+        result = Order.flatten_side(side)
+
+        # Assert
+        self.assertEqual(expected, result)
 
     def test_market_order_with_quantity_zero_raises_exception(self):
         # Arrange
@@ -602,6 +621,7 @@ class OrderTests(unittest.TestCase):
             LiquiditySide.MAKER,
             USD,
             USD,
+            False,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -652,6 +672,7 @@ class OrderTests(unittest.TestCase):
             LiquiditySide.MAKER,
             USD,
             USD,
+            False,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH)

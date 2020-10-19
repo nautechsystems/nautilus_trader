@@ -920,6 +920,7 @@ cdef class OrderFilled(OrderEvent):
             LiquiditySide liquidity_side,
             Currency base_currency not None,
             Currency quote_currency not None,
+            bint is_inverse,
             datetime execution_time not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -959,6 +960,8 @@ cdef class OrderFilled(OrderEvent):
             The order securities base currency.
         quote_currency : Currency
             The order securities quote currency.
+        is_inverse : bool
+            If the instrument base/quote is inverse for quantity and PNL.
         execution_time : datetime
             The execution time.
         event_id : UUID
@@ -985,13 +988,14 @@ cdef class OrderFilled(OrderEvent):
         self.filled_qty = filled_qty
         self.cumulative_qty = cumulative_qty
         self.leaves_qty = leaves_qty
+        self.is_partial_fill = self.leaves_qty > 0
         self.avg_price = avg_price
         self.commission = commission
         self.liquidity_side = liquidity_side
         self.base_currency = base_currency
         self.quote_currency = quote_currency
+        self.is_inverse = is_inverse
         self.execution_time = execution_time
-        self.is_partial_fill = self.leaves_qty > 0
         self.is_completion_trigger = not self.is_partial_fill
 
     cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id):
@@ -1036,6 +1040,7 @@ cdef class OrderFilled(OrderEvent):
             self.liquidity_side,
             self.base_currency,
             self.quote_currency,
+            self.is_inverse,
             self.execution_time,
             self.id,
             self.timestamp

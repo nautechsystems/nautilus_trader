@@ -176,6 +176,52 @@ cdef class Position:
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
 
+    @staticmethod
+    cdef inline PositionSide side_from_order_side_c(OrderSide side) except *:
+        """
+        Return the position side resulting from the given order side (from FLAT).
+
+        Parameters
+        ----------
+        side : OrderSide
+            The order side
+
+        Returns
+        -------
+        PositionSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED.
+
+        """
+        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
+
+        return PositionSide.LONG if side == OrderSide.BUY else PositionSide.SHORT
+
+    @staticmethod
+    def side_from_order_side(OrderSide side):
+        """
+        Return the position side resulting from the given order side (from FLAT).
+
+        Parameters
+        ----------
+        side : OrderSide
+            The order side
+
+        Returns
+        -------
+        PositionSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED.
+
+        """
+        return Position.side_from_order_side_c(side)
+
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -187,7 +233,7 @@ cdef class Position:
         """
         return f"Position(id={self.id.value}, {self.status_string()})"
 
-    cpdef str position_side_as_string(self):
+    cpdef str side_as_string(self):
         """
         Return the position side as a string.
 

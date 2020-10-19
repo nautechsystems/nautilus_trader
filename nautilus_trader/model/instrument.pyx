@@ -16,14 +16,16 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fraction cimport Fraction
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport position_side_from_string
+from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.quicktions cimport Fraction
 
 
 cdef class Instrument:
@@ -41,8 +43,8 @@ cdef class Instrument:
             Currency settlement_currency not None,
             int price_precision,
             int size_precision,
-            Decimal multiplier not None,
             Decimal tick_size not None,
+            Decimal multiplier not None,
             Decimal leverage not None,
             Quantity lot_size not None,
             Quantity max_quantity,  # Can be None
@@ -59,7 +61,7 @@ cdef class Instrument:
             Decimal funding_rate_long not None,
             Decimal funding_rate_short not None,
             datetime timestamp not None,
-            dict info = None,
+            dict info=None,
     ):
         """
         Initialize a new instance of the Instrument class.
@@ -84,10 +86,10 @@ cdef class Instrument:
             The trading size decimal precision.
         tick_size : Decimal
             The tick size.
-        leverage : Decimal
-            The current leverage for the instrument.
         multiplier : Decimal
             The contract value multiplier.
+        leverage : Decimal
+            The current leverage for the instrument.
         lot_size : Quantity
             The rounded lot unit size.
         max_quantity : Quantity
@@ -124,27 +126,60 @@ cdef class Instrument:
         Raises
         ------
         ValueError
-            If asset type is UNDEFINED.
+            If asset_class is UNDEFINED.
         ValueError
-            If price precision is negative (< 0).
+            If asset_type is UNDEFINED.
         ValueError
-            If size precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If tick size is not positive (> 0).
+            If size_precision is negative (< 0).
+        ValueError
+            If tick_size is not positive (> 0).
+        ValueError
+            If multiplier is not positive (> 0).
+        ValueError
+            If leverage is not positive (> 0).
         ValueError
             If lot size is not positive (> 0).
         ValueError
-            If leverage is not positive (> 0).
+            If max_quantity is not positive (> 0).
+        ValueError
+            If min_quantity is negative (< 0).
+        ValueError
+            If max_notional is not positive (> 0).
+        ValueError
+            If min_notional is negative (< 0).
+        ValueError
+            If max_price is not positive (> 0).
+        ValueError
+            If min_price is negative (< 0).
 
         """
         if info is None:
             info = {}
+        Condition.not_equal(asset_class, AssetClass.UNDEFINED, 'asset_class', 'UNDEFINED')
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
         Condition.positive(tick_size, "tick_size")
-        Condition.positive(lot_size, "lot_size")
+        Condition.positive(multiplier, "multiplier")
         Condition.positive(leverage, "leverage")
+        Condition.positive(lot_size, "lot_size")
+        if max_quantity:
+            Condition.positive(max_quantity, "max_quantity")
+        if min_quantity:
+            Condition.not_negative(min_quantity, "min_quantity")
+        if max_notional:
+            Condition.positive(max_notional, "max_notional")
+        if min_notional:
+            Condition.not_negative(min_notional, "min_notional")
+        if max_price:
+            Condition.positive(max_price, "max_price")
+        if min_price:
+            Condition.not_negative(min_price, "min_price")
+        Condition.not_negative(margin_initial, "margin_initial")
+        Condition.not_negative(margin_maintenance, "margin_maintenance")
+        Condition.not_negative(margin_maintenance, "margin_maintenance")
 
         self.symbol = symbol
         self.asset_class = asset_class
@@ -242,64 +277,278 @@ cdef class Instrument:
         """
         return f"<{str(self)} object at {id(self)}>"
 
-    cpdef Money calculate_pnl(
-        self,
-        PositionSide side,
-        Fraction open_price,
-        Fraction close_price,
-        Quantity quantity,
-        double xrate=1.,
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price):
+        """
+        Calculate the order margin from the given parameters.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+
+        Returns
+        -------
+        Money
+            In the instrument base currency.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        if self.leverage == 1:
+            return Money(0, self.base_currency)  # No margin necessary
+
+        cdef Fraction notional = self._calculate_notional(quantity, price)
+
+        cdef Fraction margin = notional / self.leverage * self.margin_initial
+        margin += notional * self.taker_fee * 2
+
+        return Money(margin, self.base_currency)
+
+    cpdef Money calculate_position_margin(
+            self,
+            PositionSide side,
+            Quantity quantity,
+            QuoteTick last,
     ):
         """
-        Calculate the PNL from the given parameters.
+        Calculate the position margin from the given parameters.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The currency position side.
+        quantity : Quantity
+            The currency position quantity.
+        last : QuoteTick
+            The last quote tick.
+
+        Returns
+        -------
+        Money
+            In the base currency for the instrument.
+
+        Raises
+        ------
+        ValueError
+            If last.symbol != self.symbol
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(last, "last")
+        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+
+        if self.leverage == 1:
+            return Money(0, self.base_currency)  # No margin necessary
+
+        cdef Price close_price = self._get_close_price(side, last)
+        cdef Fraction notional = self._calculate_notional(quantity, close_price)
+
+        cdef Fraction margin = notional / self.leverage * self.margin_maintenance
+        margin += notional * self.taker_fee
+
+        return Money(margin, self.base_currency)
+
+    cpdef Money calculate_open_value(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        QuoteTick last,
+    ):
+        """
+
+        Parameters
+        ----------
+        side : PositionSide
+            The currency position side.
+        quantity : Quantity
+            The open quantity.
+        last : QuoteTick
+            The last quote tick.
+
+        Returns
+        -------
+        Money
+            In the instrument base currency.
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+        ValueError
+            If last.symbol != self.symbol
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(last, "last")
+        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+
+        cdef Price close_price = self._get_close_price(side, last)
+        cdef Fraction notional = self._calculate_notional(quantity, close_price)
+
+        return Money(notional, self.base_currency)
+
+    cpdef Money calculate_unrealized_pnl(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        Fraction avg_open,
+        QuoteTick last,
+    ):
+        """
+        Calculate the unrealized PNL from the given parameters.
 
         Parameters
         ----------
         side : PositionSide
             The side of the trade.
-        open_price : Fraction
-            The average open price of the trade.
-        close_price : Fraction
-            The average close price of the trade.
         quantity : Quantity
             The quantity
-        xrate : double
-            The exchange rate between the base currency and the settlement
-            currency (only applicable for quanto instruments, else ignored).
+        avg_open : Fraction
+            The average open price of the trade.
+        last : QuoteTick
+            The last quote tick.
 
         Returns
         -------
         Money
-            In the settlement currency for the instrument.
+            In the instrument base currency.
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
 
         """
-        cdef Fraction return_percentage = self._calculate_return(
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(avg_open, "avg_open")
+        Condition.not_none(last, "last")
+
+        cdef Price close_price = self._get_close_price(side, last)
+
+        return self.calculate_pnl(
             side,
-            open_price,
+            quantity,
+            avg_open,
             close_price,
         )
 
+    cpdef Money calculate_pnl(
+            self,
+            PositionSide side,
+            Quantity quantity,
+            Fraction avg_open,
+            Fraction avg_close,
+    ):
+        """
+        Calculate the unrealized PNL from the given parameters.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The side of the trade.
+        quantity : Quantity
+            The quantity
+        avg_open : Fraction
+            The average open price of the trade.
+        avg_close : Fraction
+            The average close price of the trade.
+
+        Returns
+        -------
+        Money
+            In the instrument base currency.
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(avg_open, "avg_open")
+        Condition.not_none(avg_close, "avg_close")
+
+        if side == PositionSide.LONG:
+            return_percentage = (avg_close - avg_open) / avg_open
+        elif side == PositionSide.SHORT:
+            return_percentage = (avg_open - avg_close) / avg_open
+        else:
+            raise ValueError(f"Cannot calculate PNL "
+                             f"(position side was {position_side_to_string(side)}).")
+
         cdef Fraction pnl = return_percentage * quantity * self.multiplier
 
-        if self.is_inverse:
-            pnl *= (1 / close_price)
-        elif self.is_quanto:
-            pnl *= xrate
+        pnl = self._invert_if_inverse(pnl, avg_close)
 
-        return Money(pnl, self.settlement_currency)
+        return Money(pnl, self.base_currency)
 
-    cdef inline Fraction _calculate_return(
+    cpdef Money calculate_commission(
         self,
-        PositionSide side,
-        Fraction open_price,
-        Fraction close_price,
+        Quantity quantity,
+        Fraction avg_price,
+        LiquiditySide liquidity_side,
     ):
-        if side == PositionSide.LONG:
-            return (close_price - open_price) / open_price
-        elif side == PositionSide.SHORT:
-            return (open_price - close_price) / open_price
-        elif side == PositionSide.FLAT:
-            return Decimal()
+        """
+        Calculate the commission generated from a transaction with the given
+        parameters.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The quantity for the transaction.
+        avg_price : Price
+            The average price transaction (only applicable for inverse
+            instruments, else ignored).
+        liquidity_side : LiquiditySide
+            The liquidity side for the transaction.
+
+        Returns
+        -------
+        Money
+            In the base currency for the instrument.
+
+        Raises
+        ------
+        ValueError
+            If liquidity_side is NONE.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(avg_price, "avg_price")
+
+        cdef Fraction notional = self._calculate_notional(quantity, avg_price)
+
+        if liquidity_side == LiquiditySide.MAKER:
+            commission = notional * self.maker_fee
+        elif liquidity_side == LiquiditySide.TAKER:
+            commission = notional * self.taker_fee
         else:
-            raise ValueError(f"Cannot calculate return "
-                             f"(position side was {position_side_from_string(side)}).")
+            raise ValueError(f"Cannot calculate commission "
+                             f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")
+
+        commission += commission * self.settlement_fee
+
+        return Money(commission, self.base_currency)
+
+    cdef inline Fraction _calculate_notional(self, Quantity quantity, Fraction close_price):
+        cdef Fraction notional = quantity * self.multiplier
+
+        return self._invert_if_inverse(notional, close_price)
+
+    cdef inline Fraction _invert_if_inverse(self, Fraction notional, Fraction close_price):
+        if self.is_inverse:
+            return notional * (1 / close_price)
+        else:
+            return notional
+
+    cdef inline Price _get_close_price(self, PositionSide side, QuoteTick last):
+        if side == PositionSide.LONG:
+            return last.bid
+        elif side == PositionSide.SHORT:
+            return last.ask
+        else:
+            raise ValueError(f"Cannot calculate open value "
+                             f"(position side was {position_side_to_string(side)}).")

@@ -74,6 +74,7 @@ cdef str MARGIN_CALL_STATUS
 
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str IS_INVERSE
 cdef str COMMISSION_CURRENCY
 cdef str BROKER_SYMBOL
 cdef str ASSET_TYPE
