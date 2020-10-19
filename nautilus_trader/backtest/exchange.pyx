@@ -26,14 +26,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -66,7 +63,6 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.quicktions cimport Fraction
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -292,7 +288,7 @@ cdef class SimulatedExchange:
 
         # Check for and apply any rollover interest
         if not self.rollover_applied and time_now >= self.rollover_time:
-            self.apply_rollover_interest(time_now, self.rollover_time.isoweekday())
+            self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
             self.rollover_applied = True
 
         # Check for working orders
@@ -370,137 +366,6 @@ cdef class SimulatedExchange:
                 if order.cl_ord_id in self._working_orders:  # Order may have been removed since loop started
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
-
-    cpdef void adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *:
-        Condition.not_none(event, "event")
-
-        cdef PositionSide side
-
-        if position and position.entry != event.order_side:
-            if position.entry == OrderSide.BUY:
-                side = PositionSide.LONG
-            elif position.entry == OrderSide.SELL:
-                side = PositionSide.SHORT
-            else:
-                raise RuntimeError(f"Invalid entry direction")
-        else:
-            return  # Nothing to adjust
-
-        cdef double xrate = 1.
-        if instrument.is_quanto:
-            xrate = self.xrate_calculator.get_rate(
-                from_currency=instrument.base_currency,
-                to_currency=instrument.settlement_currency,
-                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-                bid_quotes=self._build_current_bid_rates(),
-                ask_quotes=self._build_current_ask_rates(),
-            )
-
-        cdef Money pnl = instrument.calculate_pnl(
-            side=side,
-            open_price=position.avg_open_price,
-            close_price=event.avg_price,
-            quantity=event.filled_qty,
-            xrate=xrate,
-        )
-
-        if pnl.currency != self.account_currency:
-            xrate = self.xrate_calculator.get_rate(
-                from_currency=pnl.currency,
-                to_currency=self.account.currency,
-                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-                bid_quotes=self._build_current_bid_rates(),
-                ask_quotes=self._build_current_ask_rates(),
-            )
-            pnl = Money(pnl * xrate, self.account.currency)
-
-        cdef Money commission_for_account = Money(event.commission * xrate, self.account_currency)
-        self.total_commissions = self.total_commissions.add(commission_for_account)
-        pnl = pnl.sub(commission_for_account)
-
-        if not self.frozen_account:
-            self.account_balance = self.account_balance.add(pnl)
-            self.account_balance_activity_day = self.account_balance_activity_day.add(pnl)
-
-            account_state = self._generate_account_event()
-            self.account.apply(account_state)
-            self.exec_client.handle_event(self._generate_account_event())
-
-    cpdef Money calculate_pnl(
-            self,
-            PositionSide side,
-            double open_price,
-            double close_price,
-            Quantity quantity,
-            double xrate,
-    ):
-        Condition.not_none(quantity, "quantity")
-
-        cdef double difference
-        if side == PositionSide.LONG:
-            difference = (close_price - open_price) / open_price
-        elif side == PositionSide.SHORT:
-            difference = (open_price - close_price) / open_price
-        else:
-            raise ValueError(f"Cannot calculate the pnl of a "
-                             f"{position_side_to_string(side)} side")
-
-        return Money(difference * quantity * xrate, self.account_currency)
-
-    cpdef void apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        Condition.not_none(timestamp, "timestamp")
-        Condition.not_none(self.exec_client, "exec_client")
-
-        cdef list open_positions = self.exec_cache.positions_open()
-
-        cdef Position position
-        cdef Instrument instrument
-        cdef Currency base_currency
-        cdef double interest_rate
-        cdef double xrate
-        cdef double rollover
-        cdef double rollover_cumulative = 0.0
-        cdef double mid_price
-        cdef dict mid_prices = {}
-        cdef QuoteTick market
-        for position in open_positions:
-            instrument = self.instruments[position.symbol]
-            if instrument.asset_class == AssetClass.FX:
-                mid_price = mid_prices.get(instrument.symbol, 0.0)
-                if mid_price == 0.0:
-                    market = self._market[instrument.symbol]
-                    mid_price = <double>((market.ask + market.bid) / 2.0)
-                    mid_prices[instrument.symbol] = mid_price
-                interest_rate = self.rollover_calculator.calc_overnight_rate(
-                    position.symbol,
-                    timestamp,
-                )
-                xrate = self.xrate_calculator.get_rate(
-                    from_currency=instrument.quote_currency,
-                    to_currency=self.account.currency,
-                    price_type=PriceType.MID,
-                    bid_quotes=self._build_current_bid_rates(),
-                    ask_quotes=self._build_current_ask_rates(),
-                )
-                rollover = mid_price * position.quantity * interest_rate * xrate
-                # Apply any bank and broker spread markup (basis points)
-                rollover_cumulative += rollover - (rollover * self.rollover_spread)
-
-        if iso_week_day == 3:  # Book triple for Wednesdays
-            rollover_cumulative = rollover_cumulative * 3.0
-        elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
-            rollover_cumulative = rollover_cumulative * 3.0
-
-        cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
-        self.total_rollover = self.total_rollover.add(rollover_final)
-
-        if not self.frozen_account:
-            self.account_balance = self.account_balance.add(rollover_final)
-            self.account_balance_activity_day = self.account_balance_activity_day.add(rollover_final)
-
-            account_state = self._generate_account_event()
-            self.account.apply(account_state)
-            self.exec_client.handle_event(account_state)
 
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
@@ -657,6 +522,112 @@ cdef class SimulatedExchange:
             event_id=self._uuid_factory.generate(),
             event_timestamp=self._clock.utc_now(),
         )
+
+    cdef void _adjust_account(
+        self,
+        OrderFilled event,
+        Position position,
+        Instrument instrument,
+    ) except *:
+        # xrate is from instrument.base_currency to instrument.settlement_currency
+        Condition.not_none(event, "event")
+
+        if self.frozen_account:
+            return  # Nothing to adjust
+
+        # Initialize commission and PNL
+        cdef Money commission = event.commission
+        cdef Money pnl = Money(0, instrument.base_currency)
+
+        if position is not None and position.entry != event.order_side:
+            # Calculate PNL
+            pnl = instrument.calculate_pnl(
+                side=Position.side_from_order_side_c(event.order_side),
+                quantity=event.filled_qty,
+                avg_open=position.avg_open_price,
+                avg_close=event.avg_price,
+            )
+
+        if instrument.base_currency != self.account_currency:
+            # Convert to account currency
+            xrate_base_account = self.xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=instrument.settlement_currency,
+                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
+                bid_quotes=self._build_current_bid_rates(),
+                ask_quotes=self._build_current_ask_rates(),
+            )
+
+            commission = Money(event.commission * xrate_base_account, self.account_currency)
+            pnl = Money(pnl * xrate_base_account, self.account_currency)
+
+        # Final PNL
+        pnl = pnl.sub(commission)
+
+        # Apply PNL
+        self.total_commissions = self.total_commissions.add(commission)
+        self.account_balance = self.account_balance.add(pnl)
+        self.account_balance_activity_day = self.account_balance_activity_day.add(pnl)
+
+        # Generate and send event
+        account_state = self._generate_account_event()
+        self.account.apply(account_state)
+        self.exec_client.handle_event(account_state)
+
+    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
+        Condition.not_none(timestamp, "timestamp")
+        Condition.not_none(self.exec_client, "exec_client")
+
+        cdef list open_positions = self.exec_cache.positions_open()
+
+        cdef Position position
+        cdef Instrument instrument
+        cdef Currency base_currency
+        cdef double interest_rate
+        cdef double xrate
+        cdef double rollover
+        cdef double rollover_cumulative = 0.0
+        cdef double mid_price
+        cdef dict mid_prices = {}
+        cdef QuoteTick market
+        for position in open_positions:
+            instrument = self.instruments[position.symbol]
+            if instrument.asset_class == AssetClass.FX:
+                mid_price = mid_prices.get(instrument.symbol, 0.0)
+                if mid_price == 0.0:
+                    market = self._market[instrument.symbol]
+                    mid_price = <double>((market.ask + market.bid) / 2.0)
+                    mid_prices[instrument.symbol] = mid_price
+                interest_rate = self.rollover_calculator.calc_overnight_rate(
+                    position.symbol,
+                    timestamp,
+                )
+                xrate = self.xrate_calculator.get_rate(
+                    from_currency=instrument.quote_currency,
+                    to_currency=self.account.currency,
+                    price_type=PriceType.MID,
+                    bid_quotes=self._build_current_bid_rates(),
+                    ask_quotes=self._build_current_ask_rates(),
+                )
+                rollover = mid_price * position.quantity * interest_rate * xrate
+                # Apply any bank and broker spread markup (basis points)
+                rollover_cumulative += rollover - (rollover * self.rollover_spread)
+
+        if iso_week_day == 3:  # Book triple for Wednesdays
+            rollover_cumulative = rollover_cumulative * 3.0
+        elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
+            rollover_cumulative = rollover_cumulative * 3.0
+
+        cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
+        self.total_rollover = self.total_rollover.add(rollover_final)
+
+        if not self.frozen_account:
+            self.account_balance = self.account_balance.add(rollover_final)
+            self.account_balance_activity_day = self.account_balance_activity_day.add(rollover_final)
+
+            account_state = self._generate_account_event()
+            self.account.apply(account_state)
+            self.exec_client.handle_event(account_state)
 
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_stop_filled()
@@ -895,31 +866,15 @@ cdef class SimulatedExchange:
             position_id = position.id
 
         # Calculate commission
-        cdef Instrument instrument = self.instruments[order.symbol]
-        cdef Fraction inversion = Fraction(1)
-        cdef QuoteTick last
-        if instrument.is_inverse:
-            last = self._market.get(instrument.symbol)
-            if not last:
-                self._log.error(f"Cannot calculate pnl "
-                                f"(no quotes for {instrument.symbol}).")
+        cdef Instrument instrument = self.instruments.get(order.symbol)
+        if instrument is None:
+            raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
 
-            inversion = 1 / fill_price
-
-        cdef Money commission
-        if liquidity_side == LiquiditySide.MAKER:
-            commission = Money(
-                order.quantity * inversion * instrument.multiplier * instrument.maker_fee,
-                instrument.base_currency,
-            )
-        elif liquidity_side == LiquiditySide.TAKER:
-            commission = Money(
-                order.quantity * inversion * instrument.multiplier * instrument.taker_fee,
-                instrument.base_currency,
-            )
-        else:
-            raise RuntimeError(f"Cannot calculate commission "
-                               f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")
+        cdef Money commission = instrument.calculate_commission(
+            order.quantity,
+            fill_price,
+            liquidity_side,
+        )
 
         # Generate event
         cdef OrderFilled filled = OrderFilled(
@@ -937,14 +892,15 @@ cdef class SimulatedExchange:
             fill_price,
             commission,
             liquidity_side,
-            self.instruments[order.symbol].base_currency,
-            self.instruments[order.symbol].quote_currency,
+            instrument.base_currency,
+            instrument.quote_currency,
+            instrument.is_inverse,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
 
-        self.adjust_account(filled, position, instrument)
+        self._adjust_account(filled, position, instrument)
 
         self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)

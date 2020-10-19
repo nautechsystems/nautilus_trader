@@ -15,8 +15,10 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.fraction cimport Fraction
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
@@ -24,7 +26,7 @@ from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.quicktions cimport Fraction
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Instrument:
@@ -58,18 +60,44 @@ cdef class Instrument:
     cdef readonly Decimal funding_rate_short
     cdef readonly datetime timestamp
 
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price)
+    cpdef Money calculate_position_margin(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        QuoteTick last,
+    )
+
+    cpdef Money calculate_open_value(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        QuoteTick last,
+    )
+
+    cpdef Money calculate_unrealized_pnl(
+        self,
+        PositionSide side,
+        Quantity quantity,
+        Fraction open_price,
+        QuoteTick last,
+    )
+
     cpdef Money calculate_pnl(
         self,
         PositionSide side,
-        Fraction open_price,
-        Fraction close_price,
         Quantity quantity,
-        double xrate=*,
+        Fraction avg_open,
+        Fraction avg_close,
     )
 
-    cdef inline Fraction _calculate_return(
+    cpdef Money calculate_commission(
         self,
-        PositionSide side,
-        Fraction open_price,
-        Fraction close_price,
+        Quantity quantity,
+        Fraction avg_price,
+        LiquiditySide liquidity_side,
     )
+
+    cdef inline Fraction _calculate_notional(self, Quantity quantity, Fraction close_price)
+    cdef inline Fraction _invert_if_inverse(self, Fraction notional, Fraction close_price)
+    cdef inline Price _get_close_price(self, PositionSide side, QuoteTick last)

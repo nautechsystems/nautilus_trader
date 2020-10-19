@@ -134,7 +134,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             account_id = AccountId.from_string_c(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             account = self.load_account(account_id)
 
-            if account:
+            if account is not None:
                 accounts[account.id] = account
 
         return accounts
@@ -161,7 +161,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             cl_ord_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             order = self.load_order(cl_ord_id)
 
-            if order:
+            if order is not None:
                 orders[order.cl_ord_id] = order
 
         return orders
@@ -188,7 +188,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             position_id = PositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             position = self.load_position(position_id)
 
-            if position:
+            if position is not None:
                 positions[position.id] = position
 
         return positions
@@ -210,7 +210,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(account_id, "account_id")
 
         cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
-        if len(events) == 0:
+        if not events:
             return None
 
         cdef bytes event
@@ -239,7 +239,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list events = self._redis.lrange(name=self.key_orders + cl_ord_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
-        if len(events) == 0:
+        if not events:
             return None
 
         cdef OrderInitialized initial = self._event_serializer.deserialize(events.pop(0))
@@ -279,7 +279,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
-        if len(events) == 0:
+        if not events:
             return None
 
         cdef OrderFilled initial = self._event_serializer.deserialize(events.pop(0))

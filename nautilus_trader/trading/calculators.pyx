@@ -127,19 +127,25 @@ cdef class ExchangeRateCalculator:
         cdef set code_perms = set(permutations(codes, 2))
 
         # Calculate currency inverses
+        cdef dict exchange_rates_perm0
+        cdef dict exchange_rates_perm1
         for perm in code_perms:
-            if perm[0] not in exchange_rates[perm[1]]:
+            exchange_rates_perm0 = exchange_rates.get(perm[0])
+            exchange_rates_perm1 = exchange_rates.get(perm[1])
+            if exchange_rates_perm0 is None or exchange_rates_perm1 is None:
+                continue
+            if perm[0] not in exchange_rates_perm1:
                 # Search for inverse
-                if perm[1] in exchange_rates[perm[0]]:
-                    exchange_rates[perm[1]][perm[0]] = 1. / exchange_rates[perm[0]][perm[1]]
-            if perm[1] not in exchange_rates[perm[0]]:
+                if perm[1] in exchange_rates_perm0:
+                    exchange_rates_perm1[perm[0]] = 1. / exchange_rates_perm0[perm[1]]
+            if perm[1] not in exchange_rates_perm0:
                 # Search for inverse
-                if perm[0] in exchange_rates[perm[1]]:
-                    exchange_rates[perm[0]][perm[1]] = 1. / exchange_rates[perm[1]][perm[0]]
+                if perm[0] in exchange_rates_perm1:
+                    exchange_rates_perm0[perm[1]] = 1. / exchange_rates_perm1[perm[0]]
 
         cdef double xrate
         cdef dict quotes = exchange_rates.get(from_currency.code)
-        if quotes:
+        if quotes is not None:
             xrate = quotes.get(to_currency.code, 0)
             if xrate > 0:
                 return xrate
@@ -148,28 +154,34 @@ cdef class ExchangeRateCalculator:
         # Continue to calculate remaining exchange rates
         cdef double common_rate1
         cdef double common_rate2
+        cdef dict exchange_rates_code
         for perm in code_perms:
             if perm[0] in exchange_rates[perm[1]]:
                 continue
             # Search for common currency
             for code in codes:
-                if code in exchange_rates[perm[0]] and code in exchange_rates[perm[1]]:
-                    common_rate1 = exchange_rates[perm[0]][code]
-                    common_rate2 = exchange_rates[perm[1]][code]
-                    exchange_rates[perm[1]][perm[0]] = common_rate2 / common_rate1
+                exchange_rates_perm0 = exchange_rates.get(perm[0])
+                exchange_rates_perm1 = exchange_rates.get(perm[1])
+                exchange_rates_code = exchange_rates.get(code)
+                if exchange_rates_perm0 is None or exchange_rates_perm1 is None or exchange_rates_code is None:
+                    continue
+                if code in exchange_rates_perm0 and code in exchange_rates_perm1:
+                    common_rate1 = exchange_rates_perm0[code]
+                    common_rate2 = exchange_rates_perm1[code]
+                    exchange_rates_perm1[perm[0]] = common_rate2 / common_rate1
+                    # Check inverse and calculate if not found
+                    if perm[1] not in exchange_rates_perm0:
+                        exchange_rates_perm0[perm[1]] = common_rate1 / common_rate2
+                elif perm[0] in exchange_rates_code and perm[1] in exchange_rates_code:
+                    common_rate1 = exchange_rates_code[perm[0]]
+                    common_rate2 = exchange_rates_code[perm[1]]
+                    exchange_rates_perm1[perm[0]] = common_rate2 / common_rate1
                     # Check inverse and calculate if not found
                     if perm[1] not in exchange_rates[perm[0]]:
-                        exchange_rates[perm[0]][perm[1]] = common_rate1 / common_rate2
-                elif perm[0] in exchange_rates[code] and perm[1] in exchange_rates[code]:
-                    common_rate1 = exchange_rates[code][perm[0]]
-                    common_rate2 = exchange_rates[code][perm[1]]
-                    exchange_rates[perm[1]][perm[0]] = common_rate2 / common_rate1
-                    # Check inverse and calculate if not found
-                    if perm[1] not in exchange_rates[perm[0]]:
-                        exchange_rates[perm[0]][perm[1]] = common_rate1 / common_rate2
+                        exchange_rates_perm0[perm[1]] = common_rate1 / common_rate2
 
         quotes = exchange_rates.get(from_currency.code)
-        if not quotes:
+        if quotes is None:
             # Not enough data
             return 0
 

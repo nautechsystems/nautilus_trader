@@ -63,9 +63,12 @@ cdef class Position:
     cdef readonly Money commission
     cdef readonly QuoteTick last_tick
 
+    @staticmethod
+    cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
+
     cpdef void apply(self, OrderFilled event) except *
     cpdef str to_string(self)
-    cpdef str position_side_as_string(self)
+    cpdef str side_as_string(self)
     cpdef str status_string(self)
     cpdef OrderFilled last_event(self)
     cpdef ExecutionId last_execution_id(self)

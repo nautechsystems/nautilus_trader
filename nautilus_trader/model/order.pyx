@@ -210,7 +210,7 @@ cdef class Order:
         return f"<{str(self)} object at {id(self)}>"
 
     @staticmethod
-    cdef OrderSide opposite_side_c(OrderSide side):
+    cdef OrderSide opposite_side_c(OrderSide side) except *:
         """
         Return the opposite order side from the given side.
 
@@ -222,6 +222,11 @@ cdef class Order:
         Returns
         -------
         OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED.
 
         """
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
@@ -246,7 +251,7 @@ cdef class Order:
         return Order.opposite_side_c(side)
 
     @staticmethod
-    cdef OrderSide flatten_side_c(PositionSide side):
+    cdef inline OrderSide flatten_side_c(PositionSide side) except *:
         """
         Return the order side needed to flatten a position from the given side.
 

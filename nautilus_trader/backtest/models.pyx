@@ -63,7 +63,7 @@ cdef class FillModel:
         Condition.in_range(prob_fill_at_limit, 0.0, 1.0, "prob_fill_at_limit")
         Condition.in_range(prob_fill_at_stop, 0.0, 1.0, "prob_fill_at_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
-        if random_seed is not None:
+        if random_seed:
             Condition.type(random_seed, int, "random_seed")
         else:
             random_seed = 42

@@ -159,7 +159,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef QuoteTick last = self._ticks.get(tick.symbol)
         self._ticks[tick.symbol] = tick
 
-        if last and (tick.bid != last.bid or tick.ask != last.ask):
+        if last is not None and (tick.bid != last.bid or tick.ask != last.ask):
             # Clear cached unrealized PNLs
             self._unrealized_pnls_symbol[tick.symbol] = None
             self._unrealized_pnls_venue[tick.symbol.venue] = None
@@ -181,8 +181,8 @@ cdef class Portfolio(PortfolioFacade):
         cdef Order order
         cdef set orders_working
         for order in orders:
-            orders_working = self._orders_working.get(order.symbol.venue, set())
             if order.is_working():
+                orders_working = self._orders_working.get(order.symbol.venue, set())
                 orders_working.add(order)
                 self._orders_working[order.symbol.venue] = orders_working
                 self._log.debug(f"Added working {order}")
@@ -207,14 +207,12 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Venue venue = order.symbol.venue
 
-        cdef set orders_working = self._orders_working.get(venue)
+        cdef set orders_working = self._orders_working.get(venue, set())
         if order.is_working():
-            if orders_working:
-                orders_working.add(order)
-                self._log.debug(f"Added working {order}")
-            else:
-                self._orders_working[venue] = {order}
-        elif order.is_completed() and orders_working:
+            orders_working.add(order)
+            self._orders_working[venue] = orders_working
+            self._log.debug(f"Added working {order}")
+        elif order.is_completed():
             orders_working.discard(order)
 
         self._update_order_margin(venue)
@@ -325,10 +323,10 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot get account (no account registered for {venue}).")
-            return None
-        return self._accounts.get(venue)
+
+        return account
 
     cpdef Money order_margin(self, Venue venue):
         """
@@ -347,9 +345,10 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot get order margin (no account registered for {venue}).")
             return None
+
         return account.order_margin()
 
     cpdef Money position_margin(self, Venue venue):
@@ -369,9 +368,10 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot get position margin (no account registered for {venue}).")
             return None
+
         return account.position_margin()
 
     cpdef Money unrealized_pnl_for_venue(self, Venue venue):
@@ -392,11 +392,11 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Money unrealized_pnl = self._unrealized_pnls_venue.get(venue)
 
-        if unrealized_pnl:
+        if unrealized_pnl is not None:
             return unrealized_pnl
 
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot calculate unrealized PNL "
                             f"(no account registered for {venue}).")
             return None
@@ -407,10 +407,11 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef double cum_pnl = 0
 
+        cdef Symbol symbol
         cdef Money pnl
         for symbol in symbols:
             pnl = self._unrealized_pnls_symbol.get(symbol)
-            if pnl:
+            if pnl is not None:
                 cum_pnl += pnl.as_double()
                 continue
             pnl = self._calculate_unrealized_pnl(symbol)
@@ -419,7 +420,6 @@ cdef class Portfolio(PortfolioFacade):
             cum_pnl += pnl.as_double()
 
         unrealized_pnl = Money(cum_pnl, account.currency)
-
         self._unrealized_pnls_venue[venue] = unrealized_pnl
 
         return unrealized_pnl
@@ -441,7 +441,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(symbol, "symbol")
 
         cdef Money pnl = self._unrealized_pnls_symbol.get(symbol)
-        if pnl:
+        if pnl is not None:
             return pnl
 
         pnl = self._calculate_unrealized_pnl(symbol)
@@ -466,7 +466,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(venue, "venue")
 
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot calculate open value (no account registered for {venue}).")
             return None
 
@@ -478,18 +478,24 @@ cdef class Portfolio(PortfolioFacade):
         cdef dict bid_quotes = quotes[0]
         cdef dict ask_quotes = quotes[1]
 
-        cdef double open_value = 0
         cdef double xrate
+        cdef double open_value = 0
         cdef Position position
         cdef Instrument instrument
         cdef QuoteTick last
-        cdef Price inversion_price
         for position in positions_open:
             instrument = self._instruments.get(position.symbol)
-            if not instrument:
+            if instrument is None:
                 self._log.error(f"Cannot calculate open value "
                                 f"(no instrument for {position.symbol}).")
                 return None  # Cannot calculate
+
+            last = self._ticks.get(position.symbol)
+            if last is None:
+                self._log.error(f"Cannot calculate position maintenance margin "
+                                f"(no last tick for {position.symbol}).")
+                continue  # Cannot calculate
+
             xrate = self._xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
                 to_currency=account.currency,
@@ -502,15 +508,11 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{position.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
-            open_value += position.quantity * instrument.multiplier * xrate
-            if instrument.is_inverse:
-                last = self._ticks.get(position.symbol)
-                if not last:
-                    self._log.error(f"Cannot calculate unrealized PNL "
-                                f"(no quotes for {position.symbol}).")
-                    return None         # Cannot calculate
-                inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
-                open_value *= (1 / inversion_price)
+            open_value += instrument.calculate_open_value(
+                position.side,
+                position.quantity,
+                last,
+            ) * xrate
 
         return Money(open_value, account.currency)
 
@@ -526,7 +528,7 @@ cdef class Portfolio(PortfolioFacade):
                 continue
 
             tick = self._ticks.get(symbol)
-            if not tick:
+            if tick is None:
                 continue
 
             bid_quotes[base_quote] = tick.bid.as_double()
@@ -537,7 +539,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline set _symbols_open_for_venue(self, Venue venue):
         cdef Position position
         cdef set positions_open = self._positions_open.get(venue)
-        if not positions_open:
+        if positions_open is None:
             return set()
         return {position.symbol for position in positions_open}
 
@@ -566,7 +568,7 @@ cdef class Portfolio(PortfolioFacade):
 
         # Remove from positions open if found
         cdef set positions_open = self._positions_open.get(venue)
-        if positions_open:
+        if positions_open is not None:
             positions_open.discard(position)
 
         # Add to positions closed
@@ -576,28 +578,26 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef inline void _update_order_margin(self, Venue venue):
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot update order initial margin "
                             f"(no account registered for {venue}).")
             return  # Cannot calculate
 
         cdef set working_orders = self._orders_working.get(venue)
-        if not working_orders:
+        if working_orders is None:
             return  # Nothing to calculate
 
         cdef tuple quotes = self._build_quote_table(venue)
         cdef dict bid_quotes = quotes[0]
         cdef dict ask_quotes = quotes[1]
 
-        cdef double notional = 0
+        cdef double xrate
         cdef double margin = 0
-        cdef double xrate = 1.
         cdef Order order
         cdef Instrument instrument
-        cdef Price inversion_price
         for order in working_orders:
             instrument = self._instruments.get(order.symbol)
-            if not instrument:
+            if instrument is None:
                 self._log.error(f"Cannot calculate order initial margin "
                                 f"(no instrument for {order.symbol}).")
                 continue  # Cannot calculate
@@ -617,23 +617,11 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
-            # Calculate notional value
-            notional = order.quantity * instrument.multiplier * xrate
-            if instrument.is_inverse:
-                last = self._ticks.get(order.symbol)
-                if not last:
-                    self._log.error(f"Cannot calculate order margin "
-                                    f"(no quotes for {order.symbol}).")
-                    continue  # Cannot calculate
-                inversion_price = last.bid if order.side == OrderSide.SELL else last.ask
-                notional *= (1 / inversion_price)
-
-            # Order margin
-            margin += notional / instrument.leverage * instrument.margin_initial
-
-            # Fees on notional
-            margin += notional * instrument.taker_fee * 2
-
+            # Calculate margin
+            margin += instrument.calculate_order_margin(
+                order.quantity,
+                order.price,
+            ) * xrate
 
         cdef Money order_margin = Money(margin, account.currency)
         account.update_order_margin(order_margin)
@@ -643,34 +631,37 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef inline void _update_position_margin(self, Venue venue):
         cdef Account account = self._accounts.get(venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot update position maintenance margin "
                             f"(no account registered for {venue}).")
             return  # Cannot calculate
 
         cdef set open_positions = self._positions_open.get(venue)
-        if not open_positions:
+        if open_positions is None:
             return  # Nothing to calculate
 
         cdef tuple quotes = self._build_quote_table(venue)
         cdef dict bid_quotes = quotes[0]
         cdef dict ask_quotes = quotes[1]
-
-        cdef double notional
+        cdef double xrate
         cdef double margin = 0
-        cdef double xrate = 1.
         cdef Position position
         cdef Instrument instrument
-        cdef Price inversion_price
         for position in open_positions:
             instrument = self._instruments.get(position.symbol)
-            if not instrument:
+            if instrument is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
                                 f"(no instrument for {position.symbol}).")
                 continue  # Cannot calculate
 
             if instrument.leverage == 1:
                 continue  # No margin necessary
+
+            last = self._ticks.get(position.symbol)
+            if last is None:
+                self._log.error(f"Cannot calculate position maintenance margin "
+                                f"(no last tick for {position.symbol}).")
+                continue  # Cannot calculate
 
             xrate = self._xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
@@ -684,22 +675,12 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(insufficient data for {instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
-            # Calculate notional value
-            notional = position.quantity * instrument.multiplier * xrate
-            if instrument.is_inverse:
-                last = self._ticks.get(position.symbol)
-                if not last:
-                    self._log.error(f"Cannot calculate position margin "
-                                    f"(no quotes for {position.symbol}).")
-                    continue  # Cannot calculate
-                inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
-                notional *= (1 / inversion_price)
-
-            # Position margin
-            margin += notional / instrument.leverage * instrument.margin_maintenance
-
-            # Fees on notional
-            margin += notional * instrument.taker_fee
+            # Calculate margin
+            margin += instrument.calculate_position_margin(
+                position.side,
+                position.quantity,
+                last,
+            ) * xrate
 
         cdef Money position_margin = Money(margin, account.currency)
         account.update_position_margin(position_margin)
@@ -709,23 +690,23 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)
-        if not account:
+        if account is None:
             self._log.error(f"Cannot calculate unrealized PNL "
                             f"(no account registered for {symbol.venue}).")
             return None
 
         cdef set positions_open = self._positions_open.get(symbol.venue)
-        if not positions_open:
+        if positions_open is None:
             return Money(0, account.currency)
 
         cdef QuoteTick last = self._ticks.get(symbol)
-        if not last:
+        if last is None:
             self._log.error(f"Cannot calculate unrealized PNL "
                             f"(no quotes for {symbol}).")
             return None  # Cannot calculate
 
         cdef Instrument instrument = self._instruments.get(symbol)
-        if not instrument:
+        if instrument is None:
             self._log.error(f"Cannot calculate unrealized PNL "
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
@@ -737,10 +718,10 @@ cdef class Portfolio(PortfolioFacade):
         cdef double pnl = 0
         cdef double xrate = 0
         cdef Position position
-        cdef Price inversion_price
         for position in positions_open:
             if position.symbol != symbol:
                 continue  # Nothing to calculate
+
             if xrate == 0:
                 xrate = self._xrate_calculator.get_rate(
                     from_currency=instrument.base_currency,
@@ -754,9 +735,11 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{position.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
-            pnl += position.unrealized_pnl(last) * instrument.multiplier * xrate
-            inversion_price = last.bid if position.side == PositionSide.LONG else last.ask
-            if instrument.is_inverse:
-                pnl *= (1 / inversion_price)
+            pnl += instrument.calculate_pnl(
+                position.side,
+                position.quantity,
+                position.avg_open_price,
+                last.bid if position.side == PositionSide.LONG else last.ask,
+            ) * xrate
 
         return Money(pnl, account.currency)

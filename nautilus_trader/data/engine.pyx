@@ -164,12 +164,6 @@ cdef class DataEngine:
         for client in self._clients.values():
             client.request_instruments(self._internal_update_instruments)
 
-    cpdef void _internal_update_instruments(self, list instruments) except *:
-        # Handle all instruments individually
-        cdef Instrument instrument
-        for instrument in instruments:
-            self.handle_instrument(instrument)
-
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
         """
         Request the latest instrument data for the given symbol.
@@ -737,7 +731,7 @@ cdef class DataEngine:
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
         cdef QuoteTickHandler handler
-        if tick_handlers:
+        if tick_handlers is not None:
             for handler in tick_handlers:
                 handler.handle(tick)
 
@@ -791,7 +785,7 @@ cdef class DataEngine:
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
         cdef TradeTickHandler handler
-        if tick_handlers:
+        if tick_handlers is not None:
             for handler in tick_handlers:
                 handler.handle(tick)
 
@@ -846,7 +840,7 @@ cdef class DataEngine:
         # Send to all registered bar handlers for that bar type
         cdef list bar_handlers = self._bar_handlers.get(bar_type)
         cdef BarHandler handler
-        if bar_handlers:
+        if bar_handlers is not None:
             for handler in bar_handlers:
                 handler.handle(bar_type, bar)
 
@@ -879,6 +873,12 @@ cdef class DataEngine:
             self.handle_bar(bar_type, bars[i], send_to_handlers=False)
 
 # ------------------------------------------------------------------------------------------------ #
+
+    cdef void _internal_update_instruments(self, list instruments) except *:
+        # Handle all instruments individually
+        cdef Instrument instrument
+        for instrument in instruments:
+            self.handle_instrument(instrument)
 
     cdef void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:

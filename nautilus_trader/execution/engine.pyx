@@ -22,6 +22,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fraction cimport Fraction
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -50,7 +51,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.quicktions cimport Fraction
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -496,7 +496,7 @@ cdef class ExecutionEngine:
             return  # Sent to strategy
 
         cdef Order order = self.cache.order(event.cl_ord_id)
-        if not order:
+        if order is None:
             self._log.warning(f"Cannot apply event {event} to any order, "
                               f"{event.cl_ord_id.to_string(with_class=True)} "
                               f"not found in cache.")
@@ -521,7 +521,7 @@ cdef class ExecutionEngine:
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
-        if not strategy_id:
+        if strategy_id is None:
             self._log.error(f"Cannot process event {event}, "
                             f"{strategy_id.to_string(with_class=True)} "
                             f"not found.")
@@ -639,6 +639,7 @@ cdef class ExecutionEngine:
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,
+            fill.is_inverse,
             fill.execution_time,
             fill.id,
             fill.timestamp,
@@ -675,6 +676,7 @@ cdef class ExecutionEngine:
             fill.liquidity_side,
             fill.base_currency,
             fill.quote_currency,
+            fill.is_inverse,
             fill.execution_time,
             self._uuid_factory.generate(),  # New event identifier
             fill.timestamp,

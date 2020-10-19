@@ -19,8 +19,8 @@ import operator
 import sys
 import unittest
 
-from nautilus_trader.model.quicktions import Fraction as F
-from nautilus_trader.model.quicktions import _gcd as gcd
+from nautilus_trader.core.fraction import Fraction as F
+from nautilus_trader.core.fraction import _gcd as gcd
 
 
 # TODO: Investigate usage of this test class

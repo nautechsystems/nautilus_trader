@@ -476,7 +476,7 @@ cdef class TradingStrategy:
         # Update indicators
         cdef list indicators = self._indicators_for_quotes.get(tick.symbol)  # Could be None
         cdef Indicator indicator
-        if indicators:
+        if indicators is not None:
             for indicator in indicators:
                 indicator.handle_quote_tick(tick)
 
@@ -533,7 +533,7 @@ cdef class TradingStrategy:
         # Update indicators
         cdef list indicators = self._indicators_for_trades.get(tick.symbol)  # Could be None
         cdef Indicator indicator
-        if indicators:
+        if indicators is not None:
             for indicator in indicators:
                 indicator.handle_trade_tick(tick)
 
@@ -593,7 +593,7 @@ cdef class TradingStrategy:
         # Update indicators
         cdef list indicators = self._indicators_for_bars.get(bar_type)  # Could be None
         cdef Indicator indicator
-        if indicators:
+        if indicators is not None:
             for indicator in indicators:
                 indicator.handle_bar(bar)
 
@@ -1064,7 +1064,7 @@ cdef class TradingStrategy:
         Condition.not_empty(state, "state")
 
         order_id_count = state.get(b'OrderIdCount')
-        if order_id_count:
+        if order_id_count is not None:
             order_id_count = int(order_id_count.decode("utf8"))
             self.order_factory.set_count(order_id_count)
             self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
@@ -1194,7 +1194,7 @@ cdef class TradingStrategy:
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot cancel {order} (no account assigned to order yet).")
+            self.log.error(f"Cannot modify {order} (no account assigned to order yet).")
             return  # Cannot send command
 
         cdef ModifyOrder command = ModifyOrder(
