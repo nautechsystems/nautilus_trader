@@ -223,6 +223,11 @@ cdef class Order:
         -------
         OrderSide
 
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED.
+
         """
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
 

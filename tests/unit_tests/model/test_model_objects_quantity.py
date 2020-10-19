@@ -18,9 +18,9 @@ import unittest
 
 from parameterized import parameterized
 
+from nautilus_trader.core.fraction import Fraction
 from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.quicktions import Fraction
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
