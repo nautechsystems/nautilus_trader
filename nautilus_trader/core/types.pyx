@@ -55,101 +55,21 @@ cdef class ValidString:
             return self.value
 
     def __eq__(self, ValidString other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.value == other.value
 
     def __ne__(self, ValidString other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.value != other.value
 
     def __lt__(self, ValidString other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        Parameters
-        ----------
-        other : ValidString
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.value < other.value
 
     def __le__(self, ValidString other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given
-        object.
-
-        Parameters
-        ----------
-        other : ValidString
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.value <= other.value
 
     def __gt__(self, ValidString other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        Parameters
-        ----------
-        other : ValidString
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.value > other.value
 
     def __ge__(self, ValidString other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given
-        object.
-
-        Parameters
-        ----------
-        other : ValidString
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.value >= other.value
 
     def __hash__(self) -> int:
@@ -212,35 +132,9 @@ cdef class Identifier(ValidString):
         self.id_type = self.__class__.__name__
 
     def __eq__(self, Identifier other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id_type == other.id_type and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id_type != other.id_type or self.value != other.value
 
     def __hash__(self) -> int:

@@ -56,35 +56,9 @@ cdef class Message:
         self.timestamp = timestamp
 
     def __eq__(self, Message other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.message_type == other.message_type and self.id == other.id
 
     def __ne__(self, Message other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.message_type != other.message_type or self.id != other.id
 
     def __hash__(self) -> int:

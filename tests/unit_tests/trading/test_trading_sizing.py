@@ -16,8 +16,8 @@
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

@@ -19,6 +19,7 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport BTC
@@ -29,7 +30,6 @@ from nautilus_trader.model.currency cimport USDT
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -312,7 +312,7 @@ cdef class InstrumentLoader:
             settlement_currency=Currency.from_string_c(base_currency),
             price_precision=price_precision,
             size_precision=0,
-            tick_size=Decimal.from_float_c(1 / (10 ** price_precision), price_precision),
+            tick_size=Decimal(1 / (10 ** price_precision), price_precision),
             multiplier=Decimal("1"),
             leverage=Decimal("100"),
             lot_size=Quantity("1000"),
