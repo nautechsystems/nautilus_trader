@@ -274,7 +274,7 @@ cdef class QuoteTick(Tick):
         str
 
         """
-        return (f"{self.symbol.to_string()},"
+        return (f"{self.symbol},"
                 f"{self.bid},"
                 f"{self.ask},"
                 f"{self.bid_size},"
@@ -402,11 +402,11 @@ cdef class TradeTick(Tick):
         str
 
         """
-        return (f"{self.symbol.to_string()},"
+        return (f"{self.symbol},"
                 f"{self.price},"
                 f"{self.size},"
                 f"{maker_to_string(self.maker)},"
-                f"{self.match_id.to_string()},"
+                f"{self.match_id},"
                 f"{format_iso8601(self.timestamp)}")
 
     cpdef str to_serializable_string(self):
@@ -421,5 +421,5 @@ cdef class TradeTick(Tick):
         return (f"{self.price},"
                 f"{self.size},"
                 f"{maker_to_string(self.maker)},"
-                f"{self.match_id.to_string()},"
+                f"{self.match_id},"
                 f"{long(self.timestamp.timestamp())}")

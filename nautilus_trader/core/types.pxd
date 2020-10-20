@@ -17,8 +17,6 @@
 cdef class ValidString:
     cdef readonly str value
 
-    cpdef str to_string(self, bint with_class=*)
-
 
 cdef class Identifier(ValidString):
     cdef readonly str id_type

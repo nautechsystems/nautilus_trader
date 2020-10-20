@@ -231,7 +231,7 @@ cdef class BacktestDataEngine(DataEngine):
             tick_frames.append(wrangler.tick_data)
             counter += 1
 
-            self.execution_resolutions.append(f"{symbol.to_string()}={bar_aggregation_to_string(wrangler.resolution)}")
+            self.execution_resolutions.append(f"{symbol}={bar_aggregation_to_string(wrangler.resolution)}")
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
                            f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 

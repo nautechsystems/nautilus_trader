@@ -331,7 +331,7 @@ cdef class BarType:
         str
 
         """
-        return f"{self.symbol.to_string()}-{self.spec}"
+        return f"{self.symbol}-{self.spec}"
 
     def __eq__(self, BarType other) -> bool:
         return self.symbol == other.symbol and self.spec == other.spec

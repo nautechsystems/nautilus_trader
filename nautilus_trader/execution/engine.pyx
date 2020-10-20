@@ -417,7 +417,7 @@ cdef class ExecutionEngine:
 
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
+            self._log.warning(f"Cannot modify {repr(command.cl_ord_id)} "
                               f"(already completed).")
             return  # Invalid command
 
@@ -432,7 +432,7 @@ cdef class ExecutionEngine:
 
         # Validate command
         if self.cache.is_order_completed(command.cl_ord_id):
-            self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
+            self._log.warning(f"Cannot cancel {repr(command.cl_ord_id)} "
                               f"(already completed).")
             return  # Invalid command
 
@@ -498,7 +498,7 @@ cdef class ExecutionEngine:
         cdef Order order = self.cache.order(event.cl_ord_id)
         if order is None:
             self._log.warning(f"Cannot apply event {event} to any order, "
-                              f"{event.cl_ord_id.to_string(with_class=True)} "
+                              f"{repr(event.cl_ord_id)} "
                               f"not found in cache.")
             return  # Cannot process event further
 
@@ -523,7 +523,7 @@ cdef class ExecutionEngine:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {event}, "
-                            f"{strategy_id.to_string(with_class=True)} "
+                            f"{repr(strategy_id)} "
                             f"not found.")
             return  # Cannot process event further
 
@@ -540,8 +540,8 @@ cdef class ExecutionEngine:
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
-                            f"{fill.cl_ord_id.to_string(with_class=True)} or"
-                            f"{fill.position_id.to_string(with_class=True)} not found.")
+                            f"{repr(fill.cl_ord_id)} or"
+                            f"{repr(fill.position_id)} not found.")
             return  # Cannot process event further
 
         if fill.position_id.is_null():  # Exchange not assigning position_ids
@@ -589,7 +589,7 @@ cdef class ExecutionEngine:
         cdef Position position = self.cache.position(fill.position_id)
         if position is None:
             self._log.error(f"Cannot update position for "
-                            f"{fill.position_id.to_string(with_class=True)} "
+                            f"{repr(fill.position_id)} "
                             f"(no position found in cache).")
             return  # Cannot process event further
 
@@ -713,13 +713,13 @@ cdef class ExecutionEngine:
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
             self._log.error(f"Cannot send event {event} to strategy, "
-                            f"{strategy_id.to_string(with_class=True)} not found.")
+                            f"{repr(strategy_id)} not found.")
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
             self._log.error(f"Cannot send event {event} to strategy, "
-                            f"{strategy_id.to_string(with_class=True)} not registered.")
+                            f"{repr(strategy_id)} not registered.")
             return  # Cannot send to strategy
 
         strategy.handle_event(event)
