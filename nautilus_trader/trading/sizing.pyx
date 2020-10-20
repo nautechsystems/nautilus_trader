@@ -82,7 +82,7 @@ cdef class PositionSizer:
             Decimal risk,
             Decimal commission_rate,
     ):
-        if equity <= Money(0, equity.currency):
+        if equity.amount <= 0:
             return Decimal()
         cdef Decimal risk_money = equity * risk
         cdef Decimal commission = risk_money * commission_rate * 2  # (round turn)

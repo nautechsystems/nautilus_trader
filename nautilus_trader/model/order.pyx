@@ -137,37 +137,9 @@ cdef class Order:
         self._events.append(event)
 
     def __eq__(self, Order other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given
-        object.
-
-        Parameters
-        ----------
-        other : Order
-            The other order to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.cl_ord_id == other.cl_ord_id
 
     def __ne__(self, Order other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the
-        given object.
-
-        Parameters
-        ----------
-        other : Order
-            The other order to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.cl_ord_id != other.cl_ord_id
 
     def __hash__(self) -> int:
@@ -1056,35 +1028,9 @@ cdef class BracketOrder:
         self.timestamp = entry.timestamp
 
     def __eq__(self, BracketOrder other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id == other.id
 
     def __ne__(self, BracketOrder other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id != other.id
 
     def __hash__(self) -> int:
