@@ -64,7 +64,7 @@ class IdentifierTests(unittest.TestCase):
         result = repr(identifier)
 
         # Assert
-        self.assertTrue(result.startswith("<Identifier(some-id) object at"))
+        self.assertEqual("Identifier('some-id')", result)
 
     def test_mixed_identifier_equality(self):
         # Arrange
@@ -88,14 +88,21 @@ class IdentifierTests(unittest.TestCase):
         self.assertTrue(symbol1 != symbol2)
         self.assertTrue(symbol1 != symbol3)
 
-    def test_symbol_str_and_repr(self):
+    def test_symbol_str(self):
         # Arrange
         symbol = Symbol("AUD/USD", Venue('FXCM'))
 
         # Act
         # Assert
         self.assertEqual("AUD/USD.FXCM", str(symbol))
-        self.assertTrue(repr(symbol).startswith("<Symbol(AUD/USD.FXCM) object at"))
+
+    def test_symbol_repr(self):
+        # Arrange
+        symbol = Symbol("AUD/USD", Venue('FXCM'))
+
+        # Act
+        # Assert
+        self.assertEqual("Symbol('AUD/USD.FXCM')", repr(symbol))
 
     def test_can_parse_symbol_from_string(self):
         # Arrange

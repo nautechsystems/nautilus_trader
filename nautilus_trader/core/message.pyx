@@ -221,4 +221,4 @@ cdef class Response(Message):
         str
 
         """
-        return f"{self.__class__.__name__}(id={self.id}, correlation_id={self.correlation_id})"
+        return f"{self.__class__.__name__}(correlation_id={self.correlation_id}, id={self.id})"
