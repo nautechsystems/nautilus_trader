@@ -93,15 +93,15 @@ cdef class BarSpecification:
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split = value.split('-', maxsplit=2)
+        cdef list pieces = value.split('-', maxsplit=2)
 
-        if len(split) < 3:
+        if len(pieces) < 3:
             raise ValueError(f"The BarSpecification string value was malformed, was {value}")
 
         return BarSpecification(
-            int(split[0]),
-            bar_aggregation_from_string(split[1]),
-            price_type_from_string(split[2]),
+            int(pieces[0]),
+            bar_aggregation_from_string(pieces[1]),
+            price_type_from_string(pieces[2]),
         )
 
     @staticmethod
@@ -260,18 +260,18 @@ cdef class BarType:
         """
         Condition.valid_string(value, 'value')
 
-        cdef list split = value.split('-', maxsplit=3)
+        cdef list pieces = value.split('-', maxsplit=3)
 
-        if len(split) < 4:
+        if len(pieces) < 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
         cdef BarSpecification bar_spec = BarSpecification(
-            int(split[1]),
-            bar_aggregation_from_string(split[2]),
-            price_type_from_string(split[3]),
+            int(pieces[1]),
+            bar_aggregation_from_string(pieces[2]),
+            price_type_from_string(pieces[3]),
         )
 
-        return BarType(Symbol.from_string_c(split[0]), bar_spec)
+        return BarType(Symbol.from_string_c(pieces[0]), bar_spec)
 
     @staticmethod
     def from_string(str value) -> BarType:
