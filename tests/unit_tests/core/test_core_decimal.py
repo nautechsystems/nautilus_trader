@@ -120,9 +120,25 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(expected, result)
 
     @parameterized.expand([
+        [Decimal(), decimal.Decimal(), True],
+        [Decimal("0"), decimal.Decimal(-0), True],
+        [Decimal("1"), decimal.Decimal(), False],
+    ])
+    def test_equality_with_various_decimals_returns_expected_result(self, value1, value2, expected):
+        # Arrange
+        # Act
+        result = value1 == value2
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
         [0, 0, False, True, True, False],
         [1, 0, True, True, False, False],
         [-1, 0, False, False, True, True],
+        [Decimal(0), decimal.Decimal(0), False, True, True, False],
+        [Decimal(1), decimal.Decimal(0), True, True, False, False],
+        [Decimal(-1), decimal.Decimal(0), False, False, True, True],
     ])
     def test_comparisons_with_various_values_returns_expected_result(
             self,
@@ -154,6 +170,7 @@ class DecimalTests(unittest.TestCase):
         [Decimal(), 0.0, float, 0],
         [Decimal(), 1.0, float, 1.0],
         [Decimal("1"), Decimal("1.1"), Decimal, Decimal("2.1")],
+        [Decimal("1"), decimal.Decimal("1.1"), Decimal, Decimal("2.1")],
     ])
     def test_addition_with_various_types_returns_expected_result(
             self,
@@ -177,6 +194,7 @@ class DecimalTests(unittest.TestCase):
         [Decimal(), 0.0, float, 0],
         [Decimal(), 1.0, float, -1.0],
         [Decimal("1"), Decimal("1.1"), Decimal, Decimal("-0.1")],
+        [Decimal("1"), decimal.Decimal("1.1"), Decimal, Decimal("-0.1")],
     ])
     def test_subtraction_with_various_types_returns_expected_result(
             self,
@@ -197,6 +215,7 @@ class DecimalTests(unittest.TestCase):
         [Decimal(1), 1, Decimal, 1],
         [Decimal(2), 1.0, float, 2],
         [Decimal("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
+        [Decimal("1.1"), decimal.Decimal("1.1"), Decimal, Decimal("1.21")],
     ])
     def test_multiplication_with_various_types_returns_expected_result(
             self,
@@ -212,25 +231,62 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(expected_type, type(result))
         self.assertEqual(expected_value, result)
 
-    # @parameterized.expand([
-    #     [Decimal(), 1, Decimal, 0],
-    #     [Decimal(1), 2, Decimal, 0.5],
-    #     [Decimal(2), 1.0, float, 2],
-    #     [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
-    # ])
-    # def test_division_with_various_types_returns_expected_result(
-    #         self,
-    #         value1,
-    #         value2,
-    #         expected_type,
-    #         expected_value):
-    #     # Arrange
-    #     # Act
-    #     result = value1 / value2
-    #
-    #     # Assert
-    #     self.assertEqual(expected_type, type(result))
-    #     self.assertAlmostEqual(expected_value, result)
+    @parameterized.expand([
+        [Decimal(), 1, Decimal, 0],
+        [Decimal(1), 2, Decimal, 0.5],
+        [Decimal(2), 1.0, float, 2],
+        [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
+        [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, 0.9166666666666666],
+    ])
+    def test_division_with_various_types_returns_expected_result(
+            self,
+            value1,
+            value2,
+            expected_type,
+            expected_value):
+        # Arrange
+        # Act
+        result = value1 / value2
+
+        # Assert
+        self.assertEqual(expected_type, type(result))
+        self.assertAlmostEqual(expected_value, result)
+
+    @parameterized.expand([
+        [Decimal(1), Decimal(2), Decimal(2)],
+        [Decimal(1), 2, 2],
+        [Decimal(1), decimal.Decimal(2), decimal.Decimal(2)],
+    ])
+    def test_max_with_various_types_returns_expected_result(
+            self,
+            value1,
+            value2,
+            expected,
+    ):
+        # Arrange
+        # Act
+        result = max(value1, value2)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        [Decimal(1), Decimal(2), Decimal(1)],
+        [Decimal(1), 2, Decimal(1)],
+        [Decimal(2), decimal.Decimal(1), decimal.Decimal(1)],
+    ])
+    def test_min_with_various_types_returns_expected_result(
+            self,
+            value1,
+            value2,
+            expected,
+    ):
+        # Arrange
+        # Act
+        result = min(value1, value2)
+
+        # Assert
+        self.assertEqual(expected, result)
 
     @parameterized.expand([
         ["0", "0"],
