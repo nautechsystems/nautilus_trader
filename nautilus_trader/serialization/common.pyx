@@ -36,7 +36,7 @@ cpdef str convert_price_to_string(Price price):
     str
 
     """
-    return NONE if price is None else price.to_string()
+    return NONE if price is None else str(price)
 
 
 cpdef str convert_datetime_to_string(datetime time):

@@ -214,17 +214,6 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(expected_type, type(result))
         self.assertAlmostEqual(expected_value, result)
 
-    def test_str(self):
-        # Arrange
-        price = Price("1.00000")
-
-        # Act
-        result = str(price)
-
-        # Assert
-        self.assertEqual("1.00000", result)
-        self.assertEqual("1.00000", price.to_string())
-
     def test_repr(self):
         # Arrange
         price = Price(1.00000, 5)
@@ -232,6 +221,5 @@ class PriceTests(unittest.TestCase):
         # Act
         result = repr(price)
 
-        print(repr(price))
         # Assert
-        self.assertTrue(result.startswith("<Price('1.00000') object at"))
+        self.assertEqual("Price('1.00000')", result)
