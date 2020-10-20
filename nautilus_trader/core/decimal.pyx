@@ -19,8 +19,9 @@ from decimal import Decimal as PyDecimal
 
 
 cdef class Decimal:
-    """
-    Represents a financial decimal number with a fixed precision.
+    """Represents a decimal number with a specified precision.
+
+    The type interoperates with the built-in decimal.Decimal correctly.
 
     Attributes
     ----------
@@ -29,34 +30,46 @@ cdef class Decimal:
 
     """
 
-    def __init__(self, value="0"):
-        """
-        Initialize a new instance of the Decimal class.
+    def __init__(self, value="0", precision=None):
+        """Initialize a new instance of the Decimal class.
 
         Parameters
         ----------
-        value : integer, string, decimal.Decimal or Decimal.
-            The value of the quantity.
+        value : any
+            The value of the decimal. If value is a float, then a precision must
+            be specified.
+        precision : int, optional
+            The precision for the decimal. If a precision is specified then the
+            decimals value will be rounded to the precision. Else the precision
+            will be inferred from the given value.
 
         Raises
         ------
         TypeError
-            If value is a float.
+            If value is a float and precision is not specified.
+        ValueError
+            If precision is negative (< 0).
 
         """
         Condition.not_none(value, "value")
 
-        if isinstance(value, float):
-            raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
-        elif isinstance(value, Decimal):
-            self._value = value.as_decimal()
-        else:
-            self._value = PyDecimal(value)
+        if precision is not None:
+            Condition.not_negative_int(precision, "precision")
+            self._value = PyDecimal(f'{float(value):.{precision}f}')
+            self.precision = precision
+        else:  # Infer precision
+            if isinstance(value, float):
+                raise TypeError("precision cannot be inferred from a float, "
+                                "please specify a precision when passing a float")
+            elif isinstance(value, Decimal):
+                self._value = value.as_decimal()
+            else:
+                self._value = PyDecimal(value)
 
-        self.precision = precision_from_string(str(self._value))
+            self.precision = precision_from_string(str(self._value))
 
-        if self.precision < 0:
-            raise RuntimeError(f"Invalid decimal precision, was {self.precision}")
+            if self.precision < 0:
+                raise RuntimeError(f"Invalid decimal precision, was {self.precision}")
 
     @staticmethod
     cdef inline tuple _convert_values(object a, object b):
@@ -146,6 +159,20 @@ cdef class Decimal:
         else:
             return Decimal(a // b)
 
+    def __neg__(self):
+        """Returns a copy with the sign switched.
+
+        Rounds, if it has reason.
+        """
+        return Decimal(self._value.__neg__())
+
+    def __pos__(self):
+        """Returns a copy, unless it is a sNaN.
+
+        Rounds the number (if more than precision digits)
+        """
+        return Decimal(self._value.__pos__())
+
     def __mod__(self, other):
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
@@ -153,23 +180,33 @@ cdef class Decimal:
         else:
             return Decimal(a % b)
 
-    def __float__(self):
-        """Return the objects value as a float."""
-        return float(self._value)
-
     def __abs__(self):
         """abs(a)"""
         return Decimal(abs(self._value))
 
     def __round__(self, ndigits=None):
-        """round(self, ndigits)
+        """Return a rounded copy of this object.
+
         Rounds half toward even.
+
+        Parameters
+        ----------
+        ndigits : int
+            The number of digits to round to.
+
         """
         return Decimal(round(self._value, ndigits))
 
+    def __float__(self):
+        """Return the objects value as a float."""
+        return float(self._value)
+
+    def __int__(self):
+        """Converts self to an int, truncating if necessary."""
+        return int(self._value)
+
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
+        """Return the hash code of this object.
 
         Returns
         -------
@@ -179,8 +216,7 @@ cdef class Decimal:
         return hash(self._value)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
+        """Return the string representation of this object.
 
         Returns
         -------
@@ -190,9 +226,9 @@ cdef class Decimal:
         return str(self._value)
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
+        """Return the string representation of this object
+
+        The string includes the objects location in memory.
 
         Returns
         -------
@@ -201,50 +237,8 @@ cdef class Decimal:
         """
         return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
 
-    @staticmethod
-    def from_float(value: float, precision: int):
-        """
-        Return a decimal from the given value and precision.
-
-        Parameters
-        ----------
-        value : double
-            The value of the decimal.
-        precision : int, optional.
-            The precision for the decimal.
-
-        Raises
-        ------
-        ValueError
-            If precision is negative (< 0).
-
-        """
-        Condition.type(precision, int, "precision")
-
-        return Decimal.from_float_to_decimal(value, precision)
-
-    @staticmethod
-    cdef inline Decimal from_float_to_decimal(double value, int precision):
-        """
-        Return a decimal from the given value and precision.
-
-        Returns
-        -------
-        Decimal
-
-        Raises
-        ------
-        ValueError
-            If precision is negative (< 0)
-
-        """
-        Condition.not_negative_int(precision, "precision")
-
-        return Decimal(f'{value:.{precision}f}')
-
     cpdef object as_decimal(self):
-        """
-        Return this object as a builtin decimal.Decimal.
+        """Return this object as a built-in `decimal.Decimal`.
 
         Returns
         -------
@@ -254,8 +248,7 @@ cdef class Decimal:
         return self._value
 
     cpdef double as_double(self) except *:
-        """
-        Return the value of the decimal as a double.
+        """Return the value of this object as a `double`.
 
         Returns
         -------

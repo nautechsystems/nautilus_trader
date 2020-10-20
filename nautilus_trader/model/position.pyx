@@ -253,7 +253,7 @@ cdef class Position:
         str
 
         """
-        cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string_formatted()} "
+        cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string()} "
         return f"{position_side_to_string(self.side)}{quantity}{self.symbol}"
 
     cpdef set cl_ord_ids(self):

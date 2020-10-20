@@ -627,7 +627,7 @@ cdef class Portfolio(PortfolioFacade):
         account.update_order_margin(order_margin)
 
         self._log.info(f"Updated {venue} order initial margin to "
-                       f"{order_margin.to_string_formatted()}")
+                       f"{order_margin.to_string()}")
 
     cdef inline void _update_position_margin(self, Venue venue):
         cdef Account account = self._accounts.get(venue)
@@ -686,7 +686,7 @@ cdef class Portfolio(PortfolioFacade):
         account.update_position_margin(position_margin)
 
         self._log.info(f"Updated {venue} position maintenance margin to "
-                       f"{position_margin.to_string_formatted()}")
+                       f"{position_margin.to_string()}")
 
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)

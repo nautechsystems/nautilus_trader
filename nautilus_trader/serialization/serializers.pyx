@@ -377,8 +377,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
-            package[QUANTITY] = command.quantity.to_string()
-            package[PRICE] = command.price.to_string()
+            package[QUANTITY] = str(command.quantity)
+            package[PRICE] = str(command.price)
         elif isinstance(command, CancelOrder):
             package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
@@ -510,12 +510,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
             package[QUOTE_CURRENCY] = event.currency.code,
-            package[CASH_BALANCE] = event.cash_balance.to_string()
-            package[CASH_START_DAY] = event.cash_start_day.to_string()
-            package[CASH_ACTIVITY_DAY] = event.cash_activity_day.to_string()
-            package[MARGIN_USED_LIQUIDATION] = event.margin_used_liquidation.to_string()
-            package[MARGIN_USED_MAINTENANCE] = event.margin_used_maintenance.to_string()
-            package[MARGIN_RATIO] = event.margin_ratio.to_string()
+            package[CASH_BALANCE] = str(event.cash_balance)
+            package[CASH_START_DAY] = str(event.cash_start_day)
+            package[CASH_ACTIVITY_DAY] = str(event.cash_activity_day)
+            package[MARGIN_USED_LIQUIDATION] = str(event.margin_used_liquidation)
+            package[MARGIN_USED_MAINTENANCE] = str(event.margin_used_maintenance)
+            package[MARGIN_RATIO] = str(event.margin_ratio)
             package[MARGIN_CALL_STATUS] = event.margin_call_status
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -523,7 +523,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
-            package[QUANTITY] = event.quantity.to_string()
+            package[QUANTITY] = str(event.quantity)
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[OPTIONS] = MsgPackSerializer.serialize(event.options)
         elif isinstance(event, OrderSubmitted):
@@ -553,8 +553,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
             package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
-            package[QUANTITY] = event.quantity.to_string()
-            package[PRICE] = event.price.to_string()
+            package[QUANTITY] = str(event.quantity)
+            package[PRICE] = str(event.price)
             package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
@@ -574,8 +574,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[MODIFIED_TIME] = convert_datetime_to_string(event.modified_time)
-            package[MODIFIED_QUANTITY] = event.modified_quantity.to_string()
-            package[MODIFIED_PRICE] = event.modified_price.to_string()
+            package[MODIFIED_QUANTITY] = str(event.modified_quantity)
+            package[MODIFIED_PRICE] = str(event.modified_price)
         elif isinstance(event, OrderExpired):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -590,11 +590,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
-            package[FILLED_QUANTITY] = event.filled_qty.to_string()
-            package[CUMULATIVE_QUANTITY] = event.cumulative_qty.to_string()
-            package[LEAVES_QUANTITY] = event.leaves_qty.to_string()
-            package[AVERAGE_PRICE] = event.avg_price.to_string()
-            package[COMMISSION] = event.commission.to_string()
+            package[FILLED_QUANTITY] = str(event.filled_qty)
+            package[CUMULATIVE_QUANTITY] = str(event.cumulative_qty)
+            package[LEAVES_QUANTITY] = str(event.leaves_qty)
+            package[AVERAGE_PRICE] = str(event.avg_price)
+            package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
             package[BASE_CURRENCY] = event.base_currency.code

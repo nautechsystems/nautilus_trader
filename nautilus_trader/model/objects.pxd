@@ -18,25 +18,14 @@ from nautilus_trader.model.currency cimport Currency
 
 
 cdef class Quantity(Decimal):
-
-    @staticmethod
-    cdef inline Quantity from_float_c(double value, int precision)
-    cpdef double as_double(self) except *
     cpdef str to_string(self)
-    cpdef str to_string_formatted(self)
 
 
 cdef class Price(Decimal):
-
-    @staticmethod
-    cdef inline Price from_float_c(double value, int precision)
-    cpdef double as_double(self) except *
     cpdef str to_string(self)
 
 
 cdef class Money(Decimal):
     cdef readonly Currency currency
 
-    cpdef double as_double(self) except *
     cpdef str to_string(self)
-    cpdef str to_string_formatted(self)

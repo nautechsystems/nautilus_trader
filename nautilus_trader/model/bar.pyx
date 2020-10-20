@@ -543,12 +543,7 @@ cdef class Bar:
         str
 
         """
-        return (f"{self.open.to_string()},"
-                f"{self.high.to_string()},"
-                f"{self.low.to_string()},"
-                f"{self.close.to_string()},"
-                f"{self.volume.to_string()},"
-                f"{format_iso8601(self.timestamp)}")
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
 
     cpdef str to_serializable_string(self):
         """
@@ -559,12 +554,7 @@ cdef class Bar:
         str
 
         """
-        return (f"{self.open.to_string()},"
-                f"{self.high.to_string()},"
-                f"{self.low.to_string()},"
-                f"{self.close.to_string()},"
-                f"{self.volume.to_string()},"
-                f"{long(self.timestamp.timestamp())}")
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
 
     def __eq__(self, Bar other) -> bool:
         """

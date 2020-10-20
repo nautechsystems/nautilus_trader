@@ -30,11 +30,11 @@ class PriceTests(unittest.TestCase):
         # Assert
         self.assertRaises(TypeError, Price, None)
 
-    def test_from_float_with_negative_precision_argument_returns_zero_decimal(self):
+    def test_instantiate_with_negative_precision_argument_returns_zero_decimal(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Price.from_float, 1.11, -1)
+        self.assertRaises(ValueError, Price, 1.11, -1)
 
     @parameterized.expand([
         [0, Price()],
@@ -62,10 +62,10 @@ class PriceTests(unittest.TestCase):
         [1.123, 3, Price("1.123")],
         [1.155, 2, Price("1.16")],
     ])
-    def test_from_float_with_various_valid_inputs_returns_expected_decimal(self, value, precision, expected):
+    def test_instantiate_with_various_valid_precisions_returns_expected_decimal(self, value, precision, expected):
         # Arrange
         # Act
-        price = Price.from_float(value, precision)
+        price = Price(value, precision)
 
         # Assert
         self.assertEqual(expected, price)
@@ -227,7 +227,7 @@ class PriceTests(unittest.TestCase):
 
     def test_repr(self):
         # Arrange
-        price = Price.from_float(1.00000, 5)
+        price = Price(1.00000, 5)
 
         # Act
         result = repr(price)

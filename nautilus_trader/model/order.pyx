@@ -620,7 +620,7 @@ cdef class PassiveOrder(Order):
 
         """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
                 f"{order_type_to_string(self.type)} @ {self.price} "
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
@@ -644,9 +644,9 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal.from_float(self.avg_price - self.price, self.avg_price.precision)
+            self.slippage = Decimal(self.avg_price - self.price, self.avg_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal.from_float(self.price - self.avg_price, self.avg_price.precision)
+            self.slippage = Decimal(self.price - self.avg_price, self.avg_price.precision)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -762,7 +762,7 @@ cdef class MarketOrder(Order):
         str
 
         """
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
                 f"{order_type_to_string(self.type)} "
                 f"{time_in_force_to_string(self.time_in_force)}")
 

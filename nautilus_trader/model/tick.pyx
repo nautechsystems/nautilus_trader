@@ -258,7 +258,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price.from_float_c(<double>((self.bid + self.ask) / 2), self.bid.precision + 1)
+            return Price((self.bid + self.ask) / 2, precision=self.bid.precision + 1)
         elif price_type == PriceType.BID:
             return self.bid
         elif price_type == PriceType.ASK:
@@ -359,10 +359,10 @@ cdef class QuoteTick(Tick):
 
         """
         return (f"{self.symbol.to_string()},"
-                f"{self.bid.to_string()},"
-                f"{self.ask.to_string()},"
-                f"{self.bid_size.to_string()},"
-                f"{self.ask_size.to_string()},"
+                f"{self.bid},"
+                f"{self.ask},"
+                f"{self.bid_size},"
+                f"{self.ask_size},"
                 f"{format_iso8601(self.timestamp)}")
 
     cpdef str to_serializable_string(self):
@@ -374,11 +374,7 @@ cdef class QuoteTick(Tick):
         str
 
         """
-        return (f"{self.bid.to_string()},"
-                f"{self.ask.to_string()},"
-                f"{self.bid_size.to_string()},"
-                f"{self.ask_size.to_string()},"
-                f"{long(self.timestamp.timestamp())}")
+        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{long(self.timestamp.timestamp())}"
 
 
 cdef class TradeTick(Tick):
@@ -491,8 +487,8 @@ cdef class TradeTick(Tick):
 
         """
         return (f"{self.symbol.to_string()},"
-                f"{self.price.to_string()},"
-                f"{self.size.to_string()},"
+                f"{self.price},"
+                f"{self.size},"
                 f"{maker_to_string(self.maker)},"
                 f"{self.match_id.to_string()},"
                 f"{format_iso8601(self.timestamp)}")
@@ -506,8 +502,8 @@ cdef class TradeTick(Tick):
         str
 
         """
-        return (f"{self.price.to_string()},"
-                f"{self.size.to_string()},"
+        return (f"{self.price},"
+                f"{self.size},"
                 f"{maker_to_string(self.maker)},"
                 f"{self.match_id.to_string()},"
                 f"{long(self.timestamp.timestamp())}")
