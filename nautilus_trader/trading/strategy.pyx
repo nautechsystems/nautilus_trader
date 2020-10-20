@@ -104,6 +104,21 @@ cdef class TradingStrategy:
         self._indicators_for_trades = {}   # type: {Symbol, [Indicator]}
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
+    def __eq__(self, TradingStrategy other) -> bool:
+        return self.id == other.id
+
+    def __ne__(self, TradingStrategy other) -> bool:
+        return self.id != other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id.value)
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}({self.id.value})"
+
+    def __repr__(self) -> str:
+        return f"<{str(self)} object at {id(self)}>"
+
     cpdef ComponentState state(self):
         """
         Return the trading strategies state.
@@ -121,46 +136,6 @@ cdef class TradingStrategy:
 
         """
         return component_state_to_string(self._fsm.state)
-
-    def __eq__(self, TradingStrategy other) -> bool:
-        return self.id == other.id
-
-    def __ne__(self, TradingStrategy other) -> bool:
-        return self.id != other.id
-
-    def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
-        return hash(self.id.value)
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.__class__.__name__}({self.id.value})"
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

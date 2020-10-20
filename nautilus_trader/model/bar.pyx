@@ -70,6 +70,23 @@ cdef class BarSpecification:
         self.aggregation = aggregation
         self.price_type = price_type
 
+    def __eq__(self, BarSpecification other) -> bool:
+        return self.step == other.step \
+               and self.aggregation == other.aggregation \
+               and self.price_type == other.price_type
+
+    def __ne__(self, BarSpecification other) -> bool:
+        return not self == other
+
+    def __hash__(self) -> int:
+        return hash((self.step, self.aggregation, self.price_type))
+
+    def __str__(self) -> str:
+        return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self})"
+
     @staticmethod
     cdef BarSpecification from_string_c(str value):
         """
@@ -152,59 +169,6 @@ cdef class BarSpecification:
         """
         return price_type_to_string(self.price_type)
 
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
-
-    def __eq__(self, BarSpecification other) -> bool:
-        return self.step == other.step \
-            and self.aggregation == other.aggregation \
-            and self.price_type == other.price_type
-
-    def __ne__(self, BarSpecification other) -> bool:
-        return not self == other
-
-    def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
-        return hash((self.step, self.aggregation, self.price_type))
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
-
 
 cdef list _TIME_BARS = [
     BarAggregation.SECOND,
@@ -237,6 +201,21 @@ cdef class BarType:
         """
         self.symbol = symbol
         self.spec = bar_spec
+
+    def __eq__(self, BarType other) -> bool:
+        return self.symbol == other.symbol and self.spec == other.spec
+
+    def __ne__(self, BarType other) -> bool:
+        return not self == other
+
+    def __hash__(self) -> int:
+        return hash((self.symbol, self.spec))
+
+    def __str__(self) -> str:
+        return f"{self.symbol}-{self.spec}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self})"
 
     @staticmethod
     cdef BarType from_string_c(str value):
@@ -310,7 +289,10 @@ cdef class BarType:
         """
         Return the bar aggregation as a string
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.spec.aggregation_string()
 
@@ -318,60 +300,12 @@ cdef class BarType:
         """
         Return the price type as a string.
 
-        :return str.
+        Returns
+        -------
+        str
+
         """
         return self.spec.price_type_string()
-
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.symbol}-{self.spec}"
-
-    def __eq__(self, BarType other) -> bool:
-        return self.symbol == other.symbol and self.spec == other.spec
-
-    def __ne__(self, BarType other) -> bool:
-        return not self == other
-
-    def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
-        return hash((self.symbol, self.spec))
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
 
 
 cdef class Bar:
@@ -432,6 +366,26 @@ cdef class Bar:
         self.timestamp = timestamp
         self.checked = check
 
+    def __eq__(self, Bar other) -> bool:
+        return self.open == other.open \
+               and self.high == other.high \
+               and self.low == other.low \
+               and self.close == other.close \
+               and self.volume == other.volume \
+               and self.timestamp == other.timestamp
+
+    def __ne__(self, Bar other) -> bool:
+        return not self == other
+
+    def __hash__(self) -> int:
+        return hash(str(self.timestamp))
+
+    def __str__(self) -> str:
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self})"
+
     @staticmethod
     cdef Bar from_serializable_string_c(str value):
         """
@@ -482,17 +436,6 @@ cdef class Bar:
         """
         return Bar.from_serializable_string_c(value)
 
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
-
     cpdef str to_serializable_string(self):
         """
         Return the serializable string representation of this object.
@@ -503,48 +446,3 @@ cdef class Bar:
 
         """
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
-
-    def __eq__(self, Bar other) -> bool:
-        return self.open == other.open \
-            and self.high == other.high \
-            and self.low == other.low \
-            and self.close == other.close \
-            and self.volume == other.volume \
-            and self.timestamp == other.timestamp
-
-    def __ne__(self, Bar other) -> bool:
-        return not self == other
-
-    def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
-        return hash(str(self.timestamp))
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"

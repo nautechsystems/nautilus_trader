@@ -201,55 +201,18 @@ cdef class Decimal:
         return Decimal(round(self._value, ndigits))
 
     def __float__(self):
-        """Return the objects value as a float.
-
-        Returns
-        -------
-        float
-
-        """
         return float(self._value)
 
     def __int__(self):
-        """Converts self to an int, truncating if necessary.
-
-        Returns
-        -------
-        int
-
-        """
         return int(self._value)
 
     def __hash__(self) -> int:
-        """Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self._value)
 
     def __str__(self) -> str:
-        """Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return str(self._value)
 
     def __repr__(self) -> str:
-        """Return the string representation of this object
-
-        The string includes the objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"{self.__class__.__name__}('{self}')"
 
     cpdef object as_decimal(self):

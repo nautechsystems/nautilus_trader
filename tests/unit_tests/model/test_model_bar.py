@@ -49,7 +49,7 @@ class BarSpecificationTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual("1-MINUTE-BID", str(bar_spec))
-        self.assertTrue(repr(bar_spec).startswith("<BarSpecification(1-MINUTE-BID) object at"))
+        self.assertEqual("BarSpecification(1-MINUTE-BID)", repr(bar_spec))
 
     def test_parse_bar_spec_from_string(self):
         # Arrange
@@ -88,7 +88,7 @@ class BarTypeTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual("AUD/USD.FXCM-1-MINUTE-BID", str(bar_type))
-        self.assertTrue(repr(bar_type).startswith("<BarType(AUD/USD.FXCM-1-MINUTE-BID) object at"))
+        self.assertEqual("BarType(AUD/USD.FXCM-1-MINUTE-BID)", repr(bar_type))
 
 
 class BarTests(unittest.TestCase):

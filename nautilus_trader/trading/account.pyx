@@ -55,37 +55,12 @@ cdef class Account:
         return self.id != other.id
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.id.value)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return f"Account({self.id.value})"
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
     cpdef void register_portfolio(self, PortfolioFacade portfolio):
