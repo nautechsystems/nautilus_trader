@@ -64,7 +64,7 @@ cdef class Quantity(Decimal):
         """
         super().__init__(value, precision)
 
-        # Post Condition
+        # Post-condition
         Condition.true(self._value >= 0, f"quantity positive, was {self.to_string()}")
 
     cpdef str to_string(self):

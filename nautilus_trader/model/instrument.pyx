@@ -274,7 +274,6 @@ cdef class Instrument:
             return Money(0, self.base_currency)  # No margin necessary
 
         cdef Decimal notional = self._calculate_notional(quantity, price)
-
         cdef Decimal margin = notional / self.leverage * self.margin_initial
         margin += notional * self.taker_fee * 2
 
@@ -318,7 +317,6 @@ cdef class Instrument:
 
         cdef Price close_price = self._get_close_price(side, last)
         cdef Decimal notional = self._calculate_notional(quantity, close_price)
-
         cdef Decimal margin = notional / self.leverage * self.margin_maintenance
         margin += notional * self.taker_fee
 
@@ -446,6 +444,7 @@ cdef class Instrument:
 
         cdef Decimal notional = self._calculate_notional(quantity, avg_close)
 
+        cdef Decimal return_percentage
         if side == PositionSide.LONG:
             return_percentage = (avg_close - avg_open) / avg_open
         elif side == PositionSide.SHORT:
@@ -494,6 +493,7 @@ cdef class Instrument:
 
         cdef Decimal notional = self._calculate_notional(quantity, avg_price)
 
+        cdef Decimal commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * self.maker_fee
         elif liquidity_side == LiquiditySide.TAKER:
