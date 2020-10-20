@@ -22,7 +22,7 @@ cdef class Quantity(Decimal):
 
 
 cdef class Price(Decimal):
-    cpdef str to_string(self)
+    pass
 
 
 cdef class Money(Decimal):
