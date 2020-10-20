@@ -81,85 +81,85 @@ cdef class Decimal:
             b = b._value
         return a, b
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
         return a == b
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
         return a != b
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
         return a < b
 
-    def __le__(self, other):
+    def __le__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
         return a <= b
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
         return a > b
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
         return a >= b
 
-    def __add__(self, other):
+    def __add__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return a + b
         else:
             return Decimal(a + b)
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return a - b
         else:
             return Decimal(a - b)
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return a * b
         else:
             return Decimal(a * b)
 
-    def __div__(self, other):
+    def __div__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return a / b
         else:
             return Decimal(a / b)
 
-    def __truediv__(self, other):
+    def __truediv__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return a / b
         else:
             return Decimal(a / b)
 
-    def __floordiv__(self, other):
+    def __floordiv__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return a // b
         else:
             return Decimal(a // b)
 
-    def __mod__(self, other):
+    def __mod__(self, other) -> Decimal:
         a, b = Decimal._convert_values(self, other)
         if isinstance(a, float):
             return NotImplemented
