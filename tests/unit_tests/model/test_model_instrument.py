@@ -16,6 +16,7 @@
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
@@ -24,7 +25,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

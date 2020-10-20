@@ -22,7 +22,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fraction cimport Fraction
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -613,13 +613,13 @@ cdef class ExecutionEngine:
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference
         if position.side == PositionSide.LONG:
-            difference = fill.filled_qty.sub(position.quantity)
+            difference = Quantity(fill.filled_qty - position.quantity)
         else:  # position.side == PositionSide.SHORT:
-            difference = position.quantity.sub(fill.filled_qty)
+            difference = Quantity(position.quantity - fill.filled_qty)
 
         # Split commission between two positions
-        cdef Fraction fill_percent1 = position.quantity / fill.filled_qty
-        cdef Fraction fill_percent2 = 1 - fill_percent1
+        cdef Decimal fill_percent1 = position.quantity / fill.filled_qty
+        cdef Decimal fill_percent2 = 1 - fill_percent1
 
         # Split fill to close original position
         cdef OrderFilled fill_split1 = OrderFilled(

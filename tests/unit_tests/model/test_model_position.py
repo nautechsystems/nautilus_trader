@@ -22,6 +22,7 @@ import pytz
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -37,7 +38,6 @@ from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

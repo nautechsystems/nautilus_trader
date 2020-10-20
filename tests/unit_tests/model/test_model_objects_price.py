@@ -18,7 +18,7 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.core.fraction import Fraction
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.objects import Price
 
 
@@ -45,8 +45,8 @@ class PriceTests(unittest.TestCase):
         ["1.0", Price("1")],
         [decimal.Decimal(), Price()],
         [decimal.Decimal("1.1"), Price("1.1")],
-        [Fraction(), Price()],
-        [Fraction("1.1"), Price("1.1")],
+        [Decimal(), Price()],
+        [Decimal("1.1"), Price("1.1")],
     ])
     def test_instantiate_with_various_valid_inputs_returns_expected_decimal(self, value, expected):
         # Arrange
@@ -129,13 +129,13 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(expected4, result4)
 
     @parameterized.expand([
-        [Price(), Price(), Fraction, 0],
-        [Price(), Price("1.1"), Fraction, Fraction("1.1")],
-        [Price(), 0, Fraction, 0],
-        [Price(), 1, Fraction, 1],
+        [Price(), Price(), Decimal, 0],
+        [Price(), Price("1.1"), Decimal, Decimal("1.1")],
+        [Price(), 0, Decimal, 0],
+        [Price(), 1, Decimal, 1],
         [Price(), 0.0, float, 0],
         [Price(), 1.0, float, 1.0],
-        [Price("1"), Fraction("1.1"), Fraction, Fraction("2.1")],
+        [Price("1"), Decimal("1.1"), Decimal, Decimal("2.1")],
     ])
     def test_addition_with_various_types_returns_expected_result(
             self,
@@ -152,13 +152,13 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [Price(), Price(), Fraction, 0],
-        [Price(), Price("1.1"), Fraction, Fraction("-1.1")],
-        [Price(), 0, Fraction, 0],
-        [Price(), 1, Fraction, -1],
+        [Price(), Price(), Decimal, 0],
+        [Price(), Price("1.1"), Decimal, Decimal("-1.1")],
+        [Price(), 0, Decimal, 0],
+        [Price(), 1, Decimal, -1],
         [Price(), 0.0, float, 0],
         [Price(), 1.0, float, -1.0],
-        [Price("1"), Fraction("1.1"), Fraction, Fraction("-0.1")],
+        [Price("1"), Decimal("1.1"), Decimal, Decimal("-0.1")],
     ])
     def test_subtraction_with_various_types_returns_expected_result(
             self,
@@ -175,10 +175,10 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [Price(), 0, Fraction, 0],
-        [Price(1), 1, Fraction, 1],
+        [Price(), 0, Decimal, 0],
+        [Price(1), 1, Decimal, 1],
         [Price(2), 1.0, float, 2],
-        [Price("1.1"), Fraction("1.1"), Fraction, Fraction("1.21")],
+        [Price("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
     ])
     def test_multiplication_with_various_types_returns_expected_result(
             self,
@@ -195,10 +195,10 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [Price(), 1, Fraction, 0],
-        [Price(1), 2, Fraction, 0.5],
+        [Price(), 1, Decimal, 0],
+        [Price(1), 2, Decimal, 0.5],
         [Price(2), 1.0, float, 2],
-        [Price("1.1"), Fraction("1.2"), Fraction, 0.9166666666666666],
+        [Price("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
     ])
     def test_division_with_various_types_returns_expected_result(
             self,

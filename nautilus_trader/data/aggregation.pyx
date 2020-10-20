@@ -156,7 +156,7 @@ cdef class BarBuilder:
             self._low = price
 
         self._close = price
-        self._volume = self._volume.add(volume)
+        self._volume = Quantity(self._volume + volume)
         self.count += 1
         self.last_update = timestamp
 
