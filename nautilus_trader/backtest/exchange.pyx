@@ -23,6 +23,7 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -55,7 +56,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -562,12 +562,12 @@ cdef class SimulatedExchange:
             pnl = Money(pnl * xrate_base_account, self.account_currency)
 
         # Final PNL
-        pnl = pnl.sub(commission)
+        pnl = Money(pnl - commission, self.account_currency)
 
         # Apply PNL
-        self.total_commissions = self.total_commissions.add(commission)
-        self.account_balance = self.account_balance.add(pnl)
-        self.account_balance_activity_day = self.account_balance_activity_day.add(pnl)
+        self.total_commissions = Money(self.total_commissions + commission, self.account_currency)
+        self.account_balance = Money(self.account_balance + pnl, self.account_currency)
+        self.account_balance_activity_day = Money(self.account_balance_activity_day + pnl, self.account_currency)
 
         # Generate and send event
         account_state = self._generate_account_event()
@@ -619,11 +619,17 @@ cdef class SimulatedExchange:
             rollover_cumulative = rollover_cumulative * 3.0
 
         cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
-        self.total_rollover = self.total_rollover.add(rollover_final)
+        self.total_rollover = Money(self.total_rollover + rollover_final, self.account_currency)
 
         if not self.frozen_account:
-            self.account_balance = self.account_balance.add(rollover_final)
-            self.account_balance_activity_day = self.account_balance_activity_day.add(rollover_final)
+            self.account_balance = Money(
+                self.account_balance + rollover_final,
+                self.account_currency,
+            )
+            self.account_balance_activity_day = Money(
+                self.account_balance_activity_day + rollover_final,
+                self.account_currency,
+            )
 
             account_state = self._generate_account_event()
             self.account.apply(account_state)

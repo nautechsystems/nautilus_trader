@@ -15,171 +15,12 @@
 
 """Define common basic value objects in the trading domain."""
 
-from cpython.object cimport Py_GE
-from cpython.object cimport Py_GT
-from cpython.object cimport Py_LE
-from cpython.object cimport Py_LT
-
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fraction cimport Fraction
-from nautilus_trader.core.functions cimport precision_from_string
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.currency cimport Currency
 
 
-cdef class Decimal(Fraction):
-    """
-    Represents a decimal with a fixed precision.
-
-    Attributes
-    ----------
-    precision : int
-        The precision of the decimal.
-
-    """
-
-    def __init__(self, value=0):
-        """
-        Initialize a new instance of the Decimal class.
-
-        Parameters
-        ----------
-        value : integer, string, decimal.Decimal or Fraction.
-            The value of the quantity.
-
-        Raises
-        ------
-        TypeError
-            If value is a float.
-
-        """
-        Condition.not_none(value, "value")
-
-        if isinstance(value, float):
-            raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
-        super().__init__(value)
-
-        self.precision = precision_from_string(str(value))
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
-
-    cdef inline Decimal add(self, Fraction other):
-        """
-        Add the other decimal to this decimal.
-
-        Parameters
-        ----------
-        other : Decimal
-            The decimal to add.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return Decimal(self + other)
-
-    cdef inline Decimal sub(self, Fraction other):
-        """
-        Subtract the other decimal from this decimal.
-
-        Parameters
-        ----------
-        other : Decimal
-            The decimal to subtract.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return Decimal(self - other)
-
-    @staticmethod
-    def from_float(value: float, precision: int):
-        """
-        Return a decimal from the given value and precision.
-
-        Parameters
-        ----------
-        value : double
-            The value of the decimal.
-        precision : int, optional.
-            The precision for the decimal.
-
-        Raises
-        ------
-        ValueError
-            If precision is negative (< 0).
-
-        """
-        Condition.type(precision, int, "precision")
-
-        return Decimal.from_float_c(value, precision)
-
-    @staticmethod
-    cdef inline Decimal from_float_c(double value, int precision):
-        """
-        Return a decimal from the given value and precision.
-
-        Returns
-        -------
-        Decimal
-
-        Raises
-        ------
-        ValueError
-            If precision is negative (< 0)
-
-        """
-        Condition.not_negative_int(precision, "precision")
-
-        return Decimal(format(value, f'.{precision}f'))
-
-    cpdef double as_double(self) except *:
-        """
-        Return the value of the decimal as a double.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._numerator / self._denominator
-
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return format(self.as_double(), f'.{self.precision}f')
-
-
-cdef class Quantity(Fraction):
+cdef class Quantity(Decimal):
     """
     Represents a quantity with a non-negative value.
 
@@ -205,7 +46,7 @@ cdef class Quantity(Fraction):
 
         Parameters
         ----------
-        value : integer, string, decimal.Decimal or Fraction.
+        value : integer, string, decimal.Decimal or Decimal.
             The value of the quantity.
 
         Raises
@@ -216,16 +57,10 @@ cdef class Quantity(Fraction):
             If value is negative (< 0).
 
         """
-        Condition.not_none(value, "value")
-
-        if isinstance(value, float):
-            raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
         super().__init__(value)
 
-        self.precision = precision_from_string(str(value))
-
         # Post Condition
-        Condition.true(self >= 0, f"quantity not positive, was {self.to_string()}")
+        Condition.true(self >= 0, f"quantity positive, was {self.to_string()}")
 
     def __str__(self) -> str:
         """
@@ -249,38 +84,6 @@ cdef class Quantity(Fraction):
 
         """
         return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
-
-    cdef inline Quantity add(self, Fraction other):
-        """
-        Add the other quantity to this quantity.
-
-        Parameters
-        ----------
-        other : Fraction
-            The quantity to add.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        return Quantity(self + other)
-
-    cdef inline Quantity sub(self, Fraction other):
-        """
-        Subtract the other quantity from this quantity.
-
-        Parameters
-        ----------
-        other : Fraction
-            The quantity to subtract.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        return Quantity(self - other)
 
     @staticmethod
     def from_float(value: float, precision: int):
@@ -330,17 +133,6 @@ cdef class Quantity(Fraction):
 
         return Quantity(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self) except *:
-        """
-        Return the value of the quantity as a double.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._numerator / self._denominator
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -350,7 +142,7 @@ cdef class Quantity(Fraction):
         str
 
         """
-        return format(self.as_double(), f'.{self.precision}f')
+        return str(self._value)
 
     cpdef str to_string_formatted(self):
         """
@@ -362,10 +154,10 @@ cdef class Quantity(Fraction):
 
         """
         if self.precision > 0:
-            return f"{self.as_double():.{self.precision}f}"
+            return str(self)
 
         if self < 1000 or self % 1000 != 0:
-            return f"{int(self):,.0f}"
+            return f"{self.as_double():,.0f}"
 
         if self < 1000000:
             return f"{round(self / 1000)}K"
@@ -374,7 +166,7 @@ cdef class Quantity(Fraction):
         return f"{millions}M"
 
 
-cdef class Price(Fraction):
+cdef class Price(Decimal):
     """
     Represents a price in a financial market.
 
@@ -399,7 +191,7 @@ cdef class Price(Fraction):
 
         Parameters
         ----------
-        value : integer, string, decimal.Decimal or Fraction.
+        value : integer, string, decimal.Decimal or Decimal.
             The value of the price.
 
         Raises
@@ -408,13 +200,7 @@ cdef class Price(Fraction):
             If value is a float (use the from_float method).
 
         """
-        Condition.not_none(value, "value")
-
-        if isinstance(value, float):
-            raise TypeError("decimal precision cannot be inferred from a float, please use from_float()")
         super().__init__(value)
-
-        self.precision = precision_from_string(str(value))
 
     def __str__(self) -> str:
         """
@@ -438,38 +224,6 @@ cdef class Price(Fraction):
 
         """
         return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
-
-    cdef inline Price add(self, Fraction other):
-        """
-        Add the other price to this price.
-
-        Parameters
-        ----------
-        other : Fraction
-            The fractional value to add.
-
-        Returns
-        -------
-        Price
-
-        """
-        return Price(self + other)
-
-    cdef inline Price sub(self, Fraction other):
-        """
-        Subtract the other price from this price.
-
-        Parameters
-        ----------
-        other : Fraction
-            The fractional value to subtract.
-
-        Returns
-        -------
-        Price
-
-        """
-        return Price(self - other)
 
     @staticmethod
     def from_float(value: float, precision: int) -> Price:
@@ -519,17 +273,6 @@ cdef class Price(Fraction):
 
         return Price(format(value, f'.{precision}f'))
 
-    cpdef double as_double(self) except *:
-        """
-        Return the value of the price as a double.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._numerator / self._denominator
-
     cpdef str to_string(self):
         """
         Return the string representation of this object.
@@ -539,10 +282,10 @@ cdef class Price(Fraction):
         str
 
         """
-        return format(self.as_double(), f'.{self.precision}f')
+        return str(self._value)
 
 
-cdef class Money(Fraction):
+cdef class Money(Decimal):
     """
     Represents an amount of money including currency type.
 
@@ -559,7 +302,7 @@ cdef class Money(Fraction):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or Fraction.
+        value : integer, float, string, decimal.Decimal or Decimal.
             The value of the money.
         currency : Currency
             The currency of the money.
@@ -587,7 +330,7 @@ cdef class Money(Fraction):
         bool
 
         """
-        return self._eq(other) and self.currency == other.currency
+        return self._value == other._value and self.currency == other.currency
 
     def __ne__(self, Money other) -> bool:
         """
@@ -619,7 +362,7 @@ cdef class Money(Fraction):
         bool
 
         """
-        return self._richcmp(other, Py_LT) and self.currency == other.currency
+        return self._value < other._value and self.currency == other.currency
 
     def __le__(self, Money other) -> bool:
         """
@@ -635,7 +378,7 @@ cdef class Money(Fraction):
         bool
 
         """
-        return self._richcmp(other, Py_LE) and self.currency == other.currency
+        return self._value <= other._value and self.currency == other.currency
 
     def __gt__(self, Money other) -> bool:
         """
@@ -651,7 +394,7 @@ cdef class Money(Fraction):
         bool
 
         """
-        return self._richcmp(other, Py_GT) and self.currency == other.currency
+        return self._value > other._value and self.currency == other.currency
 
     def __ge__(self, Money other) -> bool:
         """
@@ -667,7 +410,7 @@ cdef class Money(Fraction):
         bool
 
         """
-        return self._richcmp(other, Py_GE) and self.currency == other.currency
+        return self._value >= other._value and self.currency == other.currency
 
     def __hash__(self) -> int:
         """"
@@ -705,63 +448,7 @@ cdef class Money(Fraction):
         str
 
         """
-        return (f"<{self.__class__.__name__}('{self}', {self.currency}) "
-                f"object at {id(self)}>")
-
-    cdef inline Money add(self, Money other):
-        """
-        Add the given money to this money.
-
-        Parameters
-        ----------
-        other : Money
-            The money to add.
-
-        Returns
-        -------
-        Money
-
-        Raises
-        ------
-        ValueError
-            If currency is not equal to this currency
-
-        """
-        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
-        return Money(self + other, self.currency)
-
-    cdef inline Money sub(self, Money other):
-        """
-        Subtract the given money from this money.
-
-        Parameters
-        ----------
-        other : Money
-            The money to subtract.
-
-        Returns
-        -------
-        Money
-
-        Raises
-        ------
-        ValueError
-            If currency is not equal to this currency
-
-        """
-        Condition.equal(self.currency, other.currency, "self.currency", "other.currency")
-        return Money(self - other, self.currency)
-
-    cpdef double as_double(self) except *:
-        """
-        Return the value of the money as a double.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._numerator / self._denominator
+        return f"<{self.__class__.__name__}('{self._value}', {self.currency}) object at {id(self)}>"
 
     cpdef str to_string(self):
         """
@@ -772,7 +459,7 @@ cdef class Money(Fraction):
         str
 
         """
-        return format(self.as_double(), f'.{self.currency.precision}f')
+        return str(self._value)
 
     cpdef str to_string_formatted(self):
         """
@@ -783,4 +470,5 @@ cdef class Money(Fraction):
         str
 
         """
+        # TODO implement __format__ on Decimal
         return f"{self.as_double():,.{self.currency.precision}f} {self.currency}"

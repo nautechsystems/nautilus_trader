@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
@@ -26,8 +27,6 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal
-from nautilus_trader.model.objects cimport Fraction
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -87,10 +86,10 @@ cdef class Position:
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline Fraction _calculate_cost(self, Fraction avg_price, Quantity total_quantity)
-    cdef inline Fraction _calculate_avg_price(self, Fraction open_price, Quantity open_quantity, OrderFilled event)
-    cdef inline Fraction _calculate_avg_open_price(self, OrderFilled event)
-    cdef inline Fraction _calculate_avg_close_price(self, OrderFilled event)
-    cdef inline Fraction _calculate_points(self, Fraction open_price, Fraction close_price)
-    cdef inline Fraction _calculate_return(self, Fraction open_price, Fraction close_price)
-    cdef inline Money _calculate_pnl(self, Fraction open_price, Fraction close_price, Quantity filled_qty)
+    cdef inline Decimal _calculate_cost(self, Decimal avg_price, Quantity total_quantity)
+    cdef inline Decimal _calculate_avg_price(self, Decimal open_price, Quantity open_quantity, OrderFilled event)
+    cdef inline Decimal _calculate_avg_open_price(self, OrderFilled event)
+    cdef inline Decimal _calculate_avg_close_price(self, OrderFilled event)
+    cdef inline Decimal _calculate_points(self, Decimal open_price, Decimal close_price)
+    cdef inline Decimal _calculate_return(self, Decimal open_price, Decimal close_price)
+    cdef inline Money _calculate_pnl(self, Decimal open_price, Decimal close_price, Quantity filled_qty)

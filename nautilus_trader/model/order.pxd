@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
@@ -44,7 +45,6 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 

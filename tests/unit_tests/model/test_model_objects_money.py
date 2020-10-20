@@ -18,7 +18,7 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.core.fraction import Fraction
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
@@ -50,9 +50,9 @@ class MoneyTests(unittest.TestCase):
         [decimal.Decimal(), Money(0, USD)],
         [decimal.Decimal("1.1"), Money("1.1", USD)],
         [decimal.Decimal("-1.1"), Money("-1.1", USD)],
-        [Fraction(), Money(0, USD)],
-        [Fraction("1.1"), Money("1.1", USD)],
-        [Fraction("-1.1"), Money("-1.1", USD)],
+        [Decimal(), Money(0, USD)],
+        [Decimal("1.1"), Money("1.1", USD)],
+        [Decimal("-1.1"), Money("-1.1", USD)],
     ])
     def test_instantiate_with_various_valid_inputs_returns_expected_decimal(self, value, expected):
         # Arrange
@@ -168,13 +168,13 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected4, result4)
 
     @parameterized.expand([
-        [Money(0, USD), Money(0, USD), Fraction, 0],
-        [Money(0, USD), Money("1.1", USD), Fraction, Fraction("1.1")],
-        [Money(0, USD), 0, Fraction, 0],
-        [Money(0, USD), 1, Fraction, 1],
+        [Money(0, USD), Money(0, USD), Decimal, 0],
+        [Money(0, USD), Money("1.1", USD), Decimal, Decimal("1.1")],
+        [Money(0, USD), 0, Decimal, 0],
+        [Money(0, USD), 1, Decimal, 1],
         [Money(0, USD), 0.0, float, 0],
         [Money(0, USD), 1.0, float, 1.0],
-        [Money("1", USD), Fraction("1.1"), Fraction, Fraction("2.1")],
+        [Money("1", USD), Decimal("1.1"), Decimal, Decimal("2.1")],
     ])
     def test_addition_with_various_types_returns_expected_result(
             self,
@@ -191,13 +191,13 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [Money(0, USD), Money(0, USD), Fraction, 0],
-        [Money(0, USD), Money("1.1", USD), Fraction, Fraction("-1.1")],
-        [Money(0, USD), 0, Fraction, 0],
-        [Money(0, USD), 1, Fraction, -1],
+        [Money(0, USD), Money(0, USD), Decimal, 0],
+        [Money(0, USD), Money("1.1", USD), Decimal, Decimal("-1.1")],
+        [Money(0, USD), 0, Decimal, 0],
+        [Money(0, USD), 1, Decimal, -1],
         [Money(0, USD), 0.0, float, 0],
         [Money(0, USD), 1.0, float, -1.0],
-        [Money("1", USD), Fraction("1.1"), Fraction, Fraction("-0.1")],
+        [Money("1", USD), Decimal("1.1"), Decimal, Decimal("-0.1")],
     ])
     def test_subtraction_with_various_types_returns_expected_result(
             self,
@@ -214,10 +214,10 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [Money(0, USD), 0, Fraction, 0],
-        [Money(1, USD), 1, Fraction, 1],
+        [Money(0, USD), 0, Decimal, 0],
+        [Money(1, USD), 1, Decimal, 1],
         [Money(2, USD), 1.0, float, 2],
-        [Money("1.1", USD), Fraction("1.1"), Fraction, Fraction("1.21")],
+        [Money("1.1", USD), Decimal("1.1"), Decimal, Decimal("1.21")],
     ])
     def test_multiplication_with_various_types_returns_expected_result(
             self,
@@ -234,10 +234,10 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [Money(0, USD), 1, Fraction, 0],
-        [Money(1, USD), 2, Fraction, 0.5],
+        [Money(0, USD), 1, Decimal, 0],
+        [Money(1, USD), 2, Decimal, 0.5],
         [Money(2, USD), 1.0, float, 2],
-        [Money("1.1", USD), Fraction("1.2"), Fraction, 0.9166666666666666],
+        [Money("1.1", USD), Decimal("1.2"), Decimal, 0.9166666666666666],
     ])
     def test_division_with_various_types_returns_expected_result(
             self,

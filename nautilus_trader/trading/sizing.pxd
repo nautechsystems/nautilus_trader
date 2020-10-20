@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.fraction cimport Fraction
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -38,8 +37,8 @@ cdef class PositionSizer:
         int unit_batch_size=*,
     )
 
-    cdef Fraction _calculate_risk_ticks(self, Price entry, Price stop_loss)
-    cdef Fraction _calculate_riskable_money(
+    cdef Decimal _calculate_risk_ticks(self, Price entry, Price stop_loss)
+    cdef Decimal _calculate_riskable_money(
         self,
         Money equity,
         Decimal risk,

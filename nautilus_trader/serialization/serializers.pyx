@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
@@ -59,7 +60,6 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
