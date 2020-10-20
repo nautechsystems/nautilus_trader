@@ -48,8 +48,7 @@ cdef class BarBuilder:
         bar_spec : BarSpecification
             The bar specification for the builder.
         use_previous_close : bool
-            If the previous close price should set the
-            open price of a new bar.
+            If the previous close price should set the open price of a new bar.
 
         """
         self.bar_spec = bar_spec
@@ -64,6 +63,15 @@ cdef class BarBuilder:
         self._low = None
         self._close = None
         self._volume = Quantity()
+
+    def __str__(self) -> str:
+        return (f"BarBuilder("
+                f"bar_spec={self.bar_spec},"
+                f"{self._open},"
+                f"{self._high},"
+                f"{self._low},"
+                f"{self._close},"
+                f"{self._volume})")
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -174,13 +182,10 @@ cdef class BarBuilder:
         self._volume = Quantity()
         self.count = 0
 
-    def __str__(self) -> str:
-        return f"BarBuilder(bar_spec={self.bar_spec},{self._open},{self._high},{self._low},{self._close},{self._volume})"
-
 
 cdef class BarAggregator:
     """
-    Provides a means of aggregating specified bars and sending to the registered handler.
+    Provides a means of aggregating specified bars and sending to a registered handler.
     """
 
     def __init__(

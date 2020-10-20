@@ -164,6 +164,20 @@ cdef class Timer:
         self.stop_time = stop_time
         self.expired = False
 
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+    def __str__(self) -> str:
+        return (f"Timer("
+                f"name={self.name}, "
+                f"interval={self.interval}, "
+                f"start_time={self.start_time}, "
+                f"next_time={self.next_time}, "
+                f"stop_time={self.stop_time})")
+
+    def __repr__(self) -> str:
+        return f"<{self.__str__} object at {id(self)}>"
+
     cpdef TimeEvent pop_event(self, UUID event_id):
         """
         Returns a generated time event with the given identifier.
@@ -197,20 +211,6 @@ cdef class Timer:
     cpdef void cancel(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
-
-    def __hash__(self) -> int:
-        return hash(self.name)
-
-    def __str__(self) -> str:
-        return (f"Timer("
-                f"name={self.name}, "
-                f"interval={self.interval}, "
-                f"start_time={self.start_time}, "
-                f"next_time={self.next_time}, "
-                f"stop_time={self.stop_time})")
-
-    def __repr__(self) -> str:
-        return f"<{self.__str__} object at {id(self)}>"
 
 
 cdef class TestTimer(Timer):
