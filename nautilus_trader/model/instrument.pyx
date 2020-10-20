@@ -211,35 +211,9 @@ cdef class Instrument:
         self.timestamp = timestamp
 
     def __eq__(self, Instrument other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.symbol == other.symbol
 
     def __ne__(self, Instrument other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return not self == other
 
     def __hash__(self) -> int:

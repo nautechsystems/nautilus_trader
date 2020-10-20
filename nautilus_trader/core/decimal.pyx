@@ -35,7 +35,7 @@ cdef class Decimal:
 
         Parameters
         ----------
-        value : any
+        value : int, float, decimal.Decimal or Decimal
             The value of the decimal. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -62,23 +62,23 @@ cdef class Decimal:
                 raise TypeError("precision cannot be inferred from a float, "
                                 "please specify a precision when passing a float")
             elif isinstance(value, Decimal):
-                self._value = value.as_decimal()
+                self._value = value._value
             else:
                 self._value = PyDecimal(value)
 
             self.precision = precision_from_string(str(self._value))
 
-            if self.precision < 0:
-                raise RuntimeError(f"Invalid decimal precision, was {self.precision}")
+            # Post condition
+            Condition.not_negative_int(self.precision, "precision")
 
     @staticmethod
     cdef inline tuple _convert_values(object a, object b):
+        if isinstance(a, float) or isinstance(b, float):
+            return float(a), float(b)
         if isinstance(a, Decimal):
             a = a._value
         if isinstance(b, Decimal):
             b = b._value
-        if isinstance(a, float) or isinstance(b, float):
-            return float(a), float(b)
         return a, b
 
     def __eq__(self, other):
@@ -159,6 +159,13 @@ cdef class Decimal:
         else:
             return Decimal(a // b)
 
+    def __mod__(self, other):
+        a, b = Decimal._convert_values(self, other)
+        if isinstance(a, float):
+            return NotImplemented
+        else:
+            return Decimal(a % b)
+
     def __neg__(self):
         """Returns a copy with the sign switched.
 
@@ -172,13 +179,6 @@ cdef class Decimal:
         Rounds the number (if more than precision digits)
         """
         return Decimal(self._value.__pos__())
-
-    def __mod__(self, other):
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
-            return NotImplemented
-        else:
-            return Decimal(a % b)
 
     def __abs__(self):
         """abs(a)"""

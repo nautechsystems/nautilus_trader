@@ -60,99 +60,21 @@ cdef class TimeEvent(Event):
         self.name = name
 
     def __eq__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp == other.timestamp
 
     def __ne__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp != other.timestamp
 
     def __lt__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp < other.timestamp
 
     def __le__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp <= other.timestamp
 
     def __gt__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp > other.timestamp
 
     def __ge__(self, TimeEvent other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
@@ -205,99 +127,22 @@ cdef class TimeEventHandler:
         self.handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.event.timestamp == other.event.timestamp
 
     def __ne__(self, TimeEventHandler other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.event.timestamp != other.event.timestamp
 
     def __lt__(self, TimeEventHandler other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.event.timestamp < other.event.timestamp
 
     def __le__(self, TimeEventHandler other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.event.timestamp <= other.event.timestamp
 
     def __gt__(self, TimeEventHandler other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.event.timestamp > other.event.timestamp
 
     def __ge__(self, TimeEventHandler other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        Parameters
-        ----------
-        other : TimeEvent
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
+        return self.event.timestamp >= other.event.timestamp
 
 
 cdef class Timer:

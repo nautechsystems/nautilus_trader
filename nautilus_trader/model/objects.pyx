@@ -44,7 +44,7 @@ cdef class Quantity(Decimal):
 
         Parameters
         ----------
-        value : any
+        value : integer, float, string, decimal.Decimal or Decimal
             The value of the quantity. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -68,8 +68,7 @@ cdef class Quantity(Decimal):
         Condition.true(self._value >= 0, f"quantity positive, was {self.to_string()}")
 
     cpdef str to_string(self):
-        """
-        Return the formatted string representation of this object.
+        """Return the formatted string representation of this object.
 
         Returns
         -------
@@ -90,8 +89,7 @@ cdef class Quantity(Decimal):
 
 
 cdef class Price(Decimal):
-    """
-    Represents a price in a financial market.
+    """Represents a price in a financial market.
 
     The number of decimal places may vary. For certain asset classes prices may
     be negative values. For example, prices for options strategies can be
@@ -109,12 +107,11 @@ cdef class Price(Decimal):
     """
 
     def __init__(self, value="0", precision=None):
-        """
-        Initialize a new instance of the Price class.
+        """Initialize a new instance of the Price class.
 
         Parameters
         ----------
-        value : any
+        value : integer, float, string, decimal.Decimal or Decimal
             The value of the price. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -143,8 +140,7 @@ cdef class Price(Decimal):
 
 
 cdef class Money(Decimal):
-    """
-    Represents an amount of money including currency type.
+    """Represents an amount of money including currency type.
 
     Attributes
     ----------
@@ -154,12 +150,11 @@ cdef class Money(Decimal):
     """
 
     def __init__(self, value, Currency currency not None):
-        """
-        Initialize a new instance of the Money class.
+        """Initialize a new instance of the Money class.
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or Decimal.
+        value : integer, float, string, decimal.Decimal or Decimal
             The value of the money.
         currency : Currency
             The currency of the money.
@@ -172,108 +167,27 @@ cdef class Money(Decimal):
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : Money
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self._value == other._value and self.currency == other.currency
 
     def __ne__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : Money
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return not self == other
 
     def __lt__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given object.
-
-        Parameters
-        ----------
-        other : Money
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self._value < other._value and self.currency == other.currency
 
     def __le__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to (<=) the given object.
-
-        Parameters
-        ----------
-        other : Money
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self._value <= other._value and self.currency == other.currency
 
     def __gt__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the given object.
-
-        Parameters
-        ----------
-        other : Money
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self._value > other._value and self.currency == other.currency
 
     def __ge__(self, Money other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal to (>=) the given object.
-
-        Parameters
-        ----------
-        other : Money
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self._value >= other._value and self.currency == other.currency
 
     def __hash__(self) -> int:
-        """"
-        Return the hash code of this object.
+        """Return the hash code of this object.
 
-        Notes
-        -----
-        The hash is based on the ticks timestamp only.
+        x.__hash__() <==> hash(x)
 
         Returns
         -------
@@ -283,9 +197,9 @@ cdef class Money(Decimal):
         return hash(self.to_string())
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
+        """Return the string representation of this object.
+
+        The string value includes the objects location in memory.
 
         Returns
         -------
@@ -296,8 +210,7 @@ cdef class Money(Decimal):
 
     @property
     def amount(self) -> Decimal:
-        """
-        Return the amount of money as a decimal.
+        """Return the amount of money as a decimal.
 
         Returns
         -------
@@ -307,13 +220,11 @@ cdef class Money(Decimal):
         return Decimal(self._value)
 
     cpdef str to_string(self):
-        """
-        Return the string representation of this object.
+        """Return the string representation of this object.
 
         Returns
         -------
         str
 
         """
-        # TODO implement __format__ on Decimal
-        return f"{self.as_double():,.{self.currency.precision}f} {self.currency}"
+        return f"{self._value:,.{self.currency.precision}f} {self.currency}"

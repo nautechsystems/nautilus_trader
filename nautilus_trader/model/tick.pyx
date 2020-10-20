@@ -63,109 +63,25 @@ cdef class Tick:
         raise NotImplementedError("method must be implemented in the subclass")
 
     def __eq__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given
-        object.
-
-        Parameters
-        ----------
-        other : Tick
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp == other.timestamp
 
     def __ne__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the
-        given object.
-
-        Parameters
-        ----------
-        other : Tick
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return other.timestamp != other.timestamp
 
     def __lt__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is less than (<) the given
-        object.
-
-        Parameters
-        ----------
-        other : Tick
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp < other.timestamp
 
     def __le__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is less than or equal to
-        (<=) the given object.
-
-        Parameters
-        ----------
-        other : Tick
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp <= other.timestamp
 
     def __gt__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is greater than (>) the
-        given object.
-
-        Parameters
-        ----------
-        other : Tick
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp > other.timestamp
 
     def __ge__(self, Tick other) -> bool:
-        """
-        Return a value indicating whether this object is greater than or equal
-        to (>=) the given object.
-
-        Parameters
-        ----------
-        other : Tick
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
         Notes

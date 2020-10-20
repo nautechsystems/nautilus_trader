@@ -164,37 +164,11 @@ cdef class BarSpecification:
         return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
 
     def __eq__(self, BarSpecification other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.step == other.step \
             and self.aggregation == other.aggregation \
             and self.price_type == other.price_type
 
     def __ne__(self, BarSpecification other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return not self == other
 
     def __hash__(self) -> int:
@@ -360,35 +334,9 @@ cdef class BarType:
         return f"{self.symbol.to_string()}-{self.spec}"
 
     def __eq__(self, BarType other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.symbol == other.symbol and self.spec == other.spec
 
     def __ne__(self, BarType other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return not self == other
 
     def __hash__(self) -> int:
@@ -557,19 +505,6 @@ cdef class Bar:
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
 
     def __eq__(self, Bar other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : Bar
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.open == other.open \
             and self.high == other.high \
             and self.low == other.low \
@@ -578,23 +513,10 @@ cdef class Bar:
             and self.timestamp == other.timestamp
 
     def __ne__(self, Bar other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : Bar
-            The other object.
-
-        Returns
-        -------
-        bool
-
-        """
         return not self == other
 
     def __hash__(self) -> int:
-        """"
+        """
         Return the hash code of this object.
 
         Returns

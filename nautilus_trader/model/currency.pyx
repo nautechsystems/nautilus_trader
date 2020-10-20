@@ -125,39 +125,11 @@ cdef class Currency:
         self.currency_type = currency_type
 
     def __eq__(self, Currency other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given
-        object.
-
-        Parameters
-        ----------
-        other : Currency
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.code == other.code \
             and self.precision == other.precision \
             and self.currency_type == other.currency_type
 
     def __ne__(self, Currency other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the
-        given object.
-
-        Parameters
-        ----------
-        other : Currency
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return not self == other
 
     def __hash__(self) -> int:
