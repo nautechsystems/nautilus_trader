@@ -312,7 +312,7 @@ cdef class InstrumentLoader:
             settlement_currency=Currency.from_string_c(base_currency),
             price_precision=price_precision,
             size_precision=0,
-            tick_size=Decimal.from_float_to_decimal(1 / (10 ** price_precision), price_precision),
+            tick_size=Decimal(1 / (10 ** price_precision), price_precision),
             multiplier=Decimal("1"),
             leverage=Decimal("100"),
             lot_size=Quantity("1000"),

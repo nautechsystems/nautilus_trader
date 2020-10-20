@@ -46,11 +46,11 @@ class QuantityTests(unittest.TestCase):
         # Assert
         self.assertRaises(TypeError, Quantity, 1.1)
 
-    def test_from_float_with_negative_precision_argument_returns_zero_decimal(self):
+    def test_instantiate_with_negative_precision_argument_returns_zero_decimal(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Quantity.from_float, 1.11, -1)
+        self.assertRaises(ValueError, Quantity, 1.11, -1)
 
     @parameterized.expand([
         [0, Quantity()],
@@ -75,10 +75,10 @@ class QuantityTests(unittest.TestCase):
         [1.123, 3, Quantity("1.123")],
         [1.155, 2, Quantity("1.16")],
     ])
-    def test_from_float_with_various_valid_inputs_returns_expected_decimal(self, value, precision, expected):
+    def test_instantiate_with_various_valid_precisions_returns_expected_decimal(self, value, precision, expected):
         # Arrange
         # Act
-        quantity = Decimal.from_float(value, precision)
+        quantity = Quantity(value, precision)
 
         # Assert
         self.assertEqual(expected, quantity)
@@ -248,15 +248,15 @@ class QuantityTests(unittest.TestCase):
         # Assert
         self.assertEqual("0", str(Quantity("0")))
         self.assertEqual("1000", str(Quantity("1000")))
-        self.assertEqual("10.05", Quantity("10.05").to_string())
-        self.assertEqual("1K", Quantity(1000).to_string_formatted())
-        self.assertEqual("1,112", Quantity(1112).to_string_formatted())
-        self.assertEqual("1K", Quantity("1000").to_string_formatted())
-        self.assertEqual("120,100", Quantity("120100").to_string_formatted())
-        self.assertEqual("200K", Quantity("200000").to_string_formatted())
-        self.assertEqual("1M", Quantity("1000000").to_string_formatted())
-        self.assertEqual("1M", Quantity(1000000).to_string_formatted())
-        self.assertEqual("2.5M", Quantity("2500000").to_string_formatted())
-        self.assertEqual("1,111,111", Quantity("1111111").to_string_formatted())
-        self.assertEqual("2.523M", Quantity("2523000").to_string_formatted())
-        self.assertEqual("100M", Quantity("100000000").to_string_formatted())
+        self.assertEqual("10.05", str(Quantity("10.05")))
+        self.assertEqual("1K", Quantity(1000).to_string())
+        self.assertEqual("1,112", Quantity(1112).to_string())
+        self.assertEqual("1K", Quantity("1000").to_string())
+        self.assertEqual("120,100", Quantity("120100").to_string())
+        self.assertEqual("200K", Quantity("200000").to_string())
+        self.assertEqual("1M", Quantity("1000000").to_string())
+        self.assertEqual("1M", Quantity(1000000).to_string())
+        self.assertEqual("2.5M", Quantity("2500000").to_string())
+        self.assertEqual("1,111,111", Quantity("1111111").to_string())
+        self.assertEqual("2.523M", Quantity("2523000").to_string())
+        self.assertEqual("100M", Quantity("100000000").to_string())

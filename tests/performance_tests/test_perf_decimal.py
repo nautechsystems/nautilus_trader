@@ -24,7 +24,7 @@ _PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = decimal.Decimal("1.00000")
 _BUILTIN_DECIMAL2 = decimal.Decimal("1.00001")
 
-_DECIMAL1 = Decimal("1.00000")
+_DECIMAL1 = Decimal("1")
 _DECIMAL2 = Decimal("1.00001")
 
 
@@ -85,7 +85,7 @@ class DecimalTesting:
 
     @staticmethod
     def make_price_from_float():
-        Price.from_float(1.23456, 5)
+        Price(1.23456, 5)
 
 
 class DecimalPerformanceTests(unittest.TestCase):

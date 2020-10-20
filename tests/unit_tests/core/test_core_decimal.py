@@ -35,11 +35,11 @@ class DecimalTests(unittest.TestCase):
         # Assert
         self.assertRaises(TypeError, Decimal, 1.1)
 
-    def test_from_float_with_negative_precision_argument_returns_zero_decimal(self):
+    def test_instantiate_with_negative_precision_argument_returns_zero_decimal(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, Decimal.from_float, 1.11, -1)
+        self.assertRaises(ValueError, Decimal, 1.11, -1)
 
     @parameterized.expand([
         [0, Decimal()],
@@ -73,10 +73,10 @@ class DecimalTests(unittest.TestCase):
         [-1.123, 3, Decimal("-1.123")],
         [1.155, 2, Decimal("1.16")],
     ])
-    def test_from_float_with_various_valid_inputs_returns_expected_decimal(self, value, precision, expected):
+    def test_instantiate_with_various_precisions_returns_expected_decimal(self, value, precision, expected):
         # Arrange
         # Act
-        decimal_object = Decimal.from_float(value, precision)
+        decimal_object = Decimal(value, precision)
 
         # Assert
         self.assertEqual(expected, decimal_object)

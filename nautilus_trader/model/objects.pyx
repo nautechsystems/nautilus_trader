@@ -21,8 +21,7 @@ from nautilus_trader.model.currency cimport Currency
 
 
 cdef class Quantity(Decimal):
-    """
-    Represents a quantity with a non-negative value.
+    """Represents a quantity with a non-negative value.
 
     Capable of storing either a whole number (no decimal places) of “shares”
     (securities denominated in whole units) or a decimal value containing
@@ -40,111 +39,35 @@ cdef class Quantity(Decimal):
 
     """
 
-    def __init__(self, value=0):
-        """
-        Initialize a new instance of the Quantity class.
+    def __init__(self, value="0", precision=None):
+        """Initialize a new instance of the Quantity class.
 
         Parameters
         ----------
-        value : integer, string, decimal.Decimal or Decimal.
-            The value of the quantity.
+        value : any
+            The value of the quantity. If value is a float, then a precision must
+            be specified.
+        precision : int, optional
+            The precision for the quantity. If a precision is specified then the
+            value will be rounded to the precision. Else the precision will be
+            inferred from the given value.
 
         Raises
         ------
         TypeError
-            If value is a float (use the from_float method).
+            If value is a float and precision is not specified.
         ValueError
             If value is negative (< 0).
+        ValueError
+            If precision is negative (< 0).
 
         """
-        super().__init__(value)
+        super().__init__(value, precision)
 
         # Post Condition
-        Condition.true(self >= 0, f"quantity positive, was {self.to_string()}")
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
-
-    @staticmethod
-    def from_float(value: float, precision: int):
-        """
-        Return a quantity from the given value and precision.
-
-        Parameters
-        ----------
-        value : double
-            The value of the quantity.
-        precision : int, optional.
-            The decimal precision for the quantity.
-
-        Raises
-        ------
-        ValueError
-            If value is negative (< 0).
-        ValueError
-            If precision is negative (< 0).
-
-        """
-        Condition.type(precision, int, "precision")
-
-        return Quantity.from_float_c(value, int(precision))
-
-    @staticmethod
-    cdef inline Quantity from_float_c(double value, int precision):
-        """
-        Return a quantity from the given value and precision.
-
-        Parameters
-        ----------
-        value : double
-            The value of the quantity.
-        precision : int, optional.
-            The decimal precision for the quantity.
-
-        Raises
-        ------
-        ValueError
-            If value is negative (< 0).
-        ValueError
-            If precision is negative (< 0).
-
-        """
-        Condition.not_negative_int(precision, "precision")
-
-        return Quantity(format(value, f'.{precision}f'))
+        Condition.true(self._value >= 0, f"quantity positive, was {self.to_string()}")
 
     cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return str(self._value)
-
-    cpdef str to_string_formatted(self):
         """
         Return the formatted string representation of this object.
 
@@ -154,15 +77,15 @@ cdef class Quantity(Decimal):
 
         """
         if self.precision > 0:
-            return str(self)
+            return str(self._value)
 
         if self < 1000 or self % 1000 != 0:
-            return f"{self.as_double():,.0f}"
+            return f"{self._value:,.0f}"
 
         if self < 1000000:
             return f"{round(self / 1000)}K"
 
-        cdef str millions = f"{self.as_double() / 1000000:.3f}".rstrip("0").rstrip(".")
+        cdef str millions = f"{self._value / 1000000:.3f}".rstrip("0").rstrip(".")
         return f"{millions}M"
 
 
@@ -185,93 +108,27 @@ cdef class Price(Decimal):
 
     """
 
-    def __init__(self, value=0):
+    def __init__(self, value="0", precision=None):
         """
         Initialize a new instance of the Price class.
 
         Parameters
         ----------
-        value : integer, string, decimal.Decimal or Decimal.
-            The value of the price.
+        value : any
+            The value of the price. If value is a float, then a precision must
+            be specified.
+        precision : int, optional
+            The precision for the price. If a precision is specified then the
+            value will be rounded to the precision. Else the precision will be
+            inferred from the given value.
 
         Raises
         ------
-        TypeError
-            If value is a float (use the from_float method).
-
-        """
-        super().__init__(value)
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
-
-    @staticmethod
-    def from_float(value: float, precision: int) -> Price:
-        """
-        Return a price from the given value and precision.
-
-        Parameters
-        ----------
-        value : double
-            The value of the price.
-        precision : int.
-            The decimal precision of the price.
-
-        Raises
-        ------
-        ValueError
-            If value is negative (< 0).
         ValueError
             If precision is negative (< 0).
 
         """
-        Condition.type(precision, int, "precision")
-
-        return Price.from_float_c(value, precision)
-
-    @staticmethod
-    cdef inline Price from_float_c(double value, int precision):
-        """
-        Return a price from the given value and precision.
-
-        Parameters
-        ----------
-        value : double
-            The value of the price.
-        precision : int.
-            The decimal precision of the price.
-
-        Raises
-        ------
-        ValueError
-            If value is negative (< 0).
-        ValueError
-            If precision is negative (< 0).
-
-        """
-        Condition.not_negative_int(precision, "precision")
-
-        return Price(format(value, f'.{precision}f'))
+        super().__init__(value, precision)
 
     cpdef str to_string(self):
         """
@@ -308,11 +165,9 @@ cdef class Money(Decimal):
             The currency of the money.
 
         """
-        Condition.not_none(value, "value")
-
-        if not isinstance(value, float):
-            value = float(value)
-        super().__init__(f"{value:.{currency.precision}f}")
+        if value is None:
+            value = "0"
+        super().__init__(value, currency.precision)
 
         self.currency = currency
 
@@ -425,18 +280,7 @@ cdef class Money(Decimal):
         int
 
         """
-        return hash(self.to_string_formatted())
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
+        return hash(self.to_string())
 
     def __repr__(self) -> str:
         """
@@ -450,20 +294,21 @@ cdef class Money(Decimal):
         """
         return f"<{self.__class__.__name__}('{self._value}', {self.currency}) object at {id(self)}>"
 
-    cpdef str to_string(self):
+    @property
+    def amount(self) -> Decimal:
         """
-        Return the string representation of this object.
+        Return the amount of money as a decimal.
 
         Returns
         -------
-        str
+        Decimal
 
         """
-        return str(self._value)
+        return Decimal(self._value)
 
-    cpdef str to_string_formatted(self):
+    cpdef str to_string(self):
         """
-        Return the formatted string representation of this object.
+        Return the string representation of this object.
 
         Returns
         -------

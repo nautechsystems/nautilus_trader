@@ -26,12 +26,6 @@ from nautilus_trader.model.objects import Money
 
 class MoneyTests(unittest.TestCase):
 
-    def test_instantiate_with_none_value_raises_type_error(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(TypeError, Money, None, USD)
-
     def test_instantiate_with_none_currency_raises_type_error(self):
         # Arrange
         # Act
@@ -269,8 +263,8 @@ class MoneyTests(unittest.TestCase):
         result2 = Money(5005.556666, USD)
 
         # Assert
-        self.assertEqual("1,000.33 USD", result1.to_string_formatted())
-        self.assertEqual("5,005.56 USD", result2.to_string_formatted())
+        self.assertEqual("1,000.33 USD", result1.to_string())
+        self.assertEqual("5,005.56 USD", result2.to_string())
 
     def test_str(self):
         # Arrange
@@ -283,7 +277,7 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual("0.00", str(money0))
         self.assertEqual("1.00", str(money1))
         self.assertEqual("1000000.00", str(money2))
-        self.assertEqual("1,000,000.00 USD", money2.to_string_formatted())
+        self.assertEqual("1,000,000.00 USD", money2.to_string())
 
     def test_repr(self):
         # Arrange
