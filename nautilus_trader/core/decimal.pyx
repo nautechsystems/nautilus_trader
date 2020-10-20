@@ -74,16 +74,6 @@ cdef class Decimal:
             # Post-condition
             Condition.not_negative_int(self.precision, "precision")
 
-    @staticmethod
-    cdef inline tuple _convert_values(object a, object b):
-        if isinstance(a, float) or isinstance(b, float):
-            return float(a), float(b)
-        if isinstance(a, Decimal):
-            a = a._value
-        if isinstance(b, Decimal):
-            b = b._value
-        return a, b
-
     def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
         if isinstance(b, float):
@@ -214,6 +204,16 @@ cdef class Decimal:
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self}')"
+
+    @staticmethod
+    cdef inline tuple _convert_values(object a, object b):
+        if isinstance(a, float) or isinstance(b, float):
+            return float(a), float(b)
+        if isinstance(a, Decimal):
+            a = a._value
+        if isinstance(b, Decimal):
+            b = b._value
+        return a, b
 
     cpdef object as_decimal(self):
         """Return this object as a built-in `decimal.Decimal`.
