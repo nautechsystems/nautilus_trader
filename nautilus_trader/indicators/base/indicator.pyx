@@ -51,26 +51,9 @@ cdef class Indicator:
         raise NotImplemented("method must be implemented in the subclass")
 
     def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return f"{self.name}({self.params})"
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
     cdef void _set_has_inputs(self, bint setting) except *:

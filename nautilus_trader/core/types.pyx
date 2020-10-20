@@ -59,37 +59,12 @@ cdef class ValidString:
         return self.value >= other.value
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.value)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return self.value
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"{str(self.__class__.__name__)}('{str(self.value)}')"
 
 
@@ -124,14 +99,6 @@ cdef class Identifier(ValidString):
         return not self == other
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         # This method seems redundant as it exists on the base class, however
         # TypeError: unhashable type gets thrown if not present.
         return hash(self.value)

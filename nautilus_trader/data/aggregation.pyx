@@ -175,27 +175,7 @@ cdef class BarBuilder:
         self.count = 0
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return f"BarBuilder(bar_spec={self.bar_spec},{self._open},{self._high},{self._low},{self._close},{self._volume})"
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class BarAggregator:
@@ -360,7 +340,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._clock = clock
         self.interval = self._get_interval()
         self._set_build_timer()
-        self.next_close = self._clock.get_timer(self.bar_type.to_string()).next_time
+        self.next_close = self._clock.get_timer(str(self.bar_type)).next_time
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -418,7 +398,7 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         Stop the bar aggregator.
         """
-        self._clock.cancel_timer(self.bar_type.to_string())
+        self._clock.cancel_timer(str(self.bar_type))
 
     cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.utc_now()
@@ -475,7 +455,7 @@ cdef class TimeBarAggregator(BarAggregator):
                              f"was {bar_aggregation_to_string(self.bar_type.spec.aggregation)}")
 
     cpdef void _set_build_timer(self) except *:
-        cdef str timer_name = self.bar_type.to_string()
+        cdef str timer_name = str(self.bar_type)
 
         self._clock.set_timer(
             name=timer_name,
@@ -488,7 +468,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._log.info(f"Started timer {timer_name}.")
 
     cpdef void _build_bar(self, datetime at_time) except *:
-        cdef Timer timer = self._clock.get_timer(self.bar_type.to_string())
+        cdef Timer timer = self._clock.get_timer(str(self.bar_type))
         cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
         self.next_close = timer.next_time

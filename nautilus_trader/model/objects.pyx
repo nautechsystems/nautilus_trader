@@ -174,27 +174,9 @@ cdef class Money(Decimal):
         return self._value >= other._value and self.currency == other.currency
 
     def __hash__(self) -> int:
-        """Return the hash code of this object.
-
-        x.__hash__() <==> hash(x)
-
-        Returns
-        -------
-        int
-
-        """
         return hash((self._value, self.currency))
 
     def __repr__(self) -> str:
-        """Return the string representation of this object.
-
-        The string value includes the objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"{self.__class__.__name__}('{self._value}', {self.currency})"
 
     @property
@@ -209,7 +191,7 @@ cdef class Money(Decimal):
         return Decimal(self._value)
 
     cpdef str to_string(self):
-        """Return the string representation of this object.
+        """Return the formatted string representation of this object.
 
         Returns
         -------
