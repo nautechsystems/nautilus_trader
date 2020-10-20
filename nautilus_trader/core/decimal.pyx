@@ -68,7 +68,7 @@ cdef class Decimal:
 
             self.precision = precision_from_string(str(self._value))
 
-            # Post condition
+            # Post-condition
             Condition.not_negative_int(self.precision, "precision")
 
     @staticmethod
@@ -198,11 +198,23 @@ cdef class Decimal:
         return Decimal(round(self._value, ndigits))
 
     def __float__(self):
-        """Return the objects value as a float."""
+        """Return the objects value as a float.
+
+        Returns
+        -------
+        float
+
+        """
         return float(self._value)
 
     def __int__(self):
-        """Converts self to an int, truncating if necessary."""
+        """Converts self to an int, truncating if necessary.
+
+        Returns
+        -------
+        int
+
+        """
         return int(self._value)
 
     def __hash__(self) -> int:
