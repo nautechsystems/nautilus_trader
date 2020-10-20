@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cpdef _gcd(a, b)
 
-cdef class Fraction:
-    cdef _numerator
-    cdef _denominator
-    cdef Py_hash_t _hash
+cdef class Decimal:
+    cdef readonly object _value
+    cdef readonly int precision
 
-    cdef Fraction limit_denominator(self, max_denominator=*)
-    cdef bint _eq(a, b)
-    cdef bint _richcmp(self, other, int op)
-    cdef tuple as_integer_ratio(self)
+    @staticmethod
+    cdef inline tuple _convert_values(object a, object b)
+
+    cpdef object as_decimal(self)
+    cpdef double as_double(self) except *

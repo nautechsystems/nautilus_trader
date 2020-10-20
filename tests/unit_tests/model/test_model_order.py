@@ -19,6 +19,7 @@ from parameterized import parameterized
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -37,7 +38,6 @@ from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Decimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

@@ -45,38 +45,11 @@ cdef class Account:
         self._position_margin = Money(0, self.currency)
 
     def __eq__(self, Account other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : Account
-            The other account to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         Condition.not_none(other, "other")
 
         return self.id == other.id
 
     def __ne__(self, Account other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the
-        given object.
-
-        Parameters
-        ----------
-        other : Account
-            The other account to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         Condition.not_none(other, "other")
 
         return self.id != other.id

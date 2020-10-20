@@ -16,11 +16,11 @@
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Decimal
 
 
 class BacktestLoadersTests(unittest.TestCase):

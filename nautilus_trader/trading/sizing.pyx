@@ -14,9 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fraction cimport Fraction
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -74,19 +73,19 @@ cdef class PositionSizer:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef Fraction _calculate_risk_ticks(self, Price entry, Price stop_loss):
+    cdef Decimal _calculate_risk_ticks(self, Price entry, Price stop_loss):
         return abs(entry - stop_loss) / self.instrument.tick_size
 
-    cdef Fraction _calculate_riskable_money(
+    cdef Decimal _calculate_riskable_money(
             self,
             Money equity,
             Decimal risk,
             Decimal commission_rate,
     ):
-        if int(equity) <= 0:
-            return Fraction()
-        cdef Fraction risk_money = equity * risk
-        cdef Fraction commission = risk_money * commission_rate * 2  # (round turn)
+        if equity.amount <= 0:
+            return Decimal()
+        cdef Decimal risk_money = equity * risk
+        cdef Decimal commission = risk_money * commission_rate * 2  # (round turn)
 
         return risk_money - commission
 
@@ -178,8 +177,8 @@ cdef class FixedRiskSizer(PositionSizer):
         if exchange_rate <= 0.0:
             return Quantity(0, precision=self.instrument.size_precision)
 
-        cdef Fraction risk_points = self._calculate_risk_ticks(entry, stop_loss)
-        cdef Fraction risk_money = self._calculate_riskable_money(equity, risk, commission_rate)
+        cdef Decimal risk_points = self._calculate_risk_ticks(entry, stop_loss)
+        cdef Decimal risk_money = self._calculate_riskable_money(equity, risk, commission_rate)
 
         if risk_points <= 0:
             # Divide by zero protection
@@ -203,4 +202,4 @@ cdef class FixedRiskSizer(PositionSizer):
         # Limit size on max trade size
         cdef double final_size = min(position_size_batched, self.instrument.max_quantity.as_double())
 
-        return Quantity.from_float_c(final_size, precision=self.instrument.size_precision)
+        return Quantity(final_size, precision=self.instrument.size_precision)

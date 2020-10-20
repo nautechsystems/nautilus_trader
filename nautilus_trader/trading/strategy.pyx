@@ -123,35 +123,9 @@ cdef class TradingStrategy:
         return component_state_to_string(self._fsm.state)
 
     def __eq__(self, TradingStrategy other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id == other.id
 
     def __ne__(self, TradingStrategy other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id != other.id
 
     def __hash__(self) -> int:

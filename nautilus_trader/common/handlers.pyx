@@ -42,35 +42,9 @@ cdef class Handler:
         self.handle = handler
 
     def __eq__(self, Handler other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return PyObject_Repr(self.handle) == PyObject_Repr(other.handle)
 
     def __ne__(self, Handler other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return PyObject_Repr(self.handle) != PyObject_Repr(other.handle)
 
     def __hash__(self) -> int:

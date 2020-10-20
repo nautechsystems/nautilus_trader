@@ -16,7 +16,7 @@
 import decimal
 import unittest
 
-from nautilus_trader.model.objects import Decimal
+from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.objects import Price
 from tests.test_kit.performance import PerformanceHarness
 
@@ -24,7 +24,7 @@ _PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = decimal.Decimal("1.00000")
 _BUILTIN_DECIMAL2 = decimal.Decimal("1.00001")
 
-_DECIMAL1 = Decimal("1.00000")
+_DECIMAL1 = Decimal("1")
 _DECIMAL2 = Decimal("1.00001")
 
 
@@ -85,7 +85,7 @@ class DecimalTesting:
 
     @staticmethod
     def make_price_from_float():
-        Price.from_float(1.23456, 5)
+        Price(1.23456, 5)
 
 
 class DecimalPerformanceTests(unittest.TestCase):
@@ -97,8 +97,8 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     def test_decimal_size(self):
         result = PerformanceHarness.object_size(_DECIMAL1)
-        # Object size test: <class 'nautilus_trader.model.objects.Decimal'> is 116 bytes.
-        self.assertTrue(result <= 116)
+        # Object size test: <class 'nautilus_trader.model.objects.Decimal'> is 176 bytes.
+        self.assertTrue(result <= 176)
 
     def test_make_builtin_decimal(self):
         result = PerformanceHarness.profile_function(DecimalTesting.make_builtin_decimal, 3, 100000)
@@ -107,12 +107,12 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     def test_make_decimal(self):
         result = PerformanceHarness.profile_function(DecimalTesting.make_decimal, 3, 100000)
-        # ~59ms (59761μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~49ms (49456μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 1.5)
 
     def test_make_price(self):
         result = PerformanceHarness.profile_function(DecimalTesting.make_price, 3, 100000)
-        # ~124ms (124959μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~67ms (67527μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 2.0)
 
     def test_float_comparisons(self):
@@ -122,7 +122,7 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     def test_decimal_comparisons(self):
         result = PerformanceHarness.profile_function(DecimalTesting.decimal_comparisons, 3, 100000)
-        # ~61ms (613183μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        # ~32ms (32570μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result <= 1.5)
 
     def test_builtin_decimal_comparisons(self):
@@ -142,10 +142,10 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     def test_decimal_arithmetic(self):
         result = PerformanceHarness.profile_function(DecimalTesting.decimal_arithmetic, 3, 100000)
-        # ~138ms (1872823μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        # ~207ms (207413μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 2.0)
 
     def test_decimal_arithmetic_with_floats(self):
         result = PerformanceHarness.profile_function(DecimalTesting.decimal_arithmetic_with_floats, 3, 100000)
-        # ~138ms (1872823μs) minimum of 3 runs @ 1,000,000 iterations each run.
+        # ~74ms (74946μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 2.0)

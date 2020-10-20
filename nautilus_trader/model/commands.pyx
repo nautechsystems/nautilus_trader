@@ -228,7 +228,7 @@ cdef class ModifyOrder(Command):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
-                f"quantity={self.quantity.to_string_formatted()}, "
+                f"quantity={self.quantity.to_string()}, "
                 f"price={self.price})")
 
 
@@ -325,5 +325,4 @@ cdef class KillSwitch(Command):
         str
 
         """
-        return (f"{self.__class__.__name__}("
-                f"trader_id={self.trader_id.value})")
+        return f"{self.__class__.__name__}(trader_id={self.trader_id.value})"

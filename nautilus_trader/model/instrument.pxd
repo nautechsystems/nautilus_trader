@@ -15,14 +15,13 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.fraction cimport Fraction
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -79,7 +78,7 @@ cdef class Instrument:
         self,
         PositionSide side,
         Quantity quantity,
-        Fraction open_price,
+        Decimal open_price,
         QuoteTick last,
     )
 
@@ -87,17 +86,16 @@ cdef class Instrument:
         self,
         PositionSide side,
         Quantity quantity,
-        Fraction avg_open,
-        Fraction avg_close,
+        Decimal avg_open,
+        Decimal avg_close,
     )
 
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        Fraction avg_price,
+        Decimal avg_price,
         LiquiditySide liquidity_side,
     )
 
-    cdef inline Fraction _calculate_notional(self, Quantity quantity, Fraction close_price)
-    cdef inline Fraction _invert_if_inverse(self, Fraction notional, Fraction close_price)
+    cdef inline Decimal _calculate_notional(self, Quantity quantity, Decimal close_price)
     cdef inline Price _get_close_price(self, PositionSide side, QuoteTick last)

@@ -94,9 +94,9 @@ cdef class AccountState(Event):
         """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balance={self.balance.to_string_formatted()}, "
-                f"margin_balance={self.margin_balance.to_string_formatted()}, "
-                f"margin_avail={self.margin_available.to_string_formatted()})")
+                f"balance={self.balance.to_string()}, "
+                f"margin_balance={self.margin_balance.to_string()}, "
+                f"margin_avail={self.margin_available.to_string()})")
 
     def __repr__(self) -> str:
         """
@@ -629,7 +629,7 @@ cdef class OrderWorking(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"{order_side_to_string(self.order_side)} {self.quantity.to_string_formatted()} "
+                f"{order_side_to_string(self.order_side)} {self.quantity.to_string()} "
                 f"{self.symbol} {order_type_to_string(self.order_type)} @ "
                 f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time})")
 
@@ -834,7 +834,7 @@ cdef class OrderModified(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"qty={self.modified_quantity.to_string_formatted()}, "
+                f"qty={self.modified_quantity.to_string()}, "
                 f"price={self.modified_price})")
 
 
@@ -1064,10 +1064,10 @@ cdef class OrderFilled(OrderEvent):
                 f"symbol={self.symbol}, "
                 f"side={order_side_to_string(self.order_side)}"
                 f"-{liquidity_side_to_string(self.liquidity_side)}, "
-                f"filled_qty={self.filled_qty.to_string_formatted()}, "
-                f"leaves_qty={self.leaves_qty.to_string_formatted()}, "
+                f"filled_qty={self.filled_qty.to_string()}, "
+                f"leaves_qty={self.leaves_qty.to_string()}, "
                 f"avg_price={self.avg_price}, "
-                f"commission={self.commission.to_string_formatted()})")
+                f"commission={self.commission.to_string()})")
 
 
 cdef class PositionEvent(Event):
@@ -1223,7 +1223,7 @@ cdef class PositionModified(PositionEvent):
                 f"avg_open={self.position.avg_open_price}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string_formatted()}, "
+                f"realized_pnl={self.position.realized_pnl.to_string()}, "
                 f"{self.position.status_string()})")
 
 
@@ -1287,4 +1287,4 @@ cdef class PositionClosed(PositionEvent):
                 f"avg_close={self.position.avg_close_price}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string_formatted()})")
+                f"realized_pnl={self.position.realized_pnl.to_string()})")

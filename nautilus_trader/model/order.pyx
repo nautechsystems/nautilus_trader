@@ -23,6 +23,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -50,7 +51,6 @@ from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -137,37 +137,9 @@ cdef class Order:
         self._events.append(event)
 
     def __eq__(self, Order other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given
-        object.
-
-        Parameters
-        ----------
-        other : Order
-            The other order to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.cl_ord_id == other.cl_ord_id
 
     def __ne__(self, Order other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the
-        given object.
-
-        Parameters
-        ----------
-        other : Order
-            The other order to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.cl_ord_id != other.cl_ord_id
 
     def __hash__(self) -> int:
@@ -620,7 +592,7 @@ cdef class PassiveOrder(Order):
 
         """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
                 f"{order_type_to_string(self.type)} @ {self.price} "
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
@@ -644,9 +616,9 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal.from_float(self.avg_price - self.price, self.avg_price.precision)
+            self.slippage = Decimal(self.avg_price - self.price, self.avg_price.precision)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal.from_float(self.price - self.avg_price, self.avg_price.precision)
+            self.slippage = Decimal(self.price - self.avg_price, self.avg_price.precision)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -762,7 +734,7 @@ cdef class MarketOrder(Order):
         str
 
         """
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string_formatted()} {self.symbol} "
+        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
                 f"{order_type_to_string(self.type)} "
                 f"{time_in_force_to_string(self.time_in_force)}")
 
@@ -1056,35 +1028,9 @@ cdef class BracketOrder:
         self.timestamp = entry.timestamp
 
     def __eq__(self, BracketOrder other) -> bool:
-        """
-        Return a value indicating whether this object is equal to (==) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id == other.id
 
     def __ne__(self, BracketOrder other) -> bool:
-        """
-        Return a value indicating whether this object is not equal to (!=) the given object.
-
-        Parameters
-        ----------
-        other : object
-            The other object to equate.
-
-        Returns
-        -------
-        bool
-
-        """
         return self.id != other.id
 
     def __hash__(self) -> int:
