@@ -1,0 +1,163 @@
+name: test-publish
+
+on:
+  push:
+    branches: [develop, master]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        python-version: [ 3.6, 3.7, 3.8 ]
+    name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # Python setup
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Setup Pip caching
+      - name: Get Pip cache dir
+        id: pip-cache
+        run: echo "::set-output name=dir::$(pip cache dir)"
+
+      - name: Pip cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.pip-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pip
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox --use-feature=2020-resolver
+
+      # Setup Poetry caching
+      - name: Get Poetry cache dir
+        id: poetry-cache
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+
+      - name: Poetry/Nox cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ steps.poetry-cache.outputs.dir }}
+            .nox
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-
+
+      # Run tests
+      - name: Run general test suite
+        run: nox -s tests --non-interactive
+
+      - name: Install Redis (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install redis-server
+      - name: Install Redis (macOS)
+        if: runner.os == 'macOS'
+        run: brew install redis
+      - name: Run integration test suite (Linux/macOS)
+        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+        run: |
+          redis-server --daemonize yes
+          nox -s integration_tests --non-interactive
+          redis-cli shutdown
+
+  tag:
+    needs: [test]
+    runs-on: ubuntu-latest
+    name: Commit tagging
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: salsify/action-detect-and-tag-new-version@v2
+        with:
+          create-tag: ${{ github.ref == 'refs/heads/master' }} # only create new tag on master
+          version-command: poetry version
+
+  publish:
+    if: github.ref == 'refs/heads/master'
+    needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        python-version: [ 3.6, 3.7, 3.8 ]
+    name: publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # Python setup
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Setup Pip caching
+      - name: Get Pip cache dir
+        id: pip-cache
+        run: echo "::set-output name=dir::$(pip cache dir)"
+
+      - name: Pip cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.pip-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pip
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox --use-feature=2020-resolver
+
+      # Setup Poetry caching
+      - name: Get Poetry cache dir
+        id: poetry-cache
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+
+      - name: Poetry/Nox cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ steps.poetry-cache.outputs.dir }}
+            .nox
+            .pytest_cache
+            build
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-
+
+      # Install/build
+      - name: Install/build
+        run: |
+          poetry install
+          poetry build
+
+      # Tag the commit with the library version (if master)
+      - name: Create git tag
+        uses: salsify/action-detect-and-tag-new-version@v2
+        if: github.ref == 'refs/heads/master'
+        with:
+          version-command: poetry version
+
+      # Publish
+      - name: Publish to test PyPi (if on develop)
+        if: github.ref == 'refs/heads/develop'
+        env:
+          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          poetry config repositories.test-pypi https://test.pypi.org/legacy/
+          poetry publish -r test-pypi --build --no-interaction
+
+      - name: Publish to production PyPi (if on master)
+        if: github.ref == 'refs/heads/master'
+        env:
+          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: poetry publish --build --no-interaction

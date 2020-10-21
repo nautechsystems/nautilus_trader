@@ -28,9 +28,6 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 # Notes for strategies written in Cython
 # --------------------------------------
-# This is example boilerplate for a Cython strategy,
-# it will not be compiled to C as it's not in a path to cythonize in setup.py.
-
 # except * in void methods allow C and Python exceptions to bubble up (otherwise they are ignored)
 
 cdef class EMACross(TradingStrategy):
