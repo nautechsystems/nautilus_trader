@@ -80,6 +80,7 @@ class DecimalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, decimal_object)
+        self.assertEqual(precision, decimal_object.precision())
 
     @parameterized.expand([
         ["0", 0],

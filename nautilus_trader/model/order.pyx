@@ -591,9 +591,9 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.avg_price - self.price, self.avg_price.precision)
+            self.slippage = Decimal(self.avg_price - self.price)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price - self.avg_price, self.avg_price.precision)
+            self.slippage = Decimal(self.price - self.avg_price)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
