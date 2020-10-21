@@ -198,4 +198,4 @@ cdef class Money(Decimal):
         str
 
         """
-        return f"{self._value:,.{self.currency.precision}f} {self.currency}"
+        return f"{self._value:,} {self.currency}"
