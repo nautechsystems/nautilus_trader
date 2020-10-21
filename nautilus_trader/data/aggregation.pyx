@@ -64,8 +64,8 @@ cdef class BarBuilder:
         self._close = None
         self._volume = Quantity()
 
-    def __str__(self) -> str:
-        return (f"BarBuilder("
+    def __repr__(self) -> str:
+        return (f"{self.__class__.__name__}("
                 f"bar_spec={self.bar_spec},"
                 f"{self._open},"
                 f"{self._high},"

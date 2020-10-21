@@ -143,20 +143,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy3 = TradingStrategy(order_id_tag="AUD/USD-002")
 
         # Act
-        result1 = strategy1 == strategy1
-        result2 = strategy1 == strategy2
-        result3 = strategy2 == strategy3
-        result4 = strategy1 != strategy1
-        result5 = strategy1 != strategy2
-        result6 = strategy2 != strategy3
-
         # Assert
-        self.assertTrue(result1)
-        self.assertFalse(result2)
-        self.assertFalse(result3)
-        self.assertFalse(result4)
-        self.assertTrue(result5)
-        self.assertTrue(result6)
+        self.assertTrue(strategy1 == strategy1)
+        self.assertFalse(strategy1 == strategy2)
+        self.assertFalse(strategy2 == strategy3)
+        self.assertFalse(strategy1 != strategy1)
+        self.assertTrue(strategy1 != strategy2)
+        self.assertTrue(strategy2 != strategy3)
 
     def test_strategy_is_hashable(self):
         # Arrange
@@ -172,13 +165,9 @@ class TradingStrategyTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="GBP/USD-MM")
 
         # Act
-        result1 = str(strategy)
-        result2 = repr(strategy)
-
         # Assert
-        self.assertEqual("TradingStrategy(TradingStrategy-GBP/USD-MM)", result1)
-        self.assertTrue(result2.startswith("<TradingStrategy(TradingStrategy-GBP/USD-MM) object at"))
-        self.assertTrue(result2.endswith(">"))
+        self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", str(strategy))
+        self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", repr(strategy))
 
     def test_get_strategy_id(self):
         # Arrange

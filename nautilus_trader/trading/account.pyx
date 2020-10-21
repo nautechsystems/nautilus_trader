@@ -57,11 +57,8 @@ cdef class Account:
     def __hash__(self) -> int:
         return hash(self.id.value)
 
-    def __str__(self) -> str:
-        return f"Account({self.id.value})"
-
     def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.__class__.__name__}(id={self.id.value})"
 
     cpdef void register_portfolio(self, PortfolioFacade portfolio):
         """

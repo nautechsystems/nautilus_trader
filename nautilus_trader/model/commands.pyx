@@ -80,7 +80,7 @@ cdef class SubmitOrder(Command):
         self.position_id = position_id
         self.order = order
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         cdef str position_id_str = "NULL" if self.position_id.is_null() else self.position_id.value
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
@@ -141,7 +141,7 @@ cdef class SubmitBracketOrder(Command):
         self.strategy_id = strategy_id
         self.bracket_order = bracket_order
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
@@ -198,7 +198,7 @@ cdef class ModifyOrder(Command):
         self.quantity = quantity
         self.price = price
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
@@ -248,7 +248,7 @@ cdef class CancelOrder(Command):
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
