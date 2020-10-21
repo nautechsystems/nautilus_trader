@@ -16,6 +16,7 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -31,12 +32,20 @@ from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
 cdef class PortfolioFacade:
+
+# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
+
     cpdef Account account(self, Venue venue)
     cpdef Money order_margin(self, Venue venue)
     cpdef Money position_margin(self, Venue venue)
     cpdef Money unrealized_pnl_for_venue(self, Venue venue)
     cpdef Money unrealized_pnl_for_symbol(self, Symbol symbol)
     cpdef Money open_value(self, Venue venue)
+    cpdef Decimal net_position(self, Symbol symbol)
+    cpdef bint is_net_long(self, Symbol symbol) except *
+    cpdef bint is_net_short(self, Symbol symbol) except *
+    cpdef bint is_flat(self, Symbol symbol) except *
+    cpdef bint is_completely_flat(self) except *
 
 
 cdef class Portfolio(PortfolioFacade):
@@ -51,9 +60,12 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
+    cdef dict _net_positions
     cdef dict _unrealized_pnls_symbol
     cdef dict _unrealized_pnls_venue
     cdef dict _xrate_symbols
+
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void register_account(self, Account account) except *
     cpdef void update_instrument(self, Instrument instrument) except *
@@ -64,6 +76,8 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
+# -- INTERNAL --------------------------------------------------------------------------------------
+
     cdef inline tuple _build_quote_table(self, Venue venue)
     cdef inline set _symbols_open_for_venue(self, Venue venue)
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *
@@ -71,6 +85,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *
     cdef inline void _handle_position_closed(self, PositionClosed event) except *
+    cdef inline void _update_net_position(self, Symbol symbol, set positions_open)
     cdef inline void _update_order_margin(self, Venue venue)
     cdef inline void _update_position_margin(self, Venue venue)
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol)

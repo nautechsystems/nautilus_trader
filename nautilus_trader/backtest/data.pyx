@@ -223,7 +223,6 @@ cdef class BacktestDataClient(DataClient):
         for instrument in self._data.instruments.values():
             self._engine.process(instrument)
 
-
         # Prepare data
         cdef list tick_frames = []
         self.execution_resolutions = []
