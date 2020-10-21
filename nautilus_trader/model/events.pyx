@@ -84,14 +84,6 @@ cdef class AccountState(Event):
         self.margin_available = margin_available
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
                 f"balance={self.balance.to_string()}, "
@@ -99,15 +91,6 @@ cdef class AccountState(Event):
                 f"margin_avail={self.margin_available.to_string()})")
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
 
@@ -140,26 +123,9 @@ cdef class OrderEvent(Event):
         self.cl_ord_id = cl_ord_id
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return f"{self.__class__.__name__}(cl_ord_id={self.cl_ord_id})"
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
 
@@ -279,14 +245,6 @@ cdef class OrderSubmitted(OrderEvent):
         self.is_completion_trigger = False
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id})")
@@ -336,14 +294,6 @@ cdef class OrderInvalid(OrderEvent):
         self.is_completion_trigger = True
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason})")
@@ -392,14 +342,6 @@ cdef class OrderDenied(OrderEvent):
         self.is_completion_trigger = True
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason})")
@@ -456,14 +398,6 @@ cdef class OrderRejected(OrderEvent):
         self.is_completion_trigger = True
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -515,14 +449,6 @@ cdef class OrderAccepted(OrderEvent):
         self.is_completion_trigger = False
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -616,14 +542,6 @@ cdef class OrderWorking(OrderEvent):
         self.is_completion_trigger = False
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -693,14 +611,6 @@ cdef class OrderCancelReject(OrderEvent):
         self.is_completion_trigger = False
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -754,14 +664,6 @@ cdef class OrderCancelled(OrderEvent):
         self.is_completion_trigger = True
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -822,14 +724,6 @@ cdef class OrderModified(OrderEvent):
         self.is_completion_trigger = False
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
@@ -883,14 +777,6 @@ cdef class OrderExpired(OrderEvent):
         self.is_completion_trigger = True
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -1047,14 +933,6 @@ cdef class OrderFilled(OrderEvent):
         )
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -1101,18 +979,6 @@ cdef class PositionEvent(Event):
         self.position = position
         self.order_fill = order_fill
 
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self)} object at {id(self)}>"
-
 
 cdef class PositionOpened(PositionEvent):
     """
@@ -1149,14 +1015,6 @@ cdef class PositionOpened(PositionEvent):
         )
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
@@ -1207,14 +1065,6 @@ cdef class PositionModified(PositionEvent):
         )
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
@@ -1268,14 +1118,6 @@ cdef class PositionClosed(PositionEvent):
         )
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "

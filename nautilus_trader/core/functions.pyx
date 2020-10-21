@@ -26,37 +26,6 @@ from nautilus_trader.core.correctness cimport Condition
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef inline int precision_from_string(str value):
-    """
-    Return the decimal precision inferred from the number of digits after
-    the '.' decimal place.
-
-    Parameters
-    ----------
-    value : str
-        The string value to parse.
-
-    Returns
-    -------
-    int
-
-    Raises
-    ------
-    ValueError
-        If value is not a valid string.
-
-    Notes
-    -----
-    If no decimal place then precision will be inferred as zero.
-
-    """
-    Condition.valid_string(value, "value")
-
-    return len(value.partition('.')[2])  # If does not contain "." then partition[2] will be ""
-
-
-@cython.boundscheck(False)
-@cython.wraparound(False)
 cpdef inline double fast_mean(list values):
     """
     Return the average value of the iterable.

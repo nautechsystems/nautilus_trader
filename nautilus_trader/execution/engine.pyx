@@ -249,26 +249,6 @@ cdef class ExecutionEngine:
             self._pos_id_generator.set_count(symbol, count)
             self._log.info(f"Set position count {symbol} to {count}")
 
-    cpdef void connect(self) except *:
-        """
-        Connect all execution clients.
-        """
-        self._log.info("Connecting all clients...")
-
-        cdef ExecutionClient client
-        for client in self._clients:
-            client.connect()
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect all execution clients.
-        """
-        self._log.info("Disconnecting all clients...")
-
-        cdef ExecutionClient client
-        for client in self._clients:
-            client.disconnect()
-
     cpdef void execute(self, Command command) except *:
         """
         Execute the given command.
@@ -336,10 +316,14 @@ cdef class ExecutionEngine:
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command) except *:
+    cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
+        if isinstance(command, Connect):
+            self._handle_connect(command)
+        elif isinstance(command, Disconnect):
+            self._handle_disconnect(command)
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
@@ -351,11 +335,41 @@ cdef class ExecutionEngine:
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
-    cdef void _handle_submit_order(self, SubmitOrder command) except *:
+    cdef inline void _handle_connect(self, Connect command) except *:
+        self._log.info("Connecting all clients...")
+
+        cdef ExecutionClient client
+        if command.venue is not None:
+            client = self._clients.get(command.venue)
+            if client is None:
+                self._log.error(f"Cannot execute {command} "
+                                f"(venue {command.venue} not registered).")
+            else:
+                client.connect()
+        else:
+            for client in self._clients:
+                client.connect()
+
+    cdef inline void _handle_disconnect(self, Disconnect command) except *:
+        self._log.info("Disconnecting all clients...")
+
+        cdef ExecutionClient client
+        if command.venue is not None:
+            client = self._clients.get(command.venue)
+            if client is None:
+                self._log.error(f"Cannot execute {command} "
+                                f"(venue {command.venue} not registered).")
+            else:
+                client.disconnect()
+        else:
+            for client in self._clients:
+                client.disconnect()
+
+    cdef inline void _handle_submit_order(self, SubmitOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
@@ -373,11 +387,11 @@ cdef class ExecutionEngine:
         # Submit order
         client.submit_order(command)
 
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
@@ -408,37 +422,37 @@ cdef class ExecutionEngine:
         # Submit bracket order
         client.submit_bracket_order(command)
 
-    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+    cdef inline void _handle_modify_order(self, ModifyOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot modify {command.cl_ord_id.to_string(with_class=True)} "
+            self._log.warning(f"Cannot modify {repr(command.cl_ord_id)} "
                               f"(already completed).")
             return  # Invalid command
 
         client.modify_order(command)
 
-    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+    cdef inline void _handle_cancel_order(self, CancelOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
         if self.cache.is_order_completed(command.cl_ord_id):
-            self._log.warning(f"Cannot cancel {command.cl_ord_id.to_string(with_class=True)} "
+            self._log.warning(f"Cannot cancel {repr(command.cl_ord_id)} "
                               f"(already completed).")
             return  # Invalid command
 
         client.cancel_order(command)
 
-    cdef void _invalidate_order(self, Order order, str reason) except *:
+    cdef inline void _invalidate_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
             order.cl_ord_id,
@@ -449,7 +463,7 @@ cdef class ExecutionEngine:
 
         self._handle_event(invalid)
 
-    cdef void _deny_order(self, Order order, str reason) except *:
+    cdef inline void _deny_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderDenied denied = OrderDenied(
             order.cl_ord_id,
@@ -462,7 +476,7 @@ cdef class ExecutionEngine:
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *:
+    cdef inline void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
@@ -498,7 +512,7 @@ cdef class ExecutionEngine:
         cdef Order order = self.cache.order(event.cl_ord_id)
         if order is None:
             self._log.warning(f"Cannot apply event {event} to any order, "
-                              f"{event.cl_ord_id.to_string(with_class=True)} "
+                              f"{repr(event.cl_ord_id)} "
                               f"not found in cache.")
             return  # Cannot process event further
 
@@ -523,7 +537,7 @@ cdef class ExecutionEngine:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {event}, "
-                            f"{strategy_id.to_string(with_class=True)} "
+                            f"{repr(strategy_id)} "
                             f"not found.")
             return  # Cannot process event further
 
@@ -540,8 +554,8 @@ cdef class ExecutionEngine:
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
-                            f"{fill.cl_ord_id.to_string(with_class=True)} or"
-                            f"{fill.position_id.to_string(with_class=True)} not found.")
+                            f"{repr(fill.cl_ord_id)} or"
+                            f"{repr(fill.position_id)} not found.")
             return  # Cannot process event further
 
         if fill.position_id.is_null():  # Exchange not assigning position_ids
@@ -589,7 +603,7 @@ cdef class ExecutionEngine:
         cdef Position position = self.cache.position(fill.position_id)
         if position is None:
             self._log.error(f"Cannot update position for "
-                            f"{fill.position_id.to_string(with_class=True)} "
+                            f"{repr(fill.position_id)} "
                             f"(no position found in cache).")
             return  # Cannot process event further
 
@@ -713,13 +727,13 @@ cdef class ExecutionEngine:
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
             self._log.error(f"Cannot send event {event} to strategy, "
-                            f"{strategy_id.to_string(with_class=True)} not found.")
+                            f"{repr(strategy_id)} not found.")
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
             self._log.error(f"Cannot send event {event} to strategy, "
-                            f"{strategy_id.to_string(with_class=True)} not registered.")
+                            f"{repr(strategy_id)} not registered.")
             return  # Cannot send to strategy
 
         strategy.handle_event(event)

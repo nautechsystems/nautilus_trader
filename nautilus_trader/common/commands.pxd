@@ -12,3 +12,36 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.core.message cimport Command
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
+
+
+cdef class Connect(Command):
+    cdef readonly Venue venue
+
+
+cdef class Disconnect(Command):
+    cdef readonly Venue venue
+
+
+cdef class DataCommand(Command):
+    cdef readonly type data_type
+    cdef readonly dict options
+
+
+cdef class Subscribe(DataCommand):
+    pass
+
+
+cdef class Unsubscribe(DataCommand):
+    pass
+
+
+cdef class RequestData(DataCommand):
+    pass
+
+
+cdef class KillSwitch(Command):
+    cdef readonly TraderId trader_id

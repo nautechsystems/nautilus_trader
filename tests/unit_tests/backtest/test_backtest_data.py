@@ -15,24 +15,18 @@
 
 import unittest
 
-from pandas import Timestamp
-
 from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 
-class BacktestDataEngineTests(unittest.TestCase):
+class BacktestDataClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -42,22 +36,3 @@ class BacktestDataEngineTests(unittest.TestCase):
         self.data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
         self.data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
         self.test_clock = TestClock()
-
-    def test_initialize_client_with_data(self):
-        # Arrange
-        uuid_factory = TestUUIDFactory()
-        logger = TestLogger(self.test_clock)
-
-        portfolio = Portfolio(self.test_clock, uuid_factory, logger)
-
-        client = BacktestDataEngine(
-            data=self.data,
-            portfolio=portfolio,
-            clock=self.test_clock,
-            logger=TestLogger(self.test_clock),
-        )
-
-        # Act
-        # Assert
-        self.assertEqual(Timestamp("2013-01-01 21:59:59.900000+0000", tz="UTC"), client.min_timestamp)
-        self.assertEqual(Timestamp("2013-01-02 09:19:00+0000", tz="UTC"), client.max_timestamp)

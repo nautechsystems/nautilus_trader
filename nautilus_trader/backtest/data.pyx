@@ -22,10 +22,9 @@ from cpython.datetime cimport datetime
 
 from pandas import DatetimeIndex
 
-from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.uuid cimport TestUUIDFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
@@ -42,7 +41,6 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class BacktestDataContainer:
@@ -64,7 +62,11 @@ cdef class BacktestDataContainer:
         """
         Add the instrument to the container.
 
-        :param instrument: The instrument to add.
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
         """
         Condition.not_none(instrument, "instrument")
 
@@ -75,9 +77,13 @@ cdef class BacktestDataContainer:
         """
         Add the tick data to the container.
 
-        :param symbol: The symbol for the tick data.
-        :param data: The tick data to add.
-        :raises TypeError: If data is a type other than DataFrame.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the tick data.
+        data : pd.DataFrame
+            The tick data to add.
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(data, "data")
@@ -97,11 +103,17 @@ cdef class BacktestDataContainer:
         """
         Add the bar data to the container.
 
-        :param symbol: The symbol for the bar data.
-        :param aggregation: The bar aggregation of the data.
-        :param price_type: The price type of the data.
-        :param data: The bar data to add.
-        :raises TypeError: If data is a type other than DataFrame.
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the bar data.
+        aggregation : BarAggregation
+            The bar aggregation of the data.
+        price_type : PriceType
+            The price type of the data.
+        data : pd.DataFrame
+            The bar data to add.
+
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(data, "data")
@@ -127,7 +139,11 @@ cdef class BacktestDataContainer:
         """
         Check the integrity of the data inside the container.
 
-        :raises: AssertionFailed: If the any integrity check fails.
+        Raises
+        ------
+        AssertionFailed
+            If the any integrity check fails.
+
         """
         # Check there is the needed instrument for each data symbol
         for symbol in self.symbols:
@@ -157,38 +173,41 @@ cdef class BacktestDataContainer:
         return size
 
 
-cdef class BacktestDataEngine(DataEngine):
+cdef class BacktestDataClient(DataClient):
     """
-    Provides a data engine for backtesting.
+    Provides a data client for backtesting.
     """
 
     def __init__(
             self,
             BacktestDataContainer data not None,
-            Portfolio portfolio not None,
-            TestClock clock not None,
-            Logger logger not None
+            Venue venue not None,
+            DataEngine engine not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
+            Logger logger not None,
     ):
         """
-        Initialize a new instance of the BacktestDataEngine class.
+        Initialize a new instance of the BacktestDataClient class.
 
-        Parameters
-        ----------
-        data : BacktestDataContainer
-            The data needed for the backtest data engine.
-        portfolio : Portfolio
-        clock : TestClock
+        venue : Venue
+            The venue the client can provide data for.
+        engine : DataEngine
+            The data engine to connect to the client.
+        clock : Clock
             The clock for the component.
+        uuid_factory : UUIDFactory
+            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
         """
         super().__init__(
-            portfolio=portfolio,
-            clock=clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=logger,
-            config={'use_previous_close': False},  # To correctly reproduce historical data bars
+            venue,
+            engine,
+            clock,
+            uuid_factory,
+            logger,
         )
 
         # Check data integrity
@@ -202,14 +221,15 @@ cdef class BacktestDataEngine(DataEngine):
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
-            self.handle_instrument(instrument)
+            self._engine.process(instrument)
+
 
         # Prepare data
         cdef list tick_frames = []
         self.execution_resolutions = []
 
         timing_start_total = datetime.utcnow()
-        for instrument in self.cache.instruments():
+        for instrument in data.instruments.values():
             symbol = instrument.symbol
             self._log.info(f"Preparing {symbol} data...")
             timing_start = datetime.utcnow()
@@ -231,7 +251,7 @@ cdef class BacktestDataEngine(DataEngine):
             tick_frames.append(wrangler.tick_data)
             counter += 1
 
-            self.execution_resolutions.append(f"{symbol.to_string()}={bar_aggregation_to_string(wrangler.resolution)}")
+            self.execution_resolutions.append(f"{symbol}={bar_aggregation_to_string(wrangler.resolution)}")
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
                            f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 
@@ -276,7 +296,7 @@ cdef class BacktestDataEngine(DataEngine):
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
-            self.handle_instrument(instrument)
+            self._engine.process(instrument)
 
         # Build tick data stream
         data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
@@ -314,25 +334,14 @@ cdef class BacktestDataEngine(DataEngine):
             Price(values[1], price_precision),
             Quantity(values[2], size_precision),
             Quantity(values[3], size_precision),
-            self._timestamps[self._index])
+            self._timestamps[self._index],
+        )
 
         self._index += 1
         if self._index > self._index_last:
             self.has_data = False
 
         return tick
-
-    cpdef void connect(self) except *:
-        """
-        Connect to the data service.
-        """
-        self._log.info("Connected.")
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect from the data service.
-        """
-        self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
         """
@@ -352,247 +361,74 @@ cdef class BacktestDataEngine(DataEngine):
 
     cpdef void dispose(self) except *:
         """
-        Dispose of the data engine by releasing all resources.
+        Dispose of the data client.
         """
         pass  # Nothing to dispose
 
-    cpdef void process_tick(self, QuoteTick tick) except *:
-        """
-        Process the given tick with the data engine.
+    # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
-        :param tick: The tick to process.
-        """
-        Condition.not_none(tick, "tick")
+    cpdef void connect(self) except *:
+        pass
 
-        self.handle_quote_tick(tick)
-
-        if self._clock.timer_count == 0 or tick.timestamp < self._clock.next_event_time:
-            return  # No events to handle yet
-
-        cdef TimeEventHandler event_handler
-        for event_handler in self._clock.advance_time(tick.timestamp):
-            event_handler.handle()
+    cpdef void disconnect(self) except *:
+        pass
 
     cpdef void request_quote_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable,
     ) except *:
-        """
-        Request the historical quote ticks for the given parameters from the data service.
-
-        :param symbol: The symbol for the ticks to download.
-        :param from_datetime: The from datetime for the request.
-        :param to_datetime: The to datetime for the request.
-        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
-        :param callback: The callback for the response.
-        :raises ValueError: If limit is negative (< 0).
-        :raises TypeError: If callback is not of type callable.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
-        Condition.callable(callback, "callback")
-
-        self._log.info(f"Simulated request quote ticks for {symbol} from {from_datetime} to {to_datetime}.")
+        pass
 
     cpdef void request_trade_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable,
     ) except *:
-        """
-        Request the historical trade ticks for the given parameters from the data service.
-
-        :param symbol: The symbol for the ticks to download.
-        :param from_datetime: The from datetime for the request.
-        :param to_datetime: The to datetime for the request.
-        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
-        :param callback: The callback for the response.
-        :raises ValueError: If limit is negative (< 0).
-        :raises TypeError: If callback is not of type callable.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
-        Condition.callable(callback, "callback")
-
-        self._log.info(f"Simulated request trade ticks for {symbol} from {from_datetime} to {to_datetime}.")
+        pass
 
     cpdef void request_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
+            self,
+            BarType bar_type,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            callback: callable,
     ) except *:
-        """
-        Request the historical bars for the given parameters from the data service.
-
-        :param bar_type: The bar type for the bars to download.
-        :param from_datetime: The from datetime for the request.
-        :param to_datetime: The to datetime for the request.
-        :param limit: The limit for the number of ticks in the response (default = no limit) (>= 0).
-        :param callback: The callback for the response.
-        :raises ValueError: If limit is negative (< 0).
-        :raises TypeError: If callback is not of type callable.
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
-        Condition.callable(callback, "callback")
-
-        self._log.info(f"Simulated request bars for {bar_type} from {from_datetime} to {to_datetime}.")
+        pass
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
-        """
-        Request the instrument for the given symbol.
+        pass
 
-        :param symbol: The symbol to update.
-        :param callback: The callback for the response.
-        :raises TypeError: If callback is not of type callable.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable(callback, "callback")
+    cpdef void request_instruments(self, callback: callable) except *:
+        pass
 
-        self._log.info(f"Requesting instrument for {symbol}...")
+    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
+        pass
 
-        callback(self.cache.instrument(symbol))
+    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+        pass
 
-    cpdef void request_instruments(self, Venue venue, callback: callable) except *:
-        """
-        Request all instrument for given venue.
+    cpdef void subscribe_bars(self, BarType bar_type) except *:
+        pass
 
-        :param venue: The venue for the request.
-        :param callback: The callback for the response.
-        :raises TypeError: If callback is not of type callable.
-        """
-        Condition.callable(callback, "callback")
+    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+        pass
 
-        self._log.info(f"Requesting all instruments for the {venue} venue ...")
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
+        pass
 
-        callback(self.cache.instruments())
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+        pass
 
-    cpdef void subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
-        """
-        Subscribe to quote tick data for the given symbol.
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+        pass
 
-        :param symbol: The tick symbol to subscribe to.
-        :param handler: The callable handler for subscription.
-        :raises ValueError: If symbol is not a key in data_providers.
-        :raises TypeError: If handler is not of type callable.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable(handler, "handler")
-
-        self._add_quote_tick_handler(symbol, handler)
-
-    cpdef void subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
-        """
-        Subscribe to trade tick data for the given symbol.
-
-        :param symbol: The tick symbol to subscribe to.
-        :param handler: The callable handler for subscription.
-        :raises ValueError: If symbol is not a key in data_providers.
-        :raises TypeError: If handler is not of type callable.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable(handler, "handler")
-
-        self._add_trade_tick_handler(symbol, handler)
-
-    cpdef void subscribe_bars(self, BarType bar_type, handler: callable) except *:
-        """
-        Subscribe to live bar data for the given bar parameters.
-
-        :param bar_type: The bar type to subscribe to.
-        :param handler: The callable handler for subscription.
-        :raises ValueError: If symbol is not a key in data_providers.
-        :raises TypeError: If handler is not of type callable or None.
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.callable_or_none(handler, "handler")
-
-        self._start_generating_bars(bar_type, handler)
-
-    cpdef void subscribe_instrument(self, Symbol symbol, handler: callable) except *:
-        """
-        Subscribe to live instrument data updates for the given symbol and handler.
-
-        :param symbol: The instrument symbol to subscribe to.
-        :param handler: The callable handler for subscription.
-        :raises TypeError: If handler is not of type callable or None.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable_or_none(handler, "handler")
-
-        if symbol not in self._instrument_handlers:
-            self._log.info(f"Simulated subscribe to {symbol} instrument updates "
-                           f"(a backtest data engine will not update an instrument).")
-
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
-        """
-        Unsubscribes from quote tick data for the given symbol.
-
-        :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises ValueError: If symbol is not a key in data_providers.
-        :raises TypeError: If handler is not of type callable or None.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable_or_none(handler, "handler")
-
-        self._remove_quote_tick_handler(symbol, handler)
-
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
-        """
-        Unsubscribes from trade tick data for the given symbol.
-
-        :param symbol: The tick symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises ValueError: If symbol is not a key in data_providers.
-        :raises TypeError: If handler is not of type callable or None.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable_or_none(handler, "handler")
-
-        self._remove_trade_tick_handler(symbol, handler)
-
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
-        """
-        Unsubscribes from bar data for the given symbol and venue.
-
-        :param bar_type: The bar type to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises ValueError: If symbol is not a key in data_providers.
-        :raises TypeError: If handler is not of type callable or None.
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.callable_or_none(handler, "handler")
-
-        self._stop_generating_bars(bar_type, handler)
-
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
-        """
-        Unsubscribe from live instrument data updates for the given symbol and handler.
-
-        :param symbol: The instrument symbol to unsubscribe from.
-        :param handler: The callable handler which was subscribed.
-        :raises TypeError: If handler is not of type Callable.
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.callable_or_none(handler, "handler")
-
-        self._log.info(f"Simulated unsubscribe from {symbol} instrument updates "
-                       f"(a backtest data engine will not update an instrument).")
-
-    cpdef void update_instruments(self, Venue venue) except *:
-        """
-        Update all instruments from the cache.
-        """
-        self._log.info(f"Simulated update all instruments for the {venue} venue "
-                       f"(a backtest data engine already has all instruments needed).")
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+        pass

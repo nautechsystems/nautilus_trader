@@ -31,7 +31,6 @@ cdef class BarSpecification:
     cdef BarSpecification from_string_c(str value)
     cdef str aggregation_string(self)
     cdef str price_type_string(self)
-    cpdef str to_string(self)
 
 
 cdef class BarType:
@@ -43,7 +42,6 @@ cdef class BarType:
     cdef bint is_time_aggregated(self) except *
     cdef str aggregation_string(self)
     cdef str price_type_string(self)
-    cpdef str to_string(self)
 
 
 cdef class Bar:
@@ -57,5 +55,4 @@ cdef class Bar:
 
     @staticmethod
     cdef Bar from_serializable_string_c(str value)
-    cpdef str to_string(self)
     cpdef str to_serializable_string(self)

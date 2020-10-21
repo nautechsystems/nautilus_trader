@@ -75,7 +75,7 @@ class DataEngineTests(unittest.TestCase):
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
         )
 
-        self.data_engine.handle_quote_tick(tick)
+        self.data_engine.process(tick)
 
         # Act
         result = self.data_engine.cache.get_xrate(JPY, USD)
@@ -94,7 +94,7 @@ class DataEngineTests(unittest.TestCase):
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
         )
 
-        self.data_engine.handle_quote_tick(tick)
+        self.data_engine.process(tick)
 
         # Act
         result = self.data_engine.cache.get_xrate(AUD, USD)

@@ -54,14 +54,6 @@ cdef class Tick:
         self.symbol = symbol
         self.timestamp = timestamp
 
-    cpdef str to_string(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef str to_serializable_string(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
     def __eq__(self, Tick other) -> bool:
         return self.timestamp == other.timestamp
 
@@ -81,42 +73,14 @@ cdef class Tick:
         return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Notes
-        -----
-        The hash is based on the ticks timestamp only.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.timestamp)
 
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
-
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
+        return f"{self.__class__.__name__}({self})"
 
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}({self.to_string()}) object at {id(self)}>"
+    cpdef str to_serializable_string(self):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class QuoteTick(Tick):
@@ -159,6 +123,14 @@ cdef class QuoteTick(Tick):
         self.bid_size = bid_size
         self.ask_size = ask_size
 
+    def __str__(self) -> str:
+        return (f"{self.symbol},"
+                f"{self.bid},"
+                f"{self.ask},"
+                f"{self.bid_size},"
+                f"{self.ask_size},"
+                f"{format_iso8601(self.timestamp)}")
+
     cpdef Price extract_price(self, PriceType price_type):
         """
         Extract the price for the given price type.
@@ -174,7 +146,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price((self.bid + self.ask) / 2, precision=self.bid.precision + 1)
+            return Price((self.bid + self.ask) / 2)
         elif price_type == PriceType.BID:
             return self.bid
         elif price_type == PriceType.ASK:
@@ -265,22 +237,6 @@ cdef class QuoteTick(Tick):
         """
         return QuoteTick.from_serializable_string_c(symbol, values)
 
-    cpdef str to_string(self):
-        """
-        Returns a string representation of the object.
-
-        Returns
-        -------
-        str
-
-        """
-        return (f"{self.symbol.to_string()},"
-                f"{self.bid},"
-                f"{self.ask},"
-                f"{self.bid_size},"
-                f"{self.ask_size},"
-                f"{format_iso8601(self.timestamp)}")
-
     cpdef str to_serializable_string(self):
         """
         Return the serializable string representation of this object.
@@ -332,6 +288,14 @@ cdef class TradeTick(Tick):
         self.size = size
         self.maker = maker
         self.match_id = match_id
+
+    def __str__(self) -> str:
+        return (f"{self.symbol},"
+                f"{self.price},"
+                f"{self.size},"
+                f"{maker_to_string(self.maker)},"
+                f"{self.match_id},"
+                f"{format_iso8601(self.timestamp)}")
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values):
@@ -393,22 +357,6 @@ cdef class TradeTick(Tick):
         """
         return TradeTick.from_serializable_string_c(symbol, values)
 
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return (f"{self.symbol.to_string()},"
-                f"{self.price},"
-                f"{self.size},"
-                f"{maker_to_string(self.maker)},"
-                f"{self.match_id.to_string()},"
-                f"{format_iso8601(self.timestamp)}")
-
     cpdef str to_serializable_string(self):
         """
         Return the serializable string representation of this object.
@@ -421,5 +369,5 @@ cdef class TradeTick(Tick):
         return (f"{self.price},"
                 f"{self.size},"
                 f"{maker_to_string(self.maker)},"
-                f"{self.match_id.to_string()},"
+                f"{self.match_id},"
                 f"{long(self.timestamp.timestamp())}")

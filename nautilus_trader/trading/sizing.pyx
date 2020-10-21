@@ -107,6 +107,7 @@ cdef class FixedRiskSizer(PositionSizer):
         """
         super().__init__(instrument)
 
+    # TODO: Refactor hard_limit to Decimal
     cpdef Quantity calculate(
             self,
             Price entry,
@@ -174,32 +175,32 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.positive_int(units, "units")
         Condition.not_negative_int(unit_batch_size, "unit_batch_size")
 
-        if exchange_rate <= 0.0:
-            return Quantity(0, precision=self.instrument.size_precision)
+        if exchange_rate == 0:
+            return Quantity(precision=self.instrument.size_precision)
 
         cdef Decimal risk_points = self._calculate_risk_ticks(entry, stop_loss)
         cdef Decimal risk_money = self._calculate_riskable_money(equity, risk, commission_rate)
 
         if risk_points <= 0:
             # Divide by zero protection
-            return Quantity(0, precision=self.instrument.size_precision)
+            return Quantity(precision=self.instrument.size_precision)
 
         # Calculate position size
         cdef Decimal tick_size = self.instrument.tick_size
-        cdef double position_size = ((risk_money / exchange_rate) / risk_points) / tick_size
+        cdef Decimal position_size = (Decimal(risk_money / exchange_rate, self.instrument.size_precision) / risk_points) / tick_size
 
         # Limit size on hard limit
         if hard_limit > 0:
-            position_size = min(position_size, hard_limit)
+            position_size = min(position_size, Decimal(hard_limit, self.instrument.size_precision))
 
         # Batch into units
-        cdef double position_size_batched = max(0, position_size / units)
+        cdef Decimal position_size_batched = max(Decimal(), position_size / units)
 
         if unit_batch_size > 0:
             # Round position size to nearest unit batch size
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
         # Limit size on max trade size
-        cdef double final_size = min(position_size_batched, self.instrument.max_quantity.as_double())
+        cdef Decimal final_size = min(position_size_batched, self.instrument.max_quantity)
 
         return Quantity(final_size, precision=self.instrument.size_precision)

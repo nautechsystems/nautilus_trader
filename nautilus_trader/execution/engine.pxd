@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.commands cimport Connect
+from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -70,8 +72,6 @@ cdef class ExecutionEngine:
     cpdef void load_cache(self) except *
     cpdef void integrity_check(self) except *
     cpdef void _set_position_symbol_counts(self) except *
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
@@ -81,17 +81,19 @@ cdef class ExecutionEngine:
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command) except *
-    cdef void _handle_submit_order(self, SubmitOrder command) except *
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cdef void _handle_modify_order(self, ModifyOrder command) except *
-    cdef void _handle_cancel_order(self, CancelOrder command) except *
-    cdef void _invalidate_order(self, Order order, str reason) except *
-    cdef void _deny_order(self, Order order, str reason) except *
+    cdef inline void _execute_command(self, Command command) except *
+    cdef inline void _handle_connect(self, Connect command) except *
+    cdef inline void _handle_disconnect(self, Disconnect command) except *
+    cdef inline void _handle_submit_order(self, SubmitOrder command) except *
+    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cdef inline void _handle_modify_order(self, ModifyOrder command) except *
+    cdef inline void _handle_cancel_order(self, CancelOrder command) except *
+    cdef inline void _invalidate_order(self, Order order, str reason) except *
+    cdef inline void _deny_order(self, Order order, str reason) except *
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *
+    cdef inline void _handle_event(self, Event event) except *
     cdef inline void _handle_account_event(self, AccountState event) except *
     cdef inline void _handle_position_event(self, PositionEvent event) except *
     cdef inline void _handle_order_event(self, OrderEvent event) except *

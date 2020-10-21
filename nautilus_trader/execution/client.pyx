@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -108,8 +107,6 @@ cdef class ExecutionClient:
             The event to handle.
 
         """
-        Condition.not_none(event, "event")
-
         self._engine.process(event)
 
     cdef void _reset(self) except *:

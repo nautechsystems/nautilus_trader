@@ -48,7 +48,7 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(999000), result)
+        self.assertEqual(Quantity(1000000), result)
 
     def test_calculate_single_unit_with_exchange_rate(self):
         # Arrange
@@ -60,7 +60,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("110.000"),
             equity=equity,
             risk=Decimal("0.001"),  # 1%
-            exchange_rate=0.01,
+            exchange_rate=1 / 110,
         )
 
         # Assert
@@ -146,10 +146,10 @@ class FixedRiskSizerTests(unittest.TestCase):
             equity=equity,
             risk=Decimal("0.01"),  # 1%
             commission_rate=Decimal("0.0002"),
-            exchange_rate=0.0093,
+            exchange_rate=1 / 107.403,
             units=1,
             unit_batch_size=1000,
         )
 
         # Assert
-        self.assertEqual(Quantity(3582000), result)
+        self.assertEqual(Quantity(3578000), result)

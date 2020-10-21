@@ -34,6 +34,12 @@ cdef class Indicator:
         self.has_inputs = False
         self.initialized = False
 
+    def __str__(self) -> str:
+        return f"{self.name}({self.params})"
+
+    def __repr__(self) -> str:
+        return f"<{str(self)} object at {id(self)}>"
+
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         # Abstract method
         raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
@@ -49,29 +55,6 @@ cdef class Indicator:
     cpdef void reset(self) except *:
         # Override should call _reset_base()
         raise NotImplemented("method must be implemented in the subclass")
-
-    def __str__(self) -> str:
-        """
-        Return a string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.name}({self.params})"
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self)} object at {id(self)}>"
 
     cdef void _set_has_inputs(self, bint setting) except *:
         self.has_inputs = setting

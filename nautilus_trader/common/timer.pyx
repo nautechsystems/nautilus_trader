@@ -78,39 +78,14 @@ cdef class TimeEvent(Event):
         return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.id)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"name={self.name}, "
                 f"timestamp={format_iso8601(self.timestamp)})")
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
 
@@ -189,6 +164,20 @@ cdef class Timer:
         self.stop_time = stop_time
         self.expired = False
 
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+    def __str__(self) -> str:
+        return (f"Timer("
+                f"name={self.name}, "
+                f"interval={self.interval}, "
+                f"start_time={self.start_time}, "
+                f"next_time={self.next_time}, "
+                f"stop_time={self.stop_time})")
+
+    def __repr__(self) -> str:
+        return f"<{self.__str__} object at {id(self)}>"
+
     cpdef TimeEvent pop_event(self, UUID event_id):
         """
         Returns a generated time event with the given identifier.
@@ -222,45 +211,6 @@ cdef class Timer:
     cpdef void cancel(self) except *:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
-
-    def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
-        return hash(self.name)
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return (f"Timer("
-                f"name={self.name}, "
-                f"interval={self.interval}, "
-                f"start_time={self.start_time}, "
-                f"next_time={self.next_time}, "
-                f"stop_time={self.stop_time})")
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__str__} object at {id(self)}>"
 
 
 cdef class TestTimer(Timer):

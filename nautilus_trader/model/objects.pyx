@@ -127,17 +127,6 @@ cdef class Price(Decimal):
         """
         super().__init__(value, precision)
 
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return str(self._value)
-
 
 cdef class Money(Decimal):
     """Represents an amount of money including currency type.
@@ -185,28 +174,10 @@ cdef class Money(Decimal):
         return self._value >= other._value and self.currency == other.currency
 
     def __hash__(self) -> int:
-        """Return the hash code of this object.
-
-        x.__hash__() <==> hash(x)
-
-        Returns
-        -------
-        int
-
-        """
-        return hash(self.to_string())
+        return hash((self._value, self.currency))
 
     def __repr__(self) -> str:
-        """Return the string representation of this object.
-
-        The string value includes the objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}('{self._value}', {self.currency}) object at {id(self)}>"
+        return f"{self.__class__.__name__}('{self._value}', {self.currency})"
 
     @property
     def amount(self) -> Decimal:
@@ -220,11 +191,11 @@ cdef class Money(Decimal):
         return Decimal(self._value)
 
     cpdef str to_string(self):
-        """Return the string representation of this object.
+        """Return the formatted string representation of this object.
 
         Returns
         -------
         str
 
         """
-        return f"{self._value:,.{self.currency.precision}f} {self.currency}"
+        return f"{self._value:,} {self.currency}"
