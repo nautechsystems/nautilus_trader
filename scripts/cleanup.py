@@ -21,31 +21,55 @@ A utility script to remove cython and pytest artifact files from source code dir
 import os
 import shutil
 
-extensions_to_clean = (".c", ".so", ".o", ".pyd", ".pyc", ".dll", ".html")
 
+FILES_TO_CLEAN = {
+    ".coverage",
+    "coverage.xml",
+    "dump.rdb",
+}
+DIRS_TO_CLEAN = {
+    ".nox",
+    ".profile",
+    ".pytest_cache",
+    "__pycache__",
+    "build",
+    "dist",
+    "docs/build",
+    "coverage.xml",
+    "dump.rdb",
+}
 
-def remove_dir_if_exists(dir_name: str):
-    """
-    Remove the directory with the given name if it exists.
-
-    Parameters
-    ----------
-    dir_name : str
-        The directory name.
-
-    """
-    if os.path.exists(dir_name):
-        shutil.rmtree(dir_name)
-
+EXTENSIONS_TO_CLEAN = (
+    ".c",
+    ".dll",
+    ".html",
+    ".o",
+    ".prof",
+    ".pyd",
+    ".pyc",
+    ".so",
+)
 
 if __name__ == "__main__":
-    remove_dir_if_exists("../.pytest_cache")
-    remove_dir_if_exists("../__pycache__")
-    remove_dir_if_exists("../build")
-    remove_dir_if_exists("../docs/build")
-    for directory in ["../nautilus_trader", "../docs"]:
-        for root, _dirs, files in os.walk(directory):
-            for name in files:
-                path = os.path.join(root, name)
-                if os.path.isfile(path) and path.endswith(extensions_to_clean):
-                    os.remove(path)
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(f"root_dir={root_dir}")
+
+    for target in FILES_TO_CLEAN:
+        try:
+            os.remove(os.path.join(root_dir, target))
+            print(f"Removed: {target}")
+        except FileNotFoundError:
+            pass
+
+    for target in DIRS_TO_CLEAN:
+        print(f"Removing dir: {target}")
+        shutil.rmtree(os.path.join(root_dir, target), ignore_errors=True)
+
+    removed_count = 0
+    for root, _dirs, files in os.walk(root_dir):
+        for name in files:
+            path = os.path.join(root, name)
+            if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
+                os.remove(path)
+                removed_count += 1
+    print(f"Removed {removed_count} discrete files by extension.")
