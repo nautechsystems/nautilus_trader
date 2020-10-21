@@ -63,6 +63,8 @@ cdef class DataClient:
         self._engine = engine
 
         self.venue = venue
+        self.command_count = 0
+        self.data_count = 0
 
         self._log.info("Initialized.")
 
@@ -160,25 +162,30 @@ cdef class DataClient:
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
-        self._engine.handle_quote_tick(tick)
+        self._engine.process(tick)
 
     cpdef void handle_quote_ticks(self, list ticks) except *:
-        self._engine.handle_quote_ticks(ticks)
+        self._engine.process((type(QuoteTick), ticks))
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
-        self._engine.handle_trade_tick(tick)
+        self._engine.process(tick)
 
     cpdef void handle_trade_ticks(self, list ticks) except *:
-        self._engine.handle_trade_ticks(ticks)
+        self._engine.process((type(TradeTick), ticks))
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
-        self._engine.handle_bar(bar_type, bar)
+        self._engine.process((bar_type, bar))
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
-        self._engine.handle_bars(bar_type, bars)
+        self._engine.process((bar_type, bars))
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
-        self._engine.handle_instrument(instrument)
+        self._engine.process(instrument)
 
     cpdef void handle_instruments(self, list instruments) except *:
-        self._engine.handle_instruments(instruments)
+        self._engine.process((type(Instrument), instruments))
+
+    cdef void _reset(self) except *:
+        # Reset the class to its initial state
+        self.command_count = 0
+        self.data_count = 0

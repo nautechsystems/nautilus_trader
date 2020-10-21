@@ -249,26 +249,6 @@ cdef class ExecutionEngine:
             self._pos_id_generator.set_count(symbol, count)
             self._log.info(f"Set position count {symbol} to {count}")
 
-    cpdef void connect(self) except *:
-        """
-        Connect all execution clients.
-        """
-        self._log.info("Connecting all clients...")
-
-        cdef ExecutionClient client
-        for client in self._clients:
-            client.connect()
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect all execution clients.
-        """
-        self._log.info("Disconnecting all clients...")
-
-        cdef ExecutionClient client
-        for client in self._clients:
-            client.disconnect()
-
     cpdef void execute(self, Command command) except *:
         """
         Execute the given command.
@@ -336,10 +316,14 @@ cdef class ExecutionEngine:
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
-    cdef void _execute_command(self, Command command) except *:
+    cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
+        if isinstance(command, Connect):
+            self._handle_connect(command)
+        elif isinstance(command, Disconnect):
+            self._handle_disconnect(command)
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
@@ -351,11 +335,41 @@ cdef class ExecutionEngine:
         else:
             self._log.error(f"Cannot handle command ({command} is unrecognized).")
 
-    cdef void _handle_submit_order(self, SubmitOrder command) except *:
+    cdef inline void _handle_connect(self, Connect command) except *:
+        self._log.info("Connecting all clients...")
+
+        cdef ExecutionClient client
+        if command.venue is not None:
+            client = self._clients.get(command.venue)
+            if client is None:
+                self._log.error(f"Cannot execute {command} "
+                                f"(venue {command.venue} not registered).")
+            else:
+                client.connect()
+        else:
+            for client in self._clients:
+                client.connect()
+
+    cdef inline void _handle_disconnect(self, Disconnect command) except *:
+        self._log.info("Disconnecting all clients...")
+
+        cdef ExecutionClient client
+        if command.venue is not None:
+            client = self._clients.get(command.venue)
+            if client is None:
+                self._log.error(f"Cannot execute {command} "
+                                f"(venue {command.venue} not registered).")
+            else:
+                client.disconnect()
+        else:
+            for client in self._clients:
+                client.disconnect()
+
+    cdef inline void _handle_submit_order(self, SubmitOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
@@ -373,11 +387,11 @@ cdef class ExecutionEngine:
         # Submit order
         client.submit_order(command)
 
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
@@ -408,11 +422,11 @@ cdef class ExecutionEngine:
         # Submit bracket order
         client.submit_bracket_order(command)
 
-    cdef void _handle_modify_order(self, ModifyOrder command) except *:
+    cdef inline void _handle_modify_order(self, ModifyOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
@@ -423,11 +437,11 @@ cdef class ExecutionEngine:
 
         client.modify_order(command)
 
-    cdef void _handle_cancel_order(self, CancelOrder command) except *:
+    cdef inline void _handle_cancel_order(self, CancelOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.warning(f"Cannot execute {command} "
-                              f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot execute {command} "
+                            f"(venue {command.venue} not registered).")
             return
 
         # Validate command
@@ -438,7 +452,7 @@ cdef class ExecutionEngine:
 
         client.cancel_order(command)
 
-    cdef void _invalidate_order(self, Order order, str reason) except *:
+    cdef inline void _invalidate_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderInvalid invalid = OrderInvalid(
             order.cl_ord_id,
@@ -449,7 +463,7 @@ cdef class ExecutionEngine:
 
         self._handle_event(invalid)
 
-    cdef void _deny_order(self, Order order, str reason) except *:
+    cdef inline void _deny_order(self, Order order, str reason) except *:
         # Generate event
         cdef OrderDenied denied = OrderDenied(
             order.cl_ord_id,
@@ -462,7 +476,7 @@ cdef class ExecutionEngine:
 
 # -- EVENT-HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *:
+    cdef inline void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 

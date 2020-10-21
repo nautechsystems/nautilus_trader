@@ -42,10 +42,10 @@ cdef class Handler:
         self.handle = handler
 
     def __eq__(self, Handler other) -> bool:
-        return PyObject_Repr(self.handle) == PyObject_Repr(other.handle)
+        return self.handle is other.handle
 
     def __ne__(self, Handler other) -> bool:
-        return PyObject_Repr(self.handle) != PyObject_Repr(other.handle)
+        return self.handle is not other.handle
 
     def __hash__(self) -> int:
         return hash(self.handle)

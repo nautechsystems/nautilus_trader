@@ -20,8 +20,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
+from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.data cimport BacktestDataContainer
-from nautilus_trader.backtest.data cimport BacktestDataEngine
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
@@ -171,11 +171,12 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.data_engine = BacktestDataEngine(
-            data=data,
+        self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.test_clock,
+            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
+            config={'use_previous_close': False},
         )
 
         self.exec_engine = ExecutionEngine(
@@ -201,6 +202,15 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
+        self.data_client = BacktestDataClient(
+            data=data,
+            venue=venue,
+            engine=self.data_engine,
+            clock=self.test_clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.test_logger,
+        )
+
         self.exec_client = BacktestExecClient(
             market=self.exchange,
             account_id=self.account_id,
@@ -208,6 +218,7 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
+        self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
@@ -264,20 +275,20 @@ cdef class BacktestEngine:
         """
         # Setup start datetime
         if start is None:
-            start = self.data_engine.min_timestamp
+            start = self.data_client.min_timestamp
         else:
-            start = max(as_utc_timestamp(start), self.data_engine.min_timestamp)
+            start = max(as_utc_timestamp(start), self.data_client.min_timestamp)
 
         # Setup stop datetime
         if stop is None:
-            stop = self.data_engine.max_timestamp
+            stop = self.data_client.max_timestamp
         else:
-            stop = min(as_utc_timestamp(stop), self.data_engine.max_timestamp)
+            stop = min(as_utc_timestamp(stop), self.data_client.max_timestamp)
 
         Condition.equal(start.tz, pytz.utc, "start.tz", "UTC")
         Condition.equal(stop.tz, pytz.utc, "stop.tz", "UTC")
-        Condition.true(start >= self.data_engine.min_timestamp, "start >= data_client.min_timestamp")
-        Condition.true(start <= self.data_engine.max_timestamp, "stop <= data_client.max_timestamp")
+        Condition.true(start >= self.data_client.min_timestamp, "start >= data_client.min_timestamp")
+        Condition.true(start <= self.data_client.max_timestamp, "stop <= data_client.max_timestamp")
         Condition.true(start < stop, "start < stop")
         Condition.type_or_none(fill_model, FillModel, "fill_model")
         if strategies:
@@ -303,7 +314,7 @@ cdef class BacktestEngine:
         self.test_clock.set_time(start)
 
         # Setup data
-        self.data_engine.setup(start, stop)
+        self.data_client.setup(start, stop)
 
         # Setup new fill model
         if fill_model is not None:
@@ -324,11 +335,11 @@ cdef class BacktestEngine:
         cdef QuoteTick tick
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while self.data_engine.has_data:
-            tick = self.data_engine.generate_tick()
+        while self.data_client.has_data:
+            tick = self.data_client.generate_tick()
             self._advance_time(tick.timestamp)
             self.exchange.process_tick(tick)
-            self.data_engine.process_tick(tick)
+            self.data_engine.process(tick)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -432,7 +443,7 @@ cdef class BacktestEngine:
         self.log.info(f"Run started:    {format_iso8601(run_started)}")
         self.log.info(f"Backtest start: {format_iso8601(start)}")
         self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
-        for resolution in self.data_engine.execution_resolutions:
+        for resolution in self.data_client.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
         if self.exchange.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
@@ -455,7 +466,7 @@ cdef class BacktestEngine:
         self.log.info(f"Backtest start: {format_iso8601(start)}")
         self.log.info(f"Backtest stop:  {format_iso8601(stop)}")
         self.log.info(f"Elapsed time:   {run_finished - run_started}")
-        for resolution in self.data_engine.execution_resolutions:
+        for resolution in self.data_client.execution_resolutions:
             self.log.info(f"Execution resolution: {resolution}")
         self.log.info(f"Iterations: {self.iteration:,}")
         self.log.info(f"Total events: {self.exec_engine.event_count:,}")

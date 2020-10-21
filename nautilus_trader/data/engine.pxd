@@ -16,8 +16,14 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.commands cimport Connect
+from nautilus_trader.common.commands cimport Disconnect
+from nautilus_trader.common.commands cimport RequestData
+from nautilus_trader.common.commands cimport Subscribe
+from nautilus_trader.common.commands cimport Unsubscribe
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.cache cimport DataCache
@@ -50,51 +56,12 @@ cdef class DataEngine:
     cdef dict _bar_handlers
 
     cdef readonly DataCache cache
+    cdef readonly int command_count
+    cdef readonly int data_count
 
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
-    cpdef void update_instruments(self, Venue venue) except *
-    cpdef void update_instruments_all(self) except *
-    cpdef void request_instrument(self, Symbol symbol, callback) except *
-    cpdef void request_instruments(self, Venue venue, callback) except *
-    cpdef void request_quote_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback,
-    ) except *
-    cpdef void request_trade_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback,
-    ) except *
-    cpdef void request_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback,
-    ) except *
-    cpdef void subscribe_instrument(self, Symbol symbol, handler) except *
-    cpdef void subscribe_quote_ticks(self, Symbol symbol, handler) except *
-    cpdef void subscribe_trade_ticks(self, Symbol symbol, handler) except *
-    cpdef void subscribe_bars(self, BarType bar_type, handler) except *
-    cpdef void unsubscribe_instrument(self, Symbol symbol, handler) except *
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol, handler) except *
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
-    cpdef void unsubscribe_bars(self, BarType bar_type, handler) except *
+# -- REGISTRATIONS ---------------------------------------------------------------------------------
 
-# -- REGISTRATION METHODS --------------------------------------------------------------------------
-
-    cpdef void register_data_client(self, DataClient client) except *
+    cpdef void register_client(self, DataClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef list registered_venues(self)
 
@@ -105,31 +72,50 @@ cdef class DataEngine:
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void handle_instrument(self, Instrument instrument) except *
-    cpdef void handle_instruments(self, list instruments) except *
-    cpdef void handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
-    cpdef void handle_quote_ticks(self, list ticks) except *
-    cpdef void handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
-    cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *
+    cpdef void execute(self, Command command) except *
+    cpdef void process(self, object data) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
+    cpdef void update_instruments(self, Venue venue) except *
+    cpdef void update_instruments_all(self) except *
 
-# --------------------------------------------------------------------------------------------------
+# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
-    cdef void _internal_update_instruments(self, list instruments) except *
-    cdef void _start_generating_bars(self, BarType bar_type, handler) except *
-    cdef void _stop_generating_bars(self, BarType bar_type, handler) except *
-    cdef void _add_quote_tick_handler(self, Symbol symbol, handler) except *
-    cdef void _add_trade_tick_handler(self, Symbol symbol, handler) except *
-    cdef void _add_bar_handler(self, BarType bar_type, handler) except *
-    cdef void _add_instrument_handler(self, Symbol symbol, handler) except *
-    cdef void _remove_quote_tick_handler(self, Symbol symbol, handler) except *
-    cdef void _remove_trade_tick_handler(self, Symbol symbol, handler) except *
-    cdef void _remove_bar_handler(self, BarType bar_type, handler) except *
-    cdef void _remove_instrument_handler(self, Symbol symbol, handler) except *
-    cdef void _bulk_build_tick_bars(
+    cdef inline void _execute_command(self, Command command) except *
+    cdef inline void _handle_connect(self, Connect command) except *
+    cdef inline void _handle_disconnect(self, Disconnect command) except *
+    cdef inline void _handle_subscribe(self, Subscribe command) except *
+    cdef inline void _handle_unsubscribe(self, Unsubscribe command) except *
+    cdef inline void _handle_request(self, RequestData command) except *
+    cdef inline void _handle_subscribe_instrument(self, Symbol symbol, handler) except *
+    cdef inline void _handle_subscribe_quote_ticks(self, Symbol symbol, handler) except *
+    cdef inline void _handle_subscribe_trade_ticks(self, Symbol symbol, handler) except *
+    cdef inline void _handle_subscribe_bars(self, BarType bar_type, handler) except *
+    cdef inline void _handle_unsubscribe_instrument(self, Symbol symbol, handler) except *
+    cdef inline void _handle_unsubscribe_quote_ticks(self, Symbol symbol, handler) except *
+    cdef inline void _handle_unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
+    cdef inline void _handle_unsubscribe_bars(self, BarType bar_type, handler) except *
+    cdef inline void _handle_request_instrument(self, Symbol symbol, callback) except *
+    cdef inline void _handle_request_instruments(self, Venue venue, callback) except *
+    cdef inline void _handle_request_quote_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback,
+    ) except *
+    cdef inline void _handle_request_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback,
+    ) except *
+    cdef inline void _handle_request_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
@@ -137,7 +123,42 @@ cdef class DataEngine:
         int limit,
         callback,
     ) except *
-    cdef void _reset(self) except *
+
+
+# -- DATA-HANDLERS ---------------------------------------------------------------------------------
+
+    cdef inline void _handle_data(self, object data) except *
+    cdef inline void _handle_packed_data(self, tuple data)
+    cpdef void _handle_instrument(self, Instrument instrument) except *
+    cpdef void _handle_instruments(self, list instruments) except *
+    cpdef void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
+    cpdef void _handle_quote_ticks(self, list ticks) except *
+    cpdef void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
+    cpdef void _handle_trade_ticks(self, list ticks) except *
+    cpdef void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
+    cpdef void _handle_bars(self, BarType bar_type, list bars) except *
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _internal_update_instruments(self, list instruments) except *
+    cdef inline void _start_generating_bars(self, BarType bar_type, handler) except *
+    cdef inline void _stop_generating_bars(self, BarType bar_type, handler) except *
+    cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler) except *
+    cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler) except *
+    cdef inline void _add_bar_handler(self, BarType bar_type, handler) except *
+    cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *
+    cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler) except *
+    cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler) except *
+    cdef inline void _remove_bar_handler(self, BarType bar_type, handler) except *
+    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler) except *
+    cdef inline void _bulk_build_tick_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback,
+    ) except *
 
 
 cdef class BulkTickBarBuilder:
