@@ -390,8 +390,8 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertTrue(repr(bracket_order).startswith("<BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010) object at"))  # noqa
         self.assertTrue(repr(bracket_order).endswith(">"))
 
     def test_can_apply_order_submitted_event_to_order(self):

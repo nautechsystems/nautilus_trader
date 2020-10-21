@@ -77,17 +77,7 @@ cdef class Quantity(Decimal):
         str
 
         """
-        if self.precision > 0:
-            return str(self._value)
-
-        if self < 1000 or self % 1000 != 0:
-            return f"{self._value:,.0f}"
-
-        if self < 1000000:
-            return f"{round(self / 1000)}K"
-
-        cdef str millions = f"{self._value / 1000000:.3f}".rstrip("0").rstrip(".")
-        return f"{millions}M"
+        return f"{self._value:,}"
 
 
 cdef class Price(Decimal):

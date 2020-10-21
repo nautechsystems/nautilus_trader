@@ -60,7 +60,6 @@ cdef class Decimal:
             if not isinstance(value, float):
                 value = float(value)
             self._value = PyDecimal(f'{value:.{precision}f}')
-            self.precision = precision
         else:  # Infer precision
             if isinstance(value, float):
                 raise TypeError("precision cannot be inferred from a float, "
@@ -69,11 +68,6 @@ cdef class Decimal:
                 self._value = value._value
             else:
                 self._value = PyDecimal(value)
-
-            # The below avoids localization issues
-            # with: len(value.partition('.')[2])
-            # However it is slower.
-            self.precision = abs(self._value.as_tuple().exponent)
 
     def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
@@ -239,6 +233,17 @@ cdef class Decimal:
         if isinstance(b, Decimal):
             b = b._value
         return a, b
+
+    cpdef int precision(self) except *:
+        """
+        Return the precision of this decimal.
+
+        Returns
+        -------
+        int
+
+        """
+        return abs(self._value.as_tuple().exponent)
 
     cpdef object as_decimal(self):
         """
