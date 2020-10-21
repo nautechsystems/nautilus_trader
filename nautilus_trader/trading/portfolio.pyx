@@ -738,7 +738,7 @@ cdef class Portfolio(PortfolioFacade):
             pnl += instrument.calculate_pnl(
                 position.side,
                 position.quantity,
-                position.avg_open_price,
+                position.avg_open,
                 last.bid if position.side == PositionSide.LONG else last.ask,
             ) * xrate
 

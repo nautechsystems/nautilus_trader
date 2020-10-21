@@ -83,15 +83,10 @@ cdef class AccountState(Event):
         self.margin_balance = margin_balance
         self.margin_available = margin_available
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balance={self.balance.to_string()}, "
-                f"margin_balance={self.margin_balance.to_string()}, "
-                f"margin_avail={self.margin_available.to_string()})")
-
-    def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+                f"balance={self.balance.to_string()})")
 
 
 cdef class OrderEvent(Event):
@@ -122,11 +117,8 @@ cdef class OrderEvent(Event):
 
         self.cl_ord_id = cl_ord_id
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}(cl_ord_id={self.cl_ord_id})"
-
     def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.__class__.__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -244,10 +236,11 @@ cdef class OrderSubmitted(OrderEvent):
         self.submitted_time = submitted_time
         self.is_completion_trigger = False
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id})")
+                f"cl_ord_id={self.cl_ord_id}, "
+                f"id={self.id})")
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -293,10 +286,11 @@ cdef class OrderInvalid(OrderEvent):
         self.reason = reason
         self.is_completion_trigger = True
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason})")
+                f"reason={self.reason}, "
+                f"id={self.id})")
 
 
 cdef class OrderDenied(OrderEvent):
@@ -341,10 +335,11 @@ cdef class OrderDenied(OrderEvent):
         self.reason = reason
         self.is_completion_trigger = True
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason})")
+                f"reason={self.reason}, "
+                f"id={self.id})")
 
 
 cdef class OrderRejected(OrderEvent):
@@ -397,11 +392,12 @@ cdef class OrderRejected(OrderEvent):
         self.reason = reason
         self.is_completion_trigger = True
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason})")
+                f"reason={self.reason}, "
+                f"id={self.id})")
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -448,11 +444,12 @@ cdef class OrderAccepted(OrderEvent):
         self.accepted_time = accepted_time
         self.is_completion_trigger = False
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id})")
+                f"order_id={self.order_id}, "
+                f"id={self.id})")
 
 
 cdef class OrderWorking(OrderEvent):
@@ -541,7 +538,7 @@ cdef class OrderWorking(OrderEvent):
         self.working_time = working_time
         self.is_completion_trigger = False
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
@@ -549,7 +546,8 @@ cdef class OrderWorking(OrderEvent):
                 f"order_id={self.order_id}, "
                 f"{order_side_to_string(self.order_side)} {self.quantity.to_string()} "
                 f"{self.symbol} {order_type_to_string(self.order_type)} @ "
-                f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time})")
+                f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time}, "
+                f"id={self.id})")
 
 
 cdef class OrderCancelReject(OrderEvent):
@@ -610,12 +608,13 @@ cdef class OrderCancelReject(OrderEvent):
         self.reason = reason
         self.is_completion_trigger = False
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"response_to={self.response_to}, "
-                f"reason={self.reason})")
+                f"reason={self.reason}, "
+                f"id={self.id})")
 
 
 cdef class OrderCancelled(OrderEvent):
@@ -663,11 +662,12 @@ cdef class OrderCancelled(OrderEvent):
         self.cancelled_time = cancelled_time
         self.is_completion_trigger = True
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id})")
+                f"order_id={self.order_id}, "
+                f"id={self.id})")
 
 
 cdef class OrderModified(OrderEvent):
@@ -723,13 +723,14 @@ cdef class OrderModified(OrderEvent):
         self.modified_time = modified_time
         self.is_completion_trigger = False
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
                 f"qty={self.modified_quantity.to_string()}, "
-                f"price={self.modified_price})")
+                f"price={self.modified_price}, "
+                f"id={self.id})")
 
 
 cdef class OrderExpired(OrderEvent):
@@ -776,11 +777,12 @@ cdef class OrderExpired(OrderEvent):
         self.expired_time = expired_time
         self.is_completion_trigger = True
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id})")
+                f"order_id={self.order_id}, "
+                f"id={self.id})")
 
 
 cdef class OrderFilled(OrderEvent):
@@ -932,7 +934,7 @@ cdef class OrderFilled(OrderEvent):
             self.timestamp
         )
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
@@ -945,7 +947,8 @@ cdef class OrderFilled(OrderEvent):
                 f"filled_qty={self.filled_qty.to_string()}, "
                 f"leaves_qty={self.leaves_qty.to_string()}, "
                 f"avg_price={self.avg_price}, "
-                f"commission={self.commission.to_string()})")
+                f"commission={self.commission.to_string()}, "
+                f"id={self.id})")
 
 
 cdef class PositionEvent(Event):
@@ -1014,14 +1017,15 @@ cdef class PositionOpened(PositionEvent):
             event_timestamp,
         )
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
-                f"avg_open={round(self.position.avg_open_price, 5)}, "
-                f"{self.position.status_string()})")
+                f"avg_open={round(self.position.avg_open, 5)}, "
+                f"{self.position.status_string()}, "
+                f"id={self.id})")
 
 
 cdef class PositionModified(PositionEvent):
@@ -1064,17 +1068,18 @@ cdef class PositionModified(PositionEvent):
             event_timestamp,
         )
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
-                f"avg_open={self.position.avg_open_price}, "
+                f"avg_open={self.position.avg_open}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_string()}, "
-                f"{self.position.status_string()})")
+                f"{self.position.status_string()}, "
+                f"id={self.id})")
 
 
 cdef class PositionClosed(PositionEvent):
@@ -1117,7 +1122,7 @@ cdef class PositionClosed(PositionEvent):
             event_timestamp,
         )
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
         return (f"{self.__class__.__name__}("
                 f"account_id={self.position.account_id}, "
@@ -1125,8 +1130,9 @@ cdef class PositionClosed(PositionEvent):
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={order_side_to_string(self.position.entry)}, "
                 f"duration={duration}, "
-                f"avg_open={self.position.avg_open_price}, "
-                f"avg_close={self.position.avg_close_price}, "
+                f"avg_open={self.position.avg_open}, "
+                f"avg_close={self.position.avg_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string()})")
+                f"realized_pnl={self.position.realized_pnl.to_string()}, "
+                f"id={self.id})")

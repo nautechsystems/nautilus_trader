@@ -544,7 +544,7 @@ cdef class SimulatedExchange:
             pnl = instrument.calculate_pnl(
                 side=Position.side_from_order_side_c(event.order_side),
                 quantity=event.filled_qty,
-                avg_open=position.avg_open_price,
+                avg_open=position.avg_open,
                 avg_close=event.avg_price,
             )
 

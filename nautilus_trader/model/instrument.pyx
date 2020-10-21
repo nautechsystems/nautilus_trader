@@ -219,11 +219,8 @@ cdef class Instrument:
     def __hash__(self) -> int:
         return hash(self.symbol.value)
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}({self.symbol.value})"
-
     def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.__class__.__name__}('{self.symbol.value}')"
 
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price):
         """

@@ -48,8 +48,11 @@ cdef class Connect(Command):
 
         self.venue = venue
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}(venue={self.venue})"
+    def __repr__(self) -> str:
+        return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
 
 cdef class Disconnect(Command):
@@ -81,8 +84,11 @@ cdef class Disconnect(Command):
 
         self.venue = venue
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}(venue={self.venue})"
+    def __repr__(self) -> str:
+        return (f"{self.__class__.__name__}("
+                f"venue={self.venue}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
 
 cdef class DataCommand(Command):
@@ -117,7 +123,7 @@ cdef class DataCommand(Command):
         self.data_type = data_type
         self.options = options
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"data_type={self.data_type}, "
                 f"options={self.options}, "
@@ -258,5 +264,8 @@ cdef class KillSwitch(Command):
 
         self.trader_id = trader_id
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}(trader_id={self.trader_id.value})"
+    def __repr__(self) -> str:
+        return (f"{self.__class__.__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
