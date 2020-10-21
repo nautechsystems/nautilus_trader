@@ -16,6 +16,7 @@
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -28,7 +29,6 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
@@ -39,6 +39,9 @@ cdef class PortfolioFacade:
     """
     Provides a read-only facade for a `Portfolio`.
     """
+
+# -- QUERIES ---------------------------------------------------------------------------------------
+
     cpdef Account account(self, Venue venue):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
@@ -63,8 +66,26 @@ cdef class PortfolioFacade:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef Decimal net_position(self, Symbol symbol):
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
 
-# TODO: Refactor duplication throughout calculation methods
+    cpdef bint is_net_long(self, Symbol symbol) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint is_net_short(self, Symbol symbol) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint is_flat(self, Symbol symbol) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint is_completely_flat(self) except *:
+        # Abstract method
+        raise NotImplementedError("method must be implemented in the subclass")
+
 
 cdef class Portfolio(PortfolioFacade):
     """
@@ -101,9 +122,12 @@ cdef class Portfolio(PortfolioFacade):
         self._orders_working = {}          # type: {Venue: {Order}}
         self._positions_open = {}          # type: {Venue: {Position}}
         self._positions_closed = {}        # type: {Venue: {Position}}
+        self._net_positions = {}           # type: {Symbol: Decimal}
         self._unrealized_pnls_symbol = {}  # type: {Symbol: Money}
         self._unrealized_pnls_venue = {}   # type: {Venue: Money}
         self._xrate_symbols = {}           # type: {Symbol: str}
+
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void register_account(self, Account account) except *:
         """
@@ -300,6 +324,7 @@ cdef class Portfolio(PortfolioFacade):
         self._orders_working.clear()
         self._positions_open.clear()
         self._positions_closed.clear()
+        self._net_positions.clear()
         self._unrealized_pnls_symbol.clear()
         self._unrealized_pnls_venue.clear()
         self._xrate_symbols.clear()
@@ -327,6 +352,111 @@ cdef class Portfolio(PortfolioFacade):
             self._log.error(f"Cannot get account (no account registered for {venue}).")
 
         return account
+
+# -- QUERIES ---------------------------------------------------------------------------------
+
+    cpdef Decimal net_position(self, Symbol symbol):
+        """
+        Return the net relative position for the given symbol. If no positions
+        for symbol then will return `Decimal('0')`.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        cdef Decimal net_position = self._net_positions.get(symbol)
+        return net_position if net_position is not None else Decimal(0)
+
+    cpdef bint is_net_long(self, Symbol symbol) except *:
+        """
+        Return a value indicating whether the portfolio is net long the given
+        symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+
+        Returns
+        -------
+        bool
+            True if net long, else False.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        cdef Decimal net_position = self._net_positions.get(symbol)
+        return False if net_position is None else net_position > 0
+
+    cpdef bint is_net_short(self, Symbol symbol) except *:
+        """
+        Return a value indicating whether the portfolio is net short the given
+        symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the query.
+
+        Returns
+        -------
+        bool
+            True if net short, else False.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        cdef Decimal net_position = self._net_positions.get(symbol)
+        return False if net_position is None else net_position < 0
+
+    cpdef bint is_flat(self, Symbol symbol) except *:
+        """
+        Return a value indicating whether the portfolio is flat for the given
+        symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter.
+
+        Returns
+        -------
+        bool
+            True if net flat, else False.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        cdef Decimal net_position = self._net_positions.get(symbol)
+
+        if net_position is None:
+            return True
+
+        return net_position == 0
+
+    cpdef bint is_completely_flat(self) except *:
+        """
+        Return a value indicating whether the portfolio is completely flat.
+
+        Returns
+        -------
+        bool
+            True if net flat across all symbols, else False.
+
+        """
+        cdef Decimal net_position = Decimal()
+
+        cdef Decimal relative
+        for relative in self._net_positions.values():
+            net_position += relative
+
+        return net_position == 0
 
     cpdef Money order_margin(self, Venue venue):
         """
@@ -516,6 +646,8 @@ cdef class Portfolio(PortfolioFacade):
 
         return Money(open_value, account.currency)
 
+# -- INTERNAL --------------------------------------------------------------------------------------
+
     cdef inline tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}
@@ -559,8 +691,11 @@ cdef class Portfolio(PortfolioFacade):
         positions_open.add(position)
         self._positions_open[venue] = positions_open
 
+        self._update_net_position(event.position.symbol, positions_open)
+
     cdef inline void _handle_position_modified(self, PositionModified event) except *:
-        pass  # Do nothing else so far (already calling update_position_margin())
+        cdef Venue venue = event.position.symbol.venue
+        self._update_net_position(event.position.symbol, self._positions_open.get(venue, set()))
 
     cdef inline void _handle_position_closed(self, PositionClosed event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -575,6 +710,17 @@ cdef class Portfolio(PortfolioFacade):
         cdef set positions_closed = self._positions_closed.get(venue, set())
         positions_closed.add(position)
         self._positions_closed[venue] = positions_closed
+
+        self._update_net_position(event.position.symbol, positions_open)
+
+    cdef inline void _update_net_position(self, Symbol symbol, set positions_open):
+        cdef Decimal net_position = Decimal()
+        for position in positions_open:
+            if position.symbol == symbol:
+                net_position += position.relative_quantity()
+
+        self._net_positions[symbol] = net_position
+        self._log.info(f"{symbol} net position = {net_position}")
 
     cdef inline void _update_order_margin(self, Venue venue):
         cdef Account account = self._accounts.get(venue)

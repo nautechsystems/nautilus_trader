@@ -280,6 +280,7 @@ cdef class Instrument:
             If last.symbol != self.symbol
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
@@ -324,6 +325,7 @@ cdef class Instrument:
             If last.symbol != self.symbol
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
@@ -365,6 +367,7 @@ cdef class Instrument:
             If side is UNDEFINED or FLAT.
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(avg_open, "avg_open")
         Condition.not_none(last, "last")
@@ -410,6 +413,7 @@ cdef class Instrument:
             If side is UNDEFINED or FLAT.
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(avg_open, "avg_open")
         Condition.not_none(avg_close, "avg_close")
