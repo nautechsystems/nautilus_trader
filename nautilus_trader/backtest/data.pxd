@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
@@ -37,7 +37,7 @@ cdef class BacktestDataContainer:
     cpdef long total_data_size(self)
 
 
-cdef class BacktestDataEngine(DataEngine):
+cdef class BacktestDataClient(DataClient):
     cdef BacktestDataContainer _data
     cdef object _tick_data
     cdef unsigned short[:] _symbols
@@ -57,5 +57,4 @@ cdef class BacktestDataEngine(DataEngine):
     cpdef void setup(self, datetime start, datetime stop) except *
     cdef QuoteTick generate_tick(self)
 
-    cpdef void process_tick(self, QuoteTick tick) except *
     cpdef void reset(self) except *

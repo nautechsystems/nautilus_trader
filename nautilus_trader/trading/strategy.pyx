@@ -16,6 +16,9 @@
 import cython
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.commands cimport RequestData
+from nautilus_trader.common.commands cimport Subscribe
+from nautilus_trader.common.commands cimport Unsubscribe
 from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -48,6 +51,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -56,6 +60,7 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.serialization.constants cimport *
 
 
 cdef class TradingStrategy:
@@ -642,13 +647,20 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.request_quote_ticks(
-            symbol=symbol,
-            from_datetime=None,
-            to_datetime=None,
-            limit=self.data.tick_capacity,
-            callback=self.handle_quote_ticks,
+        cdef RequestData request = RequestData(
+            data_type=QuoteTick,
+            options={
+                SYMBOL: symbol,
+                FROM_DATETIME: None,
+                TO_DATETIME: None,
+                LIMIT: self.data.tick_capacity,
+                'callback': self.handle_quote_ticks,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
         )
+
+        self._data_engine.execute(request)
 
     cpdef void request_trade_ticks(self, Symbol symbol) except *:
         """
@@ -663,12 +675,20 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.request_trade_ticks(
-            symbol=symbol,
-            from_datetime=None,
-            to_datetime=None,
-            limit=self.data.tick_capacity,
-            callback=self.handle_trade_ticks)
+        cdef RequestData request = RequestData(
+            data_type=TradeTick,
+            options={
+                SYMBOL: symbol,
+                FROM_DATETIME: None,
+                TO_DATETIME: None,
+                LIMIT: self.data.tick_capacity,
+                'callback': self.handle_trade_ticks,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(request)
 
     cpdef void request_bars(self, BarType bar_type) except *:
         """
@@ -683,12 +703,20 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.request_bars(
-            bar_type=bar_type,
-            from_datetime=None,
-            to_datetime=None,
-            limit=self.data.bar_capacity,
-            callback=self.handle_bars)
+        cdef RequestData request = RequestData(
+            data_type=Bar,
+            options={
+                BAR_TYPE: bar_type,
+                FROM_DATETIME: None,
+                TO_DATETIME: None,
+                LIMIT: self.data.bar_capacity,
+                'callback': self.handle_bars,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(request)
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -703,7 +731,18 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.subscribe_quote_ticks(symbol, self.handle_quote_tick)
+        cdef Subscribe subscribe = Subscribe(
+            data_type=QuoteTick,
+            options={
+                SYMBOL: symbol,
+                'handler': self.handle_quote_tick,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(subscribe)
+
         self.log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
@@ -719,7 +758,18 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.subscribe_trade_ticks(symbol, self.handle_trade_tick)
+        cdef Subscribe subscribe = Subscribe(
+            data_type=TradeTick,
+            options={
+                SYMBOL: symbol,
+                'handler': self.handle_trade_tick,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(subscribe)
+
         self.log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
@@ -735,7 +785,18 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.subscribe_bars(bar_type, self.handle_bar)
+        cdef Subscribe subscribe = Subscribe(
+            data_type=Bar,
+            options={
+                BAR_TYPE: bar_type,
+                'handler': self.handle_bar,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(subscribe)
+
         self.log.info(f"Subscribed to {bar_type} <Bar> data.")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
@@ -751,7 +812,18 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.subscribe_instrument(symbol, self.handle_data)
+        cdef Subscribe subscribe = Subscribe(
+            data_type=Instrument,
+            options={
+                SYMBOL: symbol,
+                'handler': self.handle_data,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(subscribe)
+
         self.log.info(f"Subscribed to {symbol} <Instrument> data.")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
@@ -767,7 +839,18 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.unsubscribe_quote_ticks(symbol, self.handle_quote_tick)
+        cdef Unsubscribe unsubscribe = Unsubscribe(
+            data_type=QuoteTick,
+            options={
+                SYMBOL: symbol,
+                'handler': self.handle_quote_tick,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(unsubscribe)
+
         self.log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
@@ -783,7 +866,18 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.unsubscribe_trade_ticks(symbol, self.handle_trade_tick)
+        cdef Unsubscribe unsubscribe = Unsubscribe(
+            data_type=TradeTick,
+            options={
+                SYMBOL: symbol,
+                'handler': self.handle_trade_tick,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(unsubscribe)
+
         self.log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
@@ -799,7 +893,18 @@ cdef class TradingStrategy:
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.unsubscribe_bars(bar_type, self.handle_bar)
+        cdef Unsubscribe unsubscribe = Unsubscribe(
+            data_type=Bar,
+            options={
+                BAR_TYPE: bar_type,
+                'handler': self.handle_bar,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(unsubscribe)
+
         self.log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
@@ -815,7 +920,18 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        self._data_engine.unsubscribe_instrument(symbol, self.handle_data)
+        cdef Unsubscribe unsubscribe = Unsubscribe(
+            data_type=Instrument,
+            options={
+                SYMBOL: symbol,
+                'handler': self.handle_data,
+            },
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self._data_engine.execute(unsubscribe)
+
         self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------

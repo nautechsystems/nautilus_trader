@@ -35,6 +35,8 @@ cdef class DataClient:
     cdef DataEngine _engine
 
     cdef readonly Venue venue
+    cdef readonly int command_count
+    cdef readonly int data_count
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -87,3 +89,5 @@ cdef class DataClient:
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
     cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_instruments(self, list instruments) except *
+
+    cdef void _reset(self) except *
