@@ -66,7 +66,6 @@ cdef class Position:
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
     cpdef void apply(self, OrderFilled event) except *
-    cpdef str to_string(self)
     cpdef str side_as_string(self)
     cpdef str status_string(self)
     cpdef OrderFilled last_event(self)

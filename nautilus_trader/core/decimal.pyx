@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport precision_from_string
 from decimal import Decimal as PyDecimal
+
+from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class Decimal:
@@ -40,8 +40,8 @@ cdef class Decimal:
             be specified.
         precision : int, optional
             The precision for the decimal. If a precision is specified then the
-            decimals value will be rounded to the precision. Else the precision
-            will be inferred from the given value.
+            value will be rounded to the precision. Else the precision will be
+            inferred from the given value.
 
         Raises
         ------
@@ -55,7 +55,9 @@ cdef class Decimal:
 
         if precision is not None:
             Condition.not_negative_int(precision, "precision")
-            self._value = PyDecimal(f'{float(value):.{precision}f}')
+            if not isinstance(value, float):
+                value = float(value)
+            self._value = PyDecimal(f'{value:.{precision}f}')
             self.precision = precision
         else:  # Infer precision
             if isinstance(value, float):
@@ -66,122 +68,109 @@ cdef class Decimal:
             else:
                 self._value = PyDecimal(value)
 
-            self.precision = precision_from_string(str(self._value))
+            self.precision = abs(self._value.as_tuple().exponent)
 
-            # Post-condition
-            Condition.not_negative_int(self.precision, "precision")
-
-    @staticmethod
-    cdef inline tuple _convert_values(object a, object b):
-        if isinstance(a, float) or isinstance(b, float):
-            return float(a), float(b)
-        if isinstance(a, Decimal):
-            a = a._value
-        if isinstance(b, Decimal):
-            b = b._value
-        return a, b
-
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         return a == b
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         return a != b
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         return a < b
 
-    def __le__(self, other):
+    def __le__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         return a <= b
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         return a > b
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         return a >= b
 
-    def __add__(self, other):
+    def __add__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return a + b
         else:
             return Decimal(a + b)
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return a - b
         else:
             return Decimal(a - b)
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return a * b
         else:
             return Decimal(a * b)
 
-    def __div__(self, other):
+    def __div__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return a / b
         else:
             return Decimal(a / b)
 
-    def __truediv__(self, other):
+    def __truediv__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return a / b
         else:
             return Decimal(a / b)
 
-    def __floordiv__(self, other):
+    def __floordiv__(self, other) -> Decimal or float:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return a // b
         else:
             return Decimal(a // b)
 
-    def __mod__(self, other):
+    def __mod__(self, other) -> Decimal:
         a, b = Decimal._convert_values(self, other)
-        if isinstance(a, float):
+        if isinstance(b, float):
             return NotImplemented
         else:
             return Decimal(a % b)
 
     def __neg__(self):
-        """Returns a copy with the sign switched.
+        """Return a copy with the sign switched.
 
         Rounds, if it has reason.
         """
         return Decimal(self._value.__neg__())
 
     def __pos__(self):
-        """Returns a copy, unless it is a sNaN.
+        """Return a copy, unless it is a sNaN.
 
         Rounds the number (if more than precision digits)
         """
         return Decimal(self._value.__pos__())
 
     def __abs__(self):
-        """abs(a)"""
+        """Return the absolute value of the decimal."""
         return Decimal(abs(self._value))
 
     def __round__(self, ndigits=None):
@@ -198,56 +187,29 @@ cdef class Decimal:
         return Decimal(round(self._value, ndigits))
 
     def __float__(self):
-        """Return the objects value as a float.
-
-        Returns
-        -------
-        float
-
-        """
         return float(self._value)
 
     def __int__(self):
-        """Converts self to an int, truncating if necessary.
-
-        Returns
-        -------
-        int
-
-        """
         return int(self._value)
 
     def __hash__(self) -> int:
-        """Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self._value)
 
     def __str__(self) -> str:
-        """Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return str(self._value)
 
     def __repr__(self) -> str:
-        """Return the string representation of this object
+        return f"{self.__class__.__name__}('{self}')"
 
-        The string includes the objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{self.__class__.__name__}('{self}') object at {id(self)}>"
+    @staticmethod
+    cdef inline tuple _convert_values(object a, object b):
+        if isinstance(a, float) or isinstance(b, float):
+            return float(a), float(b)
+        if isinstance(a, Decimal):
+            a = a._value
+        if isinstance(b, Decimal):
+            b = b._value
+        return a, b
 
     cpdef object as_decimal(self):
         """Return this object as a built-in `decimal.Decimal`.

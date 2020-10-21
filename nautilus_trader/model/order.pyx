@@ -143,25 +143,9 @@ cdef class Order:
         return self.cl_ord_id != other.cl_ord_id
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.cl_ord_id.value)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         cdef str id_string = f"id={self.id.value}, " if self.id else ""
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
@@ -170,15 +154,6 @@ cdef class Order:
                 f"{self.status_string()})")
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
     @staticmethod
@@ -1034,36 +1009,11 @@ cdef class BracketOrder:
         return self.id != other.id
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.id)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)
         return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"

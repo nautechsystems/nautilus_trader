@@ -57,7 +57,3 @@ cdef class CancelOrder(Command):
     cdef readonly TraderId trader_id
     cdef readonly AccountId account_id
     cdef readonly ClientOrderId cl_ord_id
-
-
-cdef class KillSwitch(Command):
-    cdef readonly TraderId trader_id

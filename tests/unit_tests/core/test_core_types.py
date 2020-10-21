@@ -73,27 +73,15 @@ class ValidStringTests(unittest.TestCase):
         # Assert
         self.assertEqual(int, type(hash(value)))
 
-    def test_to_string_returns_expected_string(self):
-        # Arrange
-        value = ValidString("abc")
-
-        # Act
-        # Assert
-        self.assertEqual("abc", value.to_string())
-
     def test_str_returns_expected_strings(self):
         # Arrange
         value = ValidString("abc")
 
         # Act
-        result1 = str(value)
-        result2 = value.to_string()
-        result3 = value.to_string(with_class=True)
+        result = str(value)
 
         # Assert
-        self.assertEqual("abc", result1)
-        self.assertEqual("abc", result2)
-        self.assertEqual("ValidString(abc)", result3)
+        self.assertEqual("abc", result)
 
     def test_repr_returns_expected_string(self):
         # Arrange
@@ -103,5 +91,4 @@ class ValidStringTests(unittest.TestCase):
         result = repr(value)
 
         # Assert
-        self.assertTrue(result.startswith("<ValidString(abc) object at "))
-        self.assertTrue(result.endswith(">"))
+        self.assertEqual("ValidString('abc')", result)

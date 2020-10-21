@@ -262,4 +262,3 @@ cdef class EMACross(TradingStrategy):
         """
         self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.symbol)

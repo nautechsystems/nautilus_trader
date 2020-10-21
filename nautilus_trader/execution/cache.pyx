@@ -222,9 +222,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         if state is not None:
             strategy.load(state)
             for key, value in state.items():
-                self._log.debug(f"Loading {strategy.id.to_string(with_class=True)}) state (key='{key}', value={value})...")
+                self._log.debug(f"Loading {repr(strategy.id)}) state (key='{key}', value={value})...")
         else:
-            self._log.info(f"No previous state found for {strategy.id.to_string(with_class=True)}")
+            self._log.info(f"No previous state found for {repr(strategy.id)}")
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -301,7 +301,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cache_venue_account_id(account.id)
 
         self._log.debug(f"Added Account(id={account.id.value}).")
-        self._log.debug(f"Indexed {account.id.to_string(with_class=True)} for {account.id.issuer}.")
+        self._log.debug(f"Indexed {repr(account.id)} for {account.id.issuer}.")
 
         # Update database
         self._database.add_account(account)
@@ -408,7 +408,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             self._index_strategy_positions[strategy_id].add(position_id)
 
-        self._log.debug(f"Indexed {position_id.to_string(with_class=True)}, "
+        self._log.debug(f"Indexed {repr(position_id)}, "
                         f"cl_ord_id={cl_ord_id}, "
                         f"strategy_id={strategy_id}).")
 

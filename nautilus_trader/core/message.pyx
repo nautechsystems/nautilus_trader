@@ -62,38 +62,10 @@ cdef class Message:
         return self.message_type != other.message_type or self.id != other.id
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.id)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.__class__.__name__}({self.id})"
-
-    def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.__class__.__name__}(id={self.id})"
 
 
 cdef class Command(Message):
@@ -213,12 +185,4 @@ cdef class Response(Message):
         self.correlation_id = correlation_id
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.__class__.__name__}(id={self.id}, correlation_id={self.correlation_id})"
+        return f"{self.__class__.__name__}(correlation_id={self.correlation_id}, id={self.id})"

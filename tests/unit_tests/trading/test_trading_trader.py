@@ -17,8 +17,8 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
+from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.data import BacktestDataEngine
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -26,6 +26,7 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
@@ -67,11 +68,12 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        data_engine = BacktestDataEngine(
-            data=data,
+        self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=clock,
+            uuid_factory=uuid_factory,
             logger=logger,
+            config={'use_previous_close': False},
         )
 
         self.analyzer = PerformanceAnalyzer()
@@ -102,6 +104,17 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
+        self.data_client = BacktestDataClient(
+            data=data,
+            venue=Venue("FXCM"),
+            engine=self.data_engine,
+            clock=clock,
+            uuid_factory=uuid_factory,
+            logger=logger,
+        )
+
+        self.data_engine.register_client(self.data_client)
+
         self.exec_client = BacktestExecClient(
             market=self.market,
             account_id=account_id,
@@ -119,7 +132,7 @@ class TraderTests(unittest.TestCase):
         self.trader = Trader(
             trader_id=trader_id,
             strategies=strategies,
-            data_engine=data_engine,
+            data_engine=self.data_engine,
             exec_engine=self.exec_engine,
             clock=clock,
             uuid_factory=uuid_factory,

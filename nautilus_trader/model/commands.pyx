@@ -81,14 +81,6 @@ cdef class SubmitOrder(Command):
         self.order = order
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         cdef str position_id_str = "NULL" if self.position_id.is_null() else self.position_id.value
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
@@ -150,14 +142,6 @@ cdef class SubmitBracketOrder(Command):
         self.bracket_order = bracket_order
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
@@ -215,14 +199,6 @@ cdef class ModifyOrder(Command):
         self.price = price
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
@@ -273,56 +249,8 @@ cdef class CancelOrder(Command):
         self.cl_ord_id = cl_ord_id
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"venue={self.venue}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value})")
-
-
-cdef class KillSwitch(Command):
-    """
-    Represents a command to aggressively shutdown the trading system.
-    """
-
-    def __init__(
-            self,
-            TraderId trader_id not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
-    ):
-        """
-        Initialize a new instance of the KillSwitch class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader identifier for the command.
-        command_id : UUID
-            The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
-
-        """
-        super().__init__(command_id, command_timestamp)
-
-        self.trader_id = trader_id
-
-    def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"{self.__class__.__name__}(trader_id={self.trader_id.value})"

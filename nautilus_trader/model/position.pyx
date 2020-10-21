@@ -79,37 +79,12 @@ cdef class Position:
         return self.id != other.id
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.id.value)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.to_string()
+        return f"Position(id={self.id.value}, {self.status_string()})"
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return f"<{str(self)} object at {id(self)}>"
 
     cpdef void apply(self, OrderFilled event) except *:
@@ -195,17 +170,6 @@ cdef class Position:
 
         """
         return Position.side_from_order_side_c(side)
-
-    cpdef str to_string(self):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"Position(id={self.id.value}, {self.status_string()})"
 
     cpdef str side_as_string(self):
         """

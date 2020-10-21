@@ -33,10 +33,6 @@ class ObjectTests:
         str(AUDUSD_FXCM)
 
     @staticmethod
-    def symbol_using_to_string():
-        AUDUSD_FXCM.to_string()
-
-    @staticmethod
     def build_bar_no_checking():
         Bar(
             Price("1.00001"),
@@ -66,11 +62,6 @@ class ObjectPerformanceTests(unittest.TestCase):
     def test_symbol_using_str(self):
         result = PerformanceHarness.profile_function(ObjectTests.symbol_using_str, 3, 1000000)
         # ~140ms (140233μs) minimum of 3 runs @ 1,000,000 iterations each run.
-        self.assertTrue(result < 0.2)
-
-    def test_symbol_using_to_string(self):
-        result = PerformanceHarness.profile_function(ObjectTests.symbol_using_to_string, 3, 1000000)
-        # ~103ms (103260μs) minimum of 3 runs @ 1,000,000 iterations each run.
         self.assertTrue(result < 0.2)
 
     def test_build_bar_no_checking(self):

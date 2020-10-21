@@ -320,7 +320,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._redis.delete(self.key_strategies + strategy_id.value)
 
-        self._log.info(f"Deleted {strategy_id.to_string(with_class=True)}.")
+        self._log.info(f"Deleted {repr(strategy_id)}.")
 
     cpdef void add_account(self, Account account) except *:
         """

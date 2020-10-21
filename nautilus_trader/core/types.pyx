@@ -40,20 +40,6 @@ cdef class ValidString:
 
         self.value = value
 
-    cpdef str to_string(self, bint with_class=False):
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
-        if with_class:
-            return f"{self.__class__.__name__}({self.value})"
-        else:
-            return self.value
-
     def __eq__(self, ValidString other) -> bool:
         return self.value == other.value
 
@@ -73,38 +59,13 @@ cdef class ValidString:
         return self.value >= other.value
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.value)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return self.value
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the objects
-        location in memory.
-
-        Returns
-        -------
-        str
-
-        """
-        return f"<{str(self.__class__.__name__)}({str(self.value)}) object at {id(self)}>"
+        return f"{str(self.__class__.__name__)}('{str(self.value)}')"
 
 
 cdef class Identifier(ValidString):
@@ -135,15 +96,9 @@ cdef class Identifier(ValidString):
         return self.id_type == other.id_type and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return self.id_type != other.id_type or self.value != other.value
+        return not self == other
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
+        # This method seems redundant as it exists on the base class, however
+        # TypeError: unhashable type gets thrown if not present.
         return hash(self.value)

@@ -123,8 +123,7 @@ class TickTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z", result0)
-        self.assertTrue(result1.startswith("<QuoteTick(AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z) object at"))
-        self.assertTrue(result1.endswith(">"))
+        self.assertEqual("QuoteTick(AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z)", result1)
 
     def test_trade_tick_str_and_repr(self):
         # Arrange
@@ -143,5 +142,4 @@ class TickTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z", result0)
-        self.assertTrue(result1.startswith("<TradeTick(AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z) object at"))
-        self.assertTrue(result1.endswith(">"))
+        self.assertEqual("TradeTick(AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z)", result1)

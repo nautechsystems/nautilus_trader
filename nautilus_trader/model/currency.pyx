@@ -133,37 +133,12 @@ cdef class Currency:
         return not self == other
 
     def __hash__(self) -> int:
-        """
-        Return the hash code of this object.
-
-        Returns
-        -------
-        int
-
-        """
         return hash(self.code)
 
     def __str__(self) -> str:
-        """
-        Return the string representation of this object.
-
-        Returns
-        -------
-        str
-
-        """
         return self.code
 
     def __repr__(self) -> str:
-        """
-        Return the string representation of this object which includes the
-        objects location in memory.
-
-        Returns
-        -------
-        str
-
-        """
         return (f"{self.__class__.__name__}("
                 f"code={self.code}, "
                 f"precision={self.precision}, "
