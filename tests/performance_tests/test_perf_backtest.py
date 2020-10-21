@@ -273,4 +273,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 15/10/20 14438290 function calls (14323752 primitive calls) in 13.273 seconds (various refactorings for clarity)
         # 19/10/20 10880065 function calls (10792051 primitive calls) in 11.181 seconds (performance optimizations)
         # 20/10/20 14130784 function calls (14016236 primitive calls) in 12.892 seconds (replace Fraction with wrapped Decimal)
-        # 21/10/20 20505398 function calls (20338534 primitive calls) in 18.457 seconds (more robust data engine for uvloop - will optimize)
+        # 21/10/20 21651240 function calls (21484376 primitive calls) in 19.456 seconds (more robust data engine for uvloop - will optimize)

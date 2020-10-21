@@ -16,7 +16,6 @@
 from decimal import Decimal as PyDecimal
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport precision_from_string
 
 
 cdef class Decimal:
@@ -69,10 +68,7 @@ cdef class Decimal:
             else:
                 self._value = PyDecimal(value)
 
-            self.precision = precision_from_string(str(self._value))
-
-            # Post-condition
-            Condition.not_negative_int(self.precision, "precision")
+            self.precision = abs(self._value.as_tuple().exponent)
 
     def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
