@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.handlers cimport BarHandler
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
@@ -211,7 +210,7 @@ cdef class BarAggregator:
 
         """
         self.bar_type = bar_type
-        self._handler = BarHandler(handler)
+        self._handler = handler
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._builder = BarBuilder(
             bar_spec=self.bar_type.spec,
@@ -227,7 +226,7 @@ cdef class BarAggregator:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:
-        self._handler.handle(self.bar_type, bar)
+        self._handler(self.bar_type, bar)
 
 
 cdef class TickBarAggregator(BarAggregator):

@@ -30,11 +30,6 @@ from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.data cimport BarData
-from nautilus_trader.model.data cimport BarDataBlock
-from nautilus_trader.model.data cimport InstrumentDataBlock
-from nautilus_trader.model.data cimport QuoteTickDataBlock
-from nautilus_trader.model.data cimport TradeTickDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -50,10 +45,8 @@ cdef class DataEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef Portfolio _portfolio
-
-    cdef dict _clients
     cdef bint _use_previous_close
-
+    cdef dict _clients
     cdef dict _instrument_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
