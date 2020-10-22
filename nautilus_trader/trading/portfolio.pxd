@@ -78,6 +78,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
+    cdef inline Decimal _net_position(self, Symbol symbol)
     cdef inline tuple _build_quote_table(self, Venue venue)
     cdef inline set _symbols_open_for_venue(self, Venue venue)
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *

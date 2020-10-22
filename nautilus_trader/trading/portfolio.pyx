@@ -370,8 +370,7 @@ cdef class Portfolio(PortfolioFacade):
         Decimal
 
         """
-        cdef Decimal net_position = self._net_positions.get(symbol)
-        return net_position if net_position is not None else Decimal(0)
+        return self._net_position(symbol)
 
     cpdef bint is_net_long(self, Symbol symbol) except *:
         """
@@ -391,8 +390,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        cdef Decimal net_position = self._net_positions.get(symbol)
-        return net_position > 0 if net_position is not None else False
+        return self._net_position(symbol) > 0
 
     cpdef bint is_net_short(self, Symbol symbol) except *:
         """
@@ -412,8 +410,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        cdef Decimal net_position = self._net_positions.get(symbol)
-        return net_position < 0 if net_position is not None else False
+        return self._net_position(symbol) < 0
 
     cpdef bint is_flat(self, Symbol symbol) except *:
         """
@@ -433,8 +430,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        cdef Decimal net_position = self._net_positions.get(symbol)
-        return net_position == 0 if net_position is not None else True
+        return self._net_position(symbol) == 0
 
     cpdef bint is_completely_flat(self) except *:
         """
@@ -446,13 +442,12 @@ cdef class Portfolio(PortfolioFacade):
             True if net flat across all symbols, else False.
 
         """
-        cdef Decimal net_position = Decimal()
+        cdef Decimal net_position
+        for net_position in self._net_positions.values():
+            if net_position != 0:
+                return False
 
-        cdef Decimal relative
-        for relative in self._net_positions.values():
-            net_position += relative
-
-        return net_position == 0
+        return True
 
     cpdef Money order_margin(self, Venue venue):
         """
@@ -643,6 +638,10 @@ cdef class Portfolio(PortfolioFacade):
         return Money(open_value, account.currency)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline Decimal _net_position(self, Symbol symbol):
+        cdef Decimal net_position = self._net_positions.get(symbol)
+        return net_position if net_position is not None else Decimal()
 
     cdef inline tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}

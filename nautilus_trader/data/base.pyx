@@ -29,6 +29,8 @@ cdef class DataCacheFacade:
     Provides a read-only facade for a `DataCache`.
     """
 
+# -- QUERIES ---------------------------------------------------------------------------------------
+
     cpdef list symbols(self):
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
