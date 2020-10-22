@@ -64,7 +64,7 @@ cdef class OrderFactory:
         bint hidden=*,
     )
 
-    cpdef StopMarketOrder stop(
+    cpdef StopMarketOrder stop_market(
         self,
         Symbol symbol,
         OrderSide order_side,

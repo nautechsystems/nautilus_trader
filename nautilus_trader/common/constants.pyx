@@ -125,3 +125,6 @@ INSTRUMENT_ARRAY = 'Instrument[]'
 LOG_LEVEL = 'LogLevel'
 LOG_TEXT = 'LogText'
 THREAD_ID = 'ThreadId'
+
+HANDLER = 'Handler'
+CALLBACK = 'Callback'

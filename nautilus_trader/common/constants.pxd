@@ -128,3 +128,6 @@ cdef str INSTRUMENT_ARRAY
 cdef str LOG_LEVEL
 cdef str LOG_TEXT
 cdef str THREAD_ID
+
+cdef str HANDLER
+cdef str CALLBACK

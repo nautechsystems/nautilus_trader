@@ -16,6 +16,7 @@
 from collections import deque
 from typing import List
 
+from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -28,7 +29,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
