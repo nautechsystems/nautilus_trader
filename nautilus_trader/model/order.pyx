@@ -145,16 +145,13 @@ cdef class Order:
     def __hash__(self) -> int:
         return hash(self.cl_ord_id.value)
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         cdef str id_string = f"id={self.id.value}, " if self.id else ""
         return (f"{self.__class__.__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"
                 f"state={self._fsm.state_as_string()}, "
                 f"{self.status_string()})")
-
-    def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
 
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side) except *:
@@ -591,9 +588,9 @@ cdef class PassiveOrder(Order):
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.avg_price - self.price, self.avg_price.precision)
+            self.slippage = Decimal(self.avg_price - self.price)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price - self.avg_price, self.avg_price.precision)
+            self.slippage = Decimal(self.price - self.avg_price)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -1011,9 +1008,6 @@ cdef class BracketOrder:
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)
         return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
-
-    def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"

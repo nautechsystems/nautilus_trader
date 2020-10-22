@@ -118,11 +118,8 @@ cdef class TradingStrategy:
     def __hash__(self) -> int:
         return hash(self.id.value)
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}({self.id.value})"
-
     def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.__class__.__name__}(id={self.id.value})"
 
     cpdef ComponentState state(self):
         """

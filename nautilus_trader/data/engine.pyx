@@ -577,30 +577,22 @@ cdef class DataEngine:
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
+        elif isinstance(data, BarData):
+            self._handle_bar(data.bar_type, data.bar)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, tuple):
-            self._handle_packed_data(data)
+        elif isinstance(data, QuoteTickDataBlock):
+            self._handle_quote_ticks(data.ticks)
+        elif isinstance(data, TradeTickDataBlock):
+            self._handle_trade_ticks(data.ticks)
+        elif isinstance(data, BarDataBlock):
+            self._handle_bars(data.bar_type, data.bars)
+        elif isinstance(data, InstrumentDataBlock):
+            self._handle_instruments(data.instruments)
         else:
             self._log.error(f"Cannot handle data ({data} is unrecognized).")
 
-    cdef inline void _handle_packed_data(self, tuple data):
-        if len(data) != 2:
-            self._log.error(f"Cannot process data, packed tuple was malformed ({data}).")
-            return
-
-        cdef type data_type = data[0]
-        cdef list data_list = data[1]
-        if data_type == type(QuoteTick):
-            self._handle_quote_ticks(data_list)
-        elif data_type == type(TradeTick):
-            self._handle_trade_ticks(data_list)
-        elif data_type == type(Instrument):
-            self._handle_instruments(data_list)
-        else:
-            self._log.error(f"Cannot handle data ({data} is unrecognized).")
-
-    cpdef void _handle_instrument(self, Instrument instrument) except *:
+    cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
 
         self._portfolio.update_instrument(instrument)
@@ -611,12 +603,12 @@ cdef class DataEngine:
             for handler in instrument_handlers:
                 handler.handle(instrument)
 
-    cpdef void _handle_instruments(self, list instruments) except *:
+    cdef inline void _handle_instruments(self, list instruments) except *:
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
+    cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
         self.cache.add_quote_tick(tick)
 
         if not send_to_handlers:
@@ -634,7 +626,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void _handle_quote_ticks(self, list ticks) except *:
+    cdef inline void _handle_quote_ticks(self, list ticks) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -647,7 +639,7 @@ cdef class DataEngine:
         for i in range(length):
             self._handle_quote_tick(ticks[i], send_to_handlers=False)
 
-    cpdef void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=True) except *:
+    cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=True) except *:
         cdef Symbol symbol = tick.symbol
 
         self.cache.add_trade_tick(tick)
@@ -664,7 +656,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void _handle_trade_ticks(self, list ticks) except *:
+    cdef inline void _handle_trade_ticks(self, list ticks) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -677,7 +669,7 @@ cdef class DataEngine:
         for i in range(length):
             self._handle_trade_tick(ticks[i], send_to_handlers=False)
 
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=True) except *:
+    cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=True) except *:
         self.cache.add_bar(bar_type, bar)
 
         if not send_to_handlers:
@@ -692,7 +684,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void _handle_bars(self, BarType bar_type, list bars: List[Bar]) except *:
+    cdef inline void _handle_bars(self, BarType bar_type, list bars: List[Bar]) except *:
         cdef int length = len(bars)
 
         self._log.debug(f"Received <Bar[{length}]> data for {bar_type}.")
@@ -706,6 +698,10 @@ cdef class DataEngine:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
+    # Wrapper for _start_generating_bars to be able to pass _handle_bar as a callback
+    cpdef void _py_handle_bar(self, BarType bar_type, Bar bar) except *:
+        self._handle_bar(bar_type, bar)
+
     cdef inline void _internal_update_instruments(self, list instruments) except *:
         # Handle all instruments individually
         cdef Instrument instrument
@@ -715,11 +711,11 @@ cdef class DataEngine:
     cdef inline void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_aggregators:
             if bar_type.spec.aggregation == BarAggregation.TICK:
-                aggregator = TickBarAggregator(bar_type, self._handle_bar, self._log.get_logger())
+                aggregator = TickBarAggregator(bar_type, self._py_handle_bar, self._log.get_logger())
             elif bar_type.is_time_aggregated():
                 aggregator = TimeBarAggregator(
                     bar_type=bar_type,
-                    handler=self._handle_bar,
+                    handler=self._py_handle_bar,
                     use_previous_close=self._use_previous_close,
                     clock=self._clock,
                     logger=self._log.get_logger(),
@@ -902,7 +898,7 @@ cdef class DataEngine:
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback
+            callback,
     ) except *:
         # Bulk build tick bars
         cdef int ticks_to_order = bar_type.spec.step * limit
@@ -910,7 +906,7 @@ cdef class DataEngine:
         cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
             bar_type,
             self._log.get_logger(),
-            callback
+            callback,
         )
 
         self._handle_request_quote_ticks(
@@ -918,7 +914,7 @@ cdef class DataEngine:
             from_datetime,
             to_datetime,
             ticks_to_order,
-            bar_builder.receive
+            bar_builder.receive,
         )
 
 

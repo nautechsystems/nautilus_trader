@@ -122,29 +122,6 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertTrue(strategy.id not in self.exec_engine.registered_strategies())
 
-    def test_is_flat_when_strategy_registered_returns_true(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=TestUUIDFactory(),
-            logger=self.logger,
-        )
-
-        # Act
-        self.exec_engine.register_strategy(strategy)
-
-        # Assert
-        self.assertTrue(self.exec_engine.cache.is_flat(strategy_id=strategy.id))
-        self.assertTrue(self.exec_engine.cache.is_flat())
-
-    def test_is_flat_when_no_registered_strategies_returns_true(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertTrue(self.exec_engine.cache.is_flat())
-
     def test_reset_execution_engine(self):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -240,8 +217,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.cache.position_exists(expected_position_id))
         self.assertTrue(self.cache.is_position_open(expected_position_id))
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertFalse(self.exec_engine.cache.is_flat(strategy_id=strategy.id))
-        self.assertFalse(self.exec_engine.cache.is_flat())
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
         self.assertTrue(expected_position_id in self.cache.position_ids())
         self.assertTrue(expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id))
@@ -294,8 +269,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.cache.position_exists(expected_id))
         self.assertTrue(self.cache.is_position_open(expected_id))
         self.assertFalse(self.cache.is_position_closed(expected_id))
-        self.assertFalse(self.exec_engine.cache.is_flat(strategy_id=strategy.id))
-        self.assertFalse(self.exec_engine.cache.is_flat())
         self.assertEqual(Position, type(self.cache.position(expected_id)))
         self.assertTrue(expected_id in self.cache.position_ids())
         self.assertTrue(expected_id not in self.cache.position_closed_ids(strategy_id=strategy.id))
@@ -370,8 +343,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.cache.position_exists(TestStubs.event_order_filled(order1).position_id))
         self.assertTrue(self.cache.is_position_open(expected_position_id))
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertFalse(self.cache.is_flat(strategy_id=strategy.id))
-        self.assertFalse(self.cache.is_flat())
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
         self.assertEqual(0, len(self.cache.positions_closed(strategy_id=strategy.id)))
         self.assertEqual(0, len(self.cache.positions_closed()))
@@ -446,8 +417,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertFalse(self.cache.is_position_open(position_id))
         self.assertTrue(self.cache.is_position_closed(position_id))
-        self.assertTrue(self.cache.is_flat(strategy_id=strategy.id))
-        self.assertTrue(self.cache.is_flat())
         self.assertEqual(position_id, self.cache.position(position_id).id)
         self.assertEqual(position_id, self.cache.positions(strategy_id=strategy.id)[0].id)
         self.assertEqual(position_id, self.cache.positions()[0].id)
@@ -538,9 +507,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.cache.is_position_open(position2_id))
         self.assertFalse(self.cache.is_position_closed(position1_id))
         self.assertFalse(self.cache.is_position_closed(position2_id))
-        self.assertFalse(self.cache.is_flat(strategy_id=strategy1.id))
-        self.assertFalse(self.cache.is_flat(strategy_id=strategy2.id))
-        self.assertFalse(self.cache.is_flat())
         self.assertEqual(Position, type(self.cache.position(position1_id)))
         self.assertEqual(Position, type(self.cache.position(position2_id)))
         self.assertTrue(position1_id in self.cache.position_ids(strategy_id=strategy1.id))
@@ -665,9 +631,6 @@ class ExecutionEngineTests(unittest.TestCase):
         # Already tested .is_position_active and .is_position_closed above
         self.assertTrue(self.cache.position_exists(position_id1))
         self.assertTrue(self.cache.position_exists(position_id2))
-        self.assertTrue(self.cache.is_flat(strategy_id=strategy1.id))
-        self.assertFalse(self.cache.is_flat(strategy_id=strategy2.id))
-        self.assertFalse(self.cache.is_flat())
         self.assertTrue(position_id1 in self.cache.position_ids(strategy_id=strategy1.id))
         self.assertTrue(position_id2 in self.cache.position_ids(strategy_id=strategy2.id))
         self.assertTrue(position_id1 in self.cache.position_ids())
@@ -756,7 +719,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
         self.assertTrue(self.cache.is_position_open(position_id_flipped))
-        self.assertFalse(self.cache.is_flat(strategy_id=strategy.id))
         self.assertTrue(position_id in self.cache.position_ids())
         self.assertTrue(position_id in self.cache.position_ids(strategy_id=strategy.id))
         self.assertTrue(position_id_flipped in self.cache.position_ids())

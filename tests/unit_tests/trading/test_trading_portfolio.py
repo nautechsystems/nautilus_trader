@@ -101,6 +101,36 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertEqual(self.account, result)
 
+    def test_net_position_when_no_positions_returns_zero(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_FXCM.symbol))
+
+    def test_is_net_long_when_no_positions_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(False, self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
+
+    def test_is_net_short_when_no_positions_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(False, self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
+
+    def test_is_flat_when_no_positions_returns_true(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+
+    def test_is_completely_flat_when_no_positions_returns_true(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+
     def test_unrealized_pnl_for_symbol_when_no_instrument_returns_none(self):
         # Arrange
         # Act
@@ -131,7 +161,7 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertIsNone(self.portfolio.open_value(FXCM))
 
-    def test_opening_one_position_updates_portfolio(self):
+    def test_opening_one_long_position_updates_portfolio(self):
         # Arrange
         order = self.order_factory.market(
             BTCUSDT_BINANCE.symbol,
@@ -169,6 +199,55 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(Money(0, BTC), self.portfolio.position_margin(BINANCE))
         self.assertEqual(Money(0.00004762, BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
         self.assertEqual(Money(0.00004762, BTC), self.portfolio.unrealized_pnl_for_symbol(BTCUSDT_BINANCE.symbol))
+        self.assertEqual(Decimal(10), self.portfolio.net_position(order.symbol))
+        self.assertTrue(self.portfolio.is_net_long(order.symbol))
+        self.assertFalse(self.portfolio.is_net_short(order.symbol))
+        self.assertFalse(self.portfolio.is_flat(order.symbol))
+        self.assertFalse(self.portfolio.is_completely_flat())
+
+    def test_opening_one_short_position_updates_portfolio(self):
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.SELL,
+            Quantity("0.515"),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order=order,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("15350.10"),
+            base_currency=BTC,
+            quote_currency=USD,
+        )
+
+        last = QuoteTick(
+            BTCUSDT_BINANCE.symbol,
+            Price("15510.15"),
+            Price("15510.25"),
+            Quantity("12.62"),
+            Quantity("3.1"),
+            UNIX_EPOCH,
+        )
+
+        self.portfolio.update_tick(last)
+
+        position = Position(fill)
+
+        # Act
+        self.portfolio.update_position(TestStubs.event_position_opened(position))
+
+        # Assert
+        self.assertEqual(Money(0.51500000, BTC), self.portfolio.open_value(BINANCE))
+        self.assertEqual(Money(0, BTC), self.portfolio.position_margin(BINANCE))
+        self.assertEqual(Money(-0.00537308, BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
+        self.assertEqual(Money(-0.00537308, BTC), self.portfolio.unrealized_pnl_for_symbol(BTCUSDT_BINANCE.symbol))
+        self.assertEqual(Decimal("-0.515"), self.portfolio.net_position(order.symbol))
+        self.assertFalse(self.portfolio.is_net_long(order.symbol))
+        self.assertTrue(self.portfolio.is_net_short(order.symbol))
+        self.assertFalse(self.portfolio.is_flat(order.symbol))
+        self.assertFalse(self.portfolio.is_completely_flat())
 
     def test_opening_one_position_when_account_in_different_base(self):
         # Arrange
@@ -389,6 +468,11 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(Money(210816.00, USD), self.portfolio.open_value(FXCM))
         self.assertEqual(Money(0., BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
         self.assertEqual(Money(0., BTC), self.portfolio.open_value(BINANCE))
+        self.assertEqual(Decimal(100000), self.portfolio.net_position(AUDUSD_FXCM.symbol))
+        self.assertTrue(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
+        self.assertFalse(self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
+        self.assertFalse(self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertFalse(self.portfolio.is_completely_flat())
 
     def test_modifying_position_updates_portfolio(self):
         # Arrange
@@ -445,6 +529,7 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(Money(40250.50, USD), self.portfolio.open_value(FXCM))
         self.assertEqual(Money(0., BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
         self.assertEqual(Money(0., BTC), self.portfolio.open_value(BINANCE))
+        self.assertEqual(Decimal(50000), self.portfolio.net_position(AUDUSD_FXCM.symbol))
 
     def test_closing_position_updates_portfolio(self):
         # Arrange
@@ -490,6 +575,11 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), self.portfolio.open_value(FXCM))
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
         self.assertEqual(Money(0, BTC), self.portfolio.open_value(BINANCE))
+        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_FXCM.symbol))
+        self.assertFalse(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
+        self.assertFalse(self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
+        self.assertTrue(self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertTrue(self.portfolio.is_completely_flat())
 
     def test_several_positions_with_different_symbols_updates_portfolio(self):
         # Arrange
@@ -575,3 +665,8 @@ class PortfolioTests(unittest.TestCase):
         self.assertEqual(Money(164.22, USD), self.portfolio.account(FXCM).position_margin())
         self.assertEqual(Money(0, BTC), self.portfolio.unrealized_pnl_for_venue(BINANCE))
         self.assertEqual(Money(0, BTC), self.portfolio.open_value(BINANCE))
+        self.assertEqual(Decimal(200000), self.portfolio.net_position(AUDUSD_FXCM.symbol))
+        self.assertEqual(Decimal(0), self.portfolio.net_position(GBPUSD_FXCM.symbol))
+        self.assertTrue(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
+        self.assertTrue(self.portfolio.is_flat(GBPUSD_FXCM.symbol))
+        self.assertFalse(self.portfolio.is_completely_flat())

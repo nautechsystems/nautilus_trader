@@ -43,7 +43,6 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("1.00000"),
             equity=equity,
             risk=Decimal("0.001"),  # 0.1%
-            exchange_rate=1.0,
             unit_batch_size=1000,
         )
 
@@ -60,7 +59,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("110.000"),
             equity=equity,
             risk=Decimal("0.001"),  # 1%
-            exchange_rate=1 / 110,
+            exchange_rate=Decimal(str(1 / 110)),
         )
 
         # Assert
@@ -92,7 +91,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("1.00000"),
             equity=equity,
             risk=Decimal("0.01"),  # 1%
-            hard_limit=500000,
+            hard_limit=Decimal(500000),
             units=1,
             unit_batch_size=1000,
         )
@@ -146,7 +145,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             equity=equity,
             risk=Decimal("0.01"),  # 1%
             commission_rate=Decimal("0.0002"),
-            exchange_rate=1 / 107.403,
+            exchange_rate=Decimal(str(1 / 107.403)),
             units=1,
             unit_batch_size=1000,
         )

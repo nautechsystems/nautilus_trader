@@ -219,11 +219,8 @@ cdef class Instrument:
     def __hash__(self) -> int:
         return hash(self.symbol.value)
 
-    def __str__(self) -> str:
-        return f"{self.__class__.__name__}({self.symbol.value})"
-
     def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.__class__.__name__}('{self.symbol.value}')"
 
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price):
         """
@@ -283,6 +280,7 @@ cdef class Instrument:
             If last.symbol != self.symbol
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
@@ -327,6 +325,7 @@ cdef class Instrument:
             If last.symbol != self.symbol
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
@@ -368,6 +367,7 @@ cdef class Instrument:
             If side is UNDEFINED or FLAT.
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(avg_open, "avg_open")
         Condition.not_none(last, "last")
@@ -413,6 +413,7 @@ cdef class Instrument:
             If side is UNDEFINED or FLAT.
 
         """
+        # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(avg_open, "avg_open")
         Condition.not_none(avg_close, "avg_close")

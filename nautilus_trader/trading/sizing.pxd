@@ -31,8 +31,8 @@ cdef class PositionSizer:
         Money equity,
         Decimal risk,
         Decimal commission_rate=*,
-        double exchange_rate=*,
-        double hard_limit=*,
+        Decimal exchange_rate=*,
+        Decimal hard_limit=*,
         int units=*,
         int unit_batch_size=*,
     )

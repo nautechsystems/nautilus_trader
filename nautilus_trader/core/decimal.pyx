@@ -19,7 +19,8 @@ from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class Decimal:
-    """Represents a decimal number with a specified precision.
+    """
+    Represents a decimal number with a specified precision.
 
     The type interoperates with the built-in decimal.Decimal correctly.
 
@@ -31,7 +32,8 @@ cdef class Decimal:
     """
 
     def __init__(self, value="0", precision=None):
-        """Initialize a new instance of the Decimal class.
+        """
+        Initialize a new instance of the Decimal class.
 
         Parameters
         ----------
@@ -58,7 +60,6 @@ cdef class Decimal:
             if not isinstance(value, float):
                 value = float(value)
             self._value = PyDecimal(f'{value:.{precision}f}')
-            self.precision = precision
         else:  # Infer precision
             if isinstance(value, float):
                 raise TypeError("precision cannot be inferred from a float, "
@@ -67,8 +68,6 @@ cdef class Decimal:
                 self._value = value._value
             else:
                 self._value = PyDecimal(value)
-
-            self.precision = abs(self._value.as_tuple().exponent)
 
     def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
@@ -156,25 +155,45 @@ cdef class Decimal:
             return Decimal(a % b)
 
     def __neg__(self):
-        """Return a copy with the sign switched.
+        """
+        Return a copy with the sign switched.
 
         Rounds, if it has reason.
+
+        Returns
+        -------
+        Decimal
+
         """
         return Decimal(self._value.__neg__())
 
     def __pos__(self):
-        """Return a copy, unless it is a sNaN.
+        """
+        Return a copy, unless it is a NaN.
 
         Rounds the number (if more than precision digits)
+
+        Returns
+        -------
+        Decimal
+
         """
         return Decimal(self._value.__pos__())
 
     def __abs__(self):
-        """Return the absolute value of the decimal."""
+        """
+        Return the absolute value of the decimal.
+
+        Returns
+        -------
+        Decimal
+
+        """
         return Decimal(abs(self._value))
 
     def __round__(self, ndigits=None):
-        """Return a rounded copy of this object.
+        """
+        Return a rounded copy of this object.
 
         Rounds half toward even.
 
@@ -182,6 +201,10 @@ cdef class Decimal:
         ----------
         ndigits : int
             The number of digits to round to.
+
+        Returns
+        -------
+        Decimal
 
         """
         return Decimal(round(self._value, ndigits))
@@ -211,8 +234,20 @@ cdef class Decimal:
             b = b._value
         return a, b
 
+    cpdef int precision(self) except *:
+        """
+        Return the precision of this decimal.
+
+        Returns
+        -------
+        int
+
+        """
+        return abs(self._value.as_tuple().exponent)
+
     cpdef object as_decimal(self):
-        """Return this object as a built-in `decimal.Decimal`.
+        """
+        Return the value of this object as a built-in `decimal.Decimal`.
 
         Returns
         -------
@@ -222,7 +257,8 @@ cdef class Decimal:
         return self._value
 
     cpdef double as_double(self) except *:
-        """Return the value of this object as a `double`.
+        """
+        Return the value of this object as a `double`.
 
         Returns
         -------

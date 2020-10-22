@@ -27,24 +27,6 @@ cdef class ExecutionCacheFacade:
     Provides a read-only facade for an `ExecutionCache`.
     """
 
-# -- TRADE QUERIES ---------------------------------------------------------------------------------
-
-    cpdef bint is_net_long(self, Symbol symbol, StrategyId strategy_id=None) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint is_net_short(self, Symbol symbol, StrategyId strategy_id=None) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint is_flat(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint is_completely_flat(self) except *:
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
 # -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):

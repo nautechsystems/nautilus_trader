@@ -30,6 +30,11 @@ from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data cimport BarData
+from nautilus_trader.model.data cimport BarDataBlock
+from nautilus_trader.model.data cimport InstrumentDataBlock
+from nautilus_trader.model.data cimport QuoteTickDataBlock
+from nautilus_trader.model.data cimport TradeTickDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -128,18 +133,18 @@ cdef class DataEngine:
 # -- DATA-HANDLERS ---------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, object data) except *
-    cdef inline void _handle_packed_data(self, tuple data)
-    cpdef void _handle_instrument(self, Instrument instrument) except *
-    cpdef void _handle_instruments(self, list instruments) except *
-    cpdef void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
-    cpdef void _handle_quote_ticks(self, list ticks) except *
-    cpdef void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
-    cpdef void _handle_trade_ticks(self, list ticks) except *
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
-    cpdef void _handle_bars(self, BarType bar_type, list bars) except *
+    cdef inline void _handle_instrument(self, Instrument instrument) except *
+    cdef inline void _handle_instruments(self, list instruments) except *
+    cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
+    cdef inline void _handle_quote_ticks(self, list ticks) except *
+    cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
+    cdef inline void _handle_trade_ticks(self, list ticks) except *
+    cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
+    cdef inline void _handle_bars(self, BarType bar_type, list bars) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
+    cpdef void _py_handle_bar(self, BarType bar_type, Bar bar) except *
     cdef inline void _internal_update_instruments(self, list instruments) except *
     cdef inline void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef inline void _stop_generating_bars(self, BarType bar_type, handler) except *
