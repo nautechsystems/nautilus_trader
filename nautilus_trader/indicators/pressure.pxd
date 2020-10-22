@@ -16,7 +16,6 @@
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class Pressure(Indicator):
@@ -27,6 +26,4 @@ cdef class Pressure(Indicator):
     cdef readonly double value
     cdef readonly double value_cumulative
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close, double volume) except *
-    cpdef void reset(self) except *

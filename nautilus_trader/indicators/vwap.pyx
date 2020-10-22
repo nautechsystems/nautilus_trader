@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
 cdef class VolumeWeightedAveragePrice(Indicator):

@@ -13,19 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-cdef class AverageTrueRange(Indicator):
-    cdef MovingAverage _moving_average
-    cdef bint _use_previous
-    cdef double _value_floor
-    cdef double _previous_close
+cdef class Stochastics(Indicator):
+    cdef object _highs
+    cdef object _lows
+    cdef object _c_sub_l
+    cdef object _h_sub_l
 
-    cdef readonly int period
-    cdef readonly double value
+    cdef readonly int period_k
+    cdef readonly int period_d
+    cdef readonly double value_k
+    cdef readonly double value_d
 
-    cpdef void update_raw(self, double high, double low, double close)
-    cdef void _floor_value(self) except *
-    cdef void _check_initialized(self) except *
+    cpdef void update_raw(self, double high, double low, double close) except *

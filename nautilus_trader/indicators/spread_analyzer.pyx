@@ -92,7 +92,7 @@ cdef class SpreadAnalyzer(Indicator):
             drop_left=False,
         )
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """
         Reset the indicator.
 
