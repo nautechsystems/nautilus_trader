@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define common basic value objects in the trading domain."""
+"""Define fundamental value objects in the trading domain."""
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
@@ -21,7 +21,8 @@ from nautilus_trader.model.currency cimport Currency
 
 
 cdef class Quantity(Decimal):
-    """Represents a quantity with a non-negative value.
+    """
+    Represents a quantity with a non-negative value.
 
     Capable of storing either a whole number (no decimal places) of “shares”
     (securities denominated in whole units) or a decimal value containing
@@ -40,7 +41,8 @@ cdef class Quantity(Decimal):
     """
 
     def __init__(self, value="0", precision=None):
-        """Initialize a new instance of the Quantity class.
+        """
+        Initialize a new instance of the Quantity class.
 
         Parameters
         ----------
@@ -65,7 +67,7 @@ cdef class Quantity(Decimal):
         super().__init__(value, precision)
 
         # Post-condition
-        Condition.true(self._value >= 0, f"quantity positive, was {self.to_string()}")
+        Condition.true(self._value >= 0, f"quantity positive, was {self._value}")
 
     cpdef str to_string(self):
         """Return the formatted string representation of this object.
@@ -75,21 +77,12 @@ cdef class Quantity(Decimal):
         str
 
         """
-        if self.precision > 0:
-            return str(self._value)
-
-        if self < 1000 or self % 1000 != 0:
-            return f"{self._value:,.0f}"
-
-        if self < 1000000:
-            return f"{round(self / 1000)}K"
-
-        cdef str millions = f"{self._value / 1000000:.3f}".rstrip("0").rstrip(".")
-        return f"{millions}M"
+        return f"{self._value:,}"
 
 
 cdef class Price(Decimal):
-    """Represents a price in a financial market.
+    """
+    Represents a price in a financial market.
 
     The number of decimal places may vary. For certain asset classes prices may
     be negative values. For example, prices for options strategies can be
@@ -107,7 +100,8 @@ cdef class Price(Decimal):
     """
 
     def __init__(self, value="0", precision=None):
-        """Initialize a new instance of the Price class.
+        """
+        Initialize a new instance of the Price class.
 
         Parameters
         ----------
@@ -129,7 +123,8 @@ cdef class Price(Decimal):
 
 
 cdef class Money(Decimal):
-    """Represents an amount of money including currency type.
+    """
+    Represents an amount of money including currency type.
 
     Attributes
     ----------
@@ -139,7 +134,8 @@ cdef class Money(Decimal):
     """
 
     def __init__(self, value, Currency currency not None):
-        """Initialize a new instance of the Money class.
+        """
+        Initialize a new instance of the Money class.
 
         Parameters
         ----------
@@ -181,7 +177,8 @@ cdef class Money(Decimal):
 
     @property
     def amount(self) -> Decimal:
-        """Return the amount of money as a decimal.
+        """
+        Return the amount of money as a decimal.
 
         Returns
         -------
@@ -191,7 +188,8 @@ cdef class Money(Decimal):
         return Decimal(self._value)
 
     cpdef str to_string(self):
-        """Return the formatted string representation of this object.
+        """
+        Return the formatted string representation of this object.
 
         Returns
         -------

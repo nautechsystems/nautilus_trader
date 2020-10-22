@@ -143,20 +143,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy3 = TradingStrategy(order_id_tag="AUD/USD-002")
 
         # Act
-        result1 = strategy1 == strategy1
-        result2 = strategy1 == strategy2
-        result3 = strategy2 == strategy3
-        result4 = strategy1 != strategy1
-        result5 = strategy1 != strategy2
-        result6 = strategy2 != strategy3
-
         # Assert
-        self.assertTrue(result1)
-        self.assertFalse(result2)
-        self.assertFalse(result3)
-        self.assertFalse(result4)
-        self.assertTrue(result5)
-        self.assertTrue(result6)
+        self.assertTrue(strategy1 == strategy1)
+        self.assertFalse(strategy1 == strategy2)
+        self.assertFalse(strategy2 == strategy3)
+        self.assertFalse(strategy1 != strategy1)
+        self.assertTrue(strategy1 != strategy2)
+        self.assertTrue(strategy2 != strategy3)
 
     def test_strategy_is_hashable(self):
         # Arrange
@@ -172,13 +165,9 @@ class TradingStrategyTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="GBP/USD-MM")
 
         # Act
-        result1 = str(strategy)
-        result2 = repr(strategy)
-
         # Assert
-        self.assertEqual("TradingStrategy(TradingStrategy-GBP/USD-MM)", result1)
-        self.assertTrue(result2.startswith("<TradingStrategy(TradingStrategy-GBP/USD-MM) object at"))
-        self.assertTrue(result2.endswith(">"))
+        self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", str(strategy))
+        self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", repr(strategy))
 
     def test_get_strategy_id(self):
         # Arrange
@@ -439,10 +428,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(OrderState.WORKING, strategy.execution.orders()[0].state())
         self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
         self.assertEqual(Price("90.002"), strategy.execution.orders()[0].price)
-        self.assertTrue(strategy.execution.is_flat())
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
         self.assertTrue(strategy.execution.is_order_working(order.cl_ord_id))
         self.assertFalse(strategy.execution.is_order_completed(order.cl_ord_id))
+        self.assertTrue(strategy.portfolio.is_flat(order.symbol))
 
     def test_cancel_all_orders(self):
         # Arrange
@@ -517,7 +506,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[0].side)
         self.assertTrue(strategy.execution.positions()[0].is_closed())
         self.assertTrue(PositionId("B-USD/JPY-1") in strategy.execution.position_closed_ids())
-        self.assertTrue(strategy.execution.is_completely_flat())
+        self.assertTrue(strategy.portfolio.is_completely_flat())
 
     def test_flatten_all_positions(self):
         # Arrange
@@ -572,7 +561,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[1].side)
         self.assertTrue(position1.id in strategy.execution.position_closed_ids())
         self.assertTrue(position2.id in strategy.execution.position_closed_ids())
-        self.assertTrue(strategy.execution.is_completely_flat())
+        self.assertTrue(strategy.portfolio.is_completely_flat())
 
     def test_update_indicators(self):
         # Arrange
@@ -630,7 +619,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(0, len(strategy.execution.positions_closed()))
         self.assertTrue(order in strategy.execution.orders_completed())
         self.assertTrue(PositionId("B-USD/JPY-1") in strategy.execution.position_open_ids())
-        self.assertFalse(strategy.execution.is_completely_flat())
+        self.assertFalse(strategy.portfolio.is_completely_flat())
 
     def test_can_track_orders_for_a_closing_position(self):
         # Arrange
@@ -667,4 +656,4 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertTrue(order2 in self.exec_engine.cache.orders_completed())
         self.assertEqual(1, len(self.exec_engine.cache.positions_closed()))
         self.assertEqual(0, len(self.exec_engine.cache.positions_open()))
-        self.assertTrue(self.exec_engine.cache.is_completely_flat())
+        self.assertTrue(strategy.portfolio.is_completely_flat())

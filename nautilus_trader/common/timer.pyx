@@ -80,13 +80,11 @@ cdef class TimeEvent(Event):
     def __hash__(self) -> int:
         return hash(self.id)
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         return (f"{self.__class__.__name__}("
                 f"name={self.name}, "
+                f"id={self.id}, "
                 f"timestamp={format_iso8601(self.timestamp)})")
-
-    def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
 
 
 cdef class TimeEventHandler:
@@ -167,16 +165,13 @@ cdef class Timer:
     def __hash__(self) -> int:
         return hash(self.name)
 
-    def __str__(self) -> str:
-        return (f"Timer("
+    def __repr__(self) -> str:
+        return (f"{self.__class__.__name__}("
                 f"name={self.name}, "
                 f"interval={self.interval}, "
                 f"start_time={self.start_time}, "
                 f"next_time={self.next_time}, "
                 f"stop_time={self.stop_time})")
-
-    def __repr__(self) -> str:
-        return f"<{self.__str__} object at {id(self)}>"
 
     cpdef TimeEvent pop_event(self, UUID event_id):
         """

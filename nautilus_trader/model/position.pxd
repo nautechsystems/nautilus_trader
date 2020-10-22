@@ -54,8 +54,8 @@ cdef class Position:
     cdef readonly datetime opened_time
     cdef readonly datetime closed_time
     cdef readonly timedelta open_duration
-    cdef readonly Decimal avg_open_price
-    cdef readonly Decimal avg_close_price
+    cdef readonly Decimal avg_open
+    cdef readonly Decimal avg_close
     cdef readonly Decimal realized_points
     cdef readonly Decimal realized_return
     cdef readonly Money realized_pnl

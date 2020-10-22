@@ -65,8 +65,8 @@ cdef class PositionSizer:
             Money equity,
             Decimal risk,
             Decimal commission_rate=Decimal(),
-            double exchange_rate=1.0,
-            double hard_limit=0.0,
+            Decimal exchange_rate=Decimal(1),
+            Decimal hard_limit=Decimal(),
             int units=1,
             int unit_batch_size=0,
     ):
@@ -115,8 +115,8 @@ cdef class FixedRiskSizer(PositionSizer):
             Money equity,
             Decimal risk,
             Decimal commission_rate=Decimal(),
-            double exchange_rate=1.0,
-            double hard_limit=0.0,
+            Decimal exchange_rate=Decimal(1),
+            Decimal hard_limit=Decimal(),
             int units=1,
             int unit_batch_size=0,
     ):
@@ -186,8 +186,7 @@ cdef class FixedRiskSizer(PositionSizer):
             return Quantity(precision=self.instrument.size_precision)
 
         # Calculate position size
-        cdef Decimal tick_size = self.instrument.tick_size
-        cdef Decimal position_size = (Decimal(risk_money / exchange_rate, self.instrument.size_precision) / risk_points) / tick_size
+        cdef Decimal position_size = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size
 
         # Limit size on hard limit
         if hard_limit > 0:

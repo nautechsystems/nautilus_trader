@@ -13,22 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
-
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
 
 
-__author__ = "Nautech Systems"
+cdef class BarData:
+    cdef readonly BarType bar_type
+    cdef readonly Bar bar
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 81
-_PATCH_VERSION = 4
-_PRE_RELEASE = ''
 
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+cdef class BarDataBlock:
+    cdef readonly BarType bar_type
+    cdef readonly list bars
+
+
+cdef class QuoteTickDataBlock:
+    cdef readonly list ticks
+
+
+cdef class TradeTickDataBlock:
+    cdef readonly list ticks
+
+
+cdef class InstrumentDataBlock:
+    cdef readonly list instruments

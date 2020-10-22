@@ -22,6 +22,11 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data cimport BarData
+from nautilus_trader.model.data cimport BarDataBlock
+from nautilus_trader.model.data cimport InstrumentDataBlock
+from nautilus_trader.model.data cimport QuoteTickDataBlock
+from nautilus_trader.model.data cimport TradeTickDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -165,25 +170,30 @@ cdef class DataClient:
         self._engine.process(tick)
 
     cpdef void handle_quote_ticks(self, list ticks) except *:
-        self._engine.process((type(QuoteTick), ticks))
+        cdef QuoteTickDataBlock data = QuoteTickDataBlock(ticks)
+        self._engine.process(data)
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         self._engine.process(tick)
 
     cpdef void handle_trade_ticks(self, list ticks) except *:
-        self._engine.process((type(TradeTick), ticks))
+        cdef TradeTickDataBlock data = TradeTickDataBlock(ticks)
+        self._engine.process(data)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
-        self._engine.process((bar_type, bar))
+        cdef BarData data = BarData(bar_type, bar)
+        self._engine.process(data)
 
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
+        cdef BarDataBlock data = BarDataBlock(bar_type, bars)
         self._engine.process((bar_type, bars))
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
         self._engine.process(instrument)
 
     cpdef void handle_instruments(self, list instruments) except *:
-        self._engine.process((type(Instrument), instruments))
+        cdef InstrumentDataBlock data = InstrumentDataBlock(instruments)
+        self._engine.process(instruments)
 
     cdef void _reset(self) except *:
         # Reset the class to its initial state

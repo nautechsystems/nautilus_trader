@@ -134,14 +134,14 @@ cdef class EMACross(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.bar_count(self.bar_type)}]...")
+                          f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.execution.is_flat(self.symbol, self.id):
+            if self.portfolio.is_flat(self.symbol):
                 self.buy(1000000)
-            elif self.execution.is_net_long(self.symbol, self.id):
+            elif self.portfolio.is_net_long(self.symbol):
                 pass
             else:
                 positions = self.execution.positions_open()
@@ -151,9 +151,9 @@ cdef class EMACross(TradingStrategy):
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.execution.is_flat(self.symbol, self.id):
+            if self.portfolio.is_flat(self.symbol):
                 self.sell(1000000)
-            elif self.execution.is_net_short(self.symbol, self.id):
+            elif self.portfolio.is_net_short(self.symbol):
                 pass
             else:
                 positions = self.execution.positions_open()
