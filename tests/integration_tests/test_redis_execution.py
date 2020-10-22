@@ -147,7 +147,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_update_order_for_working_order(self):
         # Arrange
-        order = self.strategy.order_factory.stop(
+        order = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -375,7 +375,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
-        order1 = self.strategy.order_factory.stop(
+        order1 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -422,7 +422,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1)
 
-        order2 = self.strategy.order_factory.stop(
+        order2 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

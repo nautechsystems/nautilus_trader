@@ -25,6 +25,7 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
+from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -49,7 +50,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.serialization.constants cimport *
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -338,22 +338,22 @@ cdef class DataEngine:
         if command.data_type == Instrument:
             self._handle_subscribe_instrument(
                 command.options.get(SYMBOL),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         elif command.data_type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 command.options.get(SYMBOL),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         elif command.data_type == TradeTick:
             self._handle_subscribe_trade_ticks(
                 command.options.get(SYMBOL),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         elif command.data_type == Bar:
             self._handle_subscribe_bars(
                 command.options.get(BAR_TYPE),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         else:
             self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")
@@ -362,22 +362,22 @@ cdef class DataEngine:
         if command.data_type == Instrument:
             self._handle_unsubscribe_instrument(
                 command.options.get(SYMBOL),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         elif command.data_type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
                 command.options.get(SYMBOL),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         elif command.data_type == TradeTick:
             self._handle_unsubscribe_trade_ticks(
                 command.options.get(SYMBOL),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         elif command.data_type == Bar:
             self._handle_unsubscribe_bars(
                 command.options.get(BAR_TYPE),
-                command.options.get('handler'),
+                command.options.get(HANDLER),
             )
         else:
             self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")
@@ -388,12 +388,12 @@ cdef class DataEngine:
             if venue is not None:
                 self._handle_request_instruments(
                     venue,
-                    command.options.get('callback'),
+                    command.options.get(CALLBACK),
                 )
             else:
                 self._handle_request_instrument(
                     command.options.get(SYMBOL),
-                    command.options.get('callback'),
+                    command.options.get(CALLBACK),
                 )
         elif command.data_type == QuoteTick:
             self._handle_request_quote_ticks(
@@ -401,7 +401,7 @@ cdef class DataEngine:
                 command.options.get(FROM_DATETIME),
                 command.options.get(TO_DATETIME),
                 command.options.get(LIMIT),
-                command.options.get('callback'),
+                command.options.get(CALLBACK),
             )
         elif command.data_type == TradeTick:
             self._handle_request_trade_ticks(
@@ -409,7 +409,7 @@ cdef class DataEngine:
                 command.options.get(FROM_DATETIME),
                 command.options.get(TO_DATETIME),
                 command.options.get(LIMIT),
-                command.options.get('callback'),
+                command.options.get(CALLBACK),
             )
         elif command.data_type == Bar:
             self._handle_request_bars(
@@ -417,7 +417,7 @@ cdef class DataEngine:
                 command.options.get(FROM_DATETIME),
                 command.options.get(TO_DATETIME),
                 command.options.get(LIMIT),
-                command.options.get('callback'),
+                command.options.get(CALLBACK),
             )
         else:
             self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")

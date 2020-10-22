@@ -18,6 +18,7 @@ import msgpack
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.cache cimport IdentifierCache
+from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
@@ -75,7 +76,6 @@ from nautilus_trader.serialization.common cimport convert_datetime_to_string
 from nautilus_trader.serialization.common cimport convert_price_to_string
 from nautilus_trader.serialization.common cimport convert_string_to_datetime
 from nautilus_trader.serialization.common cimport convert_string_to_price
-from nautilus_trader.serialization.constants cimport *
 
 
 cdef class MsgPackSerializer:

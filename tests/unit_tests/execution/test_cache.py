@@ -110,7 +110,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
     def test_update_order_for_working_order(self):
         # Arrange
-        order = self.strategy.order_factory.stop(
+        order = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -328,7 +328,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
-        order2 = self.strategy.order_factory.stop(
+        order2 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -375,7 +375,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
-        order2 = self.strategy.order_factory.stop(
+        order2 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -428,7 +428,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order1)
         self.cache.add_position(position1)
 
-        order2 = self.strategy.order_factory.stop(
+        order2 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

@@ -300,7 +300,7 @@ class OrderTests(unittest.TestCase):
     def test_initialize_stop_order(self):
         # Arrange
         # Act
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -339,7 +339,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_initialize_bracket_order_stop_with_take_profit(self):
         # Arrange
-        entry_order = self.order_factory.stop(
+        entry_order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -452,7 +452,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_apply_order_working_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -479,7 +479,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_apply_order_expired_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -526,7 +526,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_apply_order_modified_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
