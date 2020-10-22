@@ -48,29 +48,13 @@ class MoneyTests(unittest.TestCase):
         [Decimal("1.1"), Money("1.1", USD)],
         [Decimal("-1.1"), Money("-1.1", USD)],
     ])
-    def test_instantiate_with_various_valid_inputs_returns_expected_decimal(self, value, expected):
+    def test_instantiate_with_various_valid_inputs_returns_expected_money(self, value, expected):
         # Arrange
         # Act
         money = Money(value, USD)
 
         # Assert
         self.assertEqual(expected, money)
-
-    @parameterized.expand([
-        ["0", 0],
-        ["-0", 0],
-        ["-1", -1],
-        ["1", 1],
-        ["1.1", 1.1],
-        ["-1.1", -1.1],
-    ])
-    def test_as_double_with_various_values_returns_expected_value(self, value, expected):
-        # Arrange
-        # Act
-        result = Money(value, USD).as_double()
-
-        # Assert
-        self.assertEqual(expected, result)
 
     @parameterized.expand([
         ["0", -0, True],

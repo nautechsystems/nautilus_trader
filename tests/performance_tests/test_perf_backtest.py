@@ -181,4 +181,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 22/10/20 21635544 function calls (21468680 primitive calls) in 18.997 seconds (data wrapper classes)
         # 22/10/20 21635544 function calls (21468680 primitive calls) in 18.759 seconds (cdef inline data handler methods)
         # 22/10/20 20505398 function calls (20338534 primitive calls) in 17.905 seconds (remove redundant precision calculation)
-        # 22/10/20 20505398 function calls (20338534 primitive calls) in 14.535 seconds (improve portfolio calculation efficiency)
+        # 22/10/20 20505398 function calls (20338534 primitive calls) in 14.170 seconds (improve portfolio calculation efficiency)

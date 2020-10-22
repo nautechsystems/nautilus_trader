@@ -37,7 +37,7 @@ cdef class Decimal:
 
         Parameters
         ----------
-        value : int, float, decimal.Decimal or Decimal
+        value : integer, float, string, decimal.Decimal or Decimal
             The value of the decimal. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -55,12 +55,7 @@ cdef class Decimal:
         """
         Condition.not_none(value, "value")
 
-        if precision is not None:
-            Condition.not_negative_int(precision, "precision")
-            if not isinstance(value, float):
-                value = float(value)
-            self._value = PyDecimal(f'{value:.{precision}f}')
-        else:  # Infer precision
+        if precision is None:  # Infer precision
             if isinstance(value, float):
                 raise TypeError("precision cannot be inferred from a float, "
                                 "please specify a precision when passing a float")
@@ -68,6 +63,11 @@ cdef class Decimal:
                 self._value = value._value
             else:
                 self._value = PyDecimal(value)
+        else:
+            Condition.not_negative_int(precision, "precision")
+            if not isinstance(value, float):
+                value = float(value)
+            self._value = PyDecimal(f'{value:.{precision}f}')
 
     def __eq__(self, other) -> bool:
         a, b = Decimal._convert_values(self, other)
