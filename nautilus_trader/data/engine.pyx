@@ -17,7 +17,7 @@ import cython
 
 from cpython.datetime cimport datetime
 
-from typing import List
+from typing import Callable, List
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport Connect
@@ -25,10 +25,6 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
-from nautilus_trader.common.handlers cimport BarHandler
-from nautilus_trader.common.handlers cimport InstrumentHandler
-from nautilus_trader.common.handlers cimport QuoteTickHandler
-from nautilus_trader.common.handlers cimport TradeTickHandler
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -43,6 +39,11 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport BarData
+from nautilus_trader.model.data cimport BarDataBlock
+from nautilus_trader.model.data cimport InstrumentDataBlock
+from nautilus_trader.model.data cimport QuoteTickDataBlock
+from nautilus_trader.model.data cimport TradeTickDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -89,26 +90,24 @@ cdef class DataEngine:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(self.__class__.__name__, logger)
         self._portfolio = portfolio
+        self._use_previous_close = config.get('use_previous_close', True)
         self._clients = {}              # type: {Venue, DataClient}
 
-        self._use_previous_close = config.get('use_previous_close', True)
-
-        self.cache = DataCache(logger)
-
         # Handlers
-        self._instrument_handlers = {}  # type: {Symbol, [InstrumentHandler]}
-        self._quote_tick_handlers = {}  # type: {Symbol, [QuoteTickHandler]}
-        self._trade_tick_handlers = {}  # type: {Symbol, [TradeTickHandler]}
-        self._bar_aggregators = {}      # type: {BarType, BarAggregator}
+        self._instrument_handlers = {}  # type: {Symbol, [Callable]}
+        self._quote_tick_handlers = {}  # type: {Symbol, [Callable]}
+        self._trade_tick_handlers = {}  # type: {Symbol, [Callable]}
+        self._bar_handlers = {}         # type: {BarType, [Callable]}
 
         # Aggregators
-        self._bar_handlers = {}         # type: {BarType, [BarHandler]}
+        self._bar_aggregators = {}      # type: {BarType, BarAggregator}
+
+        self.cache = DataCache(logger)
+        self.command_count = 0
+        self.data_count = 0
 
         self._log.info("Initialized.")
         self._log.info(f"use_previous_close={self._use_previous_close}")
-
-        self.command_count = 0
-        self.data_count = 0
 
 # --REGISTRATIONS ----------------------------------------------------------------------------------
 
@@ -598,12 +597,11 @@ cdef class DataEngine:
         self._portfolio.update_instrument(instrument)
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
-        cdef InstrumentHandler handler
         if instrument_handlers:
             for handler in instrument_handlers:
                 handler.handle(instrument)
 
-    cdef inline void _handle_instruments(self, list instruments) except *:
+    cdef inline void _handle_instruments(self, list instruments: List[Instrument]) except *:
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
@@ -619,14 +617,13 @@ cdef class DataEngine:
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
-        cdef QuoteTickHandler handler
         if tick_handlers is not None:
             for handler in tick_handlers:
-                handler.handle(tick)
+                handler(tick)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _handle_quote_ticks(self, list ticks) except *:
+    cdef inline void _handle_quote_ticks(self, list ticks: List[QuoteTick]) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -649,14 +646,13 @@ cdef class DataEngine:
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
-        cdef TradeTickHandler handler
         if tick_handlers is not None:
             for handler in tick_handlers:
-                handler.handle(tick)
+                handler(tick)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _handle_trade_ticks(self, list ticks) except *:
+    cdef inline void _handle_trade_ticks(self, list ticks: List[TradeTick]) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -677,10 +673,9 @@ cdef class DataEngine:
 
         # Send to all registered bar handlers for that bar type
         cdef list bar_handlers = self._bar_handlers.get(bar_type)
-        cdef BarHandler handler
         if bar_handlers is not None:
             for handler in bar_handlers:
-                handler.handle(bar_type, bar)
+                handler(bar_type, bar)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -702,7 +697,7 @@ cdef class DataEngine:
     cpdef void _py_handle_bar(self, BarType bar_type, Bar bar) except *:
         self._handle_bar(bar_type, bar)
 
-    cdef inline void _internal_update_instruments(self, list instruments) except *:
+    cdef inline void _internal_update_instruments(self, list instruments: List[Instrument]) except *:
         # Handle all instruments individually
         cdef Instrument instrument
         for instrument in instruments:
@@ -723,13 +718,22 @@ cdef class DataEngine:
 
                 bulk_updater = BulkTimeBarUpdater(aggregator)
 
-                self._handle_request_quote_ticks(
-                    symbol=bar_type.symbol,
-                    from_datetime=aggregator.get_start_time(),
-                    to_datetime=None,  # Max
-                    limit=0,  # No limit
-                    callback=bulk_updater.receive,
-                )
+                if bar_type.spec.price_type == PriceType.LAST:
+                    self._handle_request_quote_ticks(
+                        symbol=bar_type.symbol,
+                        from_datetime=aggregator.get_start_time(),
+                        to_datetime=None,  # Max
+                        limit=0,  # No limit
+                        callback=bulk_updater.receive,
+                    )
+                else:
+                    self._handle_request_trade_ticks(
+                        symbol=bar_type.symbol,
+                        from_datetime=aggregator.get_start_time(),
+                        to_datetime=None,  # Max
+                        limit=0,  # No limit
+                        callback=bulk_updater.receive,
+                    )
 
             # Add aggregator and subscribe to QuoteTick updates
             self._bar_aggregators[bar_type] = aggregator
@@ -762,59 +766,55 @@ cdef class DataEngine:
     cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._quote_tick_handlers:
             # Setup handlers
-            self._quote_tick_handlers[symbol] = []                        # type: [QuoteTickHandler]
+            self._quote_tick_handlers[symbol] = []  # type: [Callable]
             self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
         # Add handler for subscriber
-        tick_handler = QuoteTickHandler(handler)
-        if tick_handler not in self._quote_tick_handlers[symbol]:
-            self._quote_tick_handlers[symbol].append(tick_handler)
-            self._log.debug(f"Added {tick_handler} for {symbol} <QuoteTick> data.")
+        if handler not in self._quote_tick_handlers[symbol]:
+            self._quote_tick_handlers[symbol].append(handler)
+            self._log.debug(f"Added {handler} for {symbol} <QuoteTick> data.")
         else:
-            self._log.error(f"Cannot add {tick_handler} for {symbol} <QuoteTick> data"
+            self._log.error(f"Cannot add {handler} for {symbol} <QuoteTick> data"
                             f"(duplicate handler found).")
 
     cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._trade_tick_handlers:
             # Setup handlers
-            self._trade_tick_handlers[symbol] = []                        # type: [TradeTickHandler]
+            self._trade_tick_handlers[symbol] = []  # type: [Callable]
             self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
         # Add handler for subscriber
-        tick_handler = TradeTickHandler(handler)
-        if tick_handler not in self._trade_tick_handlers[symbol]:
-            self._trade_tick_handlers[symbol].append(tick_handler)
-            self._log.debug(f"Added {tick_handler} for {symbol} <TradeTick> data.")
+        if handler not in self._trade_tick_handlers[symbol]:
+            self._trade_tick_handlers[symbol].append(handler)
+            self._log.debug(f"Added {handler} for {symbol} <TradeTick> data.")
         else:
-            self._log.error(f"Cannot add {tick_handler} for {symbol} <TradeTick> data"
+            self._log.error(f"Cannot add {handler} for {symbol} <TradeTick> data"
                             f"(duplicate handler found).")
 
     cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_handlers:
             # Setup handlers
-            self._bar_handlers[bar_type] = []                        # type: [BarHandler]
+            self._bar_handlers[bar_type] = []  # type: [Callable]
             self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
         # Add handler for subscriber
-        bar_handler = BarHandler(handler)
-        if bar_handler not in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].append(bar_handler)
-            self._log.debug(f"Added {bar_handler} for {bar_type} <Bar> data.")
+        if handler not in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].append(handler)
+            self._log.debug(f"Added {handler} for {bar_type} <Bar> data.")
         else:
-            self._log.error(f"Cannot add {bar_handler} for {bar_type} <Bar> data "
+            self._log.error(f"Cannot add {handler} for {bar_type} <Bar> data "
                             f"(duplicate handler found).")
 
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._instrument_handlers:
-            self._instrument_handlers[symbol] = []  # type: [InstrumentHandler]
+            self._instrument_handlers[symbol] = []  # type: [Callable]
             self._log.info(f"Subscribed to {symbol} <Instrument> data.")
 
-        instrument_handler = InstrumentHandler(handler)
-        if instrument_handler not in self._instrument_handlers[symbol]:
-            self._instrument_handlers[symbol].append(instrument_handler)
-            self._log.debug(f"Added {instrument_handler} for {symbol} <Instrument> data.")
+        if handler not in self._instrument_handlers[symbol]:
+            self._instrument_handlers[symbol].append(handler)
+            self._log.debug(f"Added {handler} for {symbol} <Instrument> data.")
         else:
-            self._log.error(f"Cannot add {instrument_handler} for {symbol} <Instrument> data"
+            self._log.error(f"Cannot add {handler} for {symbol} <Instrument> data"
                             f"(duplicate handler found).")
 
     cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler: callable) except *:
@@ -824,12 +824,11 @@ cdef class DataEngine:
             return
 
         # Remove subscribers handler
-        tick_handler = QuoteTickHandler(handler)
-        if tick_handler in self._quote_tick_handlers[symbol]:
-            self._quote_tick_handlers[symbol].remove(tick_handler)
-            self._log.debug(f"Removed handler {tick_handler} for {symbol} <QuoteTick> data.")
+        if handler in self._quote_tick_handlers[symbol]:
+            self._quote_tick_handlers[symbol].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {symbol} <QuoteTick> data.")
         else:
-            self._log.error(f"Cannot remove {tick_handler} for {symbol} <QuoteTick> data "
+            self._log.error(f"Cannot remove {handler} for {symbol} <QuoteTick> data "
                             f"(no matching handler found).")
 
         if not self._quote_tick_handlers[symbol]:
@@ -843,12 +842,11 @@ cdef class DataEngine:
             return
 
         # Remove subscribers handler
-        tick_handler = TradeTickHandler(handler)
-        if tick_handler in self._trade_tick_handlers[symbol]:
-            self._trade_tick_handlers[symbol].remove(tick_handler)
-            self._log.debug(f"Removed handler {tick_handler} for {symbol} <TradeTick> data.")
+        if handler in self._trade_tick_handlers[symbol]:
+            self._trade_tick_handlers[symbol].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {symbol} <TradeTick> data.")
         else:
-            self._log.error(f"Cannot remove {tick_handler} for {symbol} <TradeTick> data"
+            self._log.error(f"Cannot remove {handler} for {symbol} <TradeTick> data"
                             f"(no matching handler found).")
 
         if not self._trade_tick_handlers[symbol]:
@@ -862,12 +860,11 @@ cdef class DataEngine:
             return
 
         # Remove subscribers handler
-        cdef BarHandler bar_handler = BarHandler(handler)
-        if bar_handler in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].remove(bar_handler)
-            self._log.debug(f"Removed handler {bar_handler} for {bar_type} <Bar> data.")
+        if handler in self._bar_handlers[bar_type]:
+            self._bar_handlers[bar_type].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {bar_type} <Bar> data.")
         else:
-            self._log.debug(f"Cannot remove {bar_handler} for {bar_type} <Bar> data"
+            self._log.debug(f"Cannot remove {handler} for {bar_type} <Bar> data"
                             f"(no matching handler found).")
 
         if not self._bar_handlers[bar_type]:
@@ -880,12 +877,11 @@ cdef class DataEngine:
                             f"(no handlers found).")
             return
 
-        cdef InstrumentHandler instrument_handler = InstrumentHandler(handler)
-        if instrument_handler in self._instrument_handlers[symbol]:
-            self._instrument_handlers[symbol].remove(instrument_handler)
-            self._log.debug(f"Removed handler {instrument_handler} for {symbol} <Instrument> data.")
+        if handler in self._instrument_handlers[symbol]:
+            self._instrument_handlers[symbol].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {symbol} <Instrument> data.")
         else:
-            self._log.debug(f"Cannot remove {instrument_handler} for {symbol} <Instrument> data "
+            self._log.debug(f"Cannot remove {handler} for {symbol} <Instrument> data "
                             f"(no matching handler found).")
 
         if not self._instrument_handlers[symbol]:
@@ -1023,5 +1019,3 @@ cdef class BulkTimeBarUpdater:
                 if ticks[i].timestamp < self.start_time:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_quote_tick(ticks[i])
-
-        # TODO: Unsubscribe from data
