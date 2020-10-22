@@ -392,7 +392,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(symbol, "symbol")
 
         cdef Decimal net_position = self._net_positions.get(symbol)
-        return False if net_position is None else net_position > 0
+        return net_position > 0 if net_position is not None else False
 
     cpdef bint is_net_short(self, Symbol symbol) except *:
         """
@@ -413,7 +413,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(symbol, "symbol")
 
         cdef Decimal net_position = self._net_positions.get(symbol)
-        return False if net_position is None else net_position < 0
+        return net_position < 0 if net_position is not None else False
 
     cpdef bint is_flat(self, Symbol symbol) except *:
         """
@@ -434,11 +434,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(symbol, "symbol")
 
         cdef Decimal net_position = self._net_positions.get(symbol)
-
-        if net_position is None:
-            return True
-
-        return net_position == 0
+        return net_position == 0 if net_position is not None else True
 
     cpdef bint is_completely_flat(self) except *:
         """
