@@ -15,7 +15,6 @@
 
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class VolatilityRatio(Indicator):
@@ -26,7 +25,5 @@ cdef class VolatilityRatio(Indicator):
 
     cdef readonly double value
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close) except *
     cdef void _check_initialized(self) except *
-    cpdef void reset(self) except *
