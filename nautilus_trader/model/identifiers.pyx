@@ -51,32 +51,8 @@ cdef class Symbol(Identifier):
         Condition.valid_string(code, "code")
         super().__init__(f"{code}.{venue.value}")
 
-        self._code = code
-        self._venue = venue
-
-    @property
-    def code(self) -> str:
-        """
-        Return the symbols code identifier value.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._code
-
-    @property
-    def venue(self) -> Venue:
-        """
-        Return the symbols venue.
-
-        Returns
-        -------
-        Venue
-
-        """
-        return self._venue
+        self.code = code
+        self.venue = venue
 
     @staticmethod
     cdef Symbol from_string_c(str value):
