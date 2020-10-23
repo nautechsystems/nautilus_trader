@@ -47,7 +47,7 @@ To run code or tests from the source code, first compile the C extensions for th
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-## Architectural Values
+## Values
 
 - Reliability
 - Testability
