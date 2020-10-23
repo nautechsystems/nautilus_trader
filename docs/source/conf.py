@@ -43,9 +43,10 @@ release = version
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
+    'sphinx.ext.doctest',
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
+    'sphinx.ext.viewcode',
     "numpydoc",
 ]
 
@@ -54,6 +55,7 @@ master_doc = "index"
 
 # do not prepend module name to functions
 add_module_names = False
+todo_include_todos = False
 
 autosummary_generate = False
 numpydoc_show_class_members = True
