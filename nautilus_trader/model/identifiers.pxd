@@ -18,8 +18,8 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 
 cdef class Symbol(Identifier):
-    cdef str _code
-    cdef Venue _venue
+    cdef readonly str code
+    cdef readonly Venue venue
 
     @staticmethod
     cdef Symbol from_string_c(str value)

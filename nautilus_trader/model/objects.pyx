@@ -29,11 +29,6 @@ cdef class Quantity(Decimal):
     decimal places for non-share quantity asset classes (securities denominated
     in fractional units).
 
-    Attributes
-    ----------
-    precision : int
-        The decimal precision of this object.
-
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0/index.html#Qty
@@ -67,7 +62,7 @@ cdef class Quantity(Decimal):
         super().__init__(value, precision)
 
         # Post-condition
-        Condition.true(self._value >= 0, f"quantity positive, was {self._value}")
+        Condition.true(self._value >= 0, f"quantity not negative, was {self._value}")
 
     cpdef str to_string(self):
         """Return the formatted string representation of this object.
@@ -87,11 +82,6 @@ cdef class Price(Decimal):
     The number of decimal places may vary. For certain asset classes prices may
     be negative values. For example, prices for options strategies can be
     negative under certain market conditions.
-
-    Attributes
-    ----------
-    precision : int
-        The decimal precision of the price.
 
     References
     ----------

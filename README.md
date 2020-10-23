@@ -91,9 +91,7 @@ _Black_ is a PEP-8 compliant opinionated formatter.
 We philosophically agree with _Black_, however it does not currently run over
 Cython code. So you could say we are "handcrafting towards" _Blacks_ stylistic conventions.
 
-## Support
-
-Please direct all questions, comments or bug reports to info@nautechsystems.io
+---
 
 Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 
