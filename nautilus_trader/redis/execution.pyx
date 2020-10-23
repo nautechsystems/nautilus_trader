@@ -340,7 +340,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
-        if reply > 1:  # Reply = The length of the list after the push operation
+        if len(reply) > 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
 
         self._log.debug(f"Added Account(id={account.id.value}).")

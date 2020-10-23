@@ -68,11 +68,11 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_order(order, position_id)
 
         # Assert
-        self.assertTrue(order.cl_ord_id in self.cache.order_ids())
-        self.assertTrue(order.cl_ord_id in self.cache.order_ids(symbol=order.symbol))
-        self.assertTrue(order.cl_ord_id in self.cache.order_ids(strategy_id=self.strategy.id))
-        self.assertTrue(order.cl_ord_id in self.cache.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(order in self.cache.orders())
+        self.assertIn(order.cl_ord_id, self.cache.order_ids())
+        self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol))
+        self.assertIn(order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id))
+        self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertIn(order, self.cache.orders())
 
     def test_add_position(self):
         # Arrange
@@ -97,16 +97,16 @@ class ExecutionCacheTests(unittest.TestCase):
         # Assert
         self.assertTrue(self.cache.position_exists_for_order(order.cl_ord_id))
         self.assertTrue(self.cache.position_exists(position.id))
-        self.assertTrue(position.id in self.cache.position_ids())
-        self.assertTrue(position in self.cache.positions())
-        self.assertTrue(position in self.cache.positions_open())
-        self.assertTrue(position in self.cache.positions_open(symbol=position.symbol))
-        self.assertTrue(position in self.cache.positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.cache.positions_closed())
-        self.assertTrue(position not in self.cache.positions_closed(symbol=position.symbol))
-        self.assertTrue(position not in self.cache.positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertIn(position.id, self.cache.position_ids())
+        self.assertIn(position, self.cache.positions())
+        self.assertIn(position, self.cache.positions_open())
+        self.assertIn(position, self.cache.positions_open(symbol=position.symbol))
+        self.assertIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
+        self.assertIn(position, self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertNotIn(position, self.cache.positions_closed())
+        self.assertNotIn(position, self.cache.positions_closed(symbol=position.symbol))
+        self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
+        self.assertNotIn(position, self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
 
     def test_update_order_for_working_order(self):
         # Arrange
@@ -133,16 +133,16 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.cache.order_exists(order.cl_ord_id))
-        self.assertTrue(order.cl_ord_id in self.cache.order_ids())
-        self.assertTrue(order in self.cache.orders())
-        self.assertTrue(order in self.cache.orders_working())
-        self.assertTrue(order in self.cache.orders_working(symbol=order.symbol))
-        self.assertTrue(order in self.cache.orders_working(strategy_id=self.strategy.id))
-        self.assertTrue(order in self.cache.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.cache.orders_completed())
-        self.assertTrue(order not in self.cache.orders_completed(symbol=order.symbol))
-        self.assertTrue(order not in self.cache.orders_completed(strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.cache.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertIn(order.cl_ord_id, self.cache.order_ids())
+        self.assertIn(order, self.cache.orders())
+        self.assertIn(order, self.cache.orders_working())
+        self.assertIn(order, self.cache.orders_working(symbol=order.symbol))
+        self.assertIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
+        self.assertIn(order, self.cache.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertNotIn(order, self.cache.orders_completed())
+        self.assertNotIn(order, self.cache.orders_completed(symbol=order.symbol))
+        self.assertNotIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
+        self.assertNotIn(order, self.cache.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -165,16 +165,16 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.cache.order_exists(order.cl_ord_id))
-        self.assertTrue(order.cl_ord_id in self.cache.order_ids())
-        self.assertTrue(order in self.cache.orders())
-        self.assertTrue(order in self.cache.orders_completed())
-        self.assertTrue(order in self.cache.orders_completed(symbol=order.symbol))
-        self.assertTrue(order in self.cache.orders_completed(strategy_id=self.strategy.id))
-        self.assertTrue(order in self.cache.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.cache.orders_working())
-        self.assertTrue(order not in self.cache.orders_working(symbol=order.symbol))
-        self.assertTrue(order not in self.cache.orders_working(strategy_id=self.strategy.id))
-        self.assertTrue(order not in self.cache.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertIn(order.cl_ord_id, self.cache.order_ids())
+        self.assertIn(order, self.cache.orders())
+        self.assertIn(order, self.cache.orders_completed())
+        self.assertIn(order, self.cache.orders_completed(symbol=order.symbol))
+        self.assertIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
+        self.assertIn(order, self.cache.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertNotIn(order, self.cache.orders_working())
+        self.assertNotIn(order, self.cache.orders_working(symbol=order.symbol))
+        self.assertNotIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
+        self.assertNotIn(order, self.cache.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
 
     def test_update_position_for_open_position(self):
         # Arrange
@@ -202,16 +202,16 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.cache.position_exists(position.id))
-        self.assertTrue(position.id in self.cache.position_ids())
-        self.assertTrue(position in self.cache.positions())
-        self.assertTrue(position in self.cache.positions_open())
-        self.assertTrue(position in self.cache.positions_open(symbol=position.symbol))
-        self.assertTrue(position in self.cache.positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.cache.positions_closed())
-        self.assertTrue(position not in self.cache.positions_closed(symbol=position.symbol))
-        self.assertTrue(position not in self.cache.positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertIn(position.id, self.cache.position_ids())
+        self.assertIn(position, self.cache.positions())
+        self.assertIn(position, self.cache.positions_open())
+        self.assertIn(position, self.cache.positions_open(symbol=position.symbol))
+        self.assertIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
+        self.assertIn(position, self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertNotIn(position, self.cache.positions_closed())
+        self.assertNotIn(position, self.cache.positions_closed(symbol=position.symbol))
+        self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
+        self.assertNotIn(position, self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
         self.assertEqual(position, self.cache.position(position_id))
 
     def test_update_position_for_closed_position(self):
@@ -257,16 +257,16 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(self.cache.position_exists(position.id))
-        self.assertTrue(position.id in self.cache.position_ids())
-        self.assertTrue(position in self.cache.positions())
-        self.assertTrue(position in self.cache.positions_closed())
-        self.assertTrue(position in self.cache.positions_closed(symbol=position.symbol))
-        self.assertTrue(position in self.cache.positions_closed(strategy_id=self.strategy.id))
-        self.assertTrue(position in self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.cache.positions_open())
-        self.assertTrue(position not in self.cache.positions_open(symbol=position.symbol))
-        self.assertTrue(position not in self.cache.positions_open(strategy_id=self.strategy.id))
-        self.assertTrue(position not in self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertIn(position.id, self.cache.position_ids())
+        self.assertIn(position, self.cache.positions())
+        self.assertIn(position, self.cache.positions_closed())
+        self.assertIn(position, self.cache.positions_closed(symbol=position.symbol))
+        self.assertIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
+        self.assertIn(position, self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
+        self.assertNotIn(position, self.cache.positions_open())
+        self.assertNotIn(position, self.cache.positions_open(symbol=position.symbol))
+        self.assertNotIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
+        self.assertNotIn(position, self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
         self.assertEqual(position, self.cache.position(position_id))
 
     def test_add_account(self):
@@ -301,7 +301,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.delete_strategy(self.strategy)
 
         # Assert
-        self.assertTrue(self.strategy.id not in self.cache.strategy_ids())
+        self.assertNotIn(self.strategy.id, self.cache.strategy_ids())
 
     def test_check_residuals(self):
         # Arrange
