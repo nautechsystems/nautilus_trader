@@ -10,7 +10,7 @@ NautilusTrader Documentation
     :caption: Overview
     :hidden:
 
-    modules
+    nautilus_trader
 
 
 Indices and tables
