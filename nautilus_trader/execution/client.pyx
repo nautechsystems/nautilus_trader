@@ -15,6 +15,7 @@
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -50,7 +51,8 @@ cdef class ExecutionClient:
             The logger for the component.
 
         """
-        # TODO: Check venue matches account_id.issuer
+        Condition.equal(venue, account_id.issuer_as_venue(), "venue", "account_id.issuer_as_venue()")
+
         self._engine = engine
         self._log = LoggerAdapter(self.__class__.__name__, logger)
 

@@ -509,14 +509,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
-            package[QUOTE_CURRENCY] = event.currency.code,
-            package[CASH_BALANCE] = str(event.cash_balance)
-            package[CASH_START_DAY] = str(event.cash_start_day)
-            package[CASH_ACTIVITY_DAY] = str(event.cash_activity_day)
-            package[MARGIN_USED_LIQUIDATION] = str(event.margin_used_liquidation)
-            package[MARGIN_USED_MAINTENANCE] = str(event.margin_used_maintenance)
-            package[MARGIN_RATIO] = str(event.margin_ratio)
-            package[MARGIN_CALL_STATUS] = event.margin_call_status
+            package[CURRENCY] = event.currency.code,
+            package[BALANCE] = str(event.balance)
+            package[MARGIN_BALANCE] = str(event.margin_balance)
+            package[MARGIN_AVAILABLE] = str(event.margin_available)
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[STRATEGY_ID] = event.strategy_id.value
@@ -637,17 +633,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = Currency.from_string(unpacked[QUOTE_CURRENCY].decode(UTF8))
+            currency = Currency.from_string(unpacked[CURRENCY].decode(UTF8))
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,
-                Money(unpacked[CASH_BALANCE].decode(UTF8), currency),
-                Money(unpacked[CASH_START_DAY].decode(UTF8), currency),
-                Money(unpacked[CASH_ACTIVITY_DAY].decode(UTF8), currency),
-                Money(unpacked[MARGIN_USED_LIQUIDATION].decode(UTF8), currency),
-                Money(unpacked[MARGIN_USED_MAINTENANCE].decode(UTF8), currency),
-                Decimal(unpacked[MARGIN_RATIO].decode(UTF8)),
-                unpacked[MARGIN_CALL_STATUS].decode(UTF8),
+                Money(unpacked[BALANCE].decode(UTF8), currency),
+                Money(unpacked[MARGIN_BALANCE].decode(UTF8), currency),
+                Money(unpacked[MARGIN_AVAILABLE].decode(UTF8), currency),
                 event_id,
                 event_timestamp,
             )
