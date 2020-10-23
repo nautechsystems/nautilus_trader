@@ -58,7 +58,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         config = {
             'host': 'localhost',
-            'port': 6379
+            'port': 6379,
         }
 
         self.database = RedisExecutionDatabase(
@@ -66,7 +66,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             logger=logger,
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
-            config=config
+            config=config,
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
@@ -86,10 +86,19 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertEqual("Trader-TESTER-000:Positions:", self.database.key_positions)
         self.assertEqual("Trader-TESTER-000:Strategies:", self.database.key_strategies)
 
-    # TODO: AccountState not finalized (no serialization yet)
+    # TODO: TypeError: Expected bytes, got list
     # def test_add_account(self):
     #     # Arrange
-    #     event = TestStubs.account_event()
+    #     event = AccountState(
+    #         AccountId.from_string("BITMEX-1513111-SIMULATED"),
+    #         BTC,
+    #         Money(10., BTC),
+    #         Money(0., BTC),
+    #         Money(0., BTC),
+    #         uuid4(),
+    #         UNIX_EPOCH,
+    #     )
+    #
     #     account = Account(event)
     #
     #     # Act
@@ -119,7 +128,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
+
         position_id = PositionId('P-1')
         self.database.add_order(order, position_id)
 
@@ -132,7 +143,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(position, self.database.load_position(position.id))
 
-    # TODO: Investigate why str is deserializing to a list
+    # TODO: TypeError: Expected bytes, got list
     # def test_update_account(self):
     #     # Arrange
     #     event = TestStubs.account_event()
@@ -147,7 +158,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_update_order_for_working_order(self):
         # Arrange
-        order = self.strategy.order_factory.stop(
+        order = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -175,7 +186,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
+
         position_id = PositionId('P-1')
         self.database.add_order(order, position_id)
 
@@ -198,7 +211,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
+
         position_id = PositionId('P-1')
         self.database.add_order(order1, position_id)
 
@@ -250,7 +265,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertIsNone(result)
 
-    # TODO: Investigate why str is deserializing to a list
+    # TODO: TypeError: Expected bytes, got list
     # def test_load_account_when_account_in_database_returns_account(self):
     #     # Arrange
     #     event = TestStubs.account_event()
@@ -268,7 +283,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         # Act
         result = self.database.load_order(order.cl_ord_id)
@@ -281,7 +297,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
+
         position_id = PositionId('P-1')
         self.database.add_order(order, position_id)
 
@@ -306,7 +324,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
+
         position_id = PositionId('P-1')
         self.database.add_order(order, position_id)
 
@@ -328,10 +348,19 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, result)
 
-    # TODO: Investigate why str is deserializing to a list
+    # TODO: TypeError: Expected bytes, got list
     # def test_load_accounts_cache_when_one_account_in_database(self):
     #     # Arrange
-    #     event = TestStubs.account_event()
+    #     event = AccountState(
+    #         AccountId.from_string("BITMEX-1513111-SIMULATED"),
+    #         BTC,
+    #         Money(10., BTC),
+    #         Money(0., BTC),
+    #         Money(0., BTC),
+    #         uuid4(),
+    #         UNIX_EPOCH,
+    #     )
+    #
     #     account = Account(event)
     #     self.database.add_account(account)
     #
@@ -375,7 +404,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
     def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
-        order1 = self.strategy.order_factory.stop(
+        order1 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -413,7 +442,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
+
         position1_id = PositionId('P-1')
         self.database.add_order(order1, position1_id)
 
@@ -422,11 +453,12 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
         self.database.add_position(position1)
 
-        order2 = self.strategy.order_factory.stop(
+        order2 = self.strategy.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         position2_id = PositionId('P-2')
         self.database.add_order(order2, position2_id)
@@ -441,4 +473,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.flush()
 
         # Assert
-        # Does not raise exception
+        self.assertEqual(None, self.database.load_order(order1.cl_ord_id))
+        self.assertEqual(None, self.database.load_order(order2.cl_ord_id))
+        self.assertEqual(None, self.database.load_position(position1.id))

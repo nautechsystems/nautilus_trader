@@ -224,7 +224,7 @@ cdef class OrderFactory:
             post_only=post_only,
             hidden=hidden)
 
-    cpdef StopMarketOrder stop(
+    cpdef StopMarketOrder stop_market(
             self,
             Symbol symbol,
             OrderSide order_side,
@@ -328,7 +328,7 @@ cdef class OrderFactory:
 
         cdef OrderSide child_order_side = OrderSide.BUY if entry_order.side == OrderSide.SELL else OrderSide.SELL
 
-        cdef Order stop_loss_order = self.stop(
+        cdef Order stop_loss_order = self.stop_market(
             entry_order.symbol,
             child_order_side,
             entry_order.quantity,

@@ -208,7 +208,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
-        entry_order = self.strategy.order_factory.stop(
+        entry_order = self.strategy.order_factory.stop_market(
             USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
@@ -237,7 +237,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
-        order = self.strategy.order_factory.stop(
+        order = self.strategy.order_factory.stop_market(
             USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
@@ -319,7 +319,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         # Arrange
         self.strategy.start()
 
-        order = self.strategy.order_factory.stop(
+        order = self.strategy.order_factory.stop_market(
             USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
@@ -342,7 +342,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.exchange.process_tick(tick)  # Prepare market
         self.portfolio.update_tick(tick)
 
-        order = self.strategy.order_factory.stop(
+        order = self.strategy.order_factory.stop_market(
             USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),

@@ -41,8 +41,11 @@ cdef class BidAskMinMax(Indicator):
             The look back duration in time.
 
         """
+        super().__init__(params=[lookback])
+
         self.symbol = symbol
         self.lookback = lookback
+
         # Set up the bid/ask windows
         self.bids = WindowedMinMaxPrices(lookback)
         self.asks = WindowedMinMaxPrices(lookback)
@@ -64,9 +67,10 @@ cdef class BidAskMinMax(Indicator):
         self._set_has_inputs(True)
         self._set_initialized(True)
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """Reset the instance to like-new."""
         self._reset_base()
+
         # Reset the windows
         self.bids.reset()
         self.asks.reset()
@@ -90,15 +94,15 @@ cdef class WindowedMinMaxPrices:
         """
         self.lookback = lookback
 
-        # Set the min/max marks as None until we have data
-        self.min_price = None
-        self.max_price = None
-
         # Initialize the deques
         self._min_prices = deque()
         self._max_prices = deque()
 
-    cpdef void add_price(self, datetime ts, Price price):
+        # Set the min/max marks as None until we have data
+        self.min_price = None
+        self.max_price = None
+
+    cpdef void add_price(self, datetime ts, Price price) except *:
         """
         Given a price at a UTC timestamp, insert it into the structures and
         update our running min/max values.
@@ -126,7 +130,7 @@ cdef class WindowedMinMaxPrices:
         self.min_price = min([p[1] for p in self._min_prices])
         self.max_price = max([p[1] for p in self._max_prices])
 
-    cpdef void reset(self):
+    cpdef void reset(self) except *:
         """Reset the indicator.
 
         All stateful values are reset to their initial value.
@@ -135,6 +139,7 @@ cdef class WindowedMinMaxPrices:
         # Set the min/max marks as None until we have data
         self.min_price = None
         self.max_price = None
+
         # Clear the deques
         self._min_prices.clear()
         self._max_prices.clear()
@@ -143,12 +148,12 @@ cdef class WindowedMinMaxPrices:
         self,
         object ts_prices,
         datetime cutoff
-    ):
+    ) except *:
         """Drop items that are older than the cutoff"""
         while ts_prices and ts_prices[0][0] < cutoff:
             ts_prices.popleft()
 
-    cdef inline void _add_min_price(self, datetime ts, Price price):
+    cdef inline void _add_min_price(self, datetime ts, Price price) except *:
         """Handle appending to the min deque"""
         # Pop front elements that are less than or equal (since we want the max ask)
         while self._min_prices and self._min_prices[-1][1] <= price:
@@ -160,7 +165,7 @@ cdef class WindowedMinMaxPrices:
 
         self._min_prices.append((ts, price))
 
-    cdef inline void _add_max_price(self, datetime ts, Price price):
+    cdef inline void _add_max_price(self, datetime ts, Price price) except *:
         """Handle appending to the max deque"""
         # Pop front elements that are less than or equal (since we want the max bid)
         while self._max_prices and self._max_prices[-1][1] <= price:

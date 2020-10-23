@@ -15,7 +15,6 @@
 
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.efficiency_ratio cimport EfficiencyRatio
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class AdaptiveMovingAverage(MovingAverage):
@@ -28,6 +27,4 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     cdef EfficiencyRatio _efficiency_ratio
     cdef double _prior_value
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double value) except *
-    cpdef void reset(self) except *

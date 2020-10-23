@@ -247,18 +247,18 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_sell())
         self.assertEqual(None, order.filled_timestamp)
 
-    # def test_order_str_and_repr(self):
-    #     # Arrange
-    #     # Act
-    #     order = self.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #     )
+    def test_order_str_and_repr(self):
+        # Arrange
+        # Act
+        order = self.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
 
-        # Assert TODO: String formatting
-        # self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
-        # self.assertTrue(repr(order).startswith("<MarketOrder(cl_ord_id=O-19700101-000000-001-001-1, state=INITIALIZED, BUY 100K AUD/USD.FXCM MARKET DAY) object at"))  # noqa
+        # Assert
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY)", repr(order))  # noqa
 
     def test_initialize_limit_order(self):
         # Arrange
@@ -300,7 +300,7 @@ class OrderTests(unittest.TestCase):
     def test_initialize_stop_order(self):
         # Arrange
         # Act
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -339,7 +339,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_initialize_bracket_order_stop_with_take_profit(self):
         # Arrange
-        entry_order = self.order_factory.stop(
+        entry_order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -452,7 +452,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_apply_order_working_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -479,7 +479,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_apply_order_expired_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
@@ -526,7 +526,7 @@ class OrderTests(unittest.TestCase):
 
     def test_can_apply_order_modified_event_to_stop_order(self):
         # Arrange
-        order = self.order_factory.stop(
+        order = self.order_factory.stop_market(
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),

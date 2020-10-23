@@ -52,7 +52,7 @@ class AccountTests(unittest.TestCase):
             Money(0., BTC),
             Money(0., BTC),
             uuid4(),
-            UNIX_EPOCH
+            UNIX_EPOCH,
         )
 
         self.account = Account(state)
@@ -68,7 +68,7 @@ class AccountTests(unittest.TestCase):
             Money(0., BTC),
             Money(0., BTC),
             uuid4(),
-            UNIX_EPOCH
+            UNIX_EPOCH,
         )
 
         account = Account(state)
@@ -101,7 +101,7 @@ class AccountTests(unittest.TestCase):
             Money(0., BTC),
             Money(0., BTC),
             uuid4(),
-            UNIX_EPOCH + timedelta(minutes=1)
+            UNIX_EPOCH + timedelta(minutes=1),
         )
 
         # Act

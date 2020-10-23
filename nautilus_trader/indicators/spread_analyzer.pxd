@@ -15,7 +15,6 @@
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class SpreadAnalyzer(Indicator):
@@ -25,6 +24,3 @@ cdef class SpreadAnalyzer(Indicator):
     cdef readonly double average
 
     cdef object _spreads
-
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void reset(self)

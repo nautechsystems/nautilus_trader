@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class VolumeWeightedAveragePrice(Indicator):
@@ -26,6 +25,4 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     cdef readonly double value
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double price, double volume, datetime timestamp) except *
-    cpdef void reset(self) except *

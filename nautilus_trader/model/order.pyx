@@ -530,9 +530,10 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        # TODO: Why is format_iso8601 returning '.000Z' here?
         cdef str expire_time_str = format_iso8601(expire_time) if not None else str(None)
         options['Price'] = str(price)
+
+        # format_iso8601 sometimes returns '.000Z'
         options['ExpireTime'] = str(None) if expire_time_str == '.000Z' else expire_time_str
 
         cdef OrderInitialized init_event = OrderInitialized(

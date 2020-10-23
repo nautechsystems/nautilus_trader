@@ -20,6 +20,7 @@ from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
 from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -60,7 +61,6 @@ from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.serialization.constants cimport *
 
 
 cdef class TradingStrategy:
@@ -651,7 +651,7 @@ cdef class TradingStrategy:
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
                 LIMIT: self.data.tick_capacity,
-                'callback': self.handle_quote_ticks,
+                CALLBACK: self.handle_quote_ticks,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -679,7 +679,7 @@ cdef class TradingStrategy:
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
                 LIMIT: self.data.tick_capacity,
-                'callback': self.handle_trade_ticks,
+                CALLBACK: self.handle_trade_ticks,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -707,7 +707,7 @@ cdef class TradingStrategy:
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
                 LIMIT: self.data.bar_capacity,
-                'callback': self.handle_bars,
+                CALLBACK: self.handle_bars,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -732,7 +732,7 @@ cdef class TradingStrategy:
             data_type=QuoteTick,
             options={
                 SYMBOL: symbol,
-                'handler': self.handle_quote_tick,
+                HANDLER: self.handle_quote_tick,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -759,7 +759,7 @@ cdef class TradingStrategy:
             data_type=TradeTick,
             options={
                 SYMBOL: symbol,
-                'handler': self.handle_trade_tick,
+                HANDLER: self.handle_trade_tick,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -786,7 +786,7 @@ cdef class TradingStrategy:
             data_type=Bar,
             options={
                 BAR_TYPE: bar_type,
-                'handler': self.handle_bar,
+                HANDLER: self.handle_bar,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -813,7 +813,7 @@ cdef class TradingStrategy:
             data_type=Instrument,
             options={
                 SYMBOL: symbol,
-                'handler': self.handle_data,
+                HANDLER: self.handle_data,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -840,7 +840,7 @@ cdef class TradingStrategy:
             data_type=QuoteTick,
             options={
                 SYMBOL: symbol,
-                'handler': self.handle_quote_tick,
+                HANDLER: self.handle_quote_tick,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -867,7 +867,7 @@ cdef class TradingStrategy:
             data_type=TradeTick,
             options={
                 SYMBOL: symbol,
-                'handler': self.handle_trade_tick,
+                HANDLER: self.handle_trade_tick,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -894,7 +894,7 @@ cdef class TradingStrategy:
             data_type=Bar,
             options={
                 BAR_TYPE: bar_type,
-                'handler': self.handle_bar,
+                HANDLER: self.handle_bar,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -921,7 +921,7 @@ cdef class TradingStrategy:
             data_type=Instrument,
             options={
                 SYMBOL: symbol,
-                'handler': self.handle_data,
+                HANDLER: self.handle_data,
             },
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1358,7 +1358,8 @@ cdef class TradingStrategy:
             position.id,
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now())
+            self.clock.utc_now(),
+        )
 
         self.log.info(f"{CMD}{SENT} {submit_order}.")
         self._exec_engine.execute(submit_order)

@@ -60,7 +60,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -68,7 +69,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -76,7 +78,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         # Act
         builder.handle_quote_tick(tick1)
@@ -99,7 +102,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -107,7 +111,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -115,7 +120,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         builder.handle_quote_tick(tick1)
         builder.handle_quote_tick(tick2)
@@ -145,7 +151,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -153,7 +160,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -161,7 +169,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         builder.handle_quote_tick(tick1)
         builder.handle_quote_tick(tick2)
@@ -191,7 +200,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -199,7 +209,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -207,7 +218,8 @@ class BarBuilderTests(unittest.TestCase):
             ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         builder.handle_quote_tick(tick1)
         builder.handle_quote_tick(tick2)
@@ -261,7 +273,8 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         # Act
         aggregator.handle_quote_tick(tick1)
@@ -297,7 +310,8 @@ class TimeBarAggregatorTests(unittest.TestCase):
             ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -305,7 +319,8 @@ class TimeBarAggregatorTests(unittest.TestCase):
             ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -313,7 +328,8 @@ class TimeBarAggregatorTests(unittest.TestCase):
             ask=Price("1.00003"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=stop_time)
+            timestamp=stop_time,
+        )
 
         # Act
         aggregator.handle_quote_tick(tick1)

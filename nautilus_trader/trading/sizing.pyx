@@ -107,7 +107,6 @@ cdef class FixedRiskSizer(PositionSizer):
         """
         super().__init__(instrument)
 
-    # TODO: Refactor hard_limit to Decimal
     cpdef Quantity calculate(
             self,
             Price entry,
