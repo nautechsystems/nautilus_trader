@@ -531,35 +531,6 @@ cdef class PerformanceAnalyzer:
 
         Money objects are converted to floats.
 
-        Statistics Keys
-        ---------------
-        - PNL
-        - PNL%
-        - MaxWinner
-        - AvgWinner
-        - MinWinner
-        - MinLoser
-        - AvgLoser
-        - MaxLoser
-        - WinRate
-        - Expectancy
-        - AnnualReturn
-        - CumReturn
-        - MaxDrawdown
-        - AnnualVol
-        - SharpeRatio
-        - CalmarRatio
-        - SortinoRatio
-        - OmegaRatio
-        - Stability
-        - ReturnsMean
-        - ReturnsVariance
-        - ReturnsSkew
-        - ReturnsKurtosis
-        - TailRatio
-        - Alpha
-        - Beta
-
         Returns
         -------
         dict[str, double]
