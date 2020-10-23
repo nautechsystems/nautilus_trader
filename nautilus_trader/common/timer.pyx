@@ -257,7 +257,7 @@ cdef class TestTimer(Timer):
 
         Returns
         -------
-        List[TimeEvent]
+        list[TimeEvent]
 
         """
         Condition.not_none(to_time, "to_time")

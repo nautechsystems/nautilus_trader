@@ -66,7 +66,7 @@ cdef class PerformanceAnalyzer:
         ----------
         account : Account
             The account for the calculations.
-        positions : Dict[PositionId, Position]
+        positions : dict[PositionId, Position]
             The positions for the calculations.
 
         """
@@ -145,7 +145,7 @@ cdef class PerformanceAnalyzer:
         ----------
         timestamp : datetime
             The timestamp for the positions entry.
-        positions : List[Position]
+        positions : list[Position]
             The end of day positions.
         cash_balance : Money
             The end of day cash balance of the account.
@@ -562,7 +562,7 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        Dict[str, double]
+        dict[str, double]
 
         """
         return {
@@ -606,7 +606,7 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        List[str]
+        list[str]
 
         """
         return [

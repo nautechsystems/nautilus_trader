@@ -233,7 +233,7 @@ cdef class Account:
 
         Returns
         -------
-        List[AccountState]
+        list[AccountState]
 
         """
         return self._events.copy()

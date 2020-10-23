@@ -18,6 +18,7 @@ import pandas as pd
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
@@ -42,7 +43,7 @@ cdef class ReportProvider:
 
         Parameters
         ----------
-        orders : Dict[OrderId, Order]
+        orders : dict[OrderId, Order]
             The dictionary of client order identifiers and order objects.
 
         Returns
@@ -65,7 +66,7 @@ cdef class ReportProvider:
 
         Parameters
         ----------
-        orders : Dict[OrderId, Order]
+        orders : dict[OrderId, Order]
             The dictionary of client order identifiers and order objects.
 
         Returns
@@ -93,7 +94,7 @@ cdef class ReportProvider:
 
         Parameters
         ----------
-        positions : Dict[PositionId, Position]
+        positions : dict[PositionId, Position]
 
         Returns
         -------
@@ -112,13 +113,13 @@ cdef class ReportProvider:
 
         return pd.DataFrame(data=trades).set_index("position_id")
 
-    cpdef object generate_account_report(self, list events, datetime start=None, datetime end=None):
+    cpdef object generate_account_report(self, list events: [Event], datetime start=None, datetime end=None):
         """
         Generate an account report for the given optional time range.
 
         Parameters
         ----------
-        events : List[AccountState]
+        events : list[AccountState]
             The accounts state events list.
         start : datetime, optional
             The start of the account reports period.

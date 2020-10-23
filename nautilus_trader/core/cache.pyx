@@ -69,7 +69,7 @@ cdef class ObjectCache:
 
         Returns
         -------
-        list of str
+        list[str]
 
         """
         return list(self._cache.keys())

@@ -162,7 +162,7 @@ cdef class OrderInitialized(OrderEvent):
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
-        options : Dict[str, str]
+        options : dict[str, str]
             The order options. Contains mappings for specific order params.
 
         Raises
