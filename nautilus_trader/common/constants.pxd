@@ -64,13 +64,9 @@ cdef str LIQUIDITY_SIDE
 cdef str BROKERAGE
 cdef str ACCOUNT_NUMBER
 cdef str CURRENCY
-cdef str CASH_BALANCE
-cdef str CASH_START_DAY
-cdef str CASH_ACTIVITY_DAY
-cdef str MARGIN_USED_LIQUIDATION
-cdef str MARGIN_USED_MAINTENANCE
-cdef str MARGIN_RATIO
-cdef str MARGIN_CALL_STATUS
+cdef str BALANCE
+cdef str MARGIN_BALANCE
+cdef str MARGIN_AVAILABLE
 
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
@@ -128,3 +124,6 @@ cdef str INSTRUMENT_ARRAY
 cdef str LOG_LEVEL
 cdef str LOG_TEXT
 cdef str THREAD_ID
+
+cdef str HANDLER
+cdef str CALLBACK

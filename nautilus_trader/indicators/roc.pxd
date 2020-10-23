@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class RateOfChange(Indicator):
@@ -24,6 +23,4 @@ cdef class RateOfChange(Indicator):
     cdef readonly int period
     cdef readonly double value
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double price) except *
-    cpdef void reset(self) except *

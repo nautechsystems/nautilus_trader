@@ -106,7 +106,7 @@ cdef class KeltnerChannel(Indicator):
             double close,
     ) except *:
         """
-        Update the indicator with the given raw value.
+        Update the indicator with the given raw values.
 
         Parameters
         ----------

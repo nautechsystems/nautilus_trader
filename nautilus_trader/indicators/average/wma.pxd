@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class WeightedMovingAverage(MovingAverage):
@@ -22,6 +21,4 @@ cdef class WeightedMovingAverage(MovingAverage):
 
     cdef readonly object weights
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double value) except *
-    cpdef void reset(self) except *

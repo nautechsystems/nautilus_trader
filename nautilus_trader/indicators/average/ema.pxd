@@ -14,12 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class ExponentialMovingAverage(MovingAverage):
     cdef readonly double alpha
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double value) except *
-    cpdef void reset(self) except *

@@ -15,7 +15,6 @@
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.keltner_channel cimport KeltnerChannel
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class KeltnerPosition(Indicator):
@@ -25,6 +24,4 @@ cdef class KeltnerPosition(Indicator):
     cdef readonly double k_multiplier
     cdef readonly double value
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close) except *
-    cpdef void reset(self) except *

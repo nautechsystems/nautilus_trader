@@ -84,7 +84,7 @@ class LiveClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(datetime, type(result))
-        # TODO: Check timezone
+        self.assertTrue(str(result).endswith("+11:00"))
 
     def test_get_delta(self):
         # Arrange

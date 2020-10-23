@@ -14,12 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.serialization.constants cimport *
 
 
 cpdef str convert_price_to_string(Price price):

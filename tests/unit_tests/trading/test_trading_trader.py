@@ -164,8 +164,10 @@ class TraderTests(unittest.TestCase):
 
     def test_change_strategies(self):
         # Arrange
-        strategies = [EmptyStrategy("003"),
-                      EmptyStrategy("004")]
+        strategies = [
+            EmptyStrategy("003"),
+            EmptyStrategy("004"),
+        ]
 
         # Act
         self.trader.initialize_strategies(strategies)
@@ -177,8 +179,10 @@ class TraderTests(unittest.TestCase):
 
     def test_trader_detects_none_unique_identifiers(self):
         # Arrange
-        strategies = [EmptyStrategy("000"),
-                      EmptyStrategy("000")]
+        strategies = [
+            EmptyStrategy("000"),
+            EmptyStrategy("000"),
+        ]
 
         # Act
         self.assertRaises(ValueError, self.trader.initialize_strategies, strategies)

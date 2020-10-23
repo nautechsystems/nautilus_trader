@@ -517,8 +517,8 @@ cdef class SimulatedExchange:
             account_id=self.exec_client.account_id,
             currency=self.account_currency,
             balance=self.account_balance,
-            margin_balance=self.account_balance,    # TODO: Placeholder
-            margin_available=self.account_balance,  # TODO: Placeholder
+            margin_balance=self.account_balance,
+            margin_available=self.account_balance,
             event_id=self._uuid_factory.generate(),
             event_timestamp=self._clock.utc_now(),
         )

@@ -15,7 +15,6 @@
 
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
 
 
 cdef class MovingAverageConvergenceDivergence(Indicator):
@@ -26,6 +25,4 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
 
     cdef readonly double value
 
-    cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double close) except *
-    cpdef void reset(self) except *
