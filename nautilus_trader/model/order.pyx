@@ -269,7 +269,7 @@ cdef class Order:
 
         Returns
         -------
-        List[ExecutionId]
+        list[ExecutionId]
 
         """
         return self._execution_ids.copy()
@@ -280,7 +280,7 @@ cdef class Order:
 
         Returns
         -------
-        List[OrderEvent]
+        list[OrderEvent]
 
         """
         return self._events.copy()

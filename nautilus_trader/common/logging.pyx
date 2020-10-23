@@ -219,7 +219,7 @@ cdef class Logger:
 
         Returns
         -------
-        List[str]
+        list[str]
 
         """
         return self._log_store

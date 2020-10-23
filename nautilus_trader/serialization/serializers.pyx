@@ -116,7 +116,7 @@ cdef class MsgPackSerializer:
 
         Returns
         -------
-        Dict
+        dict[str, str]
 
         """
         Condition.not_none(message_bytes, "message_bytes")

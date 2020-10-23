@@ -77,7 +77,7 @@ cdef class BacktestEngine:
         ----------
         data : BacktestDataContainer
             The data for the backtest engine.
-        strategies : List[TradingStrategy]
+        strategies : list[TradingStrategy]
             The initial strategies for the backtest engine.
         config : BacktestConfig
             The optional configuration for the backtest engine (if None will be default).
@@ -368,7 +368,7 @@ cdef class BacktestEngine:
 
         Returns
         -------
-        List[str]
+        list[str]
 
         """
         return self.test_logger.get_log_store()

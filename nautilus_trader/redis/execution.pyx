@@ -118,7 +118,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         Returns
         -------
-        Dict[AccountId, Account]
+        dict[AccountId, Account]
 
         """
         cdef dict accounts = {}
@@ -145,7 +145,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         Returns
         -------
-        Dict[ClientOrderId, Order]
+        dict[ClientOrderId, Order]
 
         """
         cdef dict orders = {}
@@ -172,7 +172,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         Returns
         -------
-        Dict[PositionId, Position]
+        dict[PositionId, Position]
 
         """
         cdef dict positions = {}

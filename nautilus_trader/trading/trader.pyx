@@ -52,7 +52,7 @@ cdef class Trader:
         ----------
         trader_id : TraderId
             The identifier for the trader.
-        strategies : List[TradingStrategy]
+        strategies : list[TradingStrategy]
             The initial strategies for the trader.
         data_engine : DataEngine
             The data engine to register the traders strategies with.
@@ -309,7 +309,7 @@ cdef class Trader:
 
         Returns
         -------
-        Dict[StrategyId, bool]
+        dict[StrategyId, bool]
 
         """
         cdef dict states = {}

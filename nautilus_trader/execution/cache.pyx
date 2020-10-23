@@ -877,7 +877,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        List[Order]
+        list[Order]
 
         """
         cdef set cl_ord_ids = self.order_ids(symbol, strategy_id)
@@ -904,7 +904,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        List[Order]
+        list[Order]
 
         """
         cdef set cl_ord_ids = self.order_working_ids(symbol, strategy_id)
@@ -931,7 +931,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        List[Order]
+        list[Order]
 
         """
         cdef set cl_ord_ids = self.order_completed_ids(symbol, strategy_id)
@@ -997,7 +997,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        List[Position]
+        list[Position]
 
         """
         cdef set position_ids = self.position_ids(symbol, strategy_id)
@@ -1024,7 +1024,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        List[Position]
+        list[Position]
 
         """
         cdef set position_ids = self.position_open_ids(symbol, strategy_id)
@@ -1051,7 +1051,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        List[Position]
+        list[Position]
 
         """
         cdef set position_ids = self.position_closed_ids(symbol, strategy_id)
