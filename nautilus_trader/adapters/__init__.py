@@ -12,3 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""
+The `adapters` module provides integrations for data providers, brokerages, and exchanges.
+"""
