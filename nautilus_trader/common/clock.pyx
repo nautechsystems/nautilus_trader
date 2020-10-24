@@ -133,7 +133,7 @@ cdef class Clock:
 
         Returns
         -------
-        List[str]
+        list[str]
 
         """
         cdef str name

@@ -49,9 +49,9 @@ cdef class TickDataWrangler:
             The instrument for the data wrangler.
         data_ticks : pd.DataFrame
             The optional pd.DataFrame containing the tick data.
-        data_bars_bid : Dict[BarAggregation, pd.DataFrame], optional
+        data_bars_bid : dict[BarAggregation, pd.DataFrame], optional
             The bars bid data.
-        data_bars_ask : Dict[BarAggregation, pd.DataFrame], optional
+        data_bars_ask : dict[BarAggregation, pd.DataFrame], optional
             The bars ask data.
 
         Raises
@@ -59,9 +59,9 @@ cdef class TickDataWrangler:
         ValueError
             If tick_data is a type other than None or DataFrame.
         ValueError
-            If bid_data is a type other than None or Dict.
+            If bid_data is a type other than None or dict.
         ValueError
-            If ask_data is a type other than None or Dict.
+            If ask_data is a type other than None or dict.
         ValueError
             If tick_data is None and the bars data is None.
 
@@ -200,7 +200,7 @@ cdef class TickDataWrangler:
 
         Returns
         -------
-        List[Bar]
+        list[Bar]
 
         """
         return list(map(self._build_tick_from_values_with_sizes,
@@ -285,7 +285,7 @@ cdef class BarDataWrangler:
 
         Returns
         -------
-        List[Bar]
+        list[Bar]
 
         """
         return list(map(self._build_bar,
@@ -298,7 +298,7 @@ cdef class BarDataWrangler:
 
         Returns
         -------
-        List[Bar]
+        list[Bar]
 
         """
         Condition.not_negative_int(index, "index")
@@ -313,7 +313,7 @@ cdef class BarDataWrangler:
 
         Returns
         -------
-        List[Bar]
+        list[Bar]
 
         """
         Condition.not_negative_int(start, "start")

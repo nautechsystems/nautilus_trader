@@ -63,7 +63,7 @@ cdef class BarDataBlock:
         ----------
         bar_type : BarType
             The bar type for the data.
-        bars : List[Bar]
+        bars : list[Bar]
             The bar data.
 
         """
@@ -85,7 +85,7 @@ cdef class QuoteTickDataBlock:
 
         Parameters
         ----------
-        ticks : List[QuoteTick]
+        ticks : list[QuoteTick]
             The tick data.
 
         """
@@ -105,7 +105,7 @@ cdef class TradeTickDataBlock:
 
         Parameters
         ----------
-        ticks : List[QuoteTick]
+        ticks : list[QuoteTick]
             The tick data.
 
         """
@@ -125,7 +125,7 @@ cdef class InstrumentDataBlock:
 
         Parameters
         ----------
-        instruments : List[Instrument]
+        instruments : list[Instrument]
             The instrument data.
 
         """

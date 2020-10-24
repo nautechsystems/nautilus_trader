@@ -17,8 +17,6 @@ import cython
 
 from cpython.datetime cimport datetime
 
-from typing import Callable, List
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport Connect
 from nautilus_trader.common.commands cimport Disconnect
@@ -94,10 +92,10 @@ cdef class DataEngine:
         self._clients = {}              # type: {Venue, DataClient}
 
         # Handlers
-        self._instrument_handlers = {}  # type: {Symbol, [Callable]}
-        self._quote_tick_handlers = {}  # type: {Symbol, [Callable]}
-        self._trade_tick_handlers = {}  # type: {Symbol, [Callable]}
-        self._bar_handlers = {}         # type: {BarType, [Callable]}
+        self._instrument_handlers = {}  # type: {Symbol, [callable]}
+        self._quote_tick_handlers = {}  # type: {Symbol, [callable]}
+        self._trade_tick_handlers = {}  # type: {Symbol, [callable]}
+        self._bar_handlers = {}         # type: {BarType, [callable]}
 
         # Aggregators
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
@@ -155,7 +153,7 @@ cdef class DataEngine:
 
         Returns
         -------
-        List[Venue]
+        list[Venue]
 
         """
         return list(self._clients.keys())
@@ -168,7 +166,7 @@ cdef class DataEngine:
 
         Returns
         -------
-        List[Symbol]
+        list[Symbol]
 
         """
         return list(self._quote_tick_handlers.keys())
@@ -179,7 +177,7 @@ cdef class DataEngine:
 
         Returns
         -------
-        List[Symbol]
+        list[Symbol]
 
         """
         return list(self._trade_tick_handlers.keys())
@@ -190,7 +188,7 @@ cdef class DataEngine:
 
         Returns
         -------
-        List[BarType]
+        list[BarType]
 
         """
         return list(self._bar_handlers.keys())
@@ -201,7 +199,7 @@ cdef class DataEngine:
 
         Returns
         -------
-        List[Symbol]
+        list[Symbol]
 
         """
         return list(self._instrument_handlers.keys())
@@ -601,7 +599,7 @@ cdef class DataEngine:
             for handler in instrument_handlers:
                 handler.handle(instrument)
 
-    cdef inline void _handle_instruments(self, list instruments: List[Instrument]) except *:
+    cdef inline void _handle_instruments(self, list instruments: [Instrument]) except *:
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
@@ -623,7 +621,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _handle_quote_ticks(self, list ticks: List[QuoteTick]) except *:
+    cdef inline void _handle_quote_ticks(self, list ticks: [QuoteTick]) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -652,7 +650,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _handle_trade_ticks(self, list ticks: List[TradeTick]) except *:
+    cdef inline void _handle_trade_ticks(self, list ticks: [TradeTick]) except *:
         cdef int length = len(ticks)
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
@@ -679,7 +677,7 @@ cdef class DataEngine:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _handle_bars(self, BarType bar_type, list bars: List[Bar]) except *:
+    cdef inline void _handle_bars(self, BarType bar_type, list bars: [Bar]) except *:
         cdef int length = len(bars)
 
         self._log.debug(f"Received <Bar[{length}]> data for {bar_type}.")
@@ -697,7 +695,7 @@ cdef class DataEngine:
     cpdef void _py_handle_bar(self, BarType bar_type, Bar bar) except *:
         self._handle_bar(bar_type, bar)
 
-    cdef inline void _internal_update_instruments(self, list instruments: List[Instrument]) except *:
+    cdef inline void _internal_update_instruments(self, list instruments: [Instrument]) except *:
         # Handle all instruments individually
         cdef Instrument instrument
         for instrument in instruments:
@@ -766,7 +764,7 @@ cdef class DataEngine:
     cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._quote_tick_handlers:
             # Setup handlers
-            self._quote_tick_handlers[symbol] = []  # type: [Callable]
+            self._quote_tick_handlers[symbol] = []  # type: [callable]
             self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
         # Add handler for subscriber
@@ -780,7 +778,7 @@ cdef class DataEngine:
     cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._trade_tick_handlers:
             # Setup handlers
-            self._trade_tick_handlers[symbol] = []  # type: [Callable]
+            self._trade_tick_handlers[symbol] = []  # type: [callable]
             self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
         # Add handler for subscriber
@@ -794,7 +792,7 @@ cdef class DataEngine:
     cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_handlers:
             # Setup handlers
-            self._bar_handlers[bar_type] = []  # type: [Callable]
+            self._bar_handlers[bar_type] = []  # type: [callable]
             self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
         # Add handler for subscriber
@@ -807,7 +805,7 @@ cdef class DataEngine:
 
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._instrument_handlers:
-            self._instrument_handlers[symbol] = []  # type: [Callable]
+            self._instrument_handlers[symbol] = []  # type: [callable]
             self._log.info(f"Subscribed to {symbol} <Instrument> data.")
 
         if handler not in self._instrument_handlers[symbol]:
@@ -958,7 +956,7 @@ cdef class BulkTickBarBuilder:
 
         Parameters
         ----------
-        ticks : List[Tick]
+        ticks : list[Tick]
             The bulk ticks for aggregation into tick bars.
 
         """
@@ -1004,7 +1002,7 @@ cdef class BulkTimeBarUpdater:
 
         Parameters
         ----------
-        ticks : List[Tick]
+        ticks : list[Tick]
             The bulk ticks for updating the aggregator.
 
         """

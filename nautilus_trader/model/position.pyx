@@ -233,7 +233,7 @@ cdef class Position:
 
         Returns
         -------
-        List[Event]
+        list[Event]
 
         """
         return self._events.copy()
