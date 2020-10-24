@@ -26,7 +26,7 @@ Exponential Moving Average (EMA)
    :member-order: bysource
 
 Hull Moving Average (HMA)
-------------------------
+-------------------------
 
 .. automodule:: nautilus_trader.indicators.average.hma
    :members:
@@ -44,7 +44,7 @@ Moving Average Factory
    :member-order: bysource
 
 Simple Moving Average (SMA)
-----------------------------------------------
+---------------------------
 
 .. automodule:: nautilus_trader.indicators.average.sma
    :members:
@@ -53,7 +53,7 @@ Simple Moving Average (SMA)
    :member-order: bysource
 
 Weighted Moving Average (WMA)
-----------------------------------------------
+-----------------------------
 
 .. automodule:: nautilus_trader.indicators.average.wma
    :members:
@@ -107,7 +107,7 @@ Keltner Position
    :member-order: bysource
 
 Moving Average Convergence Divergence (MACD)
----------------------------------------
+--------------------------------------------
 
 .. automodule:: nautilus_trader.indicators.macd
    :members:
@@ -116,7 +116,7 @@ Moving Average Convergence Divergence (MACD)
    :member-order: bysource
 
 On Balance Volume (OBV)
---------------------------------------
+-----------------------
 
 .. automodule:: nautilus_trader.indicators.obv
    :members:
@@ -125,7 +125,7 @@ On Balance Volume (OBV)
    :member-order: bysource
 
 Pressure
--------------------------------------------
+--------
 
 .. automodule:: nautilus_trader.indicators.pressure
    :members:
@@ -134,7 +134,7 @@ Pressure
    :member-order: bysource
 
 Rate Of Change (ROC)
----
+--------------------
 
 .. automodule:: nautilus_trader.indicators.roc
    :members:
@@ -143,7 +143,7 @@ Rate Of Change (ROC)
    :member-order: bysource
 
 Relative Strength Index (RSI)
----
+-----------------------------
 
 .. automodule:: nautilus_trader.indicators.rsi
    :members:
