@@ -30,6 +30,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
@@ -55,7 +56,7 @@ if __name__ == "__main__":
     strategies = [EMACross(
         symbol=USDJPY.symbol,
         bar_spec=BarSpecification(
-            1,
+            5,
             BarAggregation.MINUTE,
             PriceType.BID,
         ),
@@ -82,7 +83,7 @@ if __name__ == "__main__":
         prob_fill_at_limit=0.2,
         prob_fill_at_stop=0.95,
         prob_slippage=0.5,
-        random_seed=None,
+        random_seed=42,
     )
 
     engine = BacktestEngine(
@@ -108,6 +109,7 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
+        print(engine.trader.generate_account_report(AccountId.from_string("FXCM-000-SIMULATED")))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

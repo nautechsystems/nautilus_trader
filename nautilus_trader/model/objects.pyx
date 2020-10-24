@@ -142,22 +142,22 @@ cdef class Money(Decimal):
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
-        return self._value == other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value == other._value
 
     def __ne__(self, Money other) -> bool:
         return not self == other
 
     def __lt__(self, Money other) -> bool:
-        return self._value < other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value < other._value
 
     def __le__(self, Money other) -> bool:
-        return self._value <= other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value <= other._value
 
     def __gt__(self, Money other) -> bool:
-        return self._value > other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value > other._value
 
     def __ge__(self, Money other) -> bool:
-        return self._value >= other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value >= other._value
 
     def __hash__(self) -> int:
         return hash((self._value, self.currency))

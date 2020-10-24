@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.trading.account cimport Account
 
@@ -25,19 +25,16 @@ cdef class PerformanceAnalyzer:
     cdef Money _account_starting_balance
     cdef Money _account_balance
     cdef Currency _account_currency
-    cdef object _returns
-    cdef object _positions
-    cdef object _transactions
+    cdef object _daily_returns
+    cdef object _realized_pnls
 
     cpdef void calculate_statistics(self, Account account, list positions) except *
-    cpdef void add_transaction(self, AccountState event) except *
-    cpdef void add_return(self, datetime time, double value) except *
-    cpdef void add_positions(self, datetime time, list positions, Money cash_balance) except *
+    cpdef void add_positions(self, list positions) except *
+    cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *
+    cpdef void add_return(self, datetime timestamp, double value) except *
     cpdef void reset(self) except *
-    cpdef object get_returns(self)
-    cpdef object get_positions(self)
-    cpdef object get_transactions(self)
-    cpdef object get_equity_curve(self)
+    cpdef object get_daily_returns(self)
+    cpdef object get_realized_pnls(self)
     cpdef double total_pnl(self) except *
     cpdef double total_pnl_percentage(self) except *
     cpdef double max_winner(self) except *
