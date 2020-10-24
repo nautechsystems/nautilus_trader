@@ -5,6 +5,7 @@ Backtest
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Config
 ------
@@ -13,6 +14,7 @@ Config
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Data
 ----
@@ -21,6 +23,7 @@ Data
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Engine
 ------
@@ -29,6 +32,7 @@ Engine
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Exchange
 --------
@@ -37,6 +41,7 @@ Exchange
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Execution
 ---------
@@ -45,6 +50,7 @@ Execution
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Loaders
 -------
@@ -53,6 +59,7 @@ Loaders
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Logging
 -------
@@ -61,6 +68,7 @@ Logging
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Models
 ------
@@ -69,3 +77,4 @@ Models
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

@@ -5,7 +5,7 @@ Data
    :members:
    :undoc-members:
    :show-inheritance:
-
+   :member-order: bysource
 
 Aggregation
 -----------
@@ -14,6 +14,7 @@ Aggregation
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Base
 ----
@@ -22,6 +23,7 @@ Base
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Cache
 -----
@@ -30,6 +32,7 @@ Cache
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Client
 ------
@@ -38,6 +41,7 @@ Client
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Database
 --------
@@ -46,6 +50,7 @@ Database
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Engine
 ------
@@ -54,6 +59,7 @@ Engine
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Wrangling
 ---------
@@ -62,3 +68,4 @@ Wrangling
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

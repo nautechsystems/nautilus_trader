@@ -5,6 +5,7 @@ Indicators
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Adaptive Moving Average (AMA)
 -----------------------------
@@ -22,6 +23,7 @@ Exponential Moving Average (EMA)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Hull Moving Average (HMA)
 ------------------------
@@ -30,6 +32,7 @@ Hull Moving Average (HMA)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Moving Average Factory
 ----------------------
@@ -38,6 +41,7 @@ Moving Average Factory
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Simple Moving Average (SMA)
 ----------------------------------------------
@@ -46,6 +50,7 @@ Simple Moving Average (SMA)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Weighted Moving Average (WMA)
 ----------------------------------------------
@@ -54,6 +59,7 @@ Weighted Moving Average (WMA)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Average True Range (ATR)
 ------------------------
@@ -62,6 +68,7 @@ Average True Range (ATR)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Bid Ask Min Max
 ---------------
@@ -70,6 +77,7 @@ Bid Ask Min Max
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Efficiency Ratio
 ----------------
@@ -78,6 +86,7 @@ Efficiency Ratio
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Keltner Channel
 ---------------
@@ -86,6 +95,7 @@ Keltner Channel
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Keltner Position
 ----------------
@@ -94,6 +104,7 @@ Keltner Position
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Moving Average Convergence Divergence (MACD)
 ---------------------------------------
@@ -102,6 +113,7 @@ Moving Average Convergence Divergence (MACD)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 On Balance Volume (OBV)
 --------------------------------------
@@ -110,6 +122,7 @@ On Balance Volume (OBV)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Pressure
 -------------------------------------------
@@ -118,6 +131,7 @@ Pressure
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Rate Of Change (ROC)
 ---
@@ -126,6 +140,7 @@ Rate Of Change (ROC)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Relative Strength Index (RSI)
 ---
@@ -134,6 +149,7 @@ Relative Strength Index (RSI)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Spread Analyzer
 ---------------
@@ -142,6 +158,7 @@ Spread Analyzer
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Stochastics
 -----------
@@ -150,6 +167,7 @@ Stochastics
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Volatility Ratio
 ----------------
@@ -158,6 +176,7 @@ Volatility Ratio
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 VWAP
 ----
@@ -166,3 +185,4 @@ VWAP
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

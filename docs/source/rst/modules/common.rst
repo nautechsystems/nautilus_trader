@@ -37,6 +37,7 @@ Component
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Constants
 ---------
@@ -45,6 +46,7 @@ Constants
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Factories
 ---------
@@ -53,6 +55,7 @@ Factories
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Generators
 ----------
@@ -61,6 +64,7 @@ Generators
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Logging
 -------
@@ -69,6 +73,7 @@ Logging
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Timer
 -----
@@ -77,6 +82,7 @@ Timer
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 UUID
 ----
@@ -85,3 +91,4 @@ UUID
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

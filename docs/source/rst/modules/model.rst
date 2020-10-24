@@ -5,6 +5,7 @@ Model
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Bar
 ---
@@ -13,6 +14,7 @@ Bar
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Commands
 --------
@@ -21,6 +23,7 @@ Commands
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Currencies
 ----------
@@ -29,6 +32,7 @@ Currencies
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Currency
 --------
@@ -37,6 +41,7 @@ Currency
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Data
 ----
@@ -45,6 +50,7 @@ Data
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Enums
 -----
@@ -53,6 +59,7 @@ Enums
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Events
 ------
@@ -61,6 +68,7 @@ Events
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Identifiers
 -----------
@@ -69,6 +77,7 @@ Identifiers
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Instrument
 ----------
@@ -77,6 +86,7 @@ Instrument
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Objects
 -------
@@ -85,6 +95,7 @@ Objects
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Order
 -----
@@ -93,6 +104,7 @@ Order
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Position
 --------
@@ -101,6 +113,7 @@ Position
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Tick
 ----
@@ -109,3 +122,4 @@ Tick
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

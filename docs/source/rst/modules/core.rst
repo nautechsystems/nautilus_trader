@@ -5,6 +5,7 @@ Core
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Cache
 -----
@@ -13,6 +14,7 @@ Cache
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Correctness
 -----------
@@ -21,6 +23,7 @@ Correctness
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Datetime
 --------
@@ -29,6 +32,7 @@ Datetime
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Decimal
 -------
@@ -37,6 +41,7 @@ Decimal
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Finite State Machine (fsm)
 --------------------------------
@@ -45,6 +50,7 @@ Finite State Machine (fsm)
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Functions
 ---------
@@ -53,6 +59,7 @@ Functions
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Message
 -------
@@ -61,6 +68,7 @@ Message
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Types
 -----
@@ -69,6 +77,7 @@ Types
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 UUID
 ----
@@ -77,3 +86,4 @@ UUID
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
