@@ -6,6 +6,7 @@
 
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/nautilus-trader/badge/?version=latest)](https://nautilus-trader.readthedocs.io/en/latest/?badge=latest)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
@@ -65,6 +66,10 @@ Development version (pre-release);
 
     $ pip install git+https://github.com/nautechsystems/nautilus_trader.git@develop
 
+## Documentation
+
+> https://nautilus-trader.readthedocs.io
+
 ## Development
 
 [Development Documentation](docs/development/)
@@ -91,9 +96,7 @@ _Black_ is a PEP-8 compliant opinionated formatter.
 We philosophically agree with _Black_, however it does not currently run over
 Cython code. So you could say we are "handcrafting towards" _Blacks_ stylistic conventions.
 
-## Support
-
-Please direct all questions, comments or bug reports to info@nautechsystems.io
+---
 
 Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
 

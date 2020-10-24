@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from collections import deque
-from typing import List
 
 from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport Logger
@@ -204,7 +203,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        List[Symbol]
+        list[Symbol]
         """
         return list(self._instruments.keys())
 
@@ -214,7 +213,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        List[Instrument]
+        list[Instrument]
 
         """
         return list(self._instruments.values())
@@ -230,7 +229,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        List[QuoteTick]
+        list[QuoteTick]
 
         """
         Condition.not_none(symbol, "symbol")
@@ -249,7 +248,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        List[TradeTick]
+        list[TradeTick]
 
         """
         Condition.not_none(symbol, "symbol")
@@ -268,7 +267,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        List[Bar]
+        list[Bar]
 
         """
         Condition.not_none(bar_type, "bar_type")

@@ -100,7 +100,7 @@ cdef class SimulatedExchange:
             The order management employed by the broker/exchange for this market.
         exec_cache : ExecutionCache
             The execution cache for the backtest.
-        instruments : Dict[Symbol, Instrument]
+        instruments : dict[Symbol, Instrument]
             The instruments needed for the backtest.
         config : BacktestConfig
             The backtest configuration.

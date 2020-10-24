@@ -449,7 +449,7 @@ cdef class TradingStrategy:
 
         Parameters
         ----------
-        ticks : List[QuoteTick]
+        ticks : list[QuoteTick]
             The received ticks.
 
         """
@@ -506,7 +506,7 @@ cdef class TradingStrategy:
 
         Parameters
         ----------
-        ticks : List[TradeTick]
+        ticks : list[TradeTick]
             The received ticks.
 
         """
@@ -568,7 +568,7 @@ cdef class TradingStrategy:
         ----------
         bar_type : BarType
             The received bar type.
-        bars : List[Bar]
+        bars : list[Bar]
             The bars to handle.
 
         """
@@ -939,7 +939,7 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        List[Indicator]
+        list[Indicator]
 
         """
         return self._indicators.copy()
@@ -1119,7 +1119,7 @@ cdef class TradingStrategy:
 
         Parameters
         ----------
-        state : Dict[str, object]
+        state : dict[str, object]
             The state dictionary.
 
         """

@@ -55,9 +55,9 @@ cdef class ExchangeRateCalculator:
         price_type : PriceType
             The price type for conversion.
         bid_quotes : dict
-            The dictionary of currency pair bid quotes Dict[str, double].
+            The dictionary of currency pair bid quotes dict[str, double].
         ask_quotes : dict
-            The dictionary of currency pair ask quotes Dict[str, double].
+            The dictionary of currency pair ask quotes dict[str, double].
 
         Returns
         -------

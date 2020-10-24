@@ -1,0 +1,29 @@
+@import url("theme.css");
+
+.wy-side-nav-search {
+    background-color: #565656;
+}
+
+.wy-side-nav-search a {
+    margin: 0
+}
+
+.wy-side-nav-search > div.version {
+    color: #f26822;
+}
+
+.wy-nav-top {
+    background: #404040;
+}
+
+.wy-menu-vertical li.on a, .wy-menu-vertical li.current>a {
+    background: #ccc;
+}
+
+.wy-side-nav-search input[type=text] {
+    border-color: #313131;
+}
+
+.wy-side-nav-search>a img.logo, .wy-side-nav-search .wy-dropdown>a img.logo {
+    max-width: 60%;
+}

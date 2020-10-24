@@ -111,7 +111,7 @@ cdef class Currency:
         ValueError
             If code is not a valid string.
         ValueError
-            If precision is not position (> 0).
+            If precision is negative (< 0).
         ValueError
             If currency_type is UNDEFINED.
 
@@ -145,7 +145,7 @@ cdef class Currency:
                 f"type={currency_type_to_string(self.currency_type)})")
 
     @staticmethod
-    def from_string(str code):
+    cdef Currency from_string_c(str code):
         """
         Return a currency from the given string (if found).
 
@@ -162,7 +162,7 @@ cdef class Currency:
         return _CURRENCY_TABLE.get(code)
 
     @staticmethod
-    cdef Currency from_string_c(str code):
+    def from_string(str code):
         """
         Return a currency from the given string (if found).
 

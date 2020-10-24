@@ -31,7 +31,7 @@ class ObjectStorer:
 
         Returns
         -------
-        List[Object]
+        list[Object]
 
         """
         return self._store

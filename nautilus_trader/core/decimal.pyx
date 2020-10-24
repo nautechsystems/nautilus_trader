@@ -24,11 +24,6 @@ cdef class Decimal:
 
     The type interoperates with the built-in decimal.Decimal correctly.
 
-    Attributes
-    ----------
-    precision : int
-        The precision of the decimal.
-
     """
 
     def __init__(self, value="0", precision=None):
