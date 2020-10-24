@@ -13,4 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `common` module provides common parts for the systems components."""
+"""The `common` sub-package provides common parts for the platforms components."""

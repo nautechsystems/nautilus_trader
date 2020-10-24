@@ -54,7 +54,11 @@ if __name__ == "__main__":
 
     strategies = [EMACross(
         symbol=USDJPY.symbol,
-        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
+        bar_spec=BarSpecification(
+            1,
+            BarAggregation.MINUTE,
+            PriceType.BID,
+        ),
         fast_ema=10,
         slow_ema=20,
     )]
