@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-This module provides components relating to data for backtesting. A `BacktestDataContainer` is
+"""This module provides components relating to data for backtesting. A `BacktestDataContainer` is
 a convenient container for holding and organizing backtest related data - which can be passed
 to one or more `BacktestDataEngine`(s).
 """

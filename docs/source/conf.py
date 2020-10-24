@@ -57,7 +57,7 @@ master_doc = "index"
 add_module_names = False
 todo_include_todos = False
 
-autosummary_generate = False
+autosummary_generate = True
 numpydoc_show_class_members = True
 
 # Add any paths that contain templates here, relative to this directory.

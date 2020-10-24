@@ -40,32 +40,32 @@ Index
     :caption: Getting Started
     :hidden:
 
-    rst/getting_started/installation
+    getting_started/installation
 
 .. toctree::
     :maxdepth: 2
     :caption: Module API
     :hidden:
 
-    rst/modules/analysis
-    rst/modules/backtest
-    rst/modules/common
-    rst/modules/core
-    rst/modules/data
-    rst/modules/execution
-    rst/modules/indicators
-    rst/modules/model
-    rst/modules/postgres
-    rst/modules/redis
-    rst/modules/serialization
-    rst/modules/trading
+    analysis
+    backtest
+    common
+    core
+    data
+    execution
+    indicators
+    model
+    postgres
+    redis
+    serialization
+    trading
 
 .. toctree::
     :maxdepth: 2
     :caption: Adapters
     :hidden:
 
-    rst/adapters/adapters.binance
-    rst/adapters/adapters.bitmex
-    rst/adapters/adapters.ccxt
-    rst/adapters/adapters.tda
+    adapters.binance
+    adapters.bitmex
+    adapters.ccxt
+    adapters.tda
