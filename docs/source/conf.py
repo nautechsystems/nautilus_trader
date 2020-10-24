@@ -43,15 +43,24 @@ release = version
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
-    'sphinx.ext.doctest',
+    "sphinx.ext.doctest",
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
-    'sphinx.ext.viewcode',
+    "sphinx.ext.viewcode",
+    'sphinx.ext.napoleon',
     "numpydoc",
 ]
 
+# The suffix(es) of source filenames.
+# You can specify multiple suffix as a list of string:
+# source_suffix = ['.rst', '.md']
+source_suffix = ".rst"
+
 # The master toctree document.
 master_doc = "index"
+
+# The name of the Pygments (syntax highlighting) style to use.
+pygments_style = 'sphinx'
 
 # do not prepend module name to functions
 add_module_names = False
