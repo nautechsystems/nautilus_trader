@@ -12,3 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+# The following imports are to allow external code to `cimport` from the package
+
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarSpecification
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.tick cimport Tick
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick

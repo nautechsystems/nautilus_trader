@@ -13,6 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `Model` module provides a rich and expressive trading domain model.
-"""
+"""The `model` module provides a rich and expressive trading domain model."""
+
+import nautilus_trader.model.identifiers  # noqa
