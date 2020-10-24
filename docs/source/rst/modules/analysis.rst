@@ -5,6 +5,7 @@ Analysis
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Performance
 -----------
@@ -13,6 +14,7 @@ Performance
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Reports
 -------
@@ -21,3 +23,4 @@ Reports
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

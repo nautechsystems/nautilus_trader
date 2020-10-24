@@ -52,8 +52,3 @@ Index
     rst/adapters/adapters.bitmex.rst
     rst/adapters/adapters.ccxt.rst
     rst/adapters/adapters.tda.rst
-
-.. toctree::
-    :maxdepth: 2
-    :caption: Deployment
-    :hidden:

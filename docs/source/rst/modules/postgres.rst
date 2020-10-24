@@ -5,6 +5,7 @@ Postgres
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Execution
 ---------
@@ -13,3 +14,4 @@ Execution
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

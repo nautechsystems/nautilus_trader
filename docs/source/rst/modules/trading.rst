@@ -5,6 +5,7 @@ Trading
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Account
 -------
@@ -13,6 +14,7 @@ Account
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Calculators
 -----------
@@ -21,6 +23,7 @@ Calculators
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Filters
 -------
@@ -29,6 +32,7 @@ Filters
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Portfolio
 ---------
@@ -37,6 +41,7 @@ Portfolio
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Sizing
 ------
@@ -45,6 +50,7 @@ Sizing
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Strategy
 --------
@@ -53,6 +59,7 @@ Strategy
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Trader
 ------
@@ -61,3 +68,4 @@ Trader
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource

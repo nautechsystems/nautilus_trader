@@ -5,6 +5,7 @@ Serialization
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Base
 ----
@@ -13,6 +14,7 @@ Base
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Common
 ------
@@ -21,6 +23,7 @@ Common
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
 
 Serializers
 -----------
@@ -29,3 +32,4 @@ Serializers
    :members:
    :undoc-members:
    :show-inheritance:
+   :member-order: bysource
