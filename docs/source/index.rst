@@ -23,32 +23,32 @@ Index
     :caption: Getting Started
     :hidden:
 
-    rst/getting_started/installation.rst
+    rst/getting_started/installation
 
 .. toctree::
     :maxdepth: 2
     :caption: Module API
     :hidden:
 
-    rst/modules/analysis.rst
-    rst/modules/backtest.rst
-    rst/modules/common.rst
-    rst/modules/core.rst
-    rst/modules/data.rst
-    rst/modules/execution.rst
-    rst/modules/indicators.rst
-    rst/modules/model.rst
-    rst/modules/postgres.rst
-    rst/modules/redis.rst
-    rst/modules/serialization.rst
-    rst/modules/trading.rst
+    rst/modules/analysis
+    rst/modules/backtest
+    rst/modules/common
+    rst/modules/core
+    rst/modules/data
+    rst/modules/execution
+    rst/modules/indicators
+    rst/modules/model
+    rst/modules/postgres
+    rst/modules/redis
+    rst/modules/serialization
+    rst/modules/trading
 
 .. toctree::
     :maxdepth: 2
     :caption: Adapters
     :hidden:
 
-    rst/adapters/adapters.binance.rst
-    rst/adapters/adapters.bitmex.rst
-    rst/adapters/adapters.ccxt.rst
-    rst/adapters/adapters.tda.rst
+    rst/adapters/adapters.binance
+    rst/adapters/adapters.bitmex
+    rst/adapters/adapters.ccxt
+    rst/adapters/adapters.tda
