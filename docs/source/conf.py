@@ -71,9 +71,10 @@ exclude_patterns = []
 
 # -- Options for HTML output -------------------------------------------------
 
-# html_logo = ""
 html_theme = "sphinx_rtd_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+html_copy_source = False
+html_show_sourcelink = False
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -81,5 +82,3 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_static_path = ["_static"]
 html_style = "css/nautilus.css"
 html_logo = "_static/img/nautilus-black.png"
-
-html_copy_source = True

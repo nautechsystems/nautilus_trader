@@ -38,6 +38,10 @@ To run code or tests from the source code, first compile the C extensions for th
 
     $ python setup.py build_ext --inplace
 
+## Documentation
+
+> https://nautilus-trader.readthedocs.io
+
 ## Features
 
 - **Fast:** C level speed and type safety provided through Cython. Asynchronous networking with uvloop.
@@ -62,19 +66,9 @@ Latest version;
 
     $ pip install nautilus_trader
 
-Development version (pre-release);
-
-    $ pip install git+https://github.com/nautechsystems/nautilus_trader.git@develop
-
-## Documentation
-
-> https://nautilus-trader.readthedocs.io
-
 ## Development
 
 [Development Documentation](docs/development/)
-
-[CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md)
 
 We recommend the PyCharm Professional edition IDE as it interprets Cython syntax.
 Unfortunately the Community edition will not interpret Cython syntax.
