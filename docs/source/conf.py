@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.abspath("./../.."))
 # -- Project information -----------------------------------------------------
 
 project = "NautilusTrader"
-copyright = "2020, Nautech Systems Pty Ltd."
+copyright = "2015-2020, Nautech Systems Pty Ltd."
 author = "Nautech Systems"
 
 version = ""
