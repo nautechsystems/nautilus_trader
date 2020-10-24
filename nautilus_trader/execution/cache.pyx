@@ -711,7 +711,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        Set[ClientOrderId]
+        set[ClientOrderId]
 
         """
         cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
@@ -735,7 +735,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        Set[ClientOrderId]
+        set[ClientOrderId]
 
         """
         cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
@@ -759,7 +759,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         Returns
         -------
-        Set[ClientOrderId]
+        set[ClientOrderId]
 
         """
         cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)

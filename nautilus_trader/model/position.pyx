@@ -197,7 +197,7 @@ cdef class Position:
 
         Returns
         -------
-        Set[OrderId]
+        set[OrderId]
 
         """
         cdef OrderFilled event
@@ -209,7 +209,7 @@ cdef class Position:
 
         Returns
         -------
-        Set[OrderId]
+        set[OrderId]
 
         """
         cdef OrderFilled event
@@ -221,7 +221,7 @@ cdef class Position:
 
         Returns
         -------
-        Set[ExecutionId]
+        set[ExecutionId]
 
         """
         cdef OrderFilled event

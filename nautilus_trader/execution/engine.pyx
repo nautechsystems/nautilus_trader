@@ -189,7 +189,7 @@ cdef class ExecutionEngine:
 
         Returns
         -------
-        Set[StrategyId]
+        set[StrategyId]
 
         """
         return set(self._clients.keys())
@@ -200,7 +200,7 @@ cdef class ExecutionEngine:
 
         Returns
         -------
-        Set[StrategyId]
+        set[StrategyId]
 
         """
         return set(self._strategies.keys())

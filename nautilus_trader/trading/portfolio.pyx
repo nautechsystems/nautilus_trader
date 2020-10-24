@@ -194,7 +194,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        orders : Set[Order]
+        orders : set[Order]
 
         """
         Condition.not_none(orders, "orders")
@@ -247,7 +247,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        positions : Set[Position]
+        positions : set[Position]
             The positions to update with.
 
         """
