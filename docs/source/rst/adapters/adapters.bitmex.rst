@@ -1,5 +1,5 @@
-BitMEX Exchange Integration
-===========================
+BitMEX Integration
+==================
 
 .. automodule:: nautilus_trader.adapters.bitmex
    :members:

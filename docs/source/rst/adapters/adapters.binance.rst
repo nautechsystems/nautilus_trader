@@ -1,5 +1,5 @@
-Binance Exchange Integration
-============================
+Binance Integration
+===================
 
 .. automodule:: nautilus_trader.adapters.binance
    :members:

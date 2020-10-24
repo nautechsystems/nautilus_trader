@@ -1,5 +1,5 @@
-CCXT Library Integration
-========================
+CCXT Integration
+================
 
 .. automodule:: nautilus_trader.adapters.ccxt
    :members:
