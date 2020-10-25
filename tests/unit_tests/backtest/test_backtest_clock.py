@@ -40,7 +40,7 @@ class TestClockTests(unittest.TestCase):
         # Act
         # Assert
         self.assertTrue(self.clock.is_default_handler_registered)
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
 
     def test_utc_now(self):
         # Arrange
@@ -60,13 +60,13 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual(datetime, type(result))
         self.assertEqual(UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney")), result)
 
-    def test_get_delta(self):
+    def test_delta(self):
         # Arrange
         start = self.clock.utc_now()
 
         # Act
         self.clock.set_time(start + timedelta(1))
-        result = self.clock.get_delta(start)
+        result = self.clock.delta(start)
 
         # Assert
         self.assertTrue(result > timedelta(0))
@@ -82,7 +82,7 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=200))
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
         self.assertEqual(1, len(events))
         self.assertEqual(TimeEventHandler, type(events[0]))
 
@@ -98,7 +98,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
         self.assertEqual(0, len(self.handler))
 
     def test_set_multiple_time_alerts(self):
@@ -112,7 +112,7 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
         self.assertEqual(2, len(events))
 
     def test_set_timer_with_immediate_start_time(self):
@@ -128,7 +128,7 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
-        self.assertEqual([name], self.clock.get_timer_names())
+        self.assertEqual([name], self.clock.timer_names)
         self.assertEqual(4, len(events))
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc), events[3].event.timestamp)
 
@@ -146,7 +146,7 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
-        self.assertEqual([name], self.clock.get_timer_names())
+        self.assertEqual([name], self.clock.timer_names)
         self.assertEqual(4, len(events))
 
     def test_set_timer_with_stop_time(self):
@@ -162,7 +162,7 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
         self.assertEqual(3, len(events))
 
     def test_cancel_timer(self):
@@ -180,7 +180,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
 
     def test_set_repeating_timer(self):
         # Arrange
@@ -197,7 +197,7 @@ class TestClockTests(unittest.TestCase):
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
-        self.assertEqual([name], self.clock.get_timer_names())
+        self.assertEqual([name], self.clock.timer_names)
         self.assertEqual(4, len(events))
 
     def test_cancel_repeating_timer(self):
@@ -217,7 +217,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.cancel_timer(name)
 
         # Assert
-        self.assertEqual([], self.clock.get_timer_names())
+        self.assertEqual([], self.clock.timer_names)
 
     def test_set_two_repeating_timers(self):
         # Arrange

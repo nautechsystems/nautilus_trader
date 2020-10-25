@@ -932,7 +932,7 @@ cdef class BulkTickBarBuilder:
             The bar_type to build.
         logger : Logger
             The logger for the bar aggregator.
-        callback : Callable
+        callback : callable
             The callback to send the built bars to.
 
         Raises

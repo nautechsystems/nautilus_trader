@@ -1009,7 +1009,7 @@ cdef class TradingStrategy:
         self.log.info(f"state={self._fsm.state_as_string()}...")
 
         # Clean up clock
-        cdef list timer_names = self.clock.get_timer_names()
+        cdef list timer_names = self.clock.timer_names
         self.clock.cancel_all_timers()
 
         cdef str name
