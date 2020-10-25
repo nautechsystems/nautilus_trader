@@ -138,7 +138,7 @@ cdef class Timer:
         ----------
         name : str
             The name for the timer.
-        callback : Callable
+        callback : callable
             The function to call at the next time.
         interval : timedelta
             The time interval for the timer (not negative).
@@ -229,7 +229,7 @@ cdef class TestTimer(Timer):
         ----------
         name : str
             The name for the timer.
-        callback : Callable
+        callback : callable
             The function to call at the next time.
         interval : timedelta
             The time interval for the timer (not negative).

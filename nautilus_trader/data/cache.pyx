@@ -113,7 +113,6 @@ cdef class DataCache(DataCacheFacade):
         cdef Symbol symbol = tick.symbol
 
         # Update latest quotes
-        # TODO: Handle the case of same symbol over different venues
         self._bid_quotes[symbol.code] = tick.bid.as_double()
         self._ask_quotes[symbol.code] = tick.ask.as_double()
 
@@ -130,7 +129,7 @@ cdef class DataCache(DataCacheFacade):
             # TODO: Test this logic
             if ticks_length < self.tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
                 ticks.append(tick)
-            return  # Tick previously handled
+            return  # Ticks previously handled
 
         ticks.appendleft(tick)
 

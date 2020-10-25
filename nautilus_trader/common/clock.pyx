@@ -28,7 +28,7 @@ from nautilus_trader.common.uuid cimport TestUUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 cdef class Clock:
@@ -58,14 +58,23 @@ cdef class Clock:
         self.next_event_name = None
         self.is_default_handler_registered = False
 
+    @property
+    def timer_names(self):
+        """
+        Returns
+        -------
+        list[str]
+            The timer labels held by the clock.
+
+        """
+        return list(self._timers.keys())
+
     cpdef datetime utc_now(self):
         """
-        Return the current UTC datetime of the clock.
-
         Returns
         -------
         datetime
-            tz-aware UTC.
+            The current tz-aware UTC time of the clock.
 
         """
         # Abstract method
@@ -73,7 +82,7 @@ cdef class Clock:
 
     cpdef datetime local_now(self, tzinfo tz):
         """
-        Return the current datetime of the clock in the given local timezone.
+        Calculate the current datetime of the clock in the given local timezone.
 
         Parameters
         ----------
@@ -88,56 +97,48 @@ cdef class Clock:
         """
         return self.utc_now().astimezone(tz)
 
-    cpdef timedelta get_delta(self, datetime time):
+    cpdef timedelta delta(self, datetime time):
         """
-        Return the timedelta from the given time.
+        Calculate the timedelta from the current time to the given time.
 
         Parameters
         ----------
         time : datetime
-            The time to take from UTC now to find the difference.
+            The datum time.
 
         Returns
         -------
         timedelta
+            The time difference.
 
         """
         Condition.not_none(time, "time")
 
         return self.utc_now() - time
 
-    cpdef Timer get_timer(self, str name):
+    cpdef Timer timer(self, str name):
         """
-        Return the datetime for the given timer name.
+        Find a particular timer.
 
         Parameters
         ----------
         name : str
             The name of the timer.
 
+        Returns
+        -------
+        Timer or None
+            The timer with the given name (if found).
+
         Raises
         ------
         ValueError
             If name is not a valid string.
-        KeyError
-            If the timer is not found.
 
         """
         Condition.valid_string(name, "name")
 
-        return self._timers[name]
-
-    cpdef list get_timer_names(self):
-        """
-        Return the timer labels held by the clock.
-
-        Returns
-        -------
-        list[str]
-
-        """
-        cdef str name
-        return [name for name in self._timers.keys()]
+        return self._timers.get(name)
 
     cpdef void register_default_handler(self, handler: callable) except *:
         """
@@ -164,8 +165,11 @@ cdef class Clock:
             handler: callable=None,
     ) except *:
         """
-        Set a time alert for the given time. When the time is reached the
-        handler will be passed the TimeEvent containing the timers unique label.
+        Set a time alert for the given time.
+
+        When the time is reached the handler will be passed the `TimeEvent`
+        containing the timers unique name. If no handler is passed then the
+        default handler (if registered) will receive the `TimeEvent`.
 
         Parameters
         ----------
@@ -174,16 +178,16 @@ cdef class Clock:
         alert_time : datetime
             The time for the alert.
         handler : callable, optional
-            The handler to receive time events (must be Callable).
+            The handler to receive time events.
 
         Raises
         ------
         ValueError
-            If label is not unique for this clock.
+            If name is not unique for this clock.
         ValueError
             If alert_time is not >= the clocks current time.
         TypeError
-            If handler is not of type Callable or None.
+            If handler is not of type callable or None.
         ValueError
             If handler is None and no default handler is registered.
 
@@ -198,13 +202,15 @@ cdef class Clock:
         Condition.true(alert_time >= now, "alert_time >= time_now()")
         Condition.callable(handler, "handler")
 
-        cdef Timer timer = self._get_timer(
+        cdef Timer timer = self._create_timer(
             name=name,
             callback=handler,
             interval=alert_time - now,
             now=now,
             start_time=now,
-            stop_time=alert_time)
+            stop_time=alert_time,
+        )
+
         self._add_timer(timer, handler)
 
     cpdef void set_timer(
@@ -216,9 +222,12 @@ cdef class Clock:
             handler=None,
     ) except *:
         """
-        Set a timer with the given interval. The timer will run from the start
-        time (optionally until the stop time). When the intervals are reached the
-        handlers will be passed the TimeEvent containing the timers unique label.
+        Set a timer with the given interval.
+
+        The timer will run from the start time (optionally until the stop time).
+        When the intervals are reached the handlers will be passed the
+        `TimeEvent` containing the timers unique name. If no handler is passed
+        then the default handler (if registered) will receive the `TimeEvent`.
 
         Parameters
         ----------
@@ -231,12 +240,12 @@ cdef class Clock:
         stop_time : datetime, optional
             The optional stop time for the timer (if None then repeats indefinitely).
         handler : callable, optional
-            The handler to receive time events (must be Callable or None).
+            The handler to receive time events.
 
         Raises
         ------
         ValueError
-            If label is not unique for this clock.
+            If name is not unique for this clock.
         ValueError
             If interval is not positive (> 0).
         ValueError
@@ -244,7 +253,7 @@ cdef class Clock:
         ValueError
             If stop_time is not None and start_time + interval > stop_time.
         TypeError
-            If handler is not of type Callable or None.
+            If handler is not of type callable or None.
         ValueError
             If handler is None and no default handler is registered.
 
@@ -265,7 +274,7 @@ cdef class Clock:
             Condition.true(stop_time > now, "stop_time > now")
             Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
 
-        cdef Timer timer = self._get_timer(
+        cdef Timer timer = self._create_timer(
             name=name,
             interval=interval,
             callback=handler,
@@ -303,15 +312,16 @@ cdef class Clock:
 
     cpdef void cancel_all_timers(self) except *:
         """
-        Cancel all timers inside the clock.
+        Cancel all timers.
         """
         cdef str name
-        for name in self.get_timer_names():
-            # Using a list of timer names as cancel_timer handles the clean
-            # removal of both the handler and timer.
+        for name in self.timer_names:
+            # Using a list of timer names from the property and passing this
+            # to cancel_timer() handles the clean removal of both the handler
+            # and timer.
             self.cancel_timer(name)
 
-    cdef Timer _get_timer(
+    cdef Timer _create_timer(
             self,
             str name,
             callback,
@@ -323,13 +333,13 @@ cdef class Clock:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef void _add_timer(self, Timer timer, handler) except *:
+    cdef inline void _add_timer(self, Timer timer, handler) except *:
         self._timers[timer.name] = timer
         self._handlers[timer.name] = handler
         self._update_stack()
         self._update_timing()
 
-    cdef void _remove_timer(self, Timer timer) except *:
+    cdef inline void _remove_timer(self, Timer timer) except *:
         self._timers.pop(timer.name, None)
         self._handlers.pop(timer.name, None)
         self._update_stack()
@@ -339,13 +349,16 @@ cdef class Clock:
         self.timer_count = len(self._timers)
 
         if self.timer_count > 0:
+            # The call to np.asarray here looks inefficient, however the intention
+            # is that its only called when a timer is added or removed only.
+            # This then allows the construction of an efficient Timer[:] memory view.
             self._stack = np.asarray(list(self._timers.values()))
         else:
             self._stack = None
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void _update_timing(self) except *:
+    cdef inline void _update_timing(self) except *:
         if self.timer_count == 0:
             self.next_event_time = None
             return
@@ -370,7 +383,7 @@ cdef class TestClock(Clock):
     """
     __test__ = False
 
-    def __init__(self, datetime initial_time not None=_UNIX_EPOCH):
+    def __init__(self, datetime initial_time not None=UNIX_EPOCH):
         """
         Initialize a new instance of the TestClock class.
 
@@ -387,11 +400,10 @@ cdef class TestClock(Clock):
 
     cpdef datetime utc_now(self):
         """
-        Return the current datetime of the clock (UTC).
-
         Returns
         -------
         datetime
+            The current tz-aware UTC time of the clock.
 
         """
         return self._time
@@ -444,7 +456,7 @@ cdef class TestClock(Clock):
         self._time = to_time
         return events
 
-    cdef Timer _get_timer(
+    cdef Timer _create_timer(
             self,
             str name,
             callback,
@@ -475,11 +487,10 @@ cdef class LiveClock(Clock):
 
     cpdef datetime utc_now(self):
         """
-        Return the current datetime of the clock (UTC).
-
         Returns
         -------
         datetime
+            The current tz-aware UTC time of the clock.
 
         """
         # From the pytz docs https://pythonhosted.org/pytz/
@@ -492,7 +503,7 @@ cdef class LiveClock(Clock):
         # by humans.
         return datetime.now(tz=pytz.utc)
 
-    cdef Timer _get_timer(
+    cdef Timer _create_timer(
             self,
             str name,
             callback,
@@ -522,7 +533,7 @@ cdef class LiveClock(Clock):
             timer.repeat(now)
             self._update_timing()
 
-    cdef void _handle_time_event(self, TimeEvent event) except *:
+    cdef inline void _handle_time_event(self, TimeEvent event) except *:
         handler = self._handlers.get(event.name)
         if handler is not None:
             handler(event)

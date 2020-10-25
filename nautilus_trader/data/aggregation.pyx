@@ -90,7 +90,7 @@ cdef class BarBuilder:
         self._update(
             price=tick.extract_price(self.bar_spec.price_type),
             volume=tick.extract_volume(self.bar_spec.price_type),
-            timestamp=tick.timestamp
+            timestamp=tick.timestamp,
         )
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -111,7 +111,7 @@ cdef class BarBuilder:
         self._update(
             price=tick.price,
             volume=tick.size,
-            timestamp=tick.timestamp
+            timestamp=tick.timestamp,
         )
 
     cpdef Bar build(self, datetime close_time=None):
@@ -344,7 +344,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._clock = clock
         self.interval = self._get_interval()
         self._set_build_timer()
-        self.next_close = self._clock.get_timer(str(self.bar_type)).next_time
+        self.next_close = self._clock.timer(str(self.bar_type)).next_time
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -472,7 +472,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._log.info(f"Started timer {timer_name}.")
 
     cpdef void _build_bar(self, datetime at_time) except *:
-        cdef Timer timer = self._clock.get_timer(str(self.bar_type))
+        cdef Timer timer = self._clock.timer(str(self.bar_type))
         cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
         self.next_close = timer.next_time

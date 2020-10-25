@@ -33,16 +33,58 @@ cdef class Clock:
     cdef object _default_handler
 
     cdef readonly int timer_count
+    """
+    Returns
+    -------
+    int
+        The number of timers active in the clock.
+
+    """
+
     cdef readonly datetime next_event_time
+    """
+    Returns
+    -------
+    datetime
+        The datetime of the next time event.
+
+    """
+
     cdef readonly str next_event_name
+    """
+    Returns
+    -------
+    str
+        The name of the next time event.
+
+    """
+
     cdef readonly bint is_test_clock
+    """
+    Return a value indicating whether the clock is a `TestClock`.
+
+    Returns
+    -------
+    bool
+        True if clock is of type `TestClock`, else False.
+
+    """
+
     cdef readonly bint is_default_handler_registered
+    """
+    Return a value indicating whether the clock has a default handler registered.
+
+    Returns
+    -------
+    bool
+        True if default handler registered, else False.
+
+    """
 
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz)
-    cpdef timedelta get_delta(self, datetime time)
-    cpdef Timer get_timer(self, str name)
-    cpdef list get_timer_names(self)
+    cpdef timedelta delta(self, datetime time)
+    cpdef Timer timer(self, str name)
     cpdef void register_default_handler(self, handler) except *
     cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *
     cpdef void set_timer(
@@ -56,7 +98,7 @@ cdef class Clock:
     cpdef void cancel_timer(self, str name) except *
     cpdef void cancel_all_timers(self) except *
 
-    cdef Timer _get_timer(
+    cdef Timer _create_timer(
         self,
         str name,
         callback,
@@ -65,10 +107,10 @@ cdef class Clock:
         datetime start_time,
         datetime stop_time,
     )
-    cdef void _add_timer(self, Timer timer, handler) except *
-    cdef void _remove_timer(self, Timer timer) except *
-    cdef void _update_stack(self) except *
-    cdef void _update_timing(self) except *
+    cdef inline void _add_timer(self, Timer timer, handler) except *
+    cdef inline void _remove_timer(self, Timer timer) except *
+    cdef inline void _update_stack(self) except *
+    cdef inline void _update_timing(self) except *
 
 
 cdef class TestClock(Clock):
@@ -82,4 +124,4 @@ cdef class TestClock(Clock):
 cdef class LiveClock(Clock):
     cpdef void _raise_time_event(self, LiveTimer timer) except *
 
-    cdef void _handle_time_event(self, TimeEvent event) except *
+    cdef inline void _handle_time_event(self, TimeEvent event) except *
