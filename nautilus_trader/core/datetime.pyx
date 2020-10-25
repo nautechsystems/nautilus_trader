@@ -13,6 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+This module provides efficient functions for performing standard datetime
+related operations. Functions include awareness/tz checks and conversions, as
+well as ISO 8601 conversion.
+"""
+
 import pandas as pd
 import pytz
 
@@ -30,6 +36,7 @@ cpdef bint is_datetime_utc(datetime timestamp) except *:
     Parameters
     ----------
     timestamp : datetime
+        The datetime to check.
 
     Returns
     -------

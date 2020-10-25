@@ -2,7 +2,8 @@ BitMEX Integration
 ==================
 
 .. automodule:: nautilus_trader.adapters.bitmex
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource

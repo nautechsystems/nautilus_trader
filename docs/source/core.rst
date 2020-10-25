@@ -2,88 +2,98 @@ Core
 ====
 
 .. automodule:: nautilus_trader.core
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Cache
 -----
 
 .. automodule:: nautilus_trader.core.cache
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Correctness
 -----------
 
 .. automodule:: nautilus_trader.core.correctness
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Datetime
 --------
 
 .. automodule:: nautilus_trader.core.datetime
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Decimal
 -------
 
 .. automodule:: nautilus_trader.core.decimal
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Finite State Machine (fsm)
 --------------------------------
 
 .. automodule:: nautilus_trader.core.fsm
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Functions
 ---------
 
 .. automodule:: nautilus_trader.core.functions
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Message
 -------
 
 .. automodule:: nautilus_trader.core.message
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Types
 -----
 
 .. automodule:: nautilus_trader.core.types
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 UUID
 ----
 
 .. automodule:: nautilus_trader.core.uuid
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
