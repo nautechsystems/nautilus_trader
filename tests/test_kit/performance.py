@@ -74,7 +74,7 @@ class PerformanceHarness:
 
         Parameters
         ----------
-        function : Callable
+        function : callable
             The function call to profile.
         runs : int
             The number of runs for the test.

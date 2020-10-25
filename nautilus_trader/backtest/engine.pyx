@@ -236,7 +236,7 @@ cdef class BacktestEngine:
 
         self.iteration = 0
 
-        self.time_to_initialize = self.clock.get_delta(self.created_time)
+        self.time_to_initialize = self.clock.delta(self.created_time)
         self.log.info(f"Initialized in {self.time_to_initialize}.")
         self._backtest_memory()
 
