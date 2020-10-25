@@ -12,3 +12,5 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""This sub-package groups all indicators and analyzers for signal discovery and filtering."""
