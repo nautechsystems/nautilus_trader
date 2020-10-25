@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-This sub-package groups components relating to the 'execution stack' for the platform.
+The `execution` sub-package groups components relating to the 'execution stack' for the platform.
 
 Due to the high-performance, the core components are reusable between
 both backtest and live implementations - helping to ensure consistent logic

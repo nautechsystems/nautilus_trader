@@ -13,4 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""This sub-package provides a rich and expressive trading domain model."""
+"""The `model` sub-package provides a rich and expressive trading domain model."""
