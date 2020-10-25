@@ -157,13 +157,13 @@ cdef class OrderInitialized(OrderEvent):
         quantity : Quantity
             The order quantity.
         time_in_force : TimeInForce
-            The order time in force.
+            The order time-in-force.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
         options : dict[str, str]
-            The order options. Contains mappings for specific order params.
+            The order initialization options. Contains mappings for specific order parameters.
 
         Raises
         ------
@@ -495,7 +495,7 @@ cdef class OrderWorking(OrderEvent):
         price : Price
             The order price.
         time_in_force : TimeInForce
-            The order time in force.
+            The order time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders only).
         working_time : datetime

@@ -71,7 +71,7 @@ cdef class BacktestConfig:
         account_currency : Currency
             The currency for the account.
         short_term_interest_csv_path : str
-            The path for the short term interest csv data (default='default').
+            The path for the short term interest csv data.
         bypass_logging : bool
             If logging should be bypassed.
         level_console : int

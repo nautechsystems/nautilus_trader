@@ -512,7 +512,7 @@ cdef class DataCache(DataCacheFacade):
         to_currency : Currency
             The currency to convert to.
         price_type : PriceType
-            The price type for the exchange rate (default=MID).
+            The price type for the exchange rate.
 
         Returns
         -------
