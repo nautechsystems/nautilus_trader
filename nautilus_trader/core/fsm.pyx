@@ -57,9 +57,9 @@ cdef class FiniteStateMachine:
         ValueError
             If state_transition_table contains a key of type other than tuple.
         ValueError
-            If trigger_parser is not of type Callable or None.
+            If trigger_parser is not of type callable or None.
         ValueError
-            If state_parser is not of type Callable or None.
+            If state_parser is not of type callable or None.
 
         """
         if trigger_parser is None:
