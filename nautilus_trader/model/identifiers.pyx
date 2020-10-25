@@ -119,7 +119,7 @@ cdef class Venue(Identifier):
             If name is not a valid string.
 
         """
-        super().__init__(name.upper())
+        super().__init__(name)
 
 
 cdef class Brokerage(Identifier):
@@ -142,7 +142,7 @@ cdef class Brokerage(Identifier):
             If name is not a valid string.
 
         """
-        super().__init__(name.upper())
+        super().__init__(name)
 
 
 cdef class RoutedVenue(Venue):
@@ -196,7 +196,7 @@ cdef class Exchange(Venue):
             If name is not a valid string.
 
         """
-        super().__init__(name.upper())
+        super().__init__(name)
 
 
 cdef class IdTag(Identifier):
