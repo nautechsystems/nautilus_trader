@@ -79,7 +79,7 @@ cdef class LogMessage:
         text : str
             The log message text.
         thread_id : long, optional
-            The thread the log message was created on (default=0).
+            The thread the log message was created on.
 
         """
         self.timestamp = timestamp

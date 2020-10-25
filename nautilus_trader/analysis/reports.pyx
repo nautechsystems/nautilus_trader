@@ -15,16 +15,14 @@
 
 import pandas as pd
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.account cimport Account
 
 
 cdef class ReportProvider:
@@ -58,7 +56,9 @@ cdef class ReportProvider:
 
         cdef list orders_all = [self._order_to_dict(o) for o in orders]
 
-        return pd.DataFrame(data=orders_all).set_index("cl_ord_id")
+        report = pd.DataFrame(data=orders_all).set_index("cl_ord_id")
+        report.sort_values("timestamp", inplace=True)
+        return report
 
     cpdef object generate_order_fills_report(self, list orders):
         """
@@ -84,9 +84,11 @@ cdef class ReportProvider:
         ]
 
         if not filled_orders:
-            return pd.DataFrame.empty
+            return pd.DataFrame()
 
-        return pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
+        report = pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
+        report.sort_values("timestamp", inplace=True)
+        return report
 
     cpdef object generate_positions_report(self, list positions):
         """
@@ -109,43 +111,41 @@ cdef class ReportProvider:
         cdef list trades = [self._position_to_dict(p) for p in positions if p.is_closed()]
 
         if not trades:
-            return pd.DataFrame.empty
+            return pd.DataFrame()
 
-        return pd.DataFrame(data=trades).set_index("position_id")
+        report = pd.DataFrame(data=trades).set_index("position_id")
+        report.sort_values("opened_time", inplace=True)
+        return report
 
-    cpdef object generate_account_report(self, list events: [Event], datetime start=None, datetime end=None):
+    cpdef object generate_account_report(self, Account account):
         """
         Generate an account report for the given optional time range.
 
         Parameters
         ----------
-        events : list[AccountState]
-            The accounts state events list.
-        start : datetime, optional
-            The start of the account reports period.
-        end : datetime, optional
-            The end of the account reports period.
+        account : Account
+            The account for the report.
 
         Returns
         -------
         pd.DataFrame
 
         """
-        Condition.not_none(events, "events")
+        Condition.not_none(account, "account")
 
-        if start is None:
-            start = events[0].timestamp
-        if end is None:
-            end = events[-1].timestamp
+        cdef list events = account.events()
 
-        cdef list account_events = [
-            self._account_state_to_dict(e) for e in events if start <= e.timestamp <= end
-        ]
+        if not events:
+            return pd.DataFrame()
+
+        cdef list account_events = [self._account_state_to_dict(e) for e in events]
 
         if not account_events:
-            return pd.DataFrame.empty
+            return pd.DataFrame()
 
-        return pd.DataFrame(data=account_events).set_index("timestamp")
+        report = pd.DataFrame(data=account_events).set_index("timestamp")
+        report.sort_index(inplace=True)
+        return report
 
     cdef dict _order_to_dict(self, Order order):
         return {

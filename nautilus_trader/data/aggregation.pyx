@@ -64,7 +64,7 @@ cdef class BarBuilder:
         self._volume = Quantity()
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"bar_spec={self.bar_spec},"
                 f"{self._open},"
                 f"{self._high},"
@@ -211,7 +211,7 @@ cdef class BarAggregator:
         """
         self.bar_type = bar_type
         self._handler = handler
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
         self._builder = BarBuilder(
             bar_spec=self.bar_type.spec,
             use_previous_close=use_previous_close,

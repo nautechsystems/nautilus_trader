@@ -35,7 +35,8 @@ from scipy.stats import kurtosis
 from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -54,9 +55,8 @@ cdef class PerformanceAnalyzer:
         self._account_starting_balance = None
         self._account_balance = None
         self._account_currency = None
-        self._returns = pd.Series(dtype=float64)
-        self._positions = pd.DataFrame(columns=["cash"])
-        self._transactions = pd.DataFrame(columns=["capital", "pnl"])
+        self._daily_returns = pd.Series(dtype=float64)
+        self._realized_pnls = pd.Series(dtype=float64)
 
     cpdef void calculate_statistics(self, Account account, list positions) except *:
         """
@@ -73,44 +73,49 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(account, "account")
         Condition.not_none(positions, "positions")
 
-        cdef AccountState event
-        for event in account.events():
-            self.add_transaction(event)
+        self._account_currency = account.currency
+        self._account_balance = account.balance()
+        self._account_starting_balance = account.events()[0].balance
+
+        self._daily_returns = pd.Series(dtype=float64)
+        self._realized_pnls = pd.Series(dtype=float64)
+
+        self.add_positions(positions)
+
+    cpdef void add_positions(self, list positions) except *:
+        """
+        Add end of day positions data to the analyzer.
+
+        Parameters
+        ----------
+        positions : list[Position]
+            The positions for analysis.
+
+        """
+        Condition.not_none(positions, "positions")
 
         cdef Position position
         for position in positions:
             if position.is_closed():
+                self.add_trade(position.id, position.realized_pnl)
                 self.add_return(position.closed_time, position.realized_return)
 
-    cpdef void add_transaction(self, AccountState event) except *:
+    cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
         """
         Handle the transaction associated with the given account event.
 
         Parameters
         ----------
-        event : AccountState
-            The event to handle.
+        position_id : PositionId
+            The position identifier for the trade.
+        realized_pnl : Money
+            The realized PNL for the trade.
 
         """
-        Condition.not_none(event, "event")
+        Condition.not_none(position_id, "position_id")
+        Condition.not_none(realized_pnl, "realized_pnl")
 
-        if self._account_balance is None:
-            # Initialize account data
-            self._account_starting_balance = event.balance
-            self._account_balance = event.balance
-            self._account_currency = event.currency
-            return  # No transaction to handle
-
-        # Calculate transaction data
-        cdef Money pnl = Money(event.balance - self._account_balance, self._account_currency)
-        self._account_balance = event.balance
-
-        # Set index if it does not exist
-        if event.timestamp not in self._transactions:
-            self._transactions.loc[event.timestamp] = 0
-
-        self._transactions.loc[event.timestamp]["balance"] = float(self._account_balance)
-        self._transactions.loc[event.timestamp]["pnl"] = float(pnl)
+        self._realized_pnls.loc[position_id.value] = realized_pnl.as_double()
 
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
@@ -127,48 +132,10 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(timestamp, "time")
 
         cdef date index_date = timestamp.date()
-        if index_date not in self._returns:
-            self._returns.loc[index_date] = 0.0
+        if index_date not in self._daily_returns:
+            self._daily_returns.loc[index_date] = 0.0
 
-        self._returns.loc[index_date] += value
-
-    cpdef void add_positions(
-        self,
-        datetime timestamp,
-        list positions,
-        Money cash_balance,
-    ) except *:
-        """
-        Add end of day positions data to the analyzer.
-
-        Parameters
-        ----------
-        timestamp : datetime
-            The timestamp for the positions entry.
-        positions : list[Position]
-            The end of day positions.
-        cash_balance : Money
-            The end of day cash balance of the account.
-
-        """
-        Condition.not_none(timestamp, "time")
-        Condition.not_none(positions, "positions")
-        Condition.not_none(cash_balance, "cash_balance")
-
-        cdef date index_date = timestamp.date()
-        if index_date not in self._positions:
-            self._positions.loc[index_date] = 0
-
-        cdef Position position
-        cdef str symbol
-        cdef list columns
-        for position in positions:
-            symbol = str(position.symbol)
-            columns = list(self._positions.columns.values)
-            if symbol not in columns:
-                continue
-
-            self._positions.loc[index_date][symbol] += position.relative_quantity()
+        self._daily_returns.loc[index_date] += value
 
     cpdef void reset(self) except *:
         """
@@ -177,53 +144,26 @@ cdef class PerformanceAnalyzer:
         self._account_starting_balance = None
         self._account_balance = None
         self._account_currency = None
-        self._returns = pd.Series(dtype=float64)
-        self._positions = pd.DataFrame(columns=["cash"])
-        self._transactions = pd.DataFrame(columns=["capital", "pnl"])
+        self._daily_returns = pd.Series(dtype=float64)
+        self._realized_pnls = pd.Series(dtype=float64)
 
-    cpdef object get_returns(self):
+    cpdef object get_daily_returns(self):
         """
         Return the returns data.
-
         Returns
         -------
         pd.Series
-
         """
-        return self._returns
+        return self._daily_returns
 
-    cpdef object get_positions(self):
+    cpdef object get_realized_pnls(self):
         """
-        Return the positions data.
-
+        Return the returns data.
         Returns
         -------
-        pd.DataFrame
-
+        pd.Series
         """
-        return self._positions
-
-    cpdef object get_transactions(self):
-        """
-        Return the transactions data.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        return self._transactions
-
-    cpdef object get_equity_curve(self):
-        """
-        Return the transactions data.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        return self._transactions["capital"]
+        return self._realized_pnls
 
     cpdef double total_pnl(self) except *:
         """
@@ -245,12 +185,12 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if self._account_starting_balance == Money(0, self._account_currency):
+        if self._account_starting_balance.amount == 0:
             # Protect divide by zero
             return 0.
-        cdef double current = self._account_balance
-        cdef double starting = self._account_starting_balance.as_double()
-        cdef double difference = current - starting
+        cdef Decimal current = self._account_balance
+        cdef Decimal starting = self._account_starting_balance
+        cdef Decimal difference = current - starting
 
         return (difference / starting) * 100
 
@@ -263,7 +203,10 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._transactions["pnl"].max()
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
+        return max(self._realized_pnls)
 
     cpdef double max_loser(self) except *:
         """
@@ -274,7 +217,10 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._transactions["pnl"].min()
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
+        return min(self._realized_pnls)
 
     cpdef double min_winner(self) except *:
         """
@@ -285,7 +231,10 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._transactions["pnl"][self._transactions["pnl"] > 0].min()
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
+        return min([x for x in self._realized_pnls if x > 0])
 
     cpdef double min_loser(self) except *:
         """
@@ -296,7 +245,10 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._transactions["pnl"][self._transactions["pnl"] <= 0].max()
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
+        return max([x for x in self._realized_pnls if x <= 0])
 
     cpdef double avg_winner(self) except *:
         """
@@ -307,7 +259,10 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._transactions["pnl"][self._transactions["pnl"] > 0].mean()
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
+        return np.mean([x for x in self._realized_pnls if x > 0])
 
     cpdef double avg_loser(self) except *:
         """
@@ -318,7 +273,10 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return self._transactions["pnl"][self._transactions["pnl"] <= 0].mean()
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
+        return np.mean([x for x in self._realized_pnls if x <= 0])
 
     cpdef double win_rate(self) except *:
         """
@@ -329,10 +287,13 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        cdef list winners = list(self._transactions["pnl"][self._transactions["pnl"] > 0])
-        cdef list losers = list(self._transactions["pnl"][self._transactions["pnl"] <= 0])
+        if len(self._realized_pnls) == 0:
+            return 0.
 
-        return len(winners) / max(1.0, (len(winners) + len(losers)))
+        cdef list winners = [x for x in self._realized_pnls if x > 0]
+        cdef list losers = [x for x in self._realized_pnls if x <= 0]
+
+        return len(winners) / max(1., (len(winners) + len(losers)))
 
     cpdef double expectancy(self) except *:
         """
@@ -343,6 +304,9 @@ cdef class PerformanceAnalyzer:
         double
 
         """
+        if len(self._realized_pnls.index) == 0:
+            return 0.
+
         cdef double win_rate = self.win_rate()
         cdef double loss_rate = 1.0 - win_rate
 
@@ -358,7 +322,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return annual_return(returns=self._returns)
+        return annual_return(returns=self._daily_returns)
 
     cpdef double cum_return(self) except *:
         """
@@ -369,7 +333,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return cum_returns_final(returns=self._returns)
+        return cum_returns_final(returns=self._daily_returns)
 
     cpdef double max_drawdown_return(self) except *:
         """
@@ -380,7 +344,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return max_drawdown(returns=self._returns)
+        return max_drawdown(returns=self._daily_returns)
 
     cpdef double annual_volatility(self) except *:
         """
@@ -391,7 +355,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return annual_volatility(returns=self._returns)
+        return annual_volatility(returns=self._daily_returns)
 
     cpdef double sharpe_ratio(self) except *:
         """
@@ -402,7 +366,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return sharpe_ratio(returns=self._returns)
+        return sharpe_ratio(returns=self._daily_returns)
 
     cpdef double calmar_ratio(self) except *:
         """
@@ -413,7 +377,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return calmar_ratio(returns=self._returns)
+        return calmar_ratio(returns=self._daily_returns)
 
     cpdef double sortino_ratio(self) except *:
         """
@@ -424,7 +388,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return sortino_ratio(returns=self._returns)
+        return sortino_ratio(returns=self._daily_returns)
 
     cpdef double omega_ratio(self) except *:
         """
@@ -435,7 +399,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return omega_ratio(returns=self._returns)
+        return omega_ratio(returns=self._daily_returns)
 
     cpdef double stability_of_timeseries(self) except *:
         """
@@ -446,7 +410,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return stability_of_timeseries(returns=self._returns)
+        return stability_of_timeseries(returns=self._daily_returns)
 
     cpdef double returns_mean(self) except *:
         """
@@ -457,7 +421,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return np.mean(self._returns)
+        return np.mean(self._daily_returns)
 
     cpdef double returns_variance(self) except *:
         """
@@ -468,7 +432,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return np.var(self._returns)
+        return np.var(self._daily_returns)
 
     cpdef double returns_skew(self) except *:
         """
@@ -479,7 +443,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return skew(self._returns)
+        return skew(self._daily_returns)
 
     cpdef double returns_kurtosis(self) except *:
         """
@@ -490,7 +454,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return kurtosis(self._returns)
+        return kurtosis(self._daily_returns)
 
     cpdef double returns_tail_ratio(self) except *:
         """
@@ -501,7 +465,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return tail_ratio(self._returns)
+        return tail_ratio(self._daily_returns)
 
     cpdef double alpha(self) except *:
         """
@@ -512,7 +476,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return alpha(returns=self._returns, factor_returns=self._returns)
+        return alpha(returns=self._daily_returns, factor_returns=self._daily_returns)
 
     cpdef double beta(self) except *:
         """
@@ -523,7 +487,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        return beta(returns=self._returns, factor_returns=self._returns)
+        return beta(returns=self._daily_returns, factor_returns=self._daily_returns)
 
     cpdef dict get_performance_stats(self):
         """

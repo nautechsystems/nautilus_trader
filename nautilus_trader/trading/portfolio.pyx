@@ -113,7 +113,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         self._instruments = {}             # type: {Symbol: Instrument}
@@ -194,7 +194,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        orders : Set[Order]
+        orders : set[Order]
 
         """
         Condition.not_none(orders, "orders")
@@ -247,7 +247,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
-        positions : Set[Position]
+        positions : set[Position]
             The positions to update with.
 
         """

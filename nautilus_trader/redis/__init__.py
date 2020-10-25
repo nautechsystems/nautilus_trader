@@ -12,3 +12,5 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""The `redis` sub-package groups all `Redis` implementations for the platform."""

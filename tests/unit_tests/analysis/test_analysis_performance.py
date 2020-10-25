@@ -17,10 +17,8 @@ from datetime import datetime
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model.identifiers import PositionId
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
@@ -32,7 +30,23 @@ class AnalyzerTests(unittest.TestCase):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
 
-    def test_add_return(self):
+    def test_get_daily_returns_when_no_data_returns_empty_series(self):
+        # Arrange
+        # Act
+        result = self.analyzer.get_daily_returns()
+
+        # Assert
+        self.assertTrue(result.empty)
+
+    def test_get_realized_pnls_when_no_data_returns_empty_series(self):
+        # Arrange
+        # Act
+        result = self.analyzer.get_realized_pnls()
+
+        # Assert
+        self.assertTrue(result.empty)
+
+    def test_analyzer_tracks_daily_returns(self):
         # Arrange
         t1 = datetime(year=2010, month=1, day=1)
         t2 = datetime(year=2010, month=1, day=2)
@@ -56,20 +70,22 @@ class AnalyzerTests(unittest.TestCase):
         self.analyzer.add_return(t8, -0.25)
         self.analyzer.add_return(t9, 0.26)
         self.analyzer.add_return(t10, -0.10)
-        result = self.analyzer.get_returns()
+        self.analyzer.add_return(t10, -0.10)
+        result = self.analyzer.get_daily_returns()
 
         # Assert
         self.assertEqual(10, len(result))
+        self.assertEqual(-0.12, sum(result))
+        self.assertEqual(-0.20, result.iloc[9])
 
-    def test_add_positions(self):
+    def test_get_realized_pnls_when_all_flat_positions_returns_expected_series(self):
         # Arrange
-        position1 = TestStubs.position()
-        position2 = TestStubs.position()
+        position1 = TestStubs.position_which_is_closed(PositionId('1'))
+        position2 = TestStubs.position_which_is_closed(PositionId('2'))
 
-        positions = [position1, position2]
+        self.analyzer.add_positions([position1, position2])
 
         # Act
-        self.analyzer.add_positions(UNIX_EPOCH, positions, Money(100000, USD))
 
         # Assert
-        print(self.analyzer.get_positions())
+        self.assertTrue(all(self.analyzer.get_realized_pnls()) == 0)

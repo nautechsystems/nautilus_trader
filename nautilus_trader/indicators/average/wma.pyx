@@ -46,7 +46,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         weights : iterable
             The weights for the moving average calculation (if not None then = period).
         price_type : PriceType
-            The specified price type for extracting values from quote ticks (default=UNDEFINED).
+            The specified price type for extracting values from quote ticks.
 
         Raises
         ------

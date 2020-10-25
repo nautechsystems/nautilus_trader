@@ -86,7 +86,7 @@ cdef class TradingStrategy:
         Condition.valid_string(order_id_tag, "order_id_tag")
 
         # Identifiers
-        self.id = StrategyId(self.__class__.__name__, order_id_tag)
+        self.id = StrategyId(type(self).__name__, order_id_tag)
         self.trader_id = None     # Initialized when registered with a trader
 
         # Public components
@@ -119,7 +119,7 @@ cdef class TradingStrategy:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(id={self.id.value})"
+        return f"{type(self).__name__}(id={self.id.value})"
 
     cpdef ComponentState state(self):
         """

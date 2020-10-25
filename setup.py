@@ -100,5 +100,5 @@ setup(
     ),
     cmdclass={"build_ext": build_ext},
     options={"build_ext": {"inplace": True, "force": False, "parallel": CPU_COUNT}},
-    zip_safe=False  # Allows cimport of pxd files
+    zip_safe=False,  # Allows cimport of pxd files
 )

@@ -51,7 +51,7 @@ cdef class DataCache(DataCacheFacade):
         if config is None:
             config = {}
 
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Capacities
@@ -512,7 +512,7 @@ cdef class DataCache(DataCacheFacade):
         to_currency : Currency
             The currency to convert to.
         price_type : PriceType
-            The price type for the exchange rate (default=MID).
+            The price type for the exchange rate.
 
         Returns
         -------
