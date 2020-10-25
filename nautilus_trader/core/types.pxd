@@ -16,8 +16,30 @@
 
 cdef class ValidString:
     cdef readonly str value
+    """
+    Returns
+    -------
+    str
+        The value of the string.
+
+    """
 
 
 cdef class Identifier:
     cdef readonly str id_type
+    """
+    Returns
+    -------
+    str
+        The identifier type.
+
+    """
+
     cdef readonly str value
+    """
+    Returns
+    -------
+    str
+        The identifier value.
+
+    """

@@ -625,7 +625,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertIn(position2.id, strategy.execution.position_closed_ids())
         self.assertTrue(strategy.portfolio.is_completely_flat())
 
-    def test_can_track_orders_for_an_opened_position(self):
+    def test_track_orders_for_an_opened_position(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)
@@ -656,7 +656,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertIn(PositionId("B-USD/JPY-1"), strategy.execution.position_open_ids())
         self.assertFalse(strategy.portfolio.is_completely_flat())
 
-    def test_can_track_orders_for_a_closing_position(self):
+    def test_track_orders_for_a_closing_position(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = TestStrategy1(bar_type)

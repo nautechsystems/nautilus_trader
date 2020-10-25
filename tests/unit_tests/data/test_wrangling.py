@@ -101,7 +101,7 @@ class BarDataWranglerTests(unittest.TestCase):
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
         self.bar_builder = BarDataWrangler(5, 1, data)
 
-    def test_can_build_bars_all(self):
+    def test_build_bars_all(self):
         # Arrange
         # Act
         bars = self.bar_builder.build_bars_all()
@@ -109,7 +109,7 @@ class BarDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(1000, len(bars))
 
-    def test_can_build_bars_range_with_defaults(self):
+    def test_build_bars_range_with_defaults(self):
         # Arrange
         # Act
         bars = self.bar_builder.build_bars_range()
@@ -117,7 +117,7 @@ class BarDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(999, len(bars))
 
-    def test_can_build_bars_range_with_param(self):
+    def test_build_bars_range_with_param(self):
         # Arrange
         # Act
         bars = self.bar_builder.build_bars_range(start=500)
@@ -125,7 +125,7 @@ class BarDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(499, len(bars))
 
-    def test_can_build_bars_from_with_defaults(self):
+    def test_build_bars_from_with_defaults(self):
         # Arrange
         # Act
         bars = self.bar_builder.build_bars_from()
@@ -133,7 +133,7 @@ class BarDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(1000, len(bars))
 
-    def test_can_build_bars_from_with_param(self):
+    def test_build_bars_from_with_param(self):
         # Arrange
         # Act
         bars = self.bar_builder.build_bars_from(index=500)

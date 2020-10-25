@@ -65,11 +65,11 @@ cdef class Quantity(Decimal):
         Condition.true(self._value >= 0, f"quantity not negative, was {self._value}")
 
     cpdef str to_string(self):
-        """Return the formatted string representation of this object.
-
+        """
         Returns
         -------
         str
+            The formatted string representation of this object.
 
         """
         return f"{self._value:,}"
@@ -168,22 +168,20 @@ cdef class Money(Decimal):
     @property
     def amount(self) -> Decimal:
         """
-        Return the amount of money as a decimal.
-
         Returns
         -------
         Decimal
+            The amount of money as a decimal.
 
         """
         return Decimal(self._value)
 
     cpdef str to_string(self):
         """
-        Return the formatted string representation of this object.
-
         Returns
         -------
         str
+            The formatted string representation of this object.
 
         """
         return f"{self._value:,} {self.currency}"

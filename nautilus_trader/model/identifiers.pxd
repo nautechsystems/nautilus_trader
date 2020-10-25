@@ -19,7 +19,22 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 cdef class Symbol(Identifier):
     cdef readonly str code
+    """
+    Returns
+    -------
+    str
+        The code for the symbol.
+
+    """
+
     cdef readonly Venue venue
+    """
+    Returns
+    -------
+    Venue
+        The venue for the symbol.
+
+    """
 
     @staticmethod
     cdef Symbol from_string_c(str value)
@@ -29,16 +44,11 @@ cdef class Venue(Identifier):
     pass
 
 
-cdef class Brokerage(Identifier):
+cdef class Exchange(Venue):
     pass
 
 
-cdef class RoutedVenue(Venue):
-    cdef readonly Brokerage broker
-    cdef readonly Venue venue
-
-
-cdef class Exchange(Venue):
+cdef class Brokerage(Identifier):
     pass
 
 
