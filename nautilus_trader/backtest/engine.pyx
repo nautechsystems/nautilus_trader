@@ -122,7 +122,7 @@ cdef class BacktestEngine:
             log_file_path=config.log_file_path,
         )
 
-        self.log = LoggerAdapter(component_name=self.__class__.__name__, logger=self.logger)
+        self.log = LoggerAdapter(component_name=type(self).__name__, logger=self.logger)
 
         self.test_logger = TestLogger(
             clock=self.test_clock,

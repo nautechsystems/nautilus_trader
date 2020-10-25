@@ -274,7 +274,7 @@ cdef class UUID:
         return self.int_value
 
     def __repr__(self):
-        return '%s(%r)' % (self.__class__.__name__, self.value)
+        return '%s(%r)' % (type(self).__name__, self.value)
 
     def __setattr__(self, name, value):
         raise TypeError('UUID objects are immutable')

@@ -85,7 +85,7 @@ cdef class BarSpecification:
         return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self})"
+        return f"{type(self).__name__}({self})"
 
     @staticmethod
     cdef BarSpecification from_string_c(str value):
@@ -215,7 +215,7 @@ cdef class BarType:
         return f"{self.symbol}-{self.spec}"
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self})"
+        return f"{type(self).__name__}({self})"
 
     @staticmethod
     cdef BarType from_string_c(str value):
@@ -384,7 +384,7 @@ cdef class Bar:
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self})"
+        return f"{type(self).__name__}({self})"
 
     @staticmethod
     cdef Bar from_serializable_string_c(str value):

@@ -147,7 +147,7 @@ cdef class Order:
 
     def __repr__(self) -> str:
         cdef str id_string = f"id={self.id.value}, " if self.id else ""
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"
                 f"state={self._fsm.state_as_string()}, "

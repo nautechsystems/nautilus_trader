@@ -54,7 +54,7 @@ cdef class ExecutionClient:
         Condition.equal(venue, account_id.issuer_as_venue(), "venue", "account_id.issuer_as_venue()")
 
         self._engine = engine
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
 
         self.venue = venue
         self.account_id = account_id

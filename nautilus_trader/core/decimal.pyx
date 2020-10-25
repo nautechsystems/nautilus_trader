@@ -217,7 +217,7 @@ cdef class Decimal:
         return str(self._value)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}('{self}')"
+        return f"{type(self).__name__}('{self}')"
 
     @staticmethod
     cdef inline tuple _convert_values(object a, object b):
