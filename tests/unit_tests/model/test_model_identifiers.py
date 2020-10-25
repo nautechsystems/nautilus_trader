@@ -104,7 +104,7 @@ class IdentifierTests(unittest.TestCase):
         # Assert
         self.assertEqual("Symbol('AUD/USD.FXCM')", repr(symbol))
 
-    def test_can_parse_symbol_from_string(self):
+    def test_parse_symbol_from_string(self):
         # Arrange
         symbol = Symbol("AUD/USD", Venue('FXCM'))
 

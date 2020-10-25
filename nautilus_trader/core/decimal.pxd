@@ -20,6 +20,5 @@ cdef class Decimal:
     @staticmethod
     cdef inline tuple _convert_values(object a, object b)
 
-    cpdef int precision(self) except *
     cpdef object as_decimal(self)
     cpdef double as_double(self) except *

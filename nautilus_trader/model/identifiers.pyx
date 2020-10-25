@@ -27,11 +27,7 @@ cdef class Symbol(Identifier):
     fund level.
     """
 
-    def __init__(
-            self,
-            str code,
-            Venue venue not None,
-    ):
+    def __init__(self, str code, Venue venue not None):
         """
         Initialize a new instance of the Symbol class.
 
@@ -122,59 +118,6 @@ cdef class Venue(Identifier):
         super().__init__(name)
 
 
-cdef class Brokerage(Identifier):
-    """
-    Represents a brokerage intermediary.
-    """
-
-    def __init__(self, str name):
-        """
-        Initialize a new instance of the Brokerage class.
-
-        Parameters
-        ----------
-        name : str
-            The broker name identifier value.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
-
-        """
-        super().__init__(name)
-
-
-cdef class RoutedVenue(Venue):
-    """
-    Represents a venue routed via an intermediary broker.
-    The identifier value must be unique at the fund level.
-    """
-
-    def __init__(self, str broker, str venue):
-        """
-        Initialize a new instance of the RoutedVenue class.
-
-        Parameters
-        ----------
-        broker : str
-            The broker name identifier value.
-        venue : str
-            The venue name identifier value.
-
-        Raises
-        ------
-        ValueError
-            If broker is not a valid string.
-        ValueError
-            If venue is not a valid string.
-
-        """
-        self.broker = Brokerage(broker)
-        self.venue = Venue(venue)
-        super().__init__(f"{self.broker.value}-{self.venue.value}")
-
-
 cdef class Exchange(Venue):
     """
     Represents an exchange that financial market instruments are traded on.
@@ -189,6 +132,29 @@ cdef class Exchange(Venue):
         ----------
         name : str
             The exchange name identifier value.
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+
+        """
+        super().__init__(name)
+
+
+cdef class Brokerage(Identifier):
+    """
+    Represents a brokerage intermediary.
+    """
+
+    def __init__(self, str name):
+        """
+        Initialize a new instance of the Brokerage class.
+
+        Parameters
+        ----------
+        name : str
+            The broker name identifier value.
 
         Raises
         ------

@@ -337,7 +337,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(BracketOrderId("BO-19700101-000000-000-001-1"), bracket_order.id)
         self.assertEqual(UNIX_EPOCH, bracket_order.timestamp)
 
-    def test_can_initialize_bracket_order_stop_with_take_profit(self):
+    def test_initialize_bracket_order_stop_with_take_profit(self):
         # Arrange
         entry_order = self.order_factory.stop_market(
             AUDUSD_FXCM,
@@ -393,7 +393,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
         self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
 
-    def test_can_apply_order_submitted_event_to_order(self):
+    def test_apply_order_submitted_event_to_order(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
@@ -412,7 +412,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(submitted, order.last_event())
         self.assertFalse(order.is_completed())
 
-    def test_can_apply_order_accepted_event_to_order(self):
+    def test_apply_order_accepted_event_to_order(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
@@ -431,7 +431,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, order.state())
         self.assertFalse(order.is_completed())
 
-    def test_can_apply_order_rejected_event_to_order(self):
+    def test_apply_order_rejected_event_to_order(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
@@ -450,7 +450,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.REJECTED, order.state())
         self.assertTrue(order.is_completed())
 
-    def test_can_apply_order_working_event_to_stop_order(self):
+    def test_apply_order_working_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_FXCM,
@@ -477,7 +477,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working())
         self.assertEqual(None, order.filled_timestamp)
 
-    def test_can_apply_order_expired_event_to_stop_order(self):
+    def test_apply_order_expired_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_FXCM,
@@ -503,7 +503,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.EXPIRED, order.state())
         self.assertTrue(order.is_completed())
 
-    def test_can_apply_order_cancelled_event_to_order(self):
+    def test_apply_order_cancelled_event_to_order(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
@@ -524,7 +524,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.CANCELLED, order.state())
         self.assertTrue(order.is_completed())
 
-    def test_can_apply_order_modified_event_to_stop_order(self):
+    def test_apply_order_modified_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_FXCM,
@@ -562,7 +562,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed())
         self.assertEqual(5, order.event_count())
 
-    def test_can_apply_order_filled_event_to_market_order(self):
+    def test_apply_order_filled_event_to_market_order(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM,
@@ -591,7 +591,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_completed())
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
-    def test_can_apply_order_filled_event_to_buy_limit_order(self):
+    def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
             AUDUSD_FXCM,
@@ -642,7 +642,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_completed())
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
-    def test_can_apply_order_partially_filled_event_to_buy_limit_order(self):
+    def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
             AUDUSD_FXCM,

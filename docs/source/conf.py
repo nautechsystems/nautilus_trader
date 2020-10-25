@@ -47,7 +47,6 @@ extensions = [
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
-    'sphinx.ext.napoleon',
     "numpydoc",
 ]
 
@@ -82,8 +81,8 @@ exclude_patterns = []
 
 html_theme = "sphinx_rtd_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
-html_copy_source = False
-html_show_sourcelink = False
+html_copy_source = True
+html_show_sourcelink = True
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

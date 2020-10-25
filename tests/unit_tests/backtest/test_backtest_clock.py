@@ -72,7 +72,7 @@ class TestClockTests(unittest.TestCase):
         self.assertTrue(result > timedelta(0))
         self.assertEqual(timedelta, type(result))
 
-    def test_can_set_time_alert(self):
+    def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
         alert_time = self.clock.utc_now() + timedelta(milliseconds=100)
@@ -86,7 +86,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual(1, len(events))
         self.assertEqual(TimeEventHandler, type(events[0]))
 
-    def test_can_cancel_time_alert(self):
+    def test_cancel_time_alert(self):
         # Arrange
         name = "TEST_ALERT"
         interval = timedelta(milliseconds=100)
@@ -101,7 +101,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(0, len(self.handler))
 
-    def test_can_set_multiple_time_alerts(self):
+    def test_set_multiple_time_alerts(self):
         # Arrange
         alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
         alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
@@ -115,7 +115,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(2, len(events))
 
-    def test_can_set_timer_with_immediate_start_time(self):
+    def test_set_timer_with_immediate_start_time(self):
         # Arrange
         name = "TEST_TIMER"
 
@@ -132,7 +132,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual(4, len(events))
         self.assertEqual(datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc), events[3].event.timestamp)
 
-    def test_can_set_timer(self):
+    def test_set_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -149,7 +149,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(4, len(events))
 
-    def test_can_set_timer_with_stop_time(self):
+    def test_set_timer_with_stop_time(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -165,7 +165,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(3, len(events))
 
-    def test_can_cancel_timer(self):
+    def test_cancel_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -182,7 +182,7 @@ class TestClockTests(unittest.TestCase):
         # Assert
         self.assertEqual([], self.clock.get_timer_names())
 
-    def test_can_set_repeating_timer(self):
+    def test_set_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -200,7 +200,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual([name], self.clock.get_timer_names())
         self.assertEqual(4, len(events))
 
-    def test_can_cancel_repeating_timer(self):
+    def test_cancel_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -219,7 +219,7 @@ class TestClockTests(unittest.TestCase):
         # Assert
         self.assertEqual([], self.clock.get_timer_names())
 
-    def test_can_set_two_repeating_timers(self):
+    def test_set_two_repeating_timers(self):
         # Arrange
         start_time = self.clock.utc_now()
         interval = timedelta(milliseconds=100)
