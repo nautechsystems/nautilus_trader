@@ -40,14 +40,24 @@ cdef class Clock:
         The number of timers active in the clock.
 
     """
+
     cdef readonly datetime next_event_time
+    """
+    Returns
+    -------
+    datetime
+        The datetime of the next time event.
+
+    """
+
+    cdef readonly str next_event_name
     """
     Returns
     -------
     str
         The name of the next time event.
+
     """
-    cdef readonly str next_event_name
 
     cdef readonly bint is_test_clock
     """
