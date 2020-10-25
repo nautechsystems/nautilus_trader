@@ -29,7 +29,7 @@ cdef class Indicator:
             The initialization parameters for the indicator.
 
         """
-        self.name = self.__class__.__name__
+        self.name = type(self).__name__
         self.params = '' if params is [] else str(params)[1:-1].replace("'", '').strip('()')
         self.has_inputs = False
         self.initialized = False

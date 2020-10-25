@@ -22,7 +22,7 @@ cdef class Decimal:
     """
     Represents a decimal number with a specified precision.
 
-    The type interoperates with the built-in decimal.Decimal correctly.
+    The type interoperates with the built-in `decimal.Decimal` correctly.
 
     """
 
@@ -177,18 +177,17 @@ cdef class Decimal:
 
     def __abs__(self):
         """
-        Return the absolute value of the decimal.
-
         Returns
         -------
         Decimal
+            The absolute value of the decimal.
 
         """
         return Decimal(abs(self._value))
 
     def __round__(self, ndigits=None):
         """
-        Return a rounded copy of this object.
+        Round the decimal.
 
         Rounds half toward even.
 
@@ -200,6 +199,7 @@ cdef class Decimal:
         Returns
         -------
         Decimal
+            A rounded copy of this object.
 
         """
         return Decimal(round(self._value, ndigits))
@@ -217,7 +217,7 @@ cdef class Decimal:
         return str(self._value)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}('{self}')"
+        return f"{type(self).__name__}('{self}')"
 
     @staticmethod
     cdef inline tuple _convert_values(object a, object b):
@@ -229,35 +229,33 @@ cdef class Decimal:
             b = b._value
         return a, b
 
-    cpdef int precision(self) except *:
+    @property
+    def precision(self):
         """
-        Return the precision of this decimal.
-
         Returns
         -------
         int
+            The precision of the decimal.
 
         """
         return abs(self._value.as_tuple().exponent)
 
     cpdef object as_decimal(self):
         """
-        Return the value of this object as a built-in `decimal.Decimal`.
-
         Returns
         -------
         decimal.Decimal
+            The value of this object as a built-in `decimal.Decimal`.
 
         """
         return self._value
 
     cpdef double as_double(self) except *:
         """
-        Return the value of this object as a `double`.
-
         Returns
         -------
         double
+            The value of this object as a `double`.
 
         """
         return float(self._value)

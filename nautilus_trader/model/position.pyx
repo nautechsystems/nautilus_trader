@@ -82,7 +82,7 @@ cdef class Position:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(id={self.id.value}, {self.status_string()})"
+        return f"{type(self).__name__}(id={self.id.value}, {self.status_string()})"
 
     cpdef void apply(self, OrderFilled event) except *:
         """
@@ -197,7 +197,7 @@ cdef class Position:
 
         Returns
         -------
-        Set[OrderId]
+        set[OrderId]
 
         """
         cdef OrderFilled event
@@ -209,7 +209,7 @@ cdef class Position:
 
         Returns
         -------
-        Set[OrderId]
+        set[OrderId]
 
         """
         cdef OrderFilled event
@@ -221,7 +221,7 @@ cdef class Position:
 
         Returns
         -------
-        Set[ExecutionId]
+        set[ExecutionId]
 
         """
         cdef OrderFilled event

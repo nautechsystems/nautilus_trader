@@ -86,7 +86,7 @@ cdef class DataEngine:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
         self._portfolio = portfolio
         self._use_previous_close = config.get('use_previous_close', True)
         self._clients = {}              # type: {Venue, DataClient}

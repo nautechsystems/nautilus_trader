@@ -201,7 +201,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual(1, len(self.handler))
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
-    def test_can_cancel_timer(self):
+    def test_cancel_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -216,7 +216,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertEqual([], self.clock.get_timer_names())
         self.assertEqual(2, len(self.handler))
 
-    def test_can_set_repeating_timer(self):
+    def test_set_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -238,7 +238,7 @@ class LiveClockTests(unittest.TestCase):
         self.assertTrue(isinstance(self.handler[1], TimeEvent))
         self.assertTrue(isinstance(self.handler[2], TimeEvent))
 
-    def test_can_cancel_repeating_timer(self):
+    def test_cancel_repeating_timer(self):
         # Arrange
         name = "TEST_TIMER"
         interval = timedelta(milliseconds=100)
@@ -258,7 +258,7 @@ class LiveClockTests(unittest.TestCase):
         # Assert
         self.assertEqual(3, len(self.handler))
 
-    def test_can_set_two_repeating_timers(self):
+    def test_set_two_repeating_timers(self):
         # Arrange
         interval = timedelta(milliseconds=100)
         start_time = self.clock.utc_now() + timedelta(milliseconds=100)

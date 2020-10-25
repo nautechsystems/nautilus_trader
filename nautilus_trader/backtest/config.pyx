@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `BacktestEngine` is highly configurable, with options being held in a
+dedicated config class.
+"""
+
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
@@ -22,7 +27,7 @@ from nautilus_trader.model.objects cimport Money
 
 cdef class BacktestConfig:
     """
-    Provides a configuration for a BacktestEngine.
+    Provides a configuration for a `BacktestEngine`.
     """
     def __init__(
             self,
@@ -66,7 +71,7 @@ cdef class BacktestConfig:
         account_currency : Currency
             The currency for the account.
         short_term_interest_csv_path : str
-            The path for the short term interest csv data (default='default').
+            The path for the short term interest csv data.
         bypass_logging : bool
             If logging should be bypassed.
         level_console : int

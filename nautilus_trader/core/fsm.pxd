@@ -24,6 +24,13 @@ cdef class FiniteStateMachine:
     cdef object _state_parser
 
     cdef readonly int state
+    """
+    Returns
+    -------
+    int (C enum)
+        The current state of the FSM.
+
+    """
 
     cpdef void trigger(self, int trigger) except *
     cpdef str state_as_string(self)

@@ -65,11 +65,11 @@ cdef class Quantity(Decimal):
         Condition.true(self._value >= 0, f"quantity not negative, was {self._value}")
 
     cpdef str to_string(self):
-        """Return the formatted string representation of this object.
-
+        """
         Returns
         -------
         str
+            The formatted string representation of this object.
 
         """
         return f"{self._value:,}"
@@ -142,48 +142,46 @@ cdef class Money(Decimal):
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
-        return self._value == other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value == other._value
 
     def __ne__(self, Money other) -> bool:
         return not self == other
 
     def __lt__(self, Money other) -> bool:
-        return self._value < other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value < other._value
 
     def __le__(self, Money other) -> bool:
-        return self._value <= other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value <= other._value
 
     def __gt__(self, Money other) -> bool:
-        return self._value > other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value > other._value
 
     def __ge__(self, Money other) -> bool:
-        return self._value >= other._value and self.currency == other.currency
+        return self.currency == other.currency and self._value >= other._value
 
     def __hash__(self) -> int:
         return hash((self._value, self.currency))
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}('{self._value}', {self.currency})"
+        return f"{type(self).__name__}('{self._value}', {self.currency})"
 
     @property
     def amount(self) -> Decimal:
         """
-        Return the amount of money as a decimal.
-
         Returns
         -------
         Decimal
+            The amount of money as a decimal.
 
         """
         return Decimal(self._value)
 
     cpdef str to_string(self):
         """
-        Return the formatted string representation of this object.
-
         Returns
         -------
         str
+            The formatted string representation of this object.
 
         """
         return f"{self._value:,} {self.currency}"

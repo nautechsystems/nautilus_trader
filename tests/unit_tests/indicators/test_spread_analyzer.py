@@ -29,7 +29,7 @@ AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 
 class SpreadAnalyzerTests(unittest.TestCase):
 
-    def test_can_instantiate(self):
+    def test_instantiate(self):
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1000)
 

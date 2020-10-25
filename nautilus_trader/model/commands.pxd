@@ -28,32 +28,177 @@ from nautilus_trader.model.order cimport Order
 
 cdef class SubmitOrder(Command):
     cdef readonly Venue venue
+    """
+    Returns
+    -------
+    Venue
+        The venue the command relates to.
+    """
+
     cdef readonly TraderId trader_id
+    """
+    Returns
+    -------
+    TraderId
+        The trader identifier the command relates to.
+
+    """
+
     cdef readonly AccountId account_id
+    """
+    Returns
+    -------
+    AccountId
+        The account identifier the command relates to.
+
+    """
+
     cdef readonly StrategyId strategy_id
+    """
+    Returns
+    -------
+    StrategyId
+        The strategy identifier the command relates to.
+
+    """
+
     cdef readonly PositionId position_id
+    """
+    Returns
+    -------
+    PositionId
+        The position identifier the command relates to.
+
+    """
+
     cdef readonly Order order
+    """
+    Returns
+    -------
+    Order
+        The order for the command.
+
+    """
 
 
 cdef class SubmitBracketOrder(Command):
     cdef readonly Venue venue
+    """
+    Returns
+    -------
+    Venue
+        The venue the command relates to.
+    """
+
     cdef readonly TraderId trader_id
+    """
+    Returns
+    -------
+    TraderId
+        The trader identifier the command relates to.
+
+    """
+
     cdef readonly AccountId account_id
+    """
+    Returns
+    -------
+    AccountId
+        The account identifier the command relates to.
+
+    """
+
     cdef readonly StrategyId strategy_id
     cdef readonly BracketOrder bracket_order
 
 
 cdef class ModifyOrder(Command):
     cdef readonly Venue venue
+    """
+    Returns
+    -------
+    Venue
+        The venue the command relates to.
+    """
+
     cdef readonly TraderId trader_id
+    """
+    Returns
+    -------
+    TraderId
+        The trader identifier the command relates to.
+
+    """
+
     cdef readonly AccountId account_id
+    """
+    Returns
+    -------
+    AccountId
+        The account identifier the command relates to.
+
+    """
+
     cdef readonly ClientOrderId cl_ord_id
+    """
+    Returns
+    -------
+    ClientOrderId
+        The client order identifier the command relates to.
+
+    """
+
     cdef readonly Quantity quantity
+    """
+    Returns
+    -------
+    Quantity
+        The quantity for the command.
+
+    """
+
     cdef readonly Price price
+    """
+    Returns
+    -------
+    Price
+        The price for the command.
+
+    """
 
 
 cdef class CancelOrder(Command):
     cdef readonly Venue venue
+    """
+    Returns
+    -------
+    Venue
+        The venue the command relates to.
+    """
+
     cdef readonly TraderId trader_id
+    """
+    Returns
+    -------
+    TraderId
+        The trader identifier the command relates to.
+
+    """
+
     cdef readonly AccountId account_id
+    """
+    Returns
+    -------
+    AccountId
+        The account identifier the command relates to.
+
+    """
+
     cdef readonly ClientOrderId cl_ord_id
+    """
+    Returns
+    -------
+    ClientOrderId
+        The client order identifier the command relates to.
+
+    """

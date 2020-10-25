@@ -123,7 +123,7 @@ cdef class SimulatedExchange:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
 
         self.venue = venue
         self.oms_type = oms_type

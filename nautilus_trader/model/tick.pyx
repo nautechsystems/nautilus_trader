@@ -76,7 +76,7 @@ cdef class Tick:
         return hash(self.timestamp)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self})"
+        return f"{type(self).__name__}({self})"
 
     cpdef str to_serializable_string(self):
         # Abstract method

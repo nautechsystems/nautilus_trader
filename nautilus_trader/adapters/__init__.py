@@ -13,6 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `adapters` module provides integrations for data providers, brokerages, and exchanges.
-"""
+"""The `adapters` module provides integrations for data providers, brokerages, and exchanges."""

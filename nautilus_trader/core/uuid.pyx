@@ -20,7 +20,7 @@
 # This type follows the standard CPython UUID class very closely however not exactly
 # https://docs.python.org/3/library/uuid.html
 
-# Note: only most constants and the UUID class itself were refactored to take
+# Note: only constants and the UUID class itself were refactored to take
 # advantage of Cython C typing.
 
 r"""UUID objects (universally unique identifiers) according to RFC 4122.
@@ -274,7 +274,7 @@ cdef class UUID:
         return self.int_value
 
     def __repr__(self):
-        return '%s(%r)' % (self.__class__.__name__, self.value)
+        return '%s(%r)' % (type(self).__name__, self.value)
 
     def __setattr__(self, name, value):
         raise TypeError('UUID objects are immutable')

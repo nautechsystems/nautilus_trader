@@ -65,7 +65,7 @@ cdef class Message:
         return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(id={self.id}, timestamp={self.timestamp})"
+        return f"{type(self).__name__}(id={self.id}, timestamp={self.timestamp})"
 
 
 cdef class Command(Message):
@@ -185,7 +185,7 @@ cdef class Response(Message):
         self.correlation_id = correlation_id
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"correlation_id={self.correlation_id}, "
                 f"id={self.id}, "
                 f"timestamp={self.timestamp})")

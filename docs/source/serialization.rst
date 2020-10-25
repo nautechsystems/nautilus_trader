@@ -2,34 +2,38 @@ Serialization
 =============
 
 .. automodule:: nautilus_trader.serialization
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Base
 ----
 
 .. automodule:: nautilus_trader.serialization.base
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Common
 ------
 
 .. automodule:: nautilus_trader.serialization.common
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Serializers
 -----------
 
 .. automodule:: nautilus_trader.serialization.serializers
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource

@@ -2,7 +2,8 @@ TD Ameritrade Integration
 =========================
 
 .. automodule:: nautilus_trader.adapters.tda
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource

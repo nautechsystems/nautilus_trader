@@ -13,6 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `Model` module provides a rich and expressive trading domain model.
-"""
+"""The `model` sub-package provides a rich and expressive trading domain model."""

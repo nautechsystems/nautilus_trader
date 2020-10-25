@@ -81,7 +81,7 @@ cdef class TimeEvent(Event):
         return hash(self.id)
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"name={self.name}, "
                 f"id={self.id}, "
                 f"timestamp={format_iso8601(self.timestamp)})")
@@ -166,7 +166,7 @@ cdef class Timer:
         return hash(self.name)
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"name={self.name}, "
                 f"interval={self.interval}, "
                 f"start_time={self.start_time}, "

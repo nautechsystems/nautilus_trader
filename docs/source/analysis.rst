@@ -2,25 +2,28 @@ Analysis
 ========
 
 .. automodule:: nautilus_trader.analysis
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Performance
 -----------
 
 .. automodule:: nautilus_trader.analysis.performance
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Reports
 -------
 
 .. automodule:: nautilus_trader.analysis.reports
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource

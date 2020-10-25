@@ -12,3 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""The `analysis` sub-package groups components relating to trading performance
+statistics and analysis.
+"""

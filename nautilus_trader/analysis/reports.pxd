@@ -13,18 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.trading.account cimport Account
 
 
 cdef class ReportProvider:
     cpdef object generate_orders_report(self, list orders)
     cpdef object generate_order_fills_report(self, list orders)
     cpdef object generate_positions_report(self, list positions)
-    cpdef object generate_account_report(self, list events, datetime start=*, datetime end=*)
+    cpdef object generate_account_report(self, Account account)
 
     cdef dict _order_to_dict(self, Order order)
     cdef dict _position_to_dict(self, Position position)

@@ -45,6 +45,36 @@ class ReportProviderTests(unittest.TestCase):
             clock=TestClock(),
         )
 
+    def test_generate_orders_report_with_no_order_returns_emtpy_dataframe(self):
+        # Arrange
+        report_provider = ReportProvider()
+
+        # Act
+        report = report_provider.generate_orders_report([])
+
+        # Assert
+        self.assertTrue(report.empty)
+
+    def test_generate_orders_fills_report_with_no_order_returns_emtpy_dataframe(self):
+        # Arrange
+        report_provider = ReportProvider()
+
+        # Act
+        report = report_provider.generate_order_fills_report([])
+
+        # Assert
+        self.assertTrue(report.empty)
+
+    def test_generate_positions_report_with_no_positions_returns_emtpy_dataframe(self):
+        # Arrange
+        report_provider = ReportProvider()
+
+        # Act
+        report = report_provider.generate_positions_report([])
+
+        # Assert
+        self.assertTrue(report.empty)
+
     def test_generate_orders_report(self):
         # Arrange
         report_provider = ReportProvider()
@@ -145,7 +175,7 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual(0.80011, report.iloc[0]["avg_price"])
         self.assertEqual(0.00001, report.iloc[0]["slippage"])
 
-    def test_generate_trades_report(self):
+    def test_generate_positions_report(self):
         # Arrange
         report_provider = ReportProvider()
 

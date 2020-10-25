@@ -12,3 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""The `trading` sub-package groups all trading domain specific components and
+tooling."""
