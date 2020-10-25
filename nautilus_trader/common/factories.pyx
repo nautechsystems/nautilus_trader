@@ -59,7 +59,7 @@ cdef class OrderFactory:
         uuid_factory : UUIDFactory
             The UUID factory for the component.
         initial_count : int, optional
-            The initial order count for the factory (default=0).
+            The initial order count for the factory.
 
         Raises
         ------
@@ -135,7 +135,7 @@ cdef class OrderFactory:
         quantity : Quantity
             The orders quantity (> 0).
         time_in_force : TimeInForce, optional
-            The orders time in force (default=DAY).
+            The orders time-in-force.
 
         Returns
         -------
@@ -175,7 +175,7 @@ cdef class OrderFactory:
         """
         Create a new limit order.
 
-        If the time in force is GTD then a valid expire time must be given.
+        If the time-in-force is GTD then a valid expire time must be given.
 
         Parameters
         ----------
@@ -188,13 +188,13 @@ cdef class OrderFactory:
         price : Price
             The orders price.
         time_in_force : TimeInForce, optional
-            The orders time in force (default=DAY).
+            The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for GTD orders, default=None).
+            The order expire time (for GTD orders).
         post_only : bool, optional
-            If the order will only make a market (default=True).
+            If the order will only make a market.
         hidden : bool, optional
-            If the order should be hidden from the public book (default=False).
+            If the order should be hidden from the public book.
 
         Returns
         -------
@@ -236,7 +236,7 @@ cdef class OrderFactory:
         """
         Create a new stop-market order.
 
-        If the time in force is GTD then a valid expire time must be given.
+        If the time-in-force is GTD then a valid expire time must be given.
 
         Parameters
         ----------
@@ -249,9 +249,9 @@ cdef class OrderFactory:
         price : Price
             The orders price.
         time_in_force : TimeInForce, optional
-            The orders time in force (default=DAY).
+            The orders time-in-force.
         expire_time : datetime, optional
-            The order expire time (for GTD orders, default=None).
+            The order expire time (for GTD orders).
 
         Returns
         -------
@@ -296,7 +296,7 @@ cdef class OrderFactory:
         stop_loss : Price
             The stop-loss child order price.
         take_profit : Price, optional
-            The take-profit child order price (default=None).
+            The take-profit child order price.
 
         Returns
         -------

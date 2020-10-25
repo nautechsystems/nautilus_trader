@@ -147,7 +147,7 @@ cdef class Currency:
     @staticmethod
     cdef Currency from_string_c(str code):
         """
-        Return a currency from the given string (if found).
+        Parse the given code.
 
         Parameters
         ----------
@@ -157,6 +157,7 @@ cdef class Currency:
         Returns
         -------
         Currency or None
+            A currency from the given string (if found).
 
         """
         return _CURRENCY_TABLE.get(code)
@@ -164,7 +165,7 @@ cdef class Currency:
     @staticmethod
     def from_string(str code):
         """
-        Return a currency from the given string (if found).
+        Parse the given code.
 
         Parameters
         ----------
@@ -174,6 +175,7 @@ cdef class Currency:
         Returns
         -------
         Currency or None
+            A currency from the given string (if found).
 
         """
         return _CURRENCY_TABLE.get(code)

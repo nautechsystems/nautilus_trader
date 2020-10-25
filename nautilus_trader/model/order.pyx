@@ -497,7 +497,7 @@ cdef class PassiveOrder(Order):
         price : Price
             The order price.
         time_in_force : TimeInForce
-            The order time in force.
+            The order time-in-force.
         expire_time : datetime, optional
             The order expiry time - for GTD orders only.
         init_id : UUID
@@ -769,7 +769,7 @@ cdef class LimitOrder(PassiveOrder):
         price : Price
             The order limit price.
         time_in_force : TimeInForce
-            The order time in force.
+            The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.
         init_id : UUID
@@ -777,9 +777,9 @@ cdef class LimitOrder(PassiveOrder):
         timestamp : datetime
             The order initialization timestamp.
         post_only : bool, optional;
-            If the order will only make a market (default=True).
+            If the order will only make a market.
         hidden : bool, optional
-            If the order should be hidden from the public book (default=False).
+            If the order should be hidden from the public book.
 
         Raises
         ------
@@ -892,7 +892,7 @@ cdef class StopMarketOrder(PassiveOrder):
         price : Price
             The order stop price.
         time_in_force : TimeInForce
-            The order time in force.
+            The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.
         init_id : UUID
