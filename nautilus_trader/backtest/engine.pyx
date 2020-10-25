@@ -488,8 +488,6 @@ cdef class BacktestEngine:
         self.log.info("=================================================================")
         self.log.info(" PERFORMANCE STATISTICS")
         self.log.info("=================================================================")
-        self.log.info("Calculating statistics...")
-        self.log.info("")
         self.analyzer.calculate_statistics(self.exchange.account, self.exec_engine.cache.positions())
 
         for statistic in self.analyzer.get_performance_stats_formatted(self.exchange.account.currency):
