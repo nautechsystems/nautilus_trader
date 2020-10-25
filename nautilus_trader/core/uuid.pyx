@@ -20,7 +20,7 @@
 # This type follows the standard CPython UUID class very closely however not exactly
 # https://docs.python.org/3/library/uuid.html
 
-# Note: only most constants and the UUID class itself were refactored to take
+# Note: only constants and the UUID class itself were refactored to take
 # advantage of Cython C typing.
 
 r"""UUID objects (universally unique identifiers) according to RFC 4122.

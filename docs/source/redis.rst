@@ -2,25 +2,28 @@ Redis
 =====
 
 .. automodule:: nautilus_trader.redis
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Execution
 ---------
 
 .. automodule:: nautilus_trader.redis.execution
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
 
 Redis
 -----
 
 .. automodule:: nautilus_trader.redis
+   :show-inheritance:
+   :inherited-members:
    :members:
    :undoc-members:
-   :show-inheritance:
    :member-order: bysource
