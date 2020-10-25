@@ -68,7 +68,7 @@ cdef class ValidString:
         return f"{type(self).__name__}('{self.value}')"
 
 
-cdef class Identifier(ValidString):
+cdef class Identifier:
     """
     The base class for all identifiers.
     """
@@ -88,15 +88,36 @@ cdef class Identifier(ValidString):
             If value is not a valid string.
 
         """
-        super().__init__(value)
+        Condition.valid_string(value, "value")
+
+        self.id_type = type(self).__name__
+        self.value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return self.value == other.value and type(self) == type(other)
+        return self.id_type == self.id_type and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return self.value != other.value or type(self) != type(other)
+        return self.id_type != self.id_type or self.value != other.value
+
+    def __lt__(self, ValidString other) -> bool:
+        return self.value < other.value
+
+    def __le__(self, ValidString other) -> bool:
+        return self.value <= other.value
+
+    def __gt__(self, ValidString other) -> bool:
+        return self.value > other.value
+
+    def __ge__(self, ValidString other) -> bool:
+        return self.value >= other.value
 
     def __hash__(self) -> int:
         # This method seems redundant as it exists on the base class, however
         # TypeError: unhashable type gets thrown if not present.
         return hash(self.value)
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"{self.id_type}('{self.value}')"
