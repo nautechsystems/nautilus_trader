@@ -13,4 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""This sub-package groups all trading domain specific components and tooling."""
+"""The `trading` sub-package groups all trading domain specific components and
+tooling."""

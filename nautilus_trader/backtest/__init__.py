@@ -13,4 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""This sub-package groups components relating to backtesting."""
+"""The `backtest` sub-package groups components relating to backtesting."""
