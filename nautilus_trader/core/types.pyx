@@ -65,7 +65,7 @@ cdef class ValidString:
         return self.value
 
     def __repr__(self) -> str:
-        return f"{str(self.__class__.__name__)}('{str(self.value)}')"
+        return f"{type(self).__name__}('{self.value}')"
 
 
 cdef class Identifier(ValidString):
@@ -90,13 +90,11 @@ cdef class Identifier(ValidString):
         """
         super().__init__(value)
 
-        self.id_type = self.__class__.__name__
-
     def __eq__(self, Identifier other) -> bool:
-        return self.id_type == other.id_type and self.value == other.value
+        return self.value == other.value and type(self) == type(other)
 
     def __ne__(self, Identifier other) -> bool:
-        return not self == other
+        return self.value != other.value or type(self) != type(other)
 
     def __hash__(self) -> int:
         # This method seems redundant as it exists on the base class, however

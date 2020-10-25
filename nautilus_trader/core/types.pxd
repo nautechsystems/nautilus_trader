@@ -19,4 +19,4 @@ cdef class ValidString:
 
 
 cdef class Identifier(ValidString):
-    cdef readonly str id_type
+    pass

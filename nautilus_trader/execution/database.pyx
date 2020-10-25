@@ -44,7 +44,7 @@ cdef class ExecutionDatabase:
 
         """
         self.trader_id = trader_id
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
 
     cpdef void flush(self) except *:
         # Abstract method

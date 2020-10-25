@@ -352,7 +352,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         Condition.not_none(command, "command")
 
         cdef dict package = {
-            TYPE: command.__class__.__name__,
+            TYPE: type(command).__name__,
             ID: command.id.value,
             TIMESTAMP: convert_datetime_to_string(command.timestamp),
         }
@@ -502,7 +502,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         Condition.not_none(event, "event")
 
         cdef dict package = {
-            TYPE: event.__class__.__name__,
+            TYPE: type(event).__name__,
             ID: event.id.value,
             TIMESTAMP: convert_datetime_to_string(event.timestamp),
         }

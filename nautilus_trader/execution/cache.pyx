@@ -52,7 +52,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         super().__init__()
 
-        self._log = LoggerAdapter(self.__class__.__name__, logger)
+        self._log = LoggerAdapter(type(self).__name__, logger)
         self._database = database
 
         # Cached objects

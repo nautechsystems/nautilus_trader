@@ -84,7 +84,7 @@ cdef class AccountState(Event):
         self.margin_available = margin_available
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
                 f"balance={self.balance.to_string()})")
 
@@ -118,7 +118,7 @@ cdef class OrderEvent(Event):
         self.cl_ord_id = cl_ord_id
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
+        return f"{type(self).__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -237,7 +237,7 @@ cdef class OrderSubmitted(OrderEvent):
         self.is_completion_trigger = False
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"id={self.id})")
@@ -287,7 +287,7 @@ cdef class OrderInvalid(OrderEvent):
         self.is_completion_trigger = True
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason}, "
                 f"id={self.id})")
@@ -336,7 +336,7 @@ cdef class OrderDenied(OrderEvent):
         self.is_completion_trigger = True
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason}, "
                 f"id={self.id})")
@@ -393,7 +393,7 @@ cdef class OrderRejected(OrderEvent):
         self.is_completion_trigger = True
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason={self.reason}, "
@@ -445,7 +445,7 @@ cdef class OrderAccepted(OrderEvent):
         self.is_completion_trigger = False
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
@@ -540,7 +540,7 @@ cdef class OrderWorking(OrderEvent):
 
     def __repr__(self) -> str:
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
@@ -609,7 +609,7 @@ cdef class OrderCancelReject(OrderEvent):
         self.is_completion_trigger = False
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"response_to={self.response_to}, "
@@ -663,7 +663,7 @@ cdef class OrderCancelled(OrderEvent):
         self.is_completion_trigger = True
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
@@ -724,7 +724,7 @@ cdef class OrderModified(OrderEvent):
         self.is_completion_trigger = False
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
@@ -778,7 +778,7 @@ cdef class OrderExpired(OrderEvent):
         self.is_completion_trigger = True
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
@@ -935,7 +935,7 @@ cdef class OrderFilled(OrderEvent):
         )
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
@@ -1018,7 +1018,7 @@ cdef class PositionOpened(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
@@ -1069,7 +1069,7 @@ cdef class PositionModified(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
@@ -1124,7 +1124,7 @@ cdef class PositionClosed(PositionEvent):
 
     def __repr__(self) -> str:
         cdef str duration = str(self.position.open_duration).replace("0 days ", "")
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "

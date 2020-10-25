@@ -139,7 +139,7 @@ cdef class Currency:
         return self.code
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}("
+        return (f"{type(self).__name__}("
                 f"code={self.code}, "
                 f"precision={self.precision}, "
                 f"type={currency_type_to_string(self.currency_type)})")

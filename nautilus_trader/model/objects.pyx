@@ -163,7 +163,7 @@ cdef class Money(Decimal):
         return hash((self._value, self.currency))
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}('{self._value}', {self.currency})"
+        return f"{type(self).__name__}('{self._value}', {self.currency})"
 
     @property
     def amount(self) -> Decimal:
