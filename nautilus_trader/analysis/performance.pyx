@@ -248,7 +248,7 @@ cdef class PerformanceAnalyzer:
         if len(self._realized_pnls.index) == 0:
             return 0.
 
-        return min([x for x in self._realized_pnls if x <= 0])
+        return max([x for x in self._realized_pnls if x <= 0])
 
     cpdef double avg_winner(self) except *:
         """
@@ -287,16 +287,13 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if len(self._realized_pnls.index) == 0:
+        if len(self._realized_pnls) == 0:
             return 0.
 
         cdef list winners = [x for x in self._realized_pnls if x > 0]
         cdef list losers = [x for x in self._realized_pnls if x <= 0]
 
-        if len(losers) == 0:
-            return 1.
-
-        return len(winners) / len(losers)
+        return len(winners) / max(1., (len(winners) + len(losers)))
 
     cpdef double expectancy(self) except *:
         """
