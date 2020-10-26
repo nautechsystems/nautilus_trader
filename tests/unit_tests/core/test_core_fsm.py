@@ -57,12 +57,6 @@ class FiniteStateMachineTests(unittest.TestCase):
         # Assert
         self.assertEqual(ComponentState.INITIALIZED, self.fsm.state)
 
-    def test_state_as_string_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertEqual('INITIALIZED', self.fsm.state_as_string())
-
     def test_trigger_with_invalid_transition_raises_exception(self):
         # Arrange
         # Act

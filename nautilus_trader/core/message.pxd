@@ -63,31 +63,9 @@ cdef inline MessageType message_type_from_string(str value):
 
 
 cdef class Message:
-    cdef readonly MessageType message_type
-    """
-    Returns
-    -------
-    MessageType
-        The generic message type.
-    """
-
-    cdef readonly UUID id
-    """
-    Returns
-    -------
-    UUID
-        The message identifier.
-
-    """
-
-    cdef readonly datetime timestamp
-    """
-    Returns
-    -------
-    datetime
-        The message initialization timestamp.
-
-    """
+    cdef MessageType _message_type
+    cdef UUID _id
+    cdef datetime _timestamp
 
 
 cdef class Command(Message):
@@ -107,11 +85,4 @@ cdef class Request(Message):
 
 
 cdef class Response(Message):
-    cdef readonly UUID correlation_id
-    """
-    Returns
-    -------
-    datetime
-        The message correlation identifier.
-
-    """
+    cdef UUID _correlation_id

@@ -38,34 +38,45 @@ cdef class ValidString:
         """
         Condition.valid_string(value, "value")
 
-        self.value = value
+        self._value = value
 
     def __eq__(self, ValidString other) -> bool:
-        return self.value == other.value
+        return self._value == other.value
 
     def __ne__(self, ValidString other) -> bool:
-        return self.value != other.value
+        return self._value != other.value
 
     def __lt__(self, ValidString other) -> bool:
-        return self.value < other.value
+        return self._value < other.value
 
     def __le__(self, ValidString other) -> bool:
-        return self.value <= other.value
+        return self._value <= other.value
 
     def __gt__(self, ValidString other) -> bool:
-        return self.value > other.value
+        return self._value > other.value
 
     def __ge__(self, ValidString other) -> bool:
-        return self.value >= other.value
+        return self._value >= other.value
 
     def __hash__(self) -> int:
-        return hash(self.value)
+        return hash(self._value)
 
     def __str__(self) -> str:
-        return self.value
+        return self._value
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
+        return f"{type(self).__name__}('{self._value}')"
+
+    @property
+    def value(self):
+        """
+        Returns
+        -------
+        str
+            The value of the string.
+
+        """
+        return self._value
 
 
 cdef class Identifier:
@@ -90,25 +101,25 @@ cdef class Identifier:
         """
         Condition.valid_string(value, "value")
 
-        self.id_type = type(self).__name__
-        self.value = value
+        self._id_type = type(self).__name__
+        self._value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return self.id_type == self.id_type and self.value == other.value
+        return self._id_type == other.id_type and self._value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return self.id_type != self.id_type or self.value != other.value
+        return self._id_type != other.id_type or self._value != other.value
 
-    def __lt__(self, ValidString other) -> bool:
-        return self.value < other.value
+    def __lt__(self, Identifier other) -> bool:
+        return self._value < other.value
 
-    def __le__(self, ValidString other) -> bool:
+    def __le__(self, Identifier other) -> bool:
         return self.value <= other.value
 
-    def __gt__(self, ValidString other) -> bool:
+    def __gt__(self, Identifier other) -> bool:
         return self.value > other.value
 
-    def __ge__(self, ValidString other) -> bool:
+    def __ge__(self, Identifier other) -> bool:
         return self.value >= other.value
 
     def __hash__(self) -> int:
@@ -117,7 +128,31 @@ cdef class Identifier:
         return hash(self.value)
 
     def __str__(self) -> str:
-        return self.value
+        return self._value
 
     def __repr__(self) -> str:
-        return f"{self.id_type}('{self.value}')"
+        return f"{self._id_type}('{self._value}')"
+
+    @property
+    def id_type(self):
+        """
+        The identifier type.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._id_type
+
+    @property
+    def value(self):
+        """
+        The identifier value.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._value

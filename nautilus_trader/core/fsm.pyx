@@ -72,9 +72,32 @@ cdef class FiniteStateMachine:
         Condition.callable_or_none(state_parser, "state_parser")
 
         self._state_transition_table = state_transition_table
-        self.state = initial_state
+        self._state = initial_state
         self._trigger_parser = trigger_parser
         self._state_parser = state_parser
+
+    @property
+    def state(self):
+        """
+        The current state of the FSM.
+
+        Returns
+        -------
+        ComponentState
+
+        """
+        return self._state
+
+    cdef str state_string(self):
+        """
+        The current state as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._state_parser(self.state)
 
     cpdef void trigger(self, int trigger) except *:
         """
@@ -95,17 +118,6 @@ cdef class FiniteStateMachine:
         """
         cdef int next_state = self._state_transition_table.get((self.state, trigger), -1)
         if next_state == -1:  # Invalid
-            raise InvalidStateTrigger(f"{self.state_as_string()} -> {self._trigger_parser(trigger)}")
+            raise InvalidStateTrigger(f"{self.state_string()} -> {self._trigger_parser(trigger)}")
 
-        self.state = next_state
-
-    cpdef str state_as_string(self):
-        """
-        Return the state as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._state_parser(self.state)
+        self._state = next_state
