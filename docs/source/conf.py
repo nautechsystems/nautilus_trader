@@ -43,11 +43,11 @@ release = version
 # ones.
 extensions = [
     "autoapi.extension",
-    "sphinx.ext.autodoc",
-    "sphinx.ext.doctest",
-    "sphinx.ext.coverage",
-    "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
+    # "sphinx.ext.autodoc",
+    # "sphinx.ext.doctest",
+    # "sphinx.ext.coverage",
+    # "sphinx.ext.intersphinx",
+    # "sphinx.ext.viewcode",
     "numpydoc",
 ]
 
