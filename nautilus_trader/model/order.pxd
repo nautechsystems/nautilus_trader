@@ -17,11 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -54,155 +52,23 @@ cdef class Order:
     cdef list _events
     cdef FiniteStateMachine _fsm
 
-    cdef readonly ClientOrderId cl_ord_id
-    """
-    Returns
-    -------
-    ClientOrderId
-        The client order identifier of the order.
-    """
-
-    cdef readonly StrategyId strategy_id
-    """
-    Returns
-    -------
-    StrategyId
-        The strategy identifier associated with the order.
-    """
-
-    cdef readonly OrderId id
-    """
-    Returns
-    -------
-    OrderId or None
-        The order identifier.
-    """
-
-    cdef readonly AccountId account_id
-    """
-    Returns
-    -------
-    AccountId or None
-        The account identifier associated with the order.
-
-    """
-
-    cdef readonly ExecutionId execution_id
-    """
-    Returns
-    -------
-    ExecutionId or None
-        The last execution identifier of the order.
-
-    """
-
-    cdef readonly PositionId position_id
-    """
-    Returns
-    -------
-    PositionId or None
-        The position identifier associated with the order.
-
-    """
-
-    cdef readonly Symbol symbol
-    """
-    Returns
-    -------
-    Symbol
-        The order symbol.
-
-    """
-
-    cdef readonly OrderSide side
-    """
-    Returns
-    -------
-    OrderSide
-        The order side.
-
-    """
-
-    cdef readonly OrderType type
-    """
-    Returns
-    -------
-    OrderType
-        The order type.
-
-    """
-
-    cdef readonly Quantity quantity
-    """
-    Returns
-    -------
-    Quantity
-        The order quantity.
-
-    """
-
-    cdef readonly datetime timestamp
-    """
-    Returns
-    -------
-    datetime
-        The order initialization timestamp.
-
-    """
-
-    cdef readonly TimeInForce time_in_force
-    """
-    Returns
-    -------
-    TimeInForce
-        The order time-in-force.
-
-    """
-
-    cdef readonly Quantity filled_qty
-    """
-    Returns
-    -------
-    Quantity
-        The order total filled quantity.
-
-    """
-
-    cdef readonly datetime filled_timestamp
-    """
-    Returns
-    -------
-    datetime or None
-        The order last filled timestamp.
-
-    """
-
-    cdef readonly Decimal avg_price
-    """
-    Returns
-    -------
-    Decimal or None
-        The order average fill price.
-
-    """
-
-    cdef readonly Decimal slippage
-    """
-    Returns
-    -------
-    Decimal
-        The order total price slippage.
-
-    """
-
-    cdef readonly UUID init_id
-    """
-    Returns
-    -------
-    UUID
-        The identifier of the `OrderInitialized` event.
-
-    """
+    cdef ClientOrderId _cl_ord_id
+    cdef StrategyId _strategy_id
+    cdef OrderId _id
+    cdef AccountId _account_id
+    cdef ExecutionId _execution_id
+    cdef PositionId _position_id
+    cdef Symbol _symbol
+    cdef OrderSide _side
+    cdef OrderType _type
+    cdef Quantity _quantity
+    cdef datetime _timestamp
+    cdef TimeInForce _time_in_force
+    cdef Quantity _filled_qty
+    cdef datetime _filled_timestamp
+    cdef Decimal _avg_price
+    cdef Decimal _slippage
+    cdef UUID _init_id
 
     @staticmethod
     cdef inline OrderSide opposite_side_c(OrderSide side) except *
@@ -226,32 +92,9 @@ cdef class Order:
 
 
 cdef class PassiveOrder(Order):
-    cdef readonly Price price
-    """
-    Returns
-    -------
-    Price
-        The order price.
-
-    """
-
-    cdef readonly LiquiditySide liquidity_side
-    """
-    Returns
-    -------
-    LiquiditySide
-        The order liquidity size.
-
-    """
-
-    cdef readonly datetime expire_time
-    """
-    Returns
-    -------
-    datetime or None
-        The order expire time.
-
-    """
+    cdef Price _price
+    cdef LiquiditySide _liquidity_side
+    cdef datetime _expire_time
 
     cdef void _set_slippage(self) except *
 
@@ -267,87 +110,16 @@ cdef class StopMarketOrder(PassiveOrder):
 
 
 cdef class LimitOrder(PassiveOrder):
-    cdef readonly bint is_post_only
-    """
-    Return a value indicating whether the order is `post_only`, meaning it will
-    only make liquidity.
-
-    Returns
-    -------
-    bool
-        True if post only, else False.
-
-    """
-
-    cdef readonly bint is_hidden
-    """
-    Return a value indicating whether the order is displayed on the public order
-    book.
-
-    Returns
-    -------
-    bool
-        True if hidden, else False.
-
-    """
+    cdef bint _is_post_only
+    cdef bint _is_hidden
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized event)
 
 
 cdef class BracketOrder:
-    cdef readonly BracketOrderId id
-    """
-    Returns
-    -------
-    BracketOrderId
-        The bracket order identifier.
-
-    """
-
-    cdef readonly Order entry
-    """
-    Returns
-    -------
-    Order
-        The entry order.
-
-    """
-
-    cdef readonly StopMarketOrder stop_loss
-    """
-    Returns
-    -------
-    StopMarketOrder
-        The stop-loss order.
-
-    """
-
-    cdef readonly PassiveOrder take_profit
-    """
-    Returns
-    -------
-    PassiveOrder or None
-        The take-profit order (optional).
-
-    """
-
-    cdef readonly bint has_take_profit
-    """
-    Return a value indicating whether the bracket order has a take-profit
-
-    Returns
-    -------
-    bool
-        True if has take-profit, else False.
-
-    """
-
-    cdef readonly datetime timestamp
-    """
-    Returns
-    -------
-    datetime
-        The bracket order initialization timestamp.
-
-    """
+    cdef BracketOrderId _id
+    cdef Order _entry
+    cdef StopMarketOrder _stop_loss
+    cdef PassiveOrder _take_profit
+    cdef datetime _timestamp

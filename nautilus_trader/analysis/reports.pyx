@@ -133,7 +133,7 @@ cdef class ReportProvider:
         """
         Condition.not_none(account, "account")
 
-        cdef list events = account.events()
+        cdef list events = account.events
 
         if not events:
             return pd.DataFrame()
