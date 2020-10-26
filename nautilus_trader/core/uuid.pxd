@@ -49,31 +49,8 @@ cdef inline SafeUUID safe_uuid_from_string(str value):
 
 cdef class UUID:
     cdef readonly object int_value
-    """
-    Returns
-    -------
-    int
-        The initialization value for the UUID.
-
-    """
-
     cdef readonly str value
-    """
-    Returns
-    -------
-    str
-        The UUID value as a string.
-
-    """
-
     cdef readonly SafeUUID is_safe
-    """
-    Returns
-    -------
-    SafeUUID
-        A value indicating the safety category for the UUID.
-
-    """
 
     cdef str _get_hex_string(self)
 
