@@ -26,7 +26,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
@@ -150,7 +149,7 @@ cdef class Order:
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"
-                f"state={self._fsm.state_as_string()}, "
+                f"state={self._fsm.state_string()}, "
                 f"{self.status_string()})")
 
     @staticmethod
@@ -566,7 +565,7 @@ cdef class Order:
         str
 
         """
-        return component_state_to_string(self._fsm.state)
+        return self._fsm.state_string()
 
     cdef str status_string(self):
         """
@@ -747,11 +746,8 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        cdef str expire_time_str = format_iso8601(expire_time) if not None else str(None)
-        options['Price'] = str(price)
-
-        # format_iso8601 sometimes returns '.000Z'
-        options['ExpireTime'] = str(None) if expire_time_str == '.000Z' else expire_time_str
+        options[PRICE] = price
+        options[EXPIRE_TIME] = expire_time
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
@@ -1083,26 +1079,18 @@ cdef class LimitOrder(PassiveOrder):
         """
         Condition.not_none(event, "event")
 
-        cdef str price_string = event.options['Price']
-        cdef str expire_time_string = event.options['ExpireTime']
-
-        cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
-        cdef Price price = Price(price_string)
-        cdef post_only = event.options[POST_ONLY] == True
-        cdef hidden = event.options[HIDDEN] == True
-
         return LimitOrder(
             cl_ord_id=event.cl_ord_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=price,
+            price=event.options.get(PRICE),
             time_in_force=event.time_in_force,
-            expire_time=expire_time,
+            expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
-            post_only=post_only,
-            hidden=hidden,
+            post_only=event.options.get(POST_ONLY),
+            hidden=event.options.get(HIDDEN),
         )
 
     @property

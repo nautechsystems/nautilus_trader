@@ -176,7 +176,7 @@ cdef class Trader:
             self.stop()  # Do not start trader in an invalid state
             return
 
-        self._log.info(f"state={self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         if not self.strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
@@ -187,7 +187,7 @@ cdef class Trader:
             strategy.start()
 
         self._fsm.trigger(ComponentTrigger.RUNNING)
-        self._log.info(f"state={self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void stop(self) except *:
         """
@@ -199,7 +199,7 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef TradingStrategy strategy
         for strategy in self.strategies:
@@ -209,7 +209,7 @@ cdef class Trader:
                 self._log.warning(f"{strategy} already stopped.")
 
         self._fsm.trigger(ComponentTrigger.STOPPED)
-        self._log.info(f"state={self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -248,7 +248,7 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         for strategy in self.strategies:
             strategy.reset()
@@ -257,7 +257,7 @@ cdef class Trader:
         self.analyzer.reset()
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self._log.info(f"state={self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -271,13 +271,13 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_as_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         for strategy in self.strategies:
             strategy.dispose()
 
         self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self._log.info(f"state={self._fsm.state_as_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     @property
     def state(self):
