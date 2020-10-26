@@ -24,13 +24,12 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
 from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.order_state cimport order_state_from_string
 from nautilus_trader.model.c_enums.order_state cimport order_state_to_string
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
@@ -241,106 +240,125 @@ cdef class Order:
         """
         return Order.flatten_side_c(side)
 
-    cpdef OrderState state(self):
+    @property
+    def state(self):
         """
-        Return the orders current state.
-
         Returns
         -------
         OrderState
+            The orders current state.
 
         """
-        return order_state_from_string(self.state_as_string())
+        return self._fsm.state
 
-    cpdef Event last_event(self):
+    @property
+    def last_event(self):
         """
-        Return the last event applied to the order.
-
         Returns
         -------
         OrderEvent
+            The last event applied to the order.
 
         """
         return self._events[-1]
 
-    cpdef list execution_ids(self):
+    @property
+    def execution_ids(self):
         """
-        Return a sorted list of execution identifiers.
-
         Returns
         -------
         list[ExecutionId]
+            The execution identifiers.
 
         """
         return self._execution_ids.copy()
 
-    cpdef list events(self):
+    @property
+    def events(self):
         """
-        Return a list or order events.
-
         Returns
         -------
         list[OrderEvent]
+            The order events.
 
         """
         return self._events.copy()
 
-    cpdef int event_count(self) except *:
+    @property
+    def event_count(self):
         """
-        Return the count of events received by the order.
-
         Returns
         -------
         int
+            The count of events applied to the order.
 
         """
         return len(self._events)
 
-    cpdef bint is_buy(self) except *:
+    @property
+    def is_buy(self):
         """
-        Return a value indicating whether the order side is buy.
+        Return a value indicating whether the order side is `BUY`.
 
         Returns
         -------
         bool
+            True if BUY, else False.
 
         """
         return self.side == OrderSide.BUY
 
-    cpdef bint is_sell(self) except *:
+    @property
+    def is_sell(self):
         """
-        Return a value indicating whether the order side is sell.
+        Return a value indicating whether the order side is `SELL`.
 
         Returns
         -------
         bool
+            True if SELL, else False.
 
         """
         return self.side == OrderSide.SELL
 
-    cpdef bint is_working(self) except *:
+    @property
+    def is_working(self):
         """
-        Return a value indicating whether the order is working.
+        Return a value indicating whether the order is `WORKING`.
 
         Returns
         -------
         bool
+            True if WORKING, else False.
 
         """
         return self._fsm.state == OrderState.WORKING
 
-    cpdef bint is_completed(self) except *:
+    @property
+    def is_completed(self):
         """
-        Return a value indicating whether the order is completed.
+        Return a value indicating whether the order is `completed`.
 
         Returns
         -------
         bool
+            True if completed, else False.
 
         """
         return self._fsm.state in _COMPLETED_STATES
 
-    cpdef str status_string(self):
+    cdef str state_string(self):
+        """
+        Return the orders state as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return component_state_to_string(self._fsm.state)
+
+    cdef str status_string(self):
         """
         Return the orders status as a string.
 
@@ -350,17 +368,6 @@ cdef class Order:
 
         """
         raise NotImplemented("method must be implemented in subclass")
-
-    cpdef str state_as_string(self):
-        """
-        Return the order state as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._fsm.state_as_string()
 
     cpdef void apply(self, OrderEvent event) except *:
         """
@@ -555,7 +562,7 @@ cdef class PassiveOrder(Order):
         self.expire_time = expire_time
         self.slippage = Decimal()
 
-    cpdef str status_string(self):
+    cdef str status_string(self):
         """
         Return the orders status as a string.
 
@@ -698,7 +705,7 @@ cdef class MarketOrder(Order):
             timestamp=event.timestamp,
         )
 
-    cpdef str status_string(self):
+    cdef str status_string(self):
         """
         Return the orders status as a string.
 

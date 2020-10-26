@@ -80,7 +80,7 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         cdef list filled_orders = [
-            self._order_to_dict(o) for o in orders if o.state() == OrderState.FILLED
+            self._order_to_dict(o) for o in orders if o.state == OrderState.FILLED
         ]
 
         if not filled_orders:
@@ -157,7 +157,7 @@ cdef class ReportProvider:
             "quantity": order.quantity,
             "avg_price": "None" if order.avg_price is None else order.avg_price.as_double(),
             "slippage": order.slippage.as_double(),
-            "timestamp": order.last_event().timestamp,
+            "timestamp": order.last_event.timestamp,
         }
 
     cdef dict _position_to_dict(self, Position position):

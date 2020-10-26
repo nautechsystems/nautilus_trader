@@ -361,7 +361,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(order, "order")
         Condition.not_none(position_id, "position_id")
 
-        cdef bytes last_event = self._event_serializer.serialize(order.last_event())
+        cdef bytes last_event = self._event_serializer.serialize(order.last_event)
         cdef int reply = self._redis.rpush(self.key_orders + order.cl_ord_id.value, last_event)
 
         # Check data integrity of reply
@@ -440,7 +440,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(order, "order")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(order.last_event())
+        cdef bytes serialized_event = self._event_serializer.serialize(order.last_event)
         cdef int reply = self._redis.rpush(self.key_orders + order.cl_ord_id.value, serialized_event)
 
         # Check data integrity of reply

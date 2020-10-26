@@ -21,7 +21,6 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -51,8 +50,7 @@ cdef class Trader:
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
 
-    cpdef ComponentState state(self)
-    cpdef str state_as_string(self)
+    cdef str state_string(self)
     cpdef dict strategy_states(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)

@@ -268,7 +268,7 @@ class TestStubs:
         if position_id is None:
             position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))
         if strategy_id is None:
-            strategy_id = StrategyId("S", "NULL")
+            strategy_id = StrategyId.null_py()
         if fill_price is None:
             fill_price = Price("1.00000")
         if filled_qty is None:

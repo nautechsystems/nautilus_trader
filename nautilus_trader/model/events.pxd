@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -602,11 +603,11 @@ cdef class OrderFilled(OrderEvent):
 
     """
 
-    cdef readonly Price avg_price
+    cdef readonly Decimal avg_price
     """
     Returns
     -------
-    Price
+    Decimal
         The average fill price of the event.
 
     """

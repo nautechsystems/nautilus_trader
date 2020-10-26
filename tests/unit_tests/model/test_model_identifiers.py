@@ -130,10 +130,15 @@ class IdentifierTests(unittest.TestCase):
     def test_strategy_identifier(self):
         # Arrange
         # Act
+        strategy_id0 = StrategyId.null_py()
         strategy_id1 = StrategyId("SCALPER", "00")
         strategy_id2 = StrategyId("SCALPER", "01")
 
         # Assert
+        self.assertTrue(strategy_id0.is_null)
+        self.assertTrue(strategy_id1.not_null)
+        self.assertFalse(strategy_id1.is_null)
+        self.assertFalse(strategy_id0.not_null)
         self.assertEqual(strategy_id1, strategy_id1)
         self.assertNotEqual(strategy_id1, strategy_id2)
         self.assertEqual("SCALPER-00", strategy_id1.value)
@@ -152,3 +157,15 @@ class IdentifierTests(unittest.TestCase):
         self.assertEqual("FXCM-02851908-DEMO", account_id1.value)
         self.assertEqual(Issuer("FXCM"), account_id1.issuer)
         self.assertEqual(account_id1, AccountId.from_string("FXCM-02851908-DEMO"))
+
+    def test_position_identifier(self):
+        # Arrange
+        # Act
+        position_id0 = PositionId.null_py()
+        position_id1 = PositionId("P-1")
+
+        # Assert
+        self.assertTrue(position_id0.is_null)
+        self.assertTrue(position_id1.not_null)
+        self.assertFalse(position_id1.is_null)
+        self.assertFalse(position_id0.not_null)

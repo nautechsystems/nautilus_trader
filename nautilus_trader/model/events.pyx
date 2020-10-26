@@ -803,7 +803,7 @@ cdef class OrderFilled(OrderEvent):
             Quantity filled_qty not None,
             Quantity cumulative_qty not None,
             Quantity leaves_qty not None,
-            Price avg_price not None,
+            Decimal avg_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
             Currency base_currency not None,
@@ -840,8 +840,8 @@ cdef class OrderFilled(OrderEvent):
             The total filled quantity for the order.
         leaves_qty : Quantity
             The quantity open for further execution.
-        avg_price : Price
-            The calculated average price of all fills on this order.
+        avg_price : Decimal
+            The average price of all fills on this order.
         liquidity_side : LiquiditySide
             The execution liquidity side.
         base_currency : Currency
@@ -906,9 +906,9 @@ cdef class OrderFilled(OrderEvent):
             If strategy_id is not null and self.strategy_id does not match.
 
         """
-        if self.position_id.not_null():
+        if self.position_id.not_null:
             Condition.equal(position_id, self.position_id, "position_id", "self.position_id")
-        if self.strategy_id.not_null():
+        if self.strategy_id.not_null:
             Condition.equal(strategy_id, self.strategy_id, "strategy_id", "self.strategy_id")
 
         return OrderFilled(
