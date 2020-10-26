@@ -21,6 +21,7 @@ import pandas as pd
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal
@@ -115,23 +116,23 @@ cdef class Order:
             state_parser=order_state_to_string,
         )
 
-        self.cl_ord_id = event.cl_ord_id
-        self.strategy_id = event.strategy_id
-        self.id = None                # Can be None (OrderId from broker/exchange)
-        self.position_id = None       # Can be None
-        self.account_id = None        # Can be None
-        self.execution_id = None      # Can be None
-        self.symbol = event.symbol
-        self.side = event.order_side
-        self.type = event.order_type
-        self.quantity = event.quantity
-        self.timestamp = event.timestamp
-        self.time_in_force = event.time_in_force
-        self.filled_qty = Quantity()
-        self.filled_timestamp = None  # Can be None
-        self.avg_price = None         # Can be None
-        self.slippage = Decimal()
-        self.init_id = event.id
+        self._cl_ord_id = event.cl_ord_id
+        self._strategy_id = event.strategy_id
+        self._id = None                # Can be None (OrderId from broker/exchange)
+        self._position_id = None       # Can be None
+        self._account_id = None        # Can be None
+        self._execution_id = None      # Can be None
+        self._symbol = event.symbol
+        self._side = event.order_side
+        self._type = event.order_type
+        self._quantity = event.quantity
+        self._timestamp = event.timestamp
+        self._time_in_force = event.time_in_force
+        self._filled_qty = Quantity()
+        self._filled_timestamp = None  # Can be None
+        self._avg_price = None         # Can be None
+        self._slippage = Decimal()
+        self._init_id = event.id
 
         self._events.append(event)
 
@@ -241,12 +242,217 @@ cdef class Order:
         return Order.flatten_side_c(side)
 
     @property
+    def cl_ord_id(self):
+        """
+        The client order identifier of the order.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._cl_ord_id
+
+    @property
+    def strategy_id(self):
+        """
+        The strategy identifier associated with the order.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def id(self):
+        """
+        The order identifier.
+
+        Returns
+        -------
+        OrderId or None
+
+        """
+        return self._id
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the order.
+
+        Returns
+        -------
+        AccountId or None
+
+        """
+        return self._account_id
+
+    @property
+    def execution_id(self):
+        """
+        The last execution identifier of the order.
+
+        Returns
+        -------
+        ExecutionId or None
+
+        """
+        return self._execution_id
+
+    @property
+    def position_id(self):
+        """
+        The position identifier associated with the order.
+
+        Returns
+        -------
+        PositionId or None
+
+        """
+        return self._position_id
+
+    @property
+    def symbol(self):
+        """
+        The order symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
+
+    @property
+    def side(self):
+        """
+        The order side.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return self._side
+
+    @property
+    def type(self):
+        """
+        The order type.
+
+        Returns
+        -------
+        OrderType
+
+        """
+        return self._type
+
+    @property
+    def quantity(self):
+        """
+        The order quantity.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._quantity
+
+    @property
+    def timestamp(self):
+        """
+        The order initialization timestamp.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._timestamp
+
+    @property
+    def time_in_force(self):
+        """
+        The order time-in-force.
+
+        Returns
+        -------
+        TimeInForce
+
+        """
+        return self._time_in_force
+
+    @property
+    def filled_qty(self):
+        """
+        The order total filled quantity.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._filled_qty
+
+    @property
+    def filled_timestamp(self):
+        """
+        The order last filled timestamp.
+
+        Returns
+        -------
+        datetime or None
+
+        """
+        return self._filled_timestamp
+
+    @property
+    def avg_price(self):
+        """
+        The order average fill price.
+
+        Returns
+        -------
+        Decimal or None
+
+        """
+        return self._avg_price
+
+    @property
+    def slippage(self):
+        """
+        The order total price slippage.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return self._slippage
+
+    @property
+    def init_id(self):
+        """
+        The identifier of the `OrderInitialized` event.
+
+        Returns
+        -------
+        UUID
+
+        """
+        return self._init_id
+
+    @property
     def state(self):
         """
+        The orders current state.
+
         Returns
         -------
         OrderState
-            The orders current state.
 
         """
         return self._fsm.state
@@ -254,10 +460,11 @@ cdef class Order:
     @property
     def last_event(self):
         """
+        The last event applied to the order.
+
         Returns
         -------
         OrderEvent
-            The last event applied to the order.
 
         """
         return self._events[-1]
@@ -265,10 +472,11 @@ cdef class Order:
     @property
     def execution_ids(self):
         """
+        The execution identifiers.
+
         Returns
         -------
         list[ExecutionId]
-            The execution identifiers.
 
         """
         return self._execution_ids.copy()
@@ -276,10 +484,11 @@ cdef class Order:
     @property
     def events(self):
         """
+        The order events.
+
         Returns
         -------
         list[OrderEvent]
-            The order events.
 
         """
         return self._events.copy()
@@ -287,10 +496,11 @@ cdef class Order:
     @property
     def event_count(self):
         """
+        The count of events applied to the order.
+
         Returns
         -------
         int
-            The count of events applied to the order.
 
         """
         return len(self._events)
@@ -298,7 +508,7 @@ cdef class Order:
     @property
     def is_buy(self):
         """
-        Return a value indicating whether the order side is `BUY`.
+        If the order side is `BUY`.
 
         Returns
         -------
@@ -311,7 +521,7 @@ cdef class Order:
     @property
     def is_sell(self):
         """
-        Return a value indicating whether the order side is `SELL`.
+        If the order side is `SELL`.
 
         Returns
         -------
@@ -324,7 +534,7 @@ cdef class Order:
     @property
     def is_working(self):
         """
-        Return a value indicating whether the order is `WORKING`.
+        If the order is `WORKING`.
 
         Returns
         -------
@@ -337,7 +547,7 @@ cdef class Order:
     @property
     def is_completed(self):
         """
-        Return a value indicating whether the order is `completed`.
+        If the order is `completed`.
 
         Returns
         -------
@@ -349,7 +559,7 @@ cdef class Order:
 
     cdef str state_string(self):
         """
-        Return the orders state as a string.
+        The orders state as a string.
 
         Returns
         -------
@@ -360,7 +570,7 @@ cdef class Order:
 
     cdef str status_string(self):
         """
-        Return the orders status as a string.
+        The orders status as a string.
 
         Returns
         -------
@@ -439,13 +649,13 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _submitted(self, OrderSubmitted event) except *:
-        self.account_id = event.account_id
+        self._account_id = event.account_id
 
     cdef void _rejected(self, OrderRejected event) except *:
         pass  # Do nothing else
 
     cdef void _accepted(self, OrderAccepted event) except *:
-        self.id = event.order_id
+        self._id = event.order_id
 
     cdef void _working(self, OrderWorking event) except *:
         pass  # Do nothing else
@@ -557,10 +767,46 @@ cdef class PassiveOrder(Order):
         )
         super().__init__(init_event)
 
-        self.price = price
-        self.liquidity_side = LiquiditySide.NONE
-        self.expire_time = expire_time
-        self.slippage = Decimal()
+        self._price = price
+        self._liquidity_side = LiquiditySide.NONE
+        self._expire_time = expire_time
+        self._slippage = Decimal()
+
+    @property
+    def price(self):
+        """
+        The order price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._price
+
+    @property
+    def liquidity_side(self):
+        """
+        The order liquidity size.
+
+        Returns
+        -------
+        LiquiditySide
+
+        """
+        return self._liquidity_side
+
+    @property
+    def expire_time(self):
+        """
+        The order expire time (optional).
+
+        Returns
+        -------
+        datetime or None
+
+        """
+        return self._expire_time
 
     cdef str status_string(self):
         """
@@ -577,28 +823,28 @@ cdef class PassiveOrder(Order):
                 f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
 
     cdef void _modified(self, OrderModified event) except *:
-        self.id = event.order_id
-        self.quantity = event.modified_quantity
-        self.price = event.modified_price
+        self._id = event.order_id
+        self._quantity = event.modified_quantity
+        self._price = event.modified_price
 
     cdef void _filled(self, OrderFilled event) except *:
-        self.id = event.order_id
-        self.position_id = event.position_id
-        self.strategy_id = event.strategy_id
+        self._id = event.order_id
+        self._position_id = event.position_id
+        self._strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
-        self.execution_id = event.execution_id
-        self.liquidity_side = event.liquidity_side
-        self.filled_qty = event.filled_qty
-        self.filled_timestamp = event.timestamp
-        self.avg_price = event.avg_price
+        self._execution_id = event.execution_id
+        self._liquidity_side = event.liquidity_side
+        self._filled_qty = event.filled_qty
+        self._filled_timestamp = event.timestamp
+        self._avg_price = event.avg_price
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
 
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.avg_price - self.price)
+            self._slippage = Decimal(self.avg_price - self.price)
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price - self.avg_price)
+            self._slippage = Decimal(self.price - self.avg_price)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -722,18 +968,15 @@ cdef class MarketOrder(Order):
         raise NotImplemented("Cannot modify a market order")
 
     cdef void _filled(self, OrderFilled event) except *:
-        self.id = event.order_id
-        self.position_id = event.position_id
-        self.strategy_id = event.strategy_id
+        self._id = event.order_id
+        self._position_id = event.position_id
+        self._strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
-        self.execution_id = event.execution_id
-        self.filled_qty = event.filled_qty
-        self.filled_timestamp = event.timestamp
-        self.avg_price = event.avg_price
+        self._execution_id = event.execution_id
+        self._filled_qty = event.filled_qty
+        self._filled_timestamp = event.timestamp
+        self._avg_price = event.avg_price
 
-
-cdef str _POST_ONLY = 'PostOnly'
-cdef str _HIDDEN = 'Hidden'
 
 cdef class LimitOrder(PassiveOrder):
     """
@@ -800,12 +1043,12 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is GTD and expire_time is None.
 
         """
-        self.is_post_only = post_only
-        self.is_hidden = hidden
+        self._is_post_only = post_only
+        self._is_hidden = hidden
 
         cdef dict options = {
-            _POST_ONLY: str(post_only),
-            _HIDDEN: str(hidden),
+            POST_ONLY: post_only,
+            HIDDEN: hidden,
         }
 
         super().__init__(
@@ -845,8 +1088,8 @@ cdef class LimitOrder(PassiveOrder):
 
         cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
         cdef Price price = Price(price_string)
-        cdef post_only = event.options[_POST_ONLY] == str(True)
-        cdef hidden = event.options[_HIDDEN] == str(True)
+        cdef post_only = event.options[POST_ONLY] == True
+        cdef hidden = event.options[HIDDEN] == True
 
         return LimitOrder(
             cl_ord_id=event.cl_ord_id,
@@ -861,6 +1104,32 @@ cdef class LimitOrder(PassiveOrder):
             post_only=post_only,
             hidden=hidden,
         )
+
+    @property
+    def is_post_only(self):
+        """
+        If the order is `post_only`, meaning it will only make liquidity.
+
+        Returns
+        -------
+        bool
+            True if post only, else False.
+
+        """
+        return self._is_post_only
+
+    @property
+    def is_hidden(self):
+        """
+        If the order is displayed on the public order book.
+
+        Returns
+        -------
+        bool
+            True if hidden, else False.
+
+        """
+        return self._is_hidden
 
 
 cdef class StopMarketOrder(PassiveOrder):
@@ -1000,12 +1269,11 @@ cdef class BracketOrder:
             The take-profit (TP) 'child' order.
 
         """
-        self.id = BracketOrderId(f"B{entry.cl_ord_id.value}")
-        self.entry = entry
-        self.stop_loss = stop_loss
-        self.take_profit = take_profit
-        self.has_take_profit = take_profit is not None
-        self.timestamp = entry.timestamp
+        self._id = BracketOrderId(f"B{entry.cl_ord_id.value}")
+        self._entry = entry
+        self._stop_loss = stop_loss
+        self._take_profit = take_profit
+        self._timestamp = entry.timestamp
 
     def __eq__(self, BracketOrder other) -> bool:
         return self.id == other.id
@@ -1017,5 +1285,78 @@ cdef class BracketOrder:
         return hash(self.id)
 
     def __repr__(self) -> str:
-        cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)
-        return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
+        cdef str take_profit_price = "NONE" if self._take_profit is None else str(self._take_profit.price)
+        return f"BracketOrder(id={self._id.value}, Entry{self._entry}, SL={self._stop_loss.price}, TP={take_profit_price})"
+
+    @property
+    def id(self):
+        """
+        The bracket order identifier.
+
+        Returns
+        -------
+        BracketOrderId
+
+        """
+        return self._id
+
+    @property
+    def entry(self):
+        """
+        The entry order.
+
+        Returns
+        -------
+        Order
+
+        """
+        return self._entry
+
+    @property
+    def stop_loss(self):
+        """
+        The stop-loss order.
+
+        Returns
+        -------
+        StopMarketOrder
+
+        """
+        return self._stop_loss
+
+    @property
+    def take_profit(self):
+        """
+        The take-profit order (optional).
+
+        Returns
+        -------
+        PassiveOrder or None
+
+        """
+        return self._take_profit
+
+    @property
+    def has_take_profit(self):
+        """
+        If the bracket order has a take-profit
+
+        Returns
+        -------
+        bool
+            True if has take-profit, else False.
+
+        """
+        return self._take_profit is not None
+
+    @property
+    def timestamp(self):
+        """
+        The bracket order initialization timestamp.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._timestamp
