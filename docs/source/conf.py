@@ -43,12 +43,15 @@ release = version
 # ones.
 extensions = [
     "sphinx.ext.autodoc",
+    'autoapi.extension',
     "sphinx.ext.doctest",
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
     "numpydoc",
 ]
+
+autoapi_dirs = ['../../nautilus_trader']
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
