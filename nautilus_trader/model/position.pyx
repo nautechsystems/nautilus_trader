@@ -168,18 +168,7 @@ cdef class Position:
         """
         return Position.side_from_order_side_c(side)
 
-    cpdef str side_as_string(self):
-        """
-        Return the position side as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return position_side_to_string(self.side)
-
-    cpdef str status_string(self):
+    cdef str status_string(self):
         """
         Return the positions status as a string.
 
@@ -191,139 +180,147 @@ cdef class Position:
         cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string()} "
         return f"{position_side_to_string(self.side)}{quantity}{self.symbol}"
 
-    cpdef set cl_ord_ids(self):
+    @property
+    def cl_ord_ids(self):
         """
-        Return a list of all client order identifiers.
-
         Returns
         -------
         set[OrderId]
+            The client order identifiers associated with the position.
 
         """
         cdef OrderFilled event
         return {event.cl_ord_id for event in self._events}
 
-    cpdef set order_ids(self):
+    @property
+    def order_ids(self):
         """
-        Return a list of all client order identifiers.
-
         Returns
         -------
         set[OrderId]
+            The order identifiers associated with the position.
 
         """
         cdef OrderFilled event
         return {event.order_id for event in self._events}
 
-    cpdef set execution_ids(self):
+    @property
+    def execution_ids(self):
         """
-        Return a list of all execution identifiers.
-
         Returns
         -------
         set[ExecutionId]
+            The execution identifiers associated with the position.
 
         """
         cdef OrderFilled event
         return {event.execution_id for event in self._events}
 
-    cpdef list events(self):
+    @property
+    def events(self):
         """
-        Return a list of all order fill events.
-
         Returns
         -------
         list[Event]
+            The order fill events of the position.
 
         """
         return self._events.copy()
 
-    cpdef OrderFilled last_event(self):
+    @property
+    def last_event(self):
         """
-        Return the last fill event.
-
         Returns
         -------
         OrderFilled
+            The last order fill event.
 
         """
         return self._events[-1]
 
-    cpdef ExecutionId last_execution_id(self):
+    @property
+    def last_execution_id(self):
         """
-        Return the last execution identifier for the position.
-
         Returns
         -------
         ExecutionId
+            The last execution identifier for the position.
 
         """
         return self._events[-1].execution_id
 
-    cpdef int event_count(self) except *:
+    @property
+    def event_count(self):
         """
-        Return the count of order fill events.
-
         Returns
         -------
         int
+            The count of order fill events.
 
         """
         return len(self._events)
 
-    cpdef bint is_open(self) except *:
+    @property
+    def is_open(self):
         """
-        Return a value indicating whether the position is open.
+        Return a value indicating whether the position is not `FLAT`.
 
         Returns
         -------
         bool
+            True if FLAT, else False.
 
         """
         return self.side != PositionSide.FLAT
 
-    cpdef bint is_closed(self) except *:
+    @property
+    def is_closed(self):
         """
-        Return a value indicating whether the position is closed.
+        Return a value indicating whether the position is `FLAT`.
 
         Returns
         -------
         bool
+            True if not FLAT, else False.
 
         """
         return self.side == PositionSide.FLAT
 
-    cpdef bint is_long(self) except *:
+    @property
+    def is_long(self):
         """
-        Return a value indicating whether the position is long.
+        Return a value indicating whether the position is `LONG`.
 
         Returns
         -------
         bool
+            True if LONG, else False.
 
         """
         return self.side == PositionSide.LONG
 
-    cpdef bint is_short(self) except *:
+    @property
+    def is_short(self):
         """
         Return a value indicating whether the position is short.
 
         Returns
         -------
         bool
+            True if SHORT, else False.
 
         """
         return self.side == PositionSide.SHORT
 
-    cpdef Decimal relative_quantity(self):
+    @property
+    def relative_quantity(self):
         """
         Return the relative quantity of the position.
 
-        With positive values for long, negative values for short.
-
         Returns
         -------
-        double
+        Decimal
+            Positive values for long, negative values for short.
 
         """
         return self._relative_quantity

@@ -196,10 +196,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_positions.add(position_id)
 
             # 6- Build _index_positions_open -> {PositionId}
-            if position.is_open():
+            if position.is_open:
                 self._index_positions_open.add(position_id)
             # 6- Build _index_positions_closed -> {PositionId}
-            elif position.is_closed():
+            elif position.is_closed:
                 self._index_positions_closed.add(position_id)
 
             # 7- Build _index_strategies -> {StrategyId}
@@ -501,7 +501,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(position, "position")
 
-        if position.is_closed():
+        if position.is_closed:
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
@@ -1372,9 +1372,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         cdef Position position
         for position in positions:
-            if position.is_long():
+            if position.is_long:
                 net_quantity = Decimal(net_quantity + position.quantity)
-            elif position.is_short():
+            elif position.is_short:
                 net_quantity = Decimal(net_quantity - position.quantity)
 
         return net_quantity

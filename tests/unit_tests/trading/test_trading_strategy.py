@@ -567,7 +567,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertIn(order, strategy.execution.orders())
         self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
         self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[0].side)
-        self.assertTrue(strategy.execution.positions()[0].is_closed())
+        self.assertTrue(strategy.execution.positions()[0].is_closed)
         self.assertTrue(PositionId("B-USD/JPY-1"), strategy.execution.position_closed_ids())
         self.assertTrue(strategy.portfolio.is_completely_flat())
 

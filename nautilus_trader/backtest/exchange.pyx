@@ -918,7 +918,7 @@ cdef class SimulatedExchange:
                     self._process_order(child_order)
             del self._child_orders[order.cl_ord_id]
 
-        if position and position.is_closed():
+        if position and position.is_closed:
             oco_orders = self._position_oco_orders.get(position.id)
             if oco_orders:
                 for order in self._position_oco_orders[position.id]:

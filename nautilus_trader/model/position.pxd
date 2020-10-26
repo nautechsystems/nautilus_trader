@@ -23,7 +23,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -65,24 +64,10 @@ cdef class Position:
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
-    cpdef void apply(self, OrderFilled event) except *
-    cpdef str side_as_string(self)
-    cpdef str status_string(self)
-    cpdef OrderFilled last_event(self)
-    cpdef ExecutionId last_execution_id(self)
-    cpdef set cl_ord_ids(self)
-    cpdef set order_ids(self)
-    cpdef set execution_ids(self)
-    cpdef list events(self)
-    cpdef int event_count(self) except *
-    cpdef bint is_open(self) except *
-    cpdef bint is_closed(self) except *
-    cpdef bint is_long(self) except *
-    cpdef bint is_short(self) except *
-    cpdef Decimal relative_quantity(self)
+    cdef str status_string(self)
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
-
+    cpdef void apply(self, OrderFilled event) except *
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
     cdef inline Decimal _calculate_cost(self, Decimal avg_price, Quantity total_quantity)

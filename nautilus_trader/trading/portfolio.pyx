@@ -264,13 +264,13 @@ cdef class Portfolio(PortfolioFacade):
         cdef int open_count = 0
         cdef int closed_count = 0
         for position in positions:
-            if position.is_open():
+            if position.is_open:
                 positions_open = self._positions_open.get(position.symbol.venue, set())
                 positions_open.add(position)
                 self._positions_open[position.symbol.venue] = positions_open
                 self._log.debug(f"Added open {position}")
                 open_count += 1
-            elif position.is_closed():
+            elif position.is_closed:
                 positions_closed = self._positions_closed.get(position.symbol.venue, set())
                 positions_closed.add(position)
                 self._positions_closed[position.symbol.venue] = positions_closed
@@ -712,7 +712,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Decimal net_position = Decimal()
         for position in positions_open:
             if position.symbol == symbol:
-                net_position += position.relative_quantity()
+                net_position += position.relative_quantity
 
         self._net_positions[symbol] = net_position
         self._log.info(f"{symbol} net position = {net_position}")

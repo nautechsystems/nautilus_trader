@@ -60,6 +60,42 @@ cdef class Account:
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value})"
 
+    @property
+    def last_event(self):
+        """
+        Return the accounts last state event.
+
+        Returns
+        -------
+        AccountState
+
+        """
+        return self._events[-1]
+
+    @property
+    def events(self):
+        """
+        Return all events received by the account.
+
+        Returns
+        -------
+        list[AccountState]
+
+        """
+        return self._events.copy()
+
+    @property
+    def event_count(self):
+        """
+        Return the count of events.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)
+
     cpdef void register_portfolio(self, PortfolioFacade portfolio):
         """
         Register the given portfolio with the account.
@@ -215,36 +251,3 @@ cdef class Account:
 
         """
         return self._position_margin
-
-    cpdef AccountState last_event(self):
-        """
-        Return the accounts last state event.
-
-        Returns
-        -------
-        AccountState
-
-        """
-        return self._events[-1]
-
-    cpdef list events(self):
-        """
-        Return all events received by the account.
-
-        Returns
-        -------
-        list[AccountState]
-
-        """
-        return self._events.copy()
-
-    cpdef int event_count(self) except *:
-        """
-        Return the count of events.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self._events)
