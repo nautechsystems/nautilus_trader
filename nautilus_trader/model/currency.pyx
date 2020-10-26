@@ -120,17 +120,15 @@ cdef class Currency:
         Condition.not_negative_int(precision, "precision")
         Condition.not_equal(currency_type, CurrencyType.UNDEFINED, "currency_type", "UNDEFINED")
 
-        self.code = code
-        self.precision = precision
-        self.currency_type = currency_type
+        self._code = code
+        self._precision = precision
+        self._currency_type = currency_type
 
     def __eq__(self, Currency other) -> bool:
-        return self.code == other.code \
-            and self.precision == other.precision \
-            and self.currency_type == other.currency_type
+        return self._code == other.code and self._precision == other.precision
 
     def __ne__(self, Currency other) -> bool:
-        return not self == other
+        return self._code != other.code or self._precision != other.precision
 
     def __hash__(self) -> int:
         return hash(self.code)
@@ -140,9 +138,44 @@ cdef class Currency:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"code={self.code}, "
-                f"precision={self.precision}, "
-                f"type={currency_type_to_string(self.currency_type)})")
+                f"code={self._code}, "
+                f"precision={self._precision}, "
+                f"type={currency_type_to_string(self._currency_type)})")
+
+    @property
+    def code(self):
+        """
+        The identifier code of the currency.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._code
+
+    @property
+    def precision(self):
+        """
+        The specified precision of the currency.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._precision
+
+    def currency_type(self):
+        """
+        The general type of the currency.
+
+        Returns
+        -------
+        CurrencyType
+
+        """
+        return self._currency_type
 
     @staticmethod
     cdef Currency from_string_c(str code):
@@ -165,7 +198,7 @@ cdef class Currency:
     @staticmethod
     def from_string(str code):
         """
-        Parse the given code.
+        Parse a currency from the given string (if found).
 
         Parameters
         ----------
@@ -175,7 +208,6 @@ cdef class Currency:
         Returns
         -------
         Currency or None
-            A currency from the given string (if found).
 
         """
         return _CURRENCY_TABLE.get(code)

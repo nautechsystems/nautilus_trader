@@ -23,7 +23,7 @@ cdef class Symbol(Identifier):
     Returns
     -------
     str
-        The code for the symbol.
+        The identifier code for the symbol.
 
     """
 
