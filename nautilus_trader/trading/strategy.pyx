@@ -37,7 +37,6 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.commands cimport CancelOrder
@@ -121,20 +120,23 @@ cdef class TradingStrategy:
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value})"
 
-    cpdef ComponentState state(self):
+    @property
+    def state(self):
         """
-        Return the trading strategies state.
+        Returns
+        -------
+        ComponentState
+            the trading strategies current state.
 
         """
-        return component_state_from_string(self.state_as_string())
+        return self._fsm.state
 
-    cpdef str state_as_string(self):
+    cdef str state_string(self):
         """
-        Return the trading strategies state as a string.
-
         Returns
         -------
         str
+            The trading strategies current state as a string.
 
         """
         return component_state_to_string(self._fsm.state)

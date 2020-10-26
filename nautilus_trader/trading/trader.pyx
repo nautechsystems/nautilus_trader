@@ -127,7 +127,7 @@ cdef class Trader:
         cdef TradingStrategy strategy
         for strategy in self.strategies:
             # Design assumption that no strategies are running
-            assert not strategy.state() == ComponentState.RUNNING
+            assert not strategy.state == ComponentState.RUNNING
 
         # Dispose of current strategies
         for strategy in self.strategies:
@@ -203,7 +203,7 @@ cdef class Trader:
 
         cdef TradingStrategy strategy
         for strategy in self.strategies:
-            if strategy.state() == ComponentState.RUNNING:
+            if strategy.state == ComponentState.RUNNING:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
@@ -279,24 +279,25 @@ cdef class Trader:
         self._fsm.trigger(ComponentTrigger.DISPOSED)
         self._log.info(f"state={self._fsm.state_as_string()}.")
 
-    cpdef ComponentState state(self):
+    @property
+    def state(self):
         """
-        Return the traders state.
-
         Returns
         -------
         ComponentState
+            The traders current state.
 
         """
-        return component_state_from_string(self.state_as_string())
+        return self._fsm.state
 
-    cpdef str state_as_string(self):
+    cdef str state_string(self):
         """
         Return the traders state as a string.
 
         Returns
         -------
         str
+            The traders current state as a string.
 
         """
         return component_state_to_string(self._fsm.state)
@@ -315,7 +316,7 @@ cdef class Trader:
         cdef dict states = {}
         cdef TradingStrategy strategy
         for strategy in self.strategies:
-            states[strategy.id] = strategy.state_as_string()
+            states[strategy.id] = strategy.state_string()
 
         return states
 

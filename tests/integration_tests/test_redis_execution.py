@@ -115,7 +115,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId.py_null()
+        position_id = PositionId.null_py()
 
         # Act
         self.database.add_order(order, position_id)
@@ -227,7 +227,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order1)
 
         # Act
-        position = Position(order1.last_event())
+        position = Position(order1.last_event)
         self.database.add_position(position)
 
         order2 = self.strategy.order_factory.market(
@@ -419,7 +419,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
         order1.apply(TestStubs.event_order_filled(order1, position_id=position_id, fill_price=Price("1.00001")))
 
-        position = Position(order1.last_event())
+        position = Position(order1.last_event)
         self.database.add_position(position)
 
         # Act
@@ -473,6 +473,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.flush()
 
         # Assert
-        self.assertEqual(None, self.database.load_order(order1.cl_ord_id))
-        self.assertEqual(None, self.database.load_order(order2.cl_ord_id))
-        self.assertEqual(None, self.database.load_position(position1.id))
+        self.assertIsNone(self.database.load_order(order1.cl_ord_id))
+        self.assertIsNone(self.database.load_order(order2.cl_ord_id))
+        self.assertIsNone(self.database.load_position(position1.id))

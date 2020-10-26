@@ -302,7 +302,7 @@ cdef class SimulatedExchange:
         for order in self._working_orders.copy().values():  # Copies list to avoid resize during loop
             if not order.symbol == tick.symbol:
                 continue  # Order is for a different symbol
-            if not order.is_working():
+            if not order.is_working:
                 continue  # Orders state has changed since the loop commenced
 
             instrument = self.instruments[order.symbol]
@@ -372,7 +372,7 @@ cdef class SimulatedExchange:
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
-        if command.position_id.not_null():
+        if command.position_id.not_null:
             self._position_index[command.order.cl_ord_id] = command.position_id
 
         self._submit_order(command.order)
@@ -674,8 +674,8 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
-        if order.state() != OrderState.SUBMITTED:
-            self._log.error(f"Cannot reject order, state was {order.state_as_string()}.")
+        if order.state != OrderState.SUBMITTED:
+            self._log.error(f"Cannot reject order, state was {order.state_string()}.")
             return
 
         # Generate event
@@ -914,7 +914,7 @@ cdef class SimulatedExchange:
         # Work any bracket child orders
         if order.cl_ord_id in self._child_orders:
             for child_order in self._child_orders[order.cl_ord_id]:
-                if not child_order.is_completed():  # The order may already be cancelled or rejected
+                if not child_order.is_completed:  # The order may already be cancelled or rejected
                     self._process_order(child_order)
             del self._child_orders[order.cl_ord_id]
 
@@ -922,7 +922,7 @@ cdef class SimulatedExchange:
             oco_orders = self._position_oco_orders.get(position.id)
             if oco_orders:
                 for order in self._position_oco_orders[position.id]:
-                    if order.is_working():
+                    if order.is_working:
                         self._cancel_order(order)
                 del self._position_oco_orders[position.id]
 
@@ -946,7 +946,7 @@ cdef class SimulatedExchange:
             # Reject any latent bracket child orders
             for bracket_order_id, child_orders in self._child_orders.items():
                 for order in child_orders:
-                    if oco_order == order and order.state() != OrderState.WORKING:
+                    if oco_order == order and order.state != OrderState.WORKING:
                         self._reject_oco_order(order, order_id)
 
             # Cancel any working OCO orders
@@ -957,8 +957,8 @@ cdef class SimulatedExchange:
     cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
-        if order.is_completed():
-            self._log.debug(f"Cannot reject order, state was already {order.state_as_string()}.")
+        if order.is_completed:
+            self._log.debug(f"Cannot reject order, state was already {order.state_string()}.")
             return
 
         # Generate event
@@ -976,7 +976,7 @@ cdef class SimulatedExchange:
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
-        if order.is_completed():
+        if order.is_completed:
             self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
             return
 
@@ -994,7 +994,7 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
-        if order.is_completed():
+        if order.is_completed:
             self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
             return
 

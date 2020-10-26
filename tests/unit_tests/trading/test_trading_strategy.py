@@ -182,6 +182,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertTrue(ComponentState.INITIALIZED, strategy.state)
         self.assertFalse(strategy.indicators_initialized())
 
     def test_register_strategy_with_exec_client(self):
@@ -213,11 +214,11 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        result1 = strategy.state()
+        result1 = strategy.state
 
         # Act
         strategy.start()
-        result2 = strategy.state()
+        result2 = strategy.state
 
         # Assert
         self.assertEqual(ComponentState.INITIALIZED, result1)
@@ -242,7 +243,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
-        self.assertEqual(ComponentState.STOPPED, strategy.state())
+        self.assertEqual(ComponentState.STOPPED, strategy.state)
         self.assertIn("custom stop logic", strategy.object_storer.get_store())
 
     def test_reset(self):
@@ -272,7 +273,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.reset()
 
         # Assert
-        self.assertEqual(ComponentState.INITIALIZED, strategy.state())
+        self.assertEqual(ComponentState.INITIALIZED, strategy.state)
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
         self.assertIn("custom reset logic", strategy.object_storer.get_store())
@@ -391,7 +392,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state())
+        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
         self.assertNotIn(order.cl_ord_id, strategy.execution.orders_working())
         self.assertFalse(strategy.execution.is_order_working(order.cl_ord_id))
         self.assertTrue(strategy.execution.is_order_completed(order.cl_ord_id))
@@ -426,7 +427,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(entry, strategy.execution.orders())
-        self.assertEqual(OrderState.WORKING, entry.state())
+        self.assertEqual(OrderState.WORKING, entry.state)
         self.assertIn(entry, strategy.execution.orders_working())
         self.assertTrue(strategy.execution.is_order_working(entry.cl_ord_id))
         self.assertFalse(strategy.execution.is_order_completed(entry.cl_ord_id))
@@ -456,7 +457,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state())
+        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
         self.assertEqual(order.cl_ord_id, strategy.execution.orders_completed()[0].cl_ord_id)
         self.assertNotIn(order.cl_ord_id, strategy.execution.orders_working())
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
@@ -487,7 +488,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])
-        self.assertEqual(OrderState.WORKING, strategy.execution.orders()[0].state())
+        self.assertEqual(OrderState.WORKING, strategy.execution.orders()[0].state)
         self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
         self.assertEqual(Price("90.002"), strategy.execution.orders()[0].price)
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))
@@ -528,8 +529,8 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIn(order1, strategy.execution.orders())
         self.assertIn(order2, strategy.execution.orders())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state())
-        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[1].state())
+        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[1].state)
         self.assertIn(order1, strategy.execution.orders_completed())
         self.assertIn(order2, strategy.execution.orders_completed())
 
@@ -564,7 +565,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state())
+        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
         self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[0].side)
         self.assertTrue(strategy.execution.positions()[0].is_closed())
         self.assertTrue(PositionId("B-USD/JPY-1"), strategy.execution.position_closed_ids())
@@ -617,8 +618,8 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIn(order1, strategy.execution.orders())
         self.assertIn(order2, strategy.execution.orders())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[1].state())
+        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[1].state)
         self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[0].side)
         self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[1].side)
         self.assertIn(position1.id, strategy.execution.position_closed_ids())

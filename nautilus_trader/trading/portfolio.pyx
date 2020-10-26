@@ -205,7 +205,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Order order
         cdef set orders_working
         for order in orders:
-            if order.is_working():
+            if order.is_working:
                 orders_working = self._orders_working.get(order.symbol.venue, set())
                 orders_working.add(order)
                 self._orders_working[order.symbol.venue] = orders_working
@@ -232,11 +232,11 @@ cdef class Portfolio(PortfolioFacade):
         cdef Venue venue = order.symbol.venue
 
         cdef set orders_working = self._orders_working.get(venue, set())
-        if order.is_working():
+        if order.is_working:
             orders_working.add(order)
             self._orders_working[venue] = orders_working
             self._log.debug(f"Added working {order}")
-        elif order.is_completed():
+        elif order.is_completed:
             orders_working.discard(order)
 
         self._update_order_margin(venue)

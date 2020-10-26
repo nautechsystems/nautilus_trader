@@ -147,7 +147,7 @@ class TraderTests(unittest.TestCase):
         # Assert
         self.assertEqual(TraderId("TESTER", "000"), trader_id)
         self.assertEqual(IdTag("000"), trader_id.tag)
-        self.assertEqual(ComponentState.INITIALIZED, self.trader.state())
+        self.assertEqual(ComponentState.INITIALIZED, self.trader.state)
         self.assertEqual(2, len(self.trader.strategy_states()))
 
     def test_get_strategy_states(self):
@@ -195,7 +195,7 @@ class TraderTests(unittest.TestCase):
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        self.assertEqual(ComponentState.RUNNING, self.trader.state())
+        self.assertEqual(ComponentState.RUNNING, self.trader.state)
         self.assertEqual('RUNNING', strategy_states[StrategyId("EmptyStrategy", "001")])
         self.assertEqual('RUNNING', strategy_states[StrategyId("EmptyStrategy", "002")])
 
@@ -209,6 +209,6 @@ class TraderTests(unittest.TestCase):
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        self.assertEqual(ComponentState.STOPPED, self.trader.state())
+        self.assertEqual(ComponentState.STOPPED, self.trader.state)
         self.assertEqual('STOPPED', strategy_states[StrategyId("EmptyStrategy", "001")])
         self.assertEqual('STOPPED', strategy_states[StrategyId("EmptyStrategy", "002")])

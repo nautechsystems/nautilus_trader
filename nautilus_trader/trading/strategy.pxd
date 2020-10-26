@@ -62,8 +62,7 @@ cdef class TradingStrategy:
     cdef ExecutionEngine _exec_engine
     cdef FiniteStateMachine _fsm
 
-    cpdef ComponentState state(self)
-    cpdef str state_as_string(self)
+    cdef str state_string(self)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
