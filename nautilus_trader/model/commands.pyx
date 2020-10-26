@@ -73,22 +73,87 @@ cdef class SubmitOrder(Command):
         Condition.equal(venue, order.symbol.venue, "venue", "order.symbol.venue")
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
-        self.trader_id = trader_id
-        self.account_id = account_id
-        self.strategy_id = strategy_id
-        self.position_id = position_id
-        self.order = order
+        self._venue = venue
+        self._trader_id = trader_id
+        self._account_id = account_id
+        self._strategy_id = strategy_id
+        self._position_id = position_id
+        self._order = order
 
     def __repr__(self) -> str:
-        cdef str position_id_str = "NULL" if self.position_id.is_null else self.position_id.value
+        cdef str position_id_str = "NULL" if self._position_id.is_null else self._position_id.value
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"trader_id={self.trader_id.value}, "
-                f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.order.cl_ord_id.value}, "
+                f"venue={self._venue.value}, "
+                f"trader_id={self._trader_id.value}, "
+                f"account_id={self._account_id.value}, "
+                f"cl_ord_id={self._order.cl_ord_id.value}, "
                 f"position_id={position_id_str}, "
-                f"strategy_id={self.strategy_id.value}")
+                f"strategy_id={self._strategy_id.value}")
+
+    @property
+    def venue(self):
+        """
+        Returns
+        -------
+        Venue
+            The venue the command relates to.
+        """
+        return self._venue
+
+    @property
+    def trader_id(self):
+        """
+        Returns
+        -------
+        TraderId
+            The trader identifier the command relates to.
+
+        """
+        return self._trader_id
+
+    @property
+    def account_id(self):
+        """
+        Returns
+        -------
+        AccountId
+            The account identifier the command relates to.
+
+        """
+        return self._account_id
+
+    @property
+    def strategy_id(self):
+        """
+        Returns
+        -------
+        StrategyId
+            The strategy identifier the command relates to.
+
+        """
+        return self._strategy_id
+
+    @property
+    def position_id(self):
+        """
+        Returns
+        -------
+        PositionId
+            The position identifier the command relates to.
+
+        """
+        return self._position_id
+
+    @property
+    def order(self):
+        """
+        Returns
+        -------
+        Order
+            The order for the command.
+
+        """
+        return self._order
 
 
 cdef class SubmitBracketOrder(Command):
@@ -135,19 +200,79 @@ cdef class SubmitBracketOrder(Command):
         Condition.equal(venue, bracket_order.entry.symbol.venue, "venue", "bracket_order.entry.symbol.venue")
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
-        self.trader_id = trader_id
-        self.account_id = account_id
-        self.strategy_id = strategy_id
-        self.bracket_order = bracket_order
+        self._venue = venue
+        self._trader_id = trader_id
+        self._account_id = account_id
+        self._strategy_id = strategy_id
+        self._bracket_order = bracket_order
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"trader_id={self.trader_id.value}, "
-                f"account_id={self.account_id.value}, "
-                f"strategy_id={self.strategy_id.value}, "
-                f"id={self.bracket_order.id.value})")
+                f"venue={self._venue.value}, "
+                f"trader_id={self._trader_id.value}, "
+                f"account_id={self._account_id.value}, "
+                f"strategy_id={self._strategy_id.value}, "
+                f"id={self._bracket_order.id.value})")
+
+    @property
+    def venue(self):
+        """
+        The venue associated with the command.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
+
+    @property
+    def trader_id(self):
+        """
+        The trader identifier associated with the command.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the command.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def strategy_id(self):
+        """
+        The strategy identifier associated with the command.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def bracket_order(self):
+        """
+        The bracket order to submit.
+
+        Returns
+        -------
+        BracketOrder
+
+        """
+        return self._bracket_order
 
 
 cdef class ModifyOrder(Command):
@@ -191,21 +316,94 @@ cdef class ModifyOrder(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
-        self.trader_id = trader_id
-        self.account_id = account_id
-        self.cl_ord_id = cl_ord_id
-        self.quantity = quantity
-        self.price = price
+        self._venue = venue
+        self._trader_id = trader_id
+        self._account_id = account_id
+        self._cl_ord_id = cl_ord_id
+        self._quantity = quantity
+        self._price = price
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"trader_id={self.trader_id.value}, "
-                f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.cl_ord_id.value}, "
-                f"quantity={self.quantity.to_string()}, "
-                f"price={self.price})")
+                f"venue={self._venue.value}, "
+                f"trader_id={self._trader_id.value}, "
+                f"account_id={self._account_id.value}, "
+                f"cl_ord_id={self._cl_ord_id.value}, "
+                f"quantity={self._quantity.to_string()}, "
+                f"price={self._price})")
+
+    @property
+    def venue(self):
+        """
+        The venue the associated with the command.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
+
+    @property
+    def trader_id(self):
+        """
+        The trader identifier associated with the command.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the command.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def cl_ord_id(self):
+        """
+        The client order identifier associated with the command.
+
+        Returns
+        -------
+        ClientOrderId
+
+
+        """
+        return self._cl_ord_id
+
+    @property
+    def quantity(self):
+        """
+        The quantity for the command.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._quantity
+
+    @property
+    def price(self):
+        """
+        The price for the command.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._price
 
 
 cdef class CancelOrder(Command):
@@ -243,14 +441,63 @@ cdef class CancelOrder(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
-        self.trader_id = trader_id
-        self.account_id = account_id
-        self.cl_ord_id = cl_ord_id
+        self._venue = venue
+        self._trader_id = trader_id
+        self._account_id = account_id
+        self._cl_ord_id = cl_ord_id
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"trader_id={self.trader_id.value}, "
-                f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.cl_ord_id.value})")
+                f"venue={self._venue.value}, "
+                f"trader_id={self._trader_id.value}, "
+                f"account_id={self._account_id.value}, "
+                f"cl_ord_id={self._cl_ord_id.value})")
+
+    @property
+    def venue(self):
+        """
+        The venue associated with the command.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
+
+    @property
+    def trader_id(self):
+        """
+        The trader identifier associated with the command
+.
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the command.
+
+        Returns
+        -------
+        AccountId
+
+
+        """
+        return self._account_id
+
+    @property
+    def cl_ord_id(self):
+        """
+        The client order identifier associated with the command.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return self._cl_ord_id
