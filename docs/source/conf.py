@@ -42,7 +42,8 @@ release = version
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    'autoapi.extension',
+    "autoapi.extension",
+    "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
