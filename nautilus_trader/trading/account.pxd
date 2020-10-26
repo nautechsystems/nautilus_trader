@@ -43,6 +43,3 @@ cdef class Account:
     cpdef Money margin_available(self)
     cpdef Money order_margin(self)
     cpdef Money position_margin(self)
-    cpdef AccountState last_event(self)
-    cpdef list events(self)
-    cpdef int event_count(self) except *

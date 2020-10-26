@@ -1339,7 +1339,7 @@ cdef class TradingStrategy:
         Condition.not_none(position, "position")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        if position.is_closed():
+        if position.is_closed:
             self.log.warning(f"Cannot flatten {position} "
                              f"(the position is already closed).")
             return  # Invalid command

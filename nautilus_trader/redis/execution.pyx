@@ -19,6 +19,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
@@ -336,7 +337,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event()))
+        pipe.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -380,7 +381,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes last_event = self._event_serializer.serialize(position.last_event())
+        cdef bytes last_event = self._event_serializer.serialize(position.last_event)
         cdef int reply = self._redis.rpush(self.key_positions + position.id.value, last_event)
 
         # Check data integrity of reply
@@ -423,7 +424,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(account, "account")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(account.last_event())
+        cdef bytes serialized_event = self._event_serializer.serialize(account.last_event)
         self._redis.rpush(self.key_accounts + account.id.value, serialized_event)
 
         self._log.debug(f"Updated Account(id={account.id}).")
@@ -461,7 +462,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(position.last_event())
+        cdef bytes serialized_event = self._event_serializer.serialize(position.last_event)
         cdef int reply = self._redis.rpush(self.key_positions + position.id.value, serialized_event)
 
         # Check data integrity of reply

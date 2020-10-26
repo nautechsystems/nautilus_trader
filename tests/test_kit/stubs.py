@@ -346,7 +346,7 @@ class TestStubs:
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
             position,
-            position.last_event(),
+            position.last_event,
             uuid4(),
             UNIX_EPOCH,
         )
@@ -355,7 +355,7 @@ class TestStubs:
     def event_position_modified(position) -> PositionModified:
         return PositionModified(
             position,
-            position.last_event(),
+            position.last_event,
             uuid4(),
             UNIX_EPOCH,
         )
@@ -364,7 +364,7 @@ class TestStubs:
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
             position,
-            position.last_event(),
+            position.last_event,
             uuid4(),
             UNIX_EPOCH,
         )

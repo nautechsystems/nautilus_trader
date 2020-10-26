@@ -1060,7 +1060,7 @@ cdef class PositionModified(PositionEvent):
             If position is not open.
 
         """
-        Condition.true(position.is_open(), "position.is_open()")
+        Condition.true(position.is_open, "position.is_open")
         super().__init__(
             position,
             order_fill,
@@ -1114,7 +1114,7 @@ cdef class PositionClosed(PositionEvent):
             If position is not closed.
 
         """
-        Condition.true(position.is_closed(), "position.is_closed()")
+        Condition.true(position.is_closed, "position.is_closed")
         super().__init__(
             position,
             order_fill,

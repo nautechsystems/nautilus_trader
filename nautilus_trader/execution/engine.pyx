@@ -616,7 +616,7 @@ cdef class ExecutionEngine:
         self.cache.update_position(position)
 
         cdef PositionEvent position_event
-        if position.is_closed():
+        if position.is_closed:
             position_event = self._pos_closed_event(position, fill)
         else:
             position_event = self._pos_modified_event(position, fill)
