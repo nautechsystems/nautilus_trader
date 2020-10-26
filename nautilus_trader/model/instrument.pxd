@@ -29,35 +29,34 @@ from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Instrument:
-    cdef readonly Symbol symbol
-    cdef readonly AssetClass asset_class
-    cdef readonly AssetType asset_type
-    cdef readonly Currency base_currency
-    cdef readonly Currency quote_currency
-    cdef readonly Currency settlement_currency
-    cdef readonly bint is_inverse
-    cdef readonly bint is_quanto
-    cdef readonly int price_precision
-    cdef readonly int size_precision
-    cdef readonly int cost_precision
-    cdef readonly Decimal tick_size
-    cdef readonly Decimal multiplier
-    cdef readonly Decimal leverage
-    cdef readonly Quantity lot_size
-    cdef readonly Quantity max_quantity
-    cdef readonly Quantity min_quantity
-    cdef readonly Money max_notional
-    cdef readonly Money min_notional
-    cdef readonly Price max_price
-    cdef readonly Price min_price
-    cdef readonly Decimal margin_initial
-    cdef readonly Decimal margin_maintenance
-    cdef readonly Decimal maker_fee
-    cdef readonly Decimal taker_fee
-    cdef readonly Decimal settlement_fee
-    cdef readonly Decimal funding_rate_long
-    cdef readonly Decimal funding_rate_short
-    cdef readonly datetime timestamp
+    cdef Symbol _symbol
+    cdef AssetClass _asset_class
+    cdef AssetType _asset_type
+    cdef Currency _base_currency
+    cdef Currency _quote_currency
+    cdef Currency _settlement_currency
+    cdef bint _is_inverse
+    cdef bint _is_quanto
+    cdef int _price_precision
+    cdef int _size_precision
+    cdef Decimal _tick_size
+    cdef Decimal _multiplier
+    cdef Decimal _leverage
+    cdef Quantity _lot_size
+    cdef Quantity _max_quantity
+    cdef Quantity _min_quantity
+    cdef Money _max_notional
+    cdef Money _min_notional
+    cdef Price _max_price
+    cdef Price _min_price
+    cdef Decimal _margin_initial
+    cdef Decimal _margin_maintenance
+    cdef Decimal _maker_fee
+    cdef Decimal _taker_fee
+    cdef Decimal _settlement_fee
+    cdef Decimal _funding_rate_long
+    cdef Decimal _funding_rate_short
+    cdef datetime _timestamp
 
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price)
     cpdef Money calculate_position_margin(
