@@ -139,11 +139,16 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        TraderId or None
-            If the strategy has not been registered with a `Trader`, then will
-            return None.
+        TraderId
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with a `Trader`.
 
         """
+        Condition.not_none(self._trader_id, "trader_id")
+
         return self._trader_id
 
     @property
@@ -153,11 +158,16 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        Clock or None
-            If the strategy has not been registered with a `Trader`, then will
-            return None.
+        Clock
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with a `Trader`.
 
         """
+        Condition.not_none(self._clock, "clock")
+
         return self._clock
 
     @property
@@ -167,11 +177,16 @@ cdef class TradingStrategy:
 
         Returns
         -------
-        UUIDFactory or None
-            If the strategy has not been registered with a `Trader`, then will
-            return None.
+        UUIDFactory
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with a `Trader`.
 
         """
+        Condition.not_none(self._uuid_factory, "uuid_factory")
+
         return self._uuid_factory
 
     @property
@@ -182,10 +197,15 @@ cdef class TradingStrategy:
         Returns
         -------
         LoggerAdapter
-            If the strategy has not been registered with a `Trader`, then will
-            return None.
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with a `Trader`.
 
         """
+        Condition.not_none(self._log, "log")
+
         return self._log
 
     @property
@@ -197,10 +217,15 @@ cdef class TradingStrategy:
         Returns
         -------
         DataCacheFacade
-            If the strategy has not been registered with a `DataEngine`, then
-            will return None.
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with a `DataEngine`.
 
         """
+        Condition.not_none(self._data, "data")
+
         return self._data
 
     @property
@@ -212,10 +237,15 @@ cdef class TradingStrategy:
         Returns
         -------
         ExecutionCacheFacade or None
-            If the strategy has not been registered with an `ExecutionEngine`,
-            then will return None.
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with an `ExecutionEngine`.
 
         """
+        Condition.not_none(self._execution, "execution")
+
         return self._execution
 
     @property
@@ -226,10 +256,15 @@ cdef class TradingStrategy:
         Returns
         -------
         PortfolioFacade or None
-            If the strategy has not been registered with an `ExecutionEngine`,
-            then will return None.
+
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with an `ExecutionEngine`.
 
         """
+        Condition.not_none(self._portfolio, "portfolio")
+
         return self._portfolio
 
     @property
@@ -243,7 +278,14 @@ cdef class TradingStrategy:
             If the strategy has not been registered with a `Trader`,
             then will return None.
 
+        Raises
+        ------
+        TypeError
+            If the strategy has not been registered with a `Trader`.
+
         """
+        Condition.not_none(self._order_factory, "order_factory")
+
         return self._order_factory
 
     @property
