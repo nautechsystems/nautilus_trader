@@ -26,13 +26,6 @@ cdef class Price(Decimal):
 
 
 cdef class Money(Decimal):
-    cdef readonly Currency currency
-    """
-    Returns
-    -------
-    Currency
-        The currency of the money.
-
-    """
+    cdef Currency _currency
 
     cpdef str to_string(self)
