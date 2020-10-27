@@ -97,7 +97,7 @@ cdef class FiniteStateMachine:
         str
 
         """
-        return self._state_parser(self.state)
+        return self._state_parser(self._state)
 
     cpdef void trigger(self, int trigger) except *:
         """
@@ -116,7 +116,7 @@ cdef class FiniteStateMachine:
             If the state and trigger combination is not found in the transition table.
 
         """
-        cdef int next_state = self._state_transition_table.get((self.state, trigger), -1)
+        cdef int next_state = self._state_transition_table.get((self._state, trigger), -1)
         if next_state == -1:  # Invalid
             raise InvalidStateTrigger(f"{self.state_string()} -> {self._trigger_parser(trigger)}")
 

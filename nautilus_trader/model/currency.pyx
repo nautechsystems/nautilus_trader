@@ -131,10 +131,10 @@ cdef class Currency:
         return self._code != other.code or self._precision != other.precision
 
     def __hash__(self) -> int:
-        return hash(self.code)
+        return hash(self._code)
 
     def __str__(self) -> str:
-        return self.code
+        return self._code
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -166,6 +166,7 @@ cdef class Currency:
         """
         return self._precision
 
+    @property
     def currency_type(self):
         """
         The general type of the currency.

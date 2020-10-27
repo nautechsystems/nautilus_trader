@@ -26,7 +26,6 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -43,15 +42,15 @@ from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy:
-    cdef readonly StrategyId id
-    cdef readonly TraderId trader_id
-    cdef readonly Clock clock
-    cdef readonly UUIDFactory uuid_factory
-    cdef readonly LoggerAdapter log
-    cdef readonly DataCacheFacade data
-    cdef readonly ExecutionCacheFacade execution
-    cdef readonly PortfolioFacade portfolio
-    cdef readonly OrderFactory order_factory
+    cdef StrategyId _id
+    cdef TraderId _trader_id
+    cdef Clock _clock
+    cdef UUIDFactory _uuid_factory
+    cdef LoggerAdapter _log
+    cdef DataCacheFacade _data
+    cdef ExecutionCacheFacade _execution
+    cdef PortfolioFacade _portfolio
+    cdef OrderFactory _order_factory
 
     cdef list _indicators
     cdef dict _indicators_for_quotes
