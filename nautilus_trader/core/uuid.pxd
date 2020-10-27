@@ -13,49 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 cdef extern from *:
-    ctypedef unsigned long long int128 "__int128_t"
-
-
-cdef enum SafeUUID:
-    UNKNOWN = -1
-    UNDEFINED = 0
-    SAFE = 1
-    UNSAFE = 2
-
-
-cdef inline str safe_uuid_to_string(int value):
-    if value == -1:
-        return 'UNKNOWN'
-    elif value == 1:
-        return 'SAFE'
-    elif value == 2:
-        return 'UNSAFE'
-    else:
-        return 'UNDEFINED'
-
-
-cdef inline SafeUUID safe_uuid_from_string(str value):
-    if value == 'UNKNOWN':
-        return SafeUUID.UNKNOWN
-    elif value == 'SAFE':
-        return SafeUUID.SAFE
-    elif value == 'UNSAFE':
-        return SafeUUID.UNSAFE
-    else:
-        return SafeUUID.UNDEFINED
+    ctypedef unsigned long long uint128 "__uint128_t"
 
 
 cdef class UUID:
-    cdef readonly object int_value
+    cdef readonly uint128 int_val
     cdef readonly str value
-    cdef readonly SafeUUID is_safe
 
-    cdef str _get_hex_string(self)
+    @staticmethod
+    cdef UUID from_string(str value)
 
 
-cpdef UUID uuid1(node=*, clock_seq=*)
-cpdef UUID uuid3(UUID namespace_uuid, str name)
 cpdef UUID uuid4()
-cpdef UUID uuid5(UUID namespace_uuid, str name)
