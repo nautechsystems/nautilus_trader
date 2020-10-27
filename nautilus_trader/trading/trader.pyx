@@ -104,7 +104,7 @@ cdef class Trader:
 
         Parameters
         ----------
-        strategies : list of TradingStrategies
+        strategies : list[TradingStrategies]
             The strategies to load into the trader.
 
         Raises

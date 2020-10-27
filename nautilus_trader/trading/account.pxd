@@ -28,9 +28,9 @@ cdef class Account:
     cdef Money _position_margin
     cdef PortfolioFacade _portfolio
 
-    cdef readonly AccountId id
-    cdef readonly AccountType account_type
-    cdef readonly Currency currency
+    cdef AccountId _id
+    cdef AccountType _account_type
+    cdef Currency _currency
 
     cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *

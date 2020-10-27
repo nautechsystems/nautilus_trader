@@ -26,7 +26,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Symbol, AccountId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
@@ -147,7 +147,8 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(account, "account")
         Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
 
-        self._accounts[account.id.issuer_as_venue()] = account
+        cdef AccountId account_id = account.id
+        self._accounts[account_id.issuer_as_venue()] = account
         account.register_portfolio(self)
 
     cpdef void update_instrument(self, Instrument instrument) except *:

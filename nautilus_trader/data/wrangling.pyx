@@ -196,11 +196,11 @@ cdef class TickDataWrangler:
 
     cpdef list build_ticks(self):
         """
-        Return a list of bars from all data.
+        Build ticks from all data.
 
         Returns
         -------
-        list[Bar]
+        list[QuoteTick]
 
         """
         return list(map(self._build_tick_from_values_with_sizes,
@@ -281,7 +281,7 @@ cdef class BarDataWrangler:
 
     cpdef list build_bars_all(self):
         """
-        Return a list of bars from all data.
+        Build bars from all data.
 
         Returns
         -------
@@ -294,7 +294,7 @@ cdef class BarDataWrangler:
 
     cpdef list build_bars_from(self, int index=0):
         """
-        Return a list of bars from the given index (>= 0).
+        Build bars from the given index (>= 0).
 
         Returns
         -------
@@ -309,7 +309,7 @@ cdef class BarDataWrangler:
 
     cpdef list build_bars_range(self, int start=0, int end=-1):
         """
-        Return a list of bars within the given range.
+        Build bars within the given range.
 
         Returns
         -------
