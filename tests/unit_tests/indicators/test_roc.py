@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.roc import RateOfChange
-from tests.test_kit.series import BatterySeries
 
 
 class RateOfChangeTests(unittest.TestCase):
@@ -26,21 +25,16 @@ class RateOfChangeTests(unittest.TestCase):
         # Arrange
         self.roc = RateOfChange(3)
 
-    def test_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("RateOfChange", self.roc.name)
 
-    def test_str(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("RateOfChange(3)", str(self.roc))
-
-    def test_repr(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.roc).startswith("<RateOfChange(3) object at"))
-        self.assertTrue(repr(self.roc).endswith(">"))
+        self.assertEqual("RateOfChange(3)", repr(self.roc))
 
     def test_period(self):
         # Act
@@ -144,18 +138,4 @@ class RateOfChangeTests(unittest.TestCase):
         self.roc.reset()
 
         # Assert
-        self.assertEqual(0, self.roc.value)  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.roc.update_raw(point)
-            output.append(self.roc.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
-        print(self.roc.value)
+        self.assertEqual(0, self.roc.value)

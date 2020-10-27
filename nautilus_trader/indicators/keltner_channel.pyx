@@ -24,11 +24,10 @@ from nautilus_trader.indicators.atr cimport AverageTrueRange
 
 cdef class KeltnerChannel(Indicator):
     """
-    An indicator which provides a Keltner channel. The Keltner channel is a
-    volatility based envelope set above and below a central moving average.
-    Traditionally the middle band is an EMA based on the typical price
-    ((high + low + close) / 3), the upper band is the middle band plus the ATR.
-    The lower band is the middle band minus the ATR.
+    The Keltner channel is a volatility based envelope set above and below a
+    central moving average. Traditionally the middle band is an EMA based on the
+    typical price (high + low + close) / 3, the upper band is the middle band
+    plus the ATR. The lower band is the middle band minus the ATR.
     """
 
     def __init__(
@@ -128,7 +127,7 @@ cdef class KeltnerChannel(Indicator):
         self.value_lower_band = self._moving_average.value - (self._atr.value * self.k_multiplier)
 
         # Initialization logic
-        if not self.initialized:
+        if not self._initialized:
             self._set_has_inputs(True)
             if self._moving_average.initialized:
                 self._set_initialized(True)

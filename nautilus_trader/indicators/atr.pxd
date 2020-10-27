@@ -18,7 +18,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class AverageTrueRange(Indicator):
-    cdef MovingAverage _moving_average
+    cdef MovingAverage _ma
     cdef bint _use_previous
     cdef double _value_floor
     cdef double _previous_close

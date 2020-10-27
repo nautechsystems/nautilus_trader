@@ -13,12 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import unittest
 
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.keltner_channel import KeltnerChannel
-from tests.test_kit.series import BatterySeries
 
 
 class KeltnerChannelTests(unittest.TestCase):
@@ -28,22 +26,16 @@ class KeltnerChannelTests(unittest.TestCase):
         # Arrange
         self.kc = KeltnerChannel(10, 2.5, MovingAverageType.EXPONENTIAL, MovingAverageType.SIMPLE)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("KeltnerChannel", self.kc.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kc))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.kc).startswith(
-            "<KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0) object at"))
-        self.assertTrue(repr(self.kc).endswith('>'))
+        self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kc))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -107,22 +99,3 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         self.kc.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output1 = []
-        output2 = []
-        output3 = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.kc.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
-            output1.append(self.kc.value_upper_band)
-            output2.append(self.kc.value_middle_band)
-            output3.append(self.kc.value_lower_band)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output1))
-        self.assertEqual(len(battery_signal), len(output2))
-        self.assertEqual(len(battery_signal), len(output3))

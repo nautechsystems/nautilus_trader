@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import unittest
 
 from nautilus_trader.indicators.stochastics import Stochastics
-from tests.test_kit.series import BatterySeries
 
 
 class StochasticsTests(unittest.TestCase):
@@ -27,22 +25,16 @@ class StochasticsTests(unittest.TestCase):
         # Arrange
         self.stochastics = Stochastics(14, 3)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("Stochastics", self.stochastics.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("Stochastics(14, 3)", str(self.stochastics))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.stochastics).startswith(
-            "<Stochastics(14, 3) object at"))
-        self.assertTrue(repr(self.stochastics).endswith(">"))
+        self.assertEqual("Stochastics(14, 3)", repr(self.stochastics))
 
     def test_period_k_returns_expected_value(self):
         # Act
@@ -123,16 +115,3 @@ class StochasticsTests(unittest.TestCase):
         # Assert
         self.assertEqual(0., self.stochastics.value_k)
         self.assertEqual(0., self.stochastics.value_d)
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.stochastics.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
-            output.append(self.stochastics.value_d)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))

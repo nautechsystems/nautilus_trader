@@ -118,7 +118,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         self._increment_input()
         self._inputs.append(value)
 
-        if self.initialized or self.weights is None:
+        if self._initialized or self.weights is None:
             self.value = np.average(self._inputs, weights=self.weights, axis=0)
         else:
             self.value = np.average(self._inputs, weights=self.weights[-len(self._inputs):], axis=0)
