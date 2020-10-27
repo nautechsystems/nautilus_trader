@@ -53,21 +53,83 @@ cdef class Clock:
         self._stack = None
         self._default_handler = None
 
-        self.timer_count = 0
-        self.next_event_time = None
-        self.next_event_name = None
-        self.is_default_handler_registered = False
+        self._timer_count = 0
+        self._next_event_time = None
+        self._next_event_name = None
 
     @property
     def timer_names(self):
         """
+        The timer names held by the clock.
+
         Returns
         -------
         list[str]
-            The timer labels held by the clock.
 
         """
         return list(self._timers.keys())
+
+    @property
+    def timer_count(self):
+        """
+        The number of timers active in the clock.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._timer_count
+
+    @property
+    def next_event_time(self):
+        """
+        The timestamp of the next time event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._next_event_time
+
+    @property
+    def next_event_name(self):
+        """
+        The name of the next time event.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._next_event_name
+
+    @property
+    def is_test_clock(self):
+        """
+        If the clock is a `TestClock`.
+
+        Returns
+        -------
+        bool
+            True if clock is of type `TestClock`, else False.
+
+        """
+        return self._is_test_clock
+
+    @property
+    def is_default_handler_registered(self):
+        """
+        If the clock has a default handler registered.
+
+        Returns
+        -------
+        bool
+            True if default handler registered, else False.
+
+        """
+        return self._default_handler is not None
 
     cpdef datetime utc_now(self):
         """
@@ -156,7 +218,6 @@ cdef class Clock:
         Condition.not_none(handler, "handler")
 
         self._default_handler = handler
-        self.is_default_handler_registered = True
 
     cpdef void set_time_alert(
             self,
@@ -346,9 +407,9 @@ cdef class Clock:
         self._update_timing()
 
     cdef void _update_stack(self) except *:
-        self.timer_count = len(self._timers)
+        self._timer_count = len(self._timers)
 
-        if self.timer_count > 0:
+        if self._timer_count > 0:
             # The call to np.asarray here looks inefficient, however the intention
             # is that its only called when a timer is added or removed only.
             # This then allows the construction of an efficient Timer[:] memory view.
@@ -359,22 +420,22 @@ cdef class Clock:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef inline void _update_timing(self) except *:
-        if self.timer_count == 0:
-            self.next_event_time = None
+        if self._timer_count == 0:
+            self._next_event_time = None
             return
-        elif self.timer_count == 1:
-            self.next_event_time = self._stack[0].next_time
+        elif self._timer_count == 1:
+            self._next_event_time = self._stack[0].next_time
             return
 
         cdef datetime next_time = self._stack[0].next_time
         cdef datetime observed
         cdef int i
-        for i in range(self.timer_count - 1):
+        for i in range(self._timer_count - 1):
             observed = self._stack[i + 1].next_time
             if observed < next_time:
                 next_time = observed
 
-        self.next_event_time = next_time
+        self._next_event_time = next_time
 
 
 cdef class TestClock(Clock):
@@ -396,7 +457,7 @@ cdef class TestClock(Clock):
         super().__init__(TestUUIDFactory())
 
         self._time = initial_time
-        self.is_test_clock = True
+        self._is_test_clock = True
 
     cpdef datetime utc_now(self):
         """
@@ -436,7 +497,7 @@ cdef class TestClock(Clock):
 
         cdef list events = []
 
-        if self.timer_count == 0 or to_time < self.next_event_time:
+        if self._timer_count == 0 or to_time < self._next_event_time:
             self._time = to_time
             return events  # No timer events to iterate
 

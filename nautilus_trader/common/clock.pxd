@@ -32,54 +32,10 @@ cdef class Clock:
     cdef Timer[:] _stack
     cdef object _default_handler
 
-    cdef readonly int timer_count
-    """
-    Returns
-    -------
-    int
-        The number of timers active in the clock.
-
-    """
-
-    cdef readonly datetime next_event_time
-    """
-    Returns
-    -------
-    datetime
-        The datetime of the next time event.
-
-    """
-
-    cdef readonly str next_event_name
-    """
-    Returns
-    -------
-    str
-        The name of the next time event.
-
-    """
-
-    cdef readonly bint is_test_clock
-    """
-    Return a value indicating whether the clock is a `TestClock`.
-
-    Returns
-    -------
-    bool
-        True if clock is of type `TestClock`, else False.
-
-    """
-
-    cdef readonly bint is_default_handler_registered
-    """
-    Return a value indicating whether the clock has a default handler registered.
-
-    Returns
-    -------
-    bool
-        True if default handler registered, else False.
-
-    """
+    cdef bint _is_test_clock
+    cdef int _timer_count
+    cdef datetime _next_event_time
+    cdef str _next_event_name
 
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz)
