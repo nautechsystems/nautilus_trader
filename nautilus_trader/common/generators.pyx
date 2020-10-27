@@ -64,10 +64,22 @@ cdef class IdentifierGenerator:
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
-        self.prefix = prefix
-        self.id_tag_trader = id_tag_trader
-        self.id_tag_strategy = id_tag_strategy
-        self.count = initial_count
+        self._prefix = prefix
+        self._id_tag_trader = id_tag_trader
+        self._id_tag_strategy = id_tag_strategy
+        self._count = initial_count
+
+    @property
+    def count(self):
+        """
+        The count of identifiers generated.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._count
 
     cpdef void set_count(self, int count) except *:
         """
@@ -79,14 +91,14 @@ cdef class IdentifierGenerator:
             The count to set.
 
         """
-        self.count = count
+        self._count = count
 
     cpdef void reset(self) except *:
         """
         Reset the identifier generator by setting all stateful values to their
         default value.
         """
-        self.count = 0
+        self._count = 0
 
     cdef str _generate(self):
         """
@@ -97,13 +109,13 @@ cdef class IdentifierGenerator:
         str
 
         """
-        self.count += 1
+        self._count += 1
 
-        return (f"{self.prefix}-"
+        return (f"{self._prefix}-"
                 f"{self._get_datetime_tag()}-"
-                f"{self.id_tag_trader.value}-"
-                f"{self.id_tag_strategy.value}-"
-                f"{self.count}")
+                f"{self._id_tag_trader.value}-"
+                f"{self._id_tag_strategy.value}-"
+                f"{self._count}")
 
     cdef str _get_datetime_tag(self):
         """
@@ -189,7 +201,7 @@ cdef class PositionIdGenerator:
             The position identifier tag for the trader.
 
         """
-        self.id_tag_trader = id_tag_trader
+        self._id_tag_trader = id_tag_trader
         self._counts = {}
 
     cpdef void reset(self) except *:
@@ -246,4 +258,4 @@ cdef class PositionIdGenerator:
 
         cdef str flipped_str = 'F' if flipped else ''
 
-        return PositionId(f"P-{self.id_tag_trader.value}-{symbol.value}-{count}{flipped_str}")
+        return PositionId(f"P-{self._id_tag_trader.value}-{symbol.value}-{count}{flipped_str}")

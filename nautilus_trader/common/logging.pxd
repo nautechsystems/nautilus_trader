@@ -113,9 +113,7 @@ cdef class Logger:
 
 cdef class LoggerAdapter:
     cdef Logger _logger
-
-    cdef readonly bint bypassed
-    cdef readonly str component_name
+    cdef str _component_name
 
     cpdef Logger get_logger(self)
     cpdef void verbose(self, str message) except *

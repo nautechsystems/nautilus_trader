@@ -2,11 +2,7 @@ Redis
 =====
 
 .. automodule:: nautilus_trader.redis
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Execution
 ---------
