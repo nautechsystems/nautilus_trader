@@ -40,5 +40,5 @@ class UUIDPerformanceTests(unittest.TestCase):
 
     def test_make_nautilus_uuid(self):
         result = PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 3, 100000)
-        # ~235ms (235752μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~215ms (215908μs) minimum of 3 runs @ 100,000 iterations each run.
         self.assertTrue(result < 1.2)
