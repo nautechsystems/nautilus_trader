@@ -27,19 +27,18 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class Trader:
+    cdef TraderId _id
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
-    cdef FiniteStateMachine _fsm
+    cdef list _strategies
 
-    cdef readonly TraderId id
-    cdef readonly Portfolio portfolio
-    cdef readonly PerformanceAnalyzer analyzer
-    cdef readonly list strategies
-    cdef readonly set strategy_ids
+    cdef Portfolio _portfolio
+    cdef PerformanceAnalyzer _analyzer
 
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *

@@ -31,12 +31,13 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
-from tests.test_kit.stubs import TestStubs
 
 if __name__ == "__main__":
-    USDJPY = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+    symbol = Symbol('USD/JPY', Venue('FXCM'))
+    USDJPY = InstrumentLoader.default_fx_ccy(symbol)
 
     data = BacktestDataContainer()
     data.add_instrument(USDJPY)
@@ -44,13 +45,13 @@ if __name__ == "__main__":
         USDJPY.symbol,
         BarAggregation.MINUTE,
         PriceType.BID,
-        TestDataProvider.usdjpy_1min_bid(),
+        TestDataProvider.usdjpy_1min_bid(),  # Stub data from the test kit
     )
     data.add_bars(
         USDJPY.symbol,
         BarAggregation.MINUTE,
         PriceType.ASK,
-        TestDataProvider.usdjpy_1min_ask(),
+        TestDataProvider.usdjpy_1min_ask(),  # Stub data from the test kit
     )
 
     strategies = [EMACross(
