@@ -136,109 +136,21 @@ cdef class Order:
         self._events.append(event)
 
     def __eq__(self, Order other) -> bool:
-        return self.cl_ord_id == other.cl_ord_id
+        return self._cl_ord_id == other.cl_ord_id
 
     def __ne__(self, Order other) -> bool:
-        return self.cl_ord_id != other.cl_ord_id
+        return self._cl_ord_id != other.cl_ord_id
 
     def __hash__(self) -> int:
-        return hash(self.cl_ord_id.value)
+        return hash(self._cl_ord_id.value)
 
     def __repr__(self) -> str:
         cdef str id_string = f"id={self.id.value}, " if self.id else ""
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id.value}, "
+                f"cl_ord_id={self._cl_ord_id.value}, "
                 f"{id_string}"
                 f"state={self._fsm.state_string()}, "
                 f"{self.status_string()})")
-
-    @staticmethod
-    cdef OrderSide opposite_side_c(OrderSide side) except *:
-        """
-        Return the opposite order side from the given side.
-
-        Parameters
-        ----------
-        side : OrderSide
-            The original order side.
-
-        Returns
-        -------
-        OrderSide
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED.
-
-        """
-        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
-
-        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
-
-    @staticmethod
-    def opposite_side(OrderSide side) -> OrderSide:
-        """
-        Return the opposite order side from the given side.
-
-        Parameters
-        ----------
-        side : OrderSide
-            The original order side.
-
-        Returns
-        -------
-        OrderSide
-
-        """
-        return Order.opposite_side_c(side)
-
-    @staticmethod
-    cdef inline OrderSide flatten_side_c(PositionSide side) except *:
-        """
-        Return the order side needed to flatten a position from the given side.
-
-        Parameters
-        ----------
-        side : PositionSide
-            The position side to flatten.
-
-        Returns
-        -------
-        OrderSide
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED or FLAT.
-
-        """
-        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
-        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
-
-        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
-
-    @staticmethod
-    def flatten_side(PositionSide side) -> OrderSide:
-        """
-        Return the order side needed to flatten a position from the given side.
-
-        Parameters
-        ----------
-        side : PositionSide
-            The position side to flatten.
-
-        Returns
-        -------
-        OrderSide
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED or FLAT.
-
-        """
-        return Order.flatten_side_c(side)
 
     @property
     def cl_ord_id(self):
@@ -515,7 +427,7 @@ cdef class Order:
             True if BUY, else False.
 
         """
-        return self.side == OrderSide.BUY
+        return self._side == OrderSide.BUY
 
     @property
     def is_sell(self):
@@ -528,7 +440,7 @@ cdef class Order:
             True if SELL, else False.
 
         """
-        return self.side == OrderSide.SELL
+        return self._side == OrderSide.SELL
 
     @property
     def is_working(self):
@@ -555,6 +467,94 @@ cdef class Order:
 
         """
         return self._fsm.state in _COMPLETED_STATES
+
+    @staticmethod
+    cdef OrderSide opposite_side_c(OrderSide side) except *:
+        """
+        Return the opposite order side from the given side.
+
+        Parameters
+        ----------
+        side : OrderSide
+            The original order side.
+
+        Returns
+        -------
+        OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED.
+
+        """
+        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
+
+        return OrderSide.BUY if side == OrderSide.SELL else OrderSide.SELL
+
+    @staticmethod
+    def opposite_side(OrderSide side) -> OrderSide:
+        """
+        Return the opposite order side from the given side.
+
+        Parameters
+        ----------
+        side : OrderSide
+            The original order side.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return Order.opposite_side_c(side)
+
+    @staticmethod
+    cdef inline OrderSide flatten_side_c(PositionSide side) except *:
+        """
+        Return the order side needed to flatten a position from the given side.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The position side to flatten.
+
+        Returns
+        -------
+        OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+
+        """
+        Condition.not_equal(side, PositionSide.UNDEFINED, "side", "PositionSide.UNDEFINED")
+        Condition.not_equal(side, PositionSide.FLAT, "side", "PositionSide.FLAT")
+
+        return OrderSide.BUY if side == PositionSide.SHORT else OrderSide.SELL
+
+    @staticmethod
+    def flatten_side(PositionSide side) -> OrderSide:
+        """
+        Return the order side needed to flatten a position from the given side.
+
+        Parameters
+        ----------
+        side : PositionSide
+            The position side to flatten.
+
+        Returns
+        -------
+        OrderSide
+
+        Raises
+        ------
+        ValueError
+            If side is UNDEFINED or FLAT.
+
+        """
+        return Order.flatten_side_c(side)
 
     cdef str state_string(self):
         """
@@ -598,7 +598,7 @@ cdef class Order:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(self.cl_ord_id, event.cl_ord_id, "id", "event.order_id")
+        Condition.equal(self._cl_ord_id, event.cl_ord_id, "id", "event.order_id")
         if self.account_id:
             Condition.equal(self.account_id, event.account_id, "account_id", "event.account_id")
 
@@ -813,10 +813,10 @@ cdef class PassiveOrder(Order):
         str
 
         """
-        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
-                f"{order_type_to_string(self.type)} @ {self.price} "
-                f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
+        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self._expire_time)}"
+        return (f"{order_side_to_string(self._side)} {self._quantity.to_string()} {self._symbol} "
+                f"{order_type_to_string(self._type)} @ {self._price} "
+                f"{time_in_force_to_string(self._time_in_force)}{expire_time}")
 
     cdef void _modified(self, OrderModified event) except *:
         self._id = event.order_id
@@ -956,9 +956,9 @@ cdef class MarketOrder(Order):
         str
 
         """
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
-                f"{order_type_to_string(self.type)} "
-                f"{time_in_force_to_string(self.time_in_force)}")
+        return (f"{order_side_to_string(self._side)} {self._quantity.to_string()} {self._symbol} "
+                f"{order_type_to_string(self._type)} "
+                f"{time_in_force_to_string(self._time_in_force)}")
 
     cdef void _modified(self, OrderModified event) except *:
         raise NotImplemented("Cannot modify a market order")

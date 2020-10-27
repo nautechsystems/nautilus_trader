@@ -223,8 +223,8 @@ cdef class Response(Message):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"correlation_id={self._correlation_id}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
+                f"id={self._id}, "
+                f"timestamp={self._timestamp})")
 
     @property
     def correlation_id(self):

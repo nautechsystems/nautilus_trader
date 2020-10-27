@@ -1460,7 +1460,7 @@ cdef class OrderFilled(OrderEvent):
         self._filled_qty = filled_qty
         self._cumulative_qty = cumulative_qty
         self._leaves_qty = leaves_qty
-        self._is_partial_fill = self.leaves_qty > 0
+        self._is_partial_fill = self._leaves_qty > 0
         self._avg_price = avg_price
         self._commission = commission
         self._liquidity_side = liquidity_side
@@ -1468,7 +1468,7 @@ cdef class OrderFilled(OrderEvent):
         self._quote_currency = quote_currency
         self._is_inverse = is_inverse
         self._execution_time = execution_time
-        self._is_completion_trigger = not self.is_partial_fill
+        self._is_completion_trigger = not self._is_partial_fill
 
     cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id):
         """

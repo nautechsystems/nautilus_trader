@@ -85,17 +85,17 @@ cdef class TradingStrategy:
         Condition.valid_string(order_id_tag, "order_id_tag")
 
         # Identifiers
-        self.id = StrategyId(type(self).__name__, order_id_tag)
-        self.trader_id = None     # Initialized when registered with a trader
+        self._id = StrategyId(type(self).__name__, order_id_tag)
+        self._trader_id = None     # Initialized when registered with a trader
 
         # Public components
-        self.clock = None          # Initialized when registered with a trader
-        self.uuid_factory = None   # Initialized when registered with a trader
-        self.log = None            # Initialized when registered with a trader
-        self.data = None           # Initialized when registered with the data engine
-        self.execution = None      # Initialized when registered with the execution engine
-        self.portfolio = None      # Initialized when registered with the execution engine
-        self.order_factory = None  # Initialized when registered with a trader
+        self._clock = None          # Initialized when registered with a trader
+        self._uuid_factory = None   # Initialized when registered with a trader
+        self._log = None            # Initialized when registered with a trader
+        self._data = None           # Initialized when registered with the data engine
+        self._execution = None      # Initialized when registered with the execution engine
+        self._portfolio = None      # Initialized when registered with the execution engine
+        self._order_factory = None  # Initialized when registered with a trader
 
         # Private components
         self._data_engine = None   # Initialized when registered with the data engine
@@ -109,24 +109,151 @@ cdef class TradingStrategy:
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
     def __eq__(self, TradingStrategy other) -> bool:
-        return self.id == other.id
+        return self._id == other.id
 
     def __ne__(self, TradingStrategy other) -> bool:
-        return self.id != other.id
+        return self._id != other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self._id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value})"
+        return f"{type(self).__name__}(id={self._id.value})"
+
+    @property
+    def id(self):
+        """
+        The trading strategies identifier.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._id
+
+    @property
+    def trader_id(self):
+        """
+        The trader identifier associated with the trading strategy.
+
+        Returns
+        -------
+        TraderId or None
+            If the strategy has not been registered with a `Trader`, then will
+            return None.
+
+        """
+        return self._trader_id
+
+    @property
+    def clock(self):
+        """
+        The trading strategies clock.
+
+        Returns
+        -------
+        Clock or None
+            If the strategy has not been registered with a `Trader`, then will
+            return None.
+
+        """
+        return self._clock
+
+    @property
+    def uuid_factory(self):
+        """
+        The trading strategies UUID factory.
+
+        Returns
+        -------
+        UUIDFactory or None
+            If the strategy has not been registered with a `Trader`, then will
+            return None.
+
+        """
+        return self._uuid_factory
+
+    @property
+    def log(self):
+        """
+        The trading strategies logger adapter.
+
+        Returns
+        -------
+        LoggerAdapter
+            If the strategy has not been registered with a `Trader`, then will
+            return None.
+
+        """
+        return self._log
+
+    @property
+    def data(self):
+        """
+        The read-only cache of the `DataEngine` the strategy is registered
+        with.
+
+        Returns
+        -------
+        DataCacheFacade
+            If the strategy has not been registered with a `DataEngine`, then
+            will return None.
+
+        """
+        return self._data
+
+    @property
+    def execution(self):
+        """
+        The read-only cache of the `ExecutionEngine` the strategy is registered
+        with.
+
+        Returns
+        -------
+        ExecutionCacheFacade or None
+            If the strategy has not been registered with an `ExecutionEngine`,
+            then will return None.
+
+        """
+        return self._execution
+
+    @property
+    def portfolio(self):
+        """
+        The read-only portfolio the trading strategy is registered with.
+
+        Returns
+        -------
+        PortfolioFacade or None
+            If the strategy has not been registered with an `ExecutionEngine`,
+            then will return None.
+
+        """
+        return self._portfolio
+
+    @property
+    def order_factory(self):
+        """
+        The trading strategies order factory.
+
+        Returns
+        -------
+        OrderFactory or None
+            If the strategy has not been registered with a `Trader`,
+            then will return None.
+
+        """
+        return self._order_factory
 
     @property
     def state(self):
         """
+        The trading strategies current state.
+
         Returns
         -------
         ComponentState
-            the trading strategies current state.
 
         """
         return self._fsm.state
@@ -285,17 +412,17 @@ cdef class TradingStrategy:
         Condition.not_none(uuid_factory, "uuid_factory")
         Condition.not_none(logger, "logger")
 
-        self.trader_id = trader_id
-        self.clock = clock
-        self.clock.register_default_handler(self.handle_event)
-        self.uuid_factory = uuid_factory
-        self.log = LoggerAdapter(self.id.value, logger)
+        self._trader_id = trader_id
+        self._clock = clock
+        self._clock.register_default_handler(self.handle_event)
+        self._uuid_factory = uuid_factory
+        self._log = LoggerAdapter(self._id.value, logger)
 
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
+        self._order_factory = OrderFactory(
+            trader_id=self._trader_id,
+            strategy_id=self._id,
+            clock=self._clock,
+            uuid_factory=self._uuid_factory,
         )
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
@@ -311,7 +438,7 @@ cdef class TradingStrategy:
         Condition.not_none(engine, "engine")
 
         self._data_engine = engine
-        self.data = engine.cache
+        self._data = engine.cache
 
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *:
         """
@@ -326,8 +453,8 @@ cdef class TradingStrategy:
         Condition.not_none(engine, "engine")
 
         self._exec_engine = engine
-        self.execution = engine.cache
-        self.portfolio = engine.portfolio
+        self._execution = engine.cache
+        self._portfolio = engine.portfolio
 
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
@@ -354,7 +481,7 @@ cdef class TradingStrategy:
         if indicator not in self._indicators_for_quotes[symbol]:
             self._indicators_for_quotes[symbol].append(indicator)
         else:
-            self.log.error(f"Indicator {indicator} already registered for {symbol} quote ticks.")
+            self._log.error(f"Indicator {indicator} already registered for {symbol} quote ticks.")
 
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
@@ -381,7 +508,7 @@ cdef class TradingStrategy:
         if indicator not in self._indicators_for_trades[symbol]:
             self._indicators_for_trades[symbol].append(indicator)
         else:
-            self.log.error(f"Indicator {indicator} already registered for {symbol} trade ticks.")
+            self._log.error(f"Indicator {indicator} already registered for {symbol} trade ticks.")
 
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *:
         """
@@ -408,7 +535,7 @@ cdef class TradingStrategy:
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
         else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
+            self._log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
 # -- HANDLER METHODS -------------------------------------------------------------------------------
 
@@ -440,7 +567,7 @@ cdef class TradingStrategy:
             try:
                 self.on_quote_tick(tick)
             except Exception as ex:
-                self.log.exception(ex)
+                self._log.exception(ex)
                 self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
@@ -461,9 +588,9 @@ cdef class TradingStrategy:
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
         if length > 0:
-            self.log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
+            self._log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
         else:
-            self.log.warning("Received <QuoteTick[]> data with no ticks.")
+            self._log.warning("Received <QuoteTick[]> data with no ticks.")
 
         cdef int i
         for i in range(length):
@@ -497,7 +624,7 @@ cdef class TradingStrategy:
             try:
                 self.on_trade_tick(tick)
             except Exception as ex:
-                self.log.exception(ex)
+                self._log.exception(ex)
                 self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
@@ -518,9 +645,9 @@ cdef class TradingStrategy:
         cdef Symbol symbol = ticks[0].symbol if length > 0 else None
 
         if length > 0:
-            self.log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
+            self._log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
         else:
-            self.log.warning("Received <TradeTick[]> data with no ticks.")
+            self._log.warning("Received <TradeTick[]> data with no ticks.")
 
         cdef int i
         for i in range(length):
@@ -557,7 +684,7 @@ cdef class TradingStrategy:
             try:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
-                self.log.exception(ex)
+                self._log.exception(ex)
                 self.stop()  # Halt strategy
 
     @cython.boundscheck(False)
@@ -579,7 +706,7 @@ cdef class TradingStrategy:
 
         cdef int length = len(bars)
 
-        self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
+        self._log.info(f"Received <Bar[{length}]> data for {bar_type}.")
 
         if length > 0 and bars[0].timestamp > bars[length - 1].timestamp:
             raise RuntimeError("Cannot handle <Bar[]> data (incorrectly sorted).")
@@ -604,7 +731,7 @@ cdef class TradingStrategy:
             try:
                 self.on_data(data)
             except Exception as ex:
-                self.log.exception(ex)
+                self._log.exception(ex)
                 self.stop()  # Halt strategy
 
     cpdef void handle_event(self, Event event) except *:
@@ -620,15 +747,15 @@ cdef class TradingStrategy:
         Condition.not_none(event, "event")
 
         if isinstance(event, (OrderRejected, OrderCancelReject)):
-            self.log.warning(f"{RECV}{EVT} {event}.")
+            self._log.warning(f"{RECV}{EVT} {event}.")
         else:
-            self.log.info(f"{RECV}{EVT} {event}.")
+            self._log.info(f"{RECV}{EVT} {event}.")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_event(event)
             except Exception as ex:
-                self.log.exception(ex)
+                self._log.exception(ex)
                 self.stop()  # Halt strategy
 
 # -- DATA METHODS ----------------------------------------------------------------------------------
@@ -644,7 +771,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef RequestData request = RequestData(
             data_type=QuoteTick,
@@ -652,11 +779,11 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
-                LIMIT: self.data.tick_capacity,
+                LIMIT: self._data.tick_capacity,
                 CALLBACK: self.handle_quote_ticks,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(request)
@@ -672,7 +799,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef RequestData request = RequestData(
             data_type=TradeTick,
@@ -680,11 +807,11 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
-                LIMIT: self.data.tick_capacity,
+                LIMIT: self._data.tick_capacity,
                 CALLBACK: self.handle_trade_ticks,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(request)
@@ -700,7 +827,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef RequestData request = RequestData(
             data_type=Bar,
@@ -708,11 +835,11 @@ cdef class TradingStrategy:
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
-                LIMIT: self.data.bar_capacity,
+                LIMIT: self._data.bar_capacity,
                 CALLBACK: self.handle_bars,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(request)
@@ -736,13 +863,13 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 HANDLER: self.handle_quote_tick,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(subscribe)
 
-        self.log.info(f"Subscribed to {symbol} <QuoteTick> data.")
+        self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -755,7 +882,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe subscribe = Subscribe(
             data_type=TradeTick,
@@ -763,13 +890,13 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 HANDLER: self.handle_trade_tick,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(subscribe)
 
-        self.log.info(f"Subscribed to {symbol} <TradeTick> data.")
+        self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -790,13 +917,13 @@ cdef class TradingStrategy:
                 BAR_TYPE: bar_type,
                 HANDLER: self.handle_bar,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(subscribe)
 
-        self.log.info(f"Subscribed to {bar_type} <Bar> data.")
+        self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
@@ -809,7 +936,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe subscribe = Subscribe(
             data_type=Instrument,
@@ -817,13 +944,13 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 HANDLER: self.handle_data,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(subscribe)
 
-        self.log.info(f"Subscribed to {symbol} <Instrument> data.")
+        self._log.info(f"Subscribed to {symbol} <Instrument> data.")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -844,13 +971,13 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 HANDLER: self.handle_quote_tick,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(unsubscribe)
 
-        self.log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
+        self._log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -863,7 +990,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
             data_type=TradeTick,
@@ -871,13 +998,13 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 HANDLER: self.handle_trade_tick,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(unsubscribe)
 
-        self.log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
+        self._log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -890,7 +1017,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data_client")
+        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
             data_type=Bar,
@@ -898,13 +1025,13 @@ cdef class TradingStrategy:
                 BAR_TYPE: bar_type,
                 HANDLER: self.handle_bar,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(unsubscribe)
 
-        self.log.info(f"Unsubscribed from {bar_type} <Bar> data.")
+        self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -925,13 +1052,13 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 HANDLER: self.handle_data,
             },
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
         )
 
         self._data_engine.execute(unsubscribe)
 
-        self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
+        self._log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
 # -- INDICATOR METHODS -----------------------------------------------------------------------------
 
@@ -972,29 +1099,29 @@ cdef class TradingStrategy:
         try:
             self._fsm.trigger(ComponentTrigger.START)
         except InvalidStateTrigger as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
             return
 
-        self.log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         if self._data_engine is None:
-            self.log.error("Cannot start strategy (the data engine is not registered).")
+            self._log.error("Cannot start strategy (the data engine is not registered).")
             return
 
         if self._exec_engine is None:
-            self.log.error("Cannot start strategy (the execution engine is not registered).")
+            self._log.error("Cannot start strategy (the execution engine is not registered).")
             return
 
         try:
             self.on_start()
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             self.stop()
             return
 
         self._fsm.trigger(ComponentTrigger.RUNNING)
-        self.log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void stop(self) except *:
         """
@@ -1005,26 +1132,26 @@ cdef class TradingStrategy:
         try:
             self._fsm.trigger(ComponentTrigger.STOP)
         except InvalidStateTrigger as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             return
 
-        self.log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         # Clean up clock
-        cdef list timer_names = self.clock.timer_names
-        self.clock.cancel_all_timers()
+        cdef list timer_names = self._clock.timer_names
+        self._clock.cancel_all_timers()
 
         cdef str name
         for name in timer_names:
-            self.log.info(f"Cancelled Timer(name={name}).")
+            self._log.info(f"Cancelled Timer(name={name}).")
 
         try:
             self.on_stop()
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
 
         self._fsm.trigger(ComponentTrigger.STOPPED)
-        self.log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void resume(self) except *:
         """
@@ -1035,21 +1162,21 @@ cdef class TradingStrategy:
         try:
             self._fsm.trigger(ComponentTrigger.RESUME)
         except InvalidStateTrigger as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             self.stop()  # Do not start strategy in an invalid state
             return
 
-        self.log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         try:
             self.on_resume()
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             self.stop()
             return
 
         self._fsm.trigger(ComponentTrigger.RUNNING)
-        self.log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void reset(self) except *:
         """
@@ -1061,13 +1188,13 @@ cdef class TradingStrategy:
         try:
             self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             return
 
-        self.log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
-        if self.order_factory:
-            self.order_factory.reset()
+        if self._order_factory:
+            self._order_factory.reset()
 
         self._indicators.clear()
         self._indicators_for_quotes.clear()
@@ -1077,10 +1204,10 @@ cdef class TradingStrategy:
         try:
             self.on_reset()
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self.log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -1089,29 +1216,29 @@ cdef class TradingStrategy:
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
             return
 
-        self.log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         try:
             self.on_dispose()
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
 
         self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self.log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef dict save(self):
         """
         Return the strategy state dictionary to be saved.
         """
-        cpdef dict state = {"OrderIdCount": self.order_factory.count()}
+        cpdef dict state = {"OrderIdCount": self._order_factory.count()}
 
         try:
             user_state = self.on_save()
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
 
         return {**state, **user_state}
 
@@ -1130,13 +1257,13 @@ cdef class TradingStrategy:
         order_id_count = state.get(b'OrderIdCount')
         if order_id_count is not None:
             order_id_count = int(order_id_count.decode("utf8"))
-            self.order_factory.set_count(order_id_count)
-            self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
+            self._order_factory.set_count(order_id_count)
+            self._log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
 
         try:
             self.on_load(state)
         except Exception as ex:
-            self.log.exception(ex)
+            self._log.exception(ex)
 
     cpdef void submit_order(self, Order order, PositionId position_id=None) except *:
         """
@@ -1151,7 +1278,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "trader_id")
+        Condition.not_none(self._trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "exec_engine")
 
         cdef Position position
@@ -1159,24 +1286,26 @@ cdef class TradingStrategy:
             # Null object pattern
             position_id = PositionId.null()
 
-        cdef AccountId account_id = self.execution.account_id(order.symbol.venue)
+        cdef AccountId account_id = self._execution.account_id(order.symbol.venue)
         if account_id is None:
-            self.log.error(f"Cannot submit {order} "
-                           f"(no account registered for {order.symbol.venue}).")
+            self._log.error(
+                f"Cannot submit {order} "
+                f"(no account registered for {order.symbol.venue})."
+            )
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
             order.symbol.venue,
-            self.trader_id,
+            self._trader_id,
             account_id,
-            self.id,
+            self._id,
             position_id,
             order,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        self._log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
@@ -1191,26 +1320,28 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bracket_order, "bracket_order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "_exec_engine")
+        Condition.not_none(self._trader_id, "trader_id")
+        Condition.not_none(self._exec_engine, "exec_engine")
 
-        cdef AccountId account_id = self.execution.account_id(bracket_order.entry.symbol.venue)
+        cdef AccountId account_id = self._execution.account_id(bracket_order.entry.symbol.venue)
         if account_id is None:
-            self.log.error(f"Cannot submit {bracket_order} "
-                           f"(no account registered for {bracket_order.entry.symbol.venue}).")
+            self._log.error(
+                f"Cannot submit {bracket_order} "
+                f"(no account registered for {bracket_order.entry.symbol.venue})."
+            )
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             bracket_order.entry.symbol.venue,
-            self.trader_id,
+            self._trader_id,
             account_id,
-            self.id,
+            self._id,
             bracket_order,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        self._log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
     cpdef void modify_order(
@@ -1237,8 +1368,8 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "_exec_engine")
+        Condition.not_none(self._trader_id, "trader_id")
+        Condition.not_none(self._exec_engine, "exec_engine")
 
         cdef bint modifying = False  # Set validation flag (must become true)
         cdef Quantity quantity = order.quantity
@@ -1253,26 +1384,28 @@ cdef class TradingStrategy:
             price = new_price
 
         if not modifying:
-            self.log.error("Cannot send command ModifyOrder "
-                           "(both new_quantity and new_price were None).")
+            self._log.error(
+                "Cannot send command ModifyOrder "
+                "(both new_quantity and new_price were None)."
+            )
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot modify {order} (no account assigned to order yet).")
+            self._log.error(f"Cannot modify {order} (no account assigned to order yet).")
             return  # Cannot send command
 
         cdef ModifyOrder command = ModifyOrder(
             order.symbol.venue,
-            self.trader_id,
+            self._trader_id,
             order.account_id,
             order.cl_ord_id,
             quantity,
             price,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        self._log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
     cpdef void cancel_order(self, Order order) except *:
@@ -1286,23 +1419,23 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "_exec_engine")
+        Condition.not_none(self._trader_id, "trader_id")
+        Condition.not_none(self._exec_engine, "exec_engine")
 
         if order.account_id is None:
-            self.log.error(f"Cannot cancel {order} (no account assigned to order yet).")
+            self._log.error(f"Cannot cancel {order} (no account assigned to order yet).")
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
             order.symbol.venue,
-            self.trader_id,
+            self._trader_id,
             order.account_id,
             order.cl_ord_id,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
+        self._log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
     cpdef void cancel_all_orders(self, Symbol symbol) except *:
@@ -1315,10 +1448,10 @@ cdef class TradingStrategy:
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef list working_orders = self.execution.orders_working(symbol, self.id)
+        cdef list working_orders = self._execution.orders_working(symbol, self._id)
 
         if not working_orders:
-            self.log.info("No working orders to cancel.")
+            self._log.info("No working orders to cancel.")
             return
 
         cdef Order order
@@ -1340,12 +1473,14 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "_exec_engine")
 
         if position.is_closed:
-            self.log.warning(f"Cannot flatten {position} "
-                             f"(the position is already closed).")
+            self._log.warning(
+                f"Cannot flatten {position} "
+                f"(the position is already closed)."
+            )
             return  # Invalid command
 
         # Create flattening order
-        cdef MarketOrder order = self.order_factory.market(
+        cdef MarketOrder order = self._order_factory.market(
             position.symbol,
             Order.flatten_side_c(position.side),
             position.quantity,
@@ -1354,16 +1489,16 @@ cdef class TradingStrategy:
         # Create command
         cdef SubmitOrder submit_order = SubmitOrder(
             position.symbol.venue,
-            self.trader_id,
+            self._trader_id,
             position.account_id,
-            self.id,
+            self._id,
             position.id,
             order,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
         )
 
-        self.log.info(f"{CMD}{SENT} {submit_order}.")
+        self._log.info(f"{CMD}{SENT} {submit_order}.")
         self._exec_engine.execute(submit_order)
 
     cpdef void flatten_all_positions(self, Symbol symbol) except *:
@@ -1379,13 +1514,13 @@ cdef class TradingStrategy:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._exec_engine, "_exec_engine")
 
-        cdef list positions_open = self.execution.positions_open(symbol, self.id)
+        cdef list positions_open = self._execution.positions_open(symbol, self._id)
 
         if not positions_open:
-            self.log.info("No open positions to flatten.")
+            self._log.info("No open positions to flatten.")
             return
 
-        self.log.info(f"Flattening {len(positions_open)} open position(s)...")
+        self._log.info(f"Flattening {len(positions_open)} open position(s)...")
 
         cdef Position position
         for position in positions_open:

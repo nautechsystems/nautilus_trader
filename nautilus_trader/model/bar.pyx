@@ -192,7 +192,7 @@ cdef class BarSpecification:
         str
 
         """
-        return bar_aggregation_to_string(self.aggregation)
+        return bar_aggregation_to_string(self._aggregation)
 
     cdef str price_type_string(self):
         """
@@ -203,7 +203,7 @@ cdef class BarSpecification:
         str
 
         """
-        return price_type_to_string(self.price_type)
+        return price_type_to_string(self._price_type)
 
 
 cdef list _TIME_BARS = [
@@ -341,7 +341,7 @@ cdef class BarType:
         bool
 
         """
-        return self.spec.aggregation in _TIME_BARS
+        return self._spec.aggregation in _TIME_BARS
 
     cdef str aggregation_string(self):
         """
@@ -352,7 +352,7 @@ cdef class BarType:
         str
 
         """
-        return self.spec.aggregation_string()
+        return self._spec.aggregation_string()
 
     cdef str price_type_string(self):
         """
@@ -363,7 +363,7 @@ cdef class BarType:
         str
 
         """
-        return self.spec.price_type_string()
+        return self._spec.price_type_string()
 
 
 cdef class Bar:
@@ -436,10 +436,10 @@ cdef class Bar:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash(str(self.timestamp))
+        return hash(str(self._timestamp))
 
     def __str__(self) -> str:
-        return f"{self._open},{self._high},{self._low},{self._close},{self._volume},{format_iso8601(self.timestamp)}"
+        return f"{self._open},{self._high},{self._low},{self._close},{self._volume},{format_iso8601(self._timestamp)}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -585,4 +585,4 @@ cdef class Bar:
         str
 
         """
-        return f"{self._open},{self._high},{self._low},{self._close},{self._volume},{long(self.timestamp.timestamp())}"
+        return f"{self._open},{self._high},{self._low},{self._close},{self._volume},{long(self._timestamp.timestamp())}"

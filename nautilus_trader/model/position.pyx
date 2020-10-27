@@ -641,7 +641,7 @@ cdef class Position:
         """
         Condition.not_none(last, "last")
 
-        return Money(self.realized_pnl + self.unrealized_pnl(last), self._base_currency)
+        return Money(self._realized_pnl + self.unrealized_pnl(last), self._base_currency)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
         cdef Money realized_pnl = event.commission
@@ -651,11 +651,11 @@ cdef class Position:
         # SHORT POSITION
         elif self._relative_quantity < 0:
             self._avg_close = self._calculate_avg_close_price(event)
-            self._realized_points = self._calculate_points(self._avg_open, self.avg_close)
-            self._realized_return = self._calculate_return(self._avg_open, self.avg_close)
+            self._realized_points = self._calculate_points(self._avg_open, self._avg_close)
+            self._realized_return = self._calculate_return(self._avg_open, self._avg_close)
             realized_pnl = self._calculate_pnl(self._avg_open, event.avg_price, event.filled_qty)
 
-        self._realized_pnl = Money(self.realized_pnl + realized_pnl, self._base_currency)
+        self._realized_pnl = Money(self._realized_pnl + realized_pnl, self._base_currency)
 
         # Update quantities
         self._buy_quantity = Quantity(self._buy_quantity + event.filled_qty)
@@ -669,11 +669,11 @@ cdef class Position:
         # LONG POSITION
         elif self._relative_quantity > 0:
             self._avg_close = self._calculate_avg_close_price(event)
-            self._realized_points = self._calculate_points(self._avg_open, self.avg_close)
-            self._realized_return = self._calculate_return(self._avg_open, self.avg_close)
+            self._realized_points = self._calculate_points(self._avg_open, self._avg_close)
+            self._realized_return = self._calculate_return(self._avg_open, self._avg_close)
             realized_pnl = self._calculate_pnl(self._avg_open, event.avg_price, event.filled_qty)
 
-        self._realized_pnl = Money(self.realized_pnl + realized_pnl, self._base_currency)
+        self._realized_pnl = Money(self._realized_pnl + realized_pnl, self._base_currency)
 
         # Update quantities
         self._sell_quantity = Quantity(self._sell_quantity + event.filled_qty)
@@ -689,11 +689,11 @@ cdef class Position:
         return self._calculate_avg_price(self._avg_open, self._quantity, event)
 
     cdef inline Decimal _calculate_avg_close_price(self, OrderFilled event):
-        if not self.avg_close:
+        if not self._avg_close:
             return event.avg_price
 
         cdef Quantity close_quantity = Quantity(self._sell_quantity) if self._side == PositionSide.LONG else self._buy_quantity
-        return self._calculate_avg_price(self.avg_close, close_quantity, event)
+        return self._calculate_avg_price(self._avg_close, close_quantity, event)
 
     cdef inline Decimal _calculate_avg_price(
         self,

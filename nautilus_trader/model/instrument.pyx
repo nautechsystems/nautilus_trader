@@ -629,10 +629,10 @@ cdef class Instrument:
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+        Condition.equal(last.symbol, self._symbol, "last.symbol", "self.symbol")
 
         if self._leverage == 1:
-            return Money(0, self.base_currency)  # No margin necessary
+            return Money(0, self._base_currency)  # No margin necessary
 
         cdef Price close_price = self._get_close_price(side, last)
         cdef Decimal notional = self._calculate_notional(quantity, close_price)
@@ -674,7 +674,7 @@ cdef class Instrument:
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+        Condition.equal(last.symbol, self._symbol, "last.symbol", "self.symbol")
 
         cdef Price close_price = self._get_close_price(side, last)
         cdef Decimal notional = self._calculate_notional(quantity, close_price)
@@ -829,7 +829,7 @@ cdef class Instrument:
         return Money(commission, self._base_currency)
 
     cdef inline Decimal _calculate_notional(self, Quantity quantity, Decimal close_price):
-        cdef Decimal notional = quantity * self.multiplier
+        cdef Decimal notional = quantity * self._multiplier
 
         if self._is_inverse:
             notional *= (1 / close_price)

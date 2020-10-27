@@ -114,13 +114,13 @@ cdef class Identifier:
         return self._value < other.value
 
     def __le__(self, Identifier other) -> bool:
-        return self.value <= other.value
+        return self._value <= other.value
 
     def __gt__(self, Identifier other) -> bool:
-        return self.value > other.value
+        return self._value > other.value
 
     def __ge__(self, Identifier other) -> bool:
-        return self.value >= other.value
+        return self._value >= other.value
 
     def __hash__(self) -> int:
         # This method seems redundant as it exists on the base class, however
