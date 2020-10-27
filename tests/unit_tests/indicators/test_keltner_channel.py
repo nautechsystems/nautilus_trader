@@ -98,4 +98,7 @@ class KeltnerChannelTests(unittest.TestCase):
         self.kc.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
-        self.kc.reset()  # No assertion errors.
+        self.kc.reset()
+
+        # Assert
+        self.assertFalse(self.kc.initialized)

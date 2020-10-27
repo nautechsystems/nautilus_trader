@@ -131,4 +131,5 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         self.rsi.reset()
 
         # Assert
+        self.assertFalse(self.rsi.initialized)
         self.assertEqual(0, self.rsi.value)

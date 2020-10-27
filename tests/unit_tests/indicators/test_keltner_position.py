@@ -66,7 +66,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.kp.value)
+        self.assertEqual(0, self.kp.value)
 
     def test_value_with_zero_width_input_returns_zero(self):
         # Arrange
@@ -76,7 +76,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.kp.value)
+        self.assertEqual(0, self.kp.value)
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -142,4 +142,7 @@ class KeltnerPositionTests(unittest.TestCase):
         self.kp.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
-        self.kp.reset()  # No assertion errors.
+        self.kp.reset()
+
+        # Assert
+        self.assertFalse(self.kp.initialized)

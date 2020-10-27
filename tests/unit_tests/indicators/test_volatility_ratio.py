@@ -53,7 +53,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
     def test_value_with_no_inputs_returns_none(self):
         # Act
         # Assert
-        self.assertEqual(0.0, self.vcr.value)
+        self.assertEqual(0, self.vcr.value)
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
@@ -62,7 +62,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.vcr.value)
+        self.assertEqual(0, self.vcr.value)
 
     def test_value_with_one_ones_input_returns_expected_value(self):
         # Arrange
@@ -70,7 +70,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.vcr.value)
+        self.assertEqual(0, self.vcr.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -94,7 +94,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         # Arrange
         high = 1.00010
         low = 1.00000
-        factor = 0.0
+        factor = 0
 
         # Act
         for _i in range(1000):
@@ -111,7 +111,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         # Arrange
         high = 1.00010
         low = 1.00000
-        factor = 0.0
+        factor = 0
 
         # Act
         for _i in range(1000):
@@ -133,4 +133,5 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         self.vcr.reset()
 
         # Assert
+        self.assertFalse(self.vcr.initialized)
         self.assertEqual(0, self.vcr.value)

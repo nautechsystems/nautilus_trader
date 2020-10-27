@@ -113,5 +113,6 @@ class StochasticsTests(unittest.TestCase):
         self.stochastics.reset()  # No assertion errors
 
         # Assert
-        self.assertEqual(0., self.stochastics.value_k)
-        self.assertEqual(0., self.stochastics.value_d)
+        self.assertFalse(self.stochastics.initialized)
+        self.assertEqual(0, self.stochastics.value_k)
+        self.assertEqual(0, self.stochastics.value_d)

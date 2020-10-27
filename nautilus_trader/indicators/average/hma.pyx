@@ -62,7 +62,7 @@ cdef class HullMovingAverage(MovingAverage):
         self._ma2 = WeightedMovingAverage(self.period, weights=self._w2)
         self._ma3 = WeightedMovingAverage(self._period_sqrt, weights=self._w3)
 
-        self.value = 0.0
+        self.value = 0
 
     cdef list _get_weights(self, int size):
         w = np.arange(1, size + 1)

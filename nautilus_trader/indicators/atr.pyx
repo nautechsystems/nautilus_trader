@@ -32,7 +32,7 @@ cdef class AverageTrueRange(Indicator):
             int period,
             ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
             bint use_previous=True,
-            double value_floor=0.0,
+            double value_floor=0,
             bint check_inputs=False,
     ):
         """
@@ -69,8 +69,8 @@ cdef class AverageTrueRange(Indicator):
         self._ma = MovingAverageFactory.create(self.period, ma_type)
         self._use_previous = use_previous
         self._value_floor = value_floor
-        self._previous_close = 0.0
-        self.value = 0.0
+        self._previous_close = 0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -144,5 +144,5 @@ cdef class AverageTrueRange(Indicator):
         """
         self._reset_base()
         self._ma.reset()
-        self._previous_close = 0.0
-        self.value = 0.0
+        self._previous_close = 0
+        self.value = 0

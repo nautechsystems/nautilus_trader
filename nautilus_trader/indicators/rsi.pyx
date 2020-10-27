@@ -51,11 +51,11 @@ cdef class RelativeStrengthIndex(Indicator):
         super().__init__(params=[period, ma_type.name])
 
         self.period = period
-        self._rsi_max = 1.0
+        self._rsi_max = 1
         self._average_gain = MovingAverageFactory.create(self.period, ma_type)
         self._average_loss = MovingAverageFactory.create(self.period, ma_type)
-        self._last_value = 0.0
-        self.value = 0.0
+        self._last_value = 0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -88,28 +88,28 @@ cdef class RelativeStrengthIndex(Indicator):
 
         cdef double gain = value - self._last_value
 
-        if gain > 0.0:
+        if gain > 0:
             self._average_gain.update_raw(gain)
-            self._average_loss.update_raw(0.0)
-        elif gain < 0.0:
+            self._average_loss.update_raw(0)
+        elif gain < 0:
             self._average_loss.update_raw(-gain)
-            self._average_gain.update_raw(0.0)
+            self._average_gain.update_raw(0)
         else:
-            self._average_gain.update_raw(0.0)
-            self._average_loss.update_raw(0.0)
+            self._average_gain.update_raw(0)
+            self._average_loss.update_raw(0)
 
         # Initialization logic
         if not self._initialized:
             if self._average_gain.initialized and self._average_loss.initialized:
                 self._set_initialized(True)
 
-        if self._average_loss.value == 0.0:
+        if self._average_loss.value == 0:
             self.value = self._rsi_max
             return
 
         cdef double rs = self._average_gain.value / self._average_loss.value
 
-        self.value = self._rsi_max - (self._rsi_max / (1.0 + rs))
+        self.value = self._rsi_max - (self._rsi_max / (1 + rs))
         self._last_value = value
 
     cpdef void reset(self) except *:
@@ -122,5 +122,5 @@ cdef class RelativeStrengthIndex(Indicator):
         self._reset_base()
         self._average_gain.reset()
         self._average_loss.reset()
-        self._last_value = 0.0
-        self.value = 0.0
+        self._last_value = 0
+        self.value = 0

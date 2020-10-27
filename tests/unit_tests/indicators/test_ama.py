@@ -82,4 +82,5 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         self.ama.reset()
 
         # Assert
-        self.assertEqual(0.0, self.ama.value)  # No assertion errors.
+        self.assertFalse(self.ama.initialized)
+        self.assertEqual(0, self.ama.value)

@@ -68,12 +68,12 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._period_er = period_er
         self._period_alpha_fast = period_alpha_fast
         self._period_alpha_slow = period_alpha_slow
-        self._alpha_fast = 2.0 / (float(self._period_alpha_fast) + 1.0)
-        self._alpha_slow = 2.0 / (float(self._period_alpha_slow) + 1.0)
+        self._alpha_fast = 2. / (float(self._period_alpha_fast) + 1.)
+        self._alpha_slow = 2. / (float(self._period_alpha_slow) + 1.)
         self._alpha_diff = self._alpha_fast - self._alpha_slow
         self._efficiency_ratio = EfficiencyRatio(self._period_er)
-        self._prior_value = 0.0
-        self.value = 0.0
+        self._prior_value = 0
+        self.value = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -150,4 +150,4 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         self._reset_ma()
         self._efficiency_ratio.reset()
-        self._prior_value = 0.0
+        self._prior_value = 0

@@ -26,7 +26,7 @@ from nautilus_trader.model.tick import QuoteTick
 
 
 class BidAskMinMaxTests(unittest.TestCase):
-    symbol = Symbol('SPY', Venue('TD Ameritrade'))
+    symbol = Symbol('SPY', Venue('NYSE'))
 
     def test_instantiate(self):
         # Arrange

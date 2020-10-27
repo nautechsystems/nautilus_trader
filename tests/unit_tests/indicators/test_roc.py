@@ -61,7 +61,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0., self.roc.value)
+        self.assertEqual(0, self.roc.value)
 
     def test_value_with_efficient_higher_inputs(self):
         # Arrange
@@ -138,4 +138,5 @@ class RateOfChangeTests(unittest.TestCase):
         self.roc.reset()
 
         # Assert
+        self.assertFalse(self.roc.initialized)
         self.assertEqual(0, self.roc.value)

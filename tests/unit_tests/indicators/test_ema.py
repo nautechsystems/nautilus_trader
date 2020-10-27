@@ -96,4 +96,5 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         self.ema.reset()
 
         # Assert
-        self.assertEqual(0.0, self.ema.value)  # No assertion errors.
+        self.assertFalse(self.ema.initialized)
+        self.assertEqual(0.0, self.ema.value)
