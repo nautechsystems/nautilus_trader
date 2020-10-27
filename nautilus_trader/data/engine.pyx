@@ -53,7 +53,8 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class DataEngine:
     """
-    Provides a generic data engine for managing many data clients.
+    Provides a high-performance data engine for managing many `DataClient`
+    instances, for the asynchronous ingest of data.
     """
 
     def __init__(

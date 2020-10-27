@@ -58,7 +58,9 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionEngine:
     """
-    Provides a high-performance execution engine.
+    Provides a high-performance execution engine for the management of many
+    `ExecutionClient` instances, and the asynchronous ingest of trading related
+    events.
     """
 
     def __init__(
