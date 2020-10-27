@@ -46,13 +46,25 @@ cdef class Connect(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
+        self._venue = venue
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
+                f"venue={self._venue}, "
+                f"id={self._id}, "
+                f"timestamp={self._timestamp})")
+
+    @property
+    def venue(self):
+        """
+        The venue for the command.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
 
 
 cdef class Disconnect(Command):
@@ -82,13 +94,25 @@ cdef class Disconnect(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
+        self._venue = venue
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
+                f"venue={self._venue}, "
+                f"id={self._id}, "
+                f"timestamp={self._timestamp})")
+
+    @property
+    def venue(self):
+        """
+        The venue for the command.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
 
 
 cdef class DataCommand(Command):
@@ -120,15 +144,39 @@ cdef class DataCommand(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.data_type = data_type
-        self.options = options
+        self._data_type = data_type
+        self._options = options
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"data_type={self.data_type}, "
-                f"options={self.options}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
+                f"data_type={self._data_type}, "
+                f"options={self._options}, "
+                f"id={self._id}, "
+                f"timestamp={self._timestamp})")
+
+    @property
+    def data_type(self):
+        """
+        The data type of the command.
+
+        Returns
+        -------
+        type
+
+        """
+        return self._data_type
+
+    @property
+    def options(self):
+        """
+        The command options.
+
+        Returns
+        -------
+        dict
+
+        """
+        return self._options
 
 
 cdef class Subscribe(DataCommand):
@@ -262,10 +310,22 @@ cdef class KillSwitch(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.trader_id = trader_id
+        self._trader_id = trader_id
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
+                f"trader_id={self._trader_id.value}, "
+                f"id={self._id}, "
+                f"timestamp={self._timestamp})")
+
+    @property
+    def trader_id(self):
+        """
+        The trader identifier associated with the command.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
