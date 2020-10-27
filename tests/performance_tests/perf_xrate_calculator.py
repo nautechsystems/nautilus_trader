@@ -49,7 +49,7 @@ class ExchangeRateOperations:
 
 class ExchangeRateCalculatorPerformanceTests(unittest.TestCase):
 
-    def test_get_xrate(self):
-        result = PerformanceHarness.profile_function(ExchangeRateOperations.get_xrate, 3, 10000)
+    @staticmethod
+    def test_get_xrate():
+        PerformanceHarness.profile_function(ExchangeRateOperations.get_xrate, 3, 10000)
         # ~50ms (50225μs) minimum of 3 runs @ 10,000 iterations each run.
-        self.assertTrue(result < 0.2)
