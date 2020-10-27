@@ -47,8 +47,30 @@ cdef class Symbol(Identifier):
         Condition.valid_string(code, "code")
         super().__init__(f"{code}.{venue.value}")
 
-        self.code = code
-        self.venue = venue
+        self._code = code
+        self._venue = venue
+
+    @property
+    def code(self):
+        """
+        Returns
+        -------
+        str
+            The identifier code for the symbol.
+
+        """
+        return self._code
+
+    @property
+    def venue(self):
+        """
+        Returns
+        -------
+        Venue
+            The venue for the symbol.
+
+        """
+        return self._venue
 
     @staticmethod
     cdef Symbol from_string_c(str value):
@@ -220,8 +242,32 @@ cdef class TraderId(Identifier):
         Condition.valid_string(tag, "tag")
         super().__init__(f"{name}-{tag}")
 
-        self.name = name
-        self.tag = IdTag(tag)
+        self._name = name
+        self._tag = IdTag(tag)
+
+    @property
+    def name(self):
+        """
+        The name identifier of the trader.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._name
+
+    @property
+    def tag(self):
+        """
+        The order identifier tag of the trader.
+
+        Returns
+        -------
+        IdTag
+
+        """
+        return self._tag
 
     @staticmethod
     cdef TraderId from_string_c(str value):
@@ -247,7 +293,6 @@ cdef class TraderId(Identifier):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
-
         return TraderId(name=pieces[0], tag=pieces[2])
 
     @staticmethod
@@ -274,7 +319,7 @@ cdef class TraderId(Identifier):
         return TraderId.from_string_c(value)
 
 
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId('S', 'NULL')
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId("S", "NULL")
 
 cdef class StrategyId(Identifier):
     """
@@ -306,8 +351,32 @@ cdef class StrategyId(Identifier):
         Condition.valid_string(tag, "tag")
         super().__init__(f"{name}-{tag}")
 
-        self.name = name
-        self.tag = IdTag(tag)
+        self._name = name
+        self._tag = IdTag(tag)
+
+    @property
+    def name(self):
+        """
+        The name identifier of the strategy.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._name
+
+    @property
+    def tag(self):
+        """
+        The order identifier tag of the strategy.
+
+        Returns
+        -------
+        IdTag
+
+        """
+        return self._tag
 
     @staticmethod
     cdef StrategyId null():
@@ -322,7 +391,7 @@ cdef class StrategyId(Identifier):
         return _NULL_STRATEGY_ID
 
     @staticmethod
-    def py_null() -> StrategyId:
+    def null_py():
         """
         Returns a strategy identifier with a `NULL` value.
 
@@ -333,7 +402,8 @@ cdef class StrategyId(Identifier):
         """
         return _NULL_STRATEGY_ID
 
-    cdef bint is_null(self) except *:
+    @property
+    def is_null(self):
         """
         Return a value indicating whether this strategy identifier is equal to
         the null identifier 'NULL'.
@@ -341,11 +411,13 @@ cdef class StrategyId(Identifier):
         Returns
         -------
         bool
+            True if NULL, else False
 
         """
-        return self.value == _NULL_STRATEGY_ID.value
+        return self.value == "S-NULL"
 
-    cdef bint not_null(self) except *:
+    @property
+    def not_null(self):
         """
         Return a value indicating whether this strategy identifier is not equal
         to the null identifier 'NULL'.
@@ -353,9 +425,10 @@ cdef class StrategyId(Identifier):
         Returns
         -------
         bool
+            True if not NULL, else False.
 
         """
-        return self.value != _NULL_STRATEGY_ID.value
+        return self.value != "S-NULL"
 
     @staticmethod
     cdef StrategyId from_string_c(str value):
@@ -464,9 +537,45 @@ cdef class AccountId(Identifier):
         """
         super().__init__(f"{issuer}-{identifier}-{account_type_to_string(account_type)}")
 
-        self.issuer = Issuer(issuer)
-        self.identifier = Identifier(identifier)
-        self.account_type = account_type
+        self._issuer = Issuer(issuer)
+        self._identifier = Identifier(identifier)
+        self._account_type = account_type
+
+    @property
+    def issuer(self):
+        """
+        The account issuer:
+
+        Returns
+        -------
+        Issuer
+
+        """
+        return self._issuer
+
+    @property
+    def identifier(self):
+        """
+        The account identifier value.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._identifier
+
+    @property
+    def account_type(self):
+        """
+        The account type.
+
+        Returns
+        -------
+        AccountType
+
+        """
+        return self._account_type
 
     cdef Venue issuer_as_venue(self):
         """
@@ -476,7 +585,7 @@ cdef class AccountId(Identifier):
         -------
         Venue
         """
-        return Venue(self.issuer.value)
+        return Venue(self._issuer.value)
 
     @staticmethod
     cdef AccountId from_string_c(str value):
@@ -627,7 +736,7 @@ cdef class OrderId(Identifier):
         super().__init__(value)
 
 
-cdef PositionId _NULL_POSITION_ID = PositionId('P-NULL')
+cdef PositionId _NULL_POSITION_ID = PositionId("P-NULL")
 
 cdef class PositionId(Identifier):
     """
@@ -669,7 +778,7 @@ cdef class PositionId(Identifier):
         return _NULL_POSITION_ID
 
     @staticmethod
-    def py_null() -> PositionId:
+    def null_py():
         """
         Returns a position identifier with a `P-NULL` value.
 
@@ -680,7 +789,8 @@ cdef class PositionId(Identifier):
         """
         return _NULL_POSITION_ID
 
-    cdef bint is_null(self) except *:
+    @property
+    def is_null(self):
         """
         Return a value indicating whether this position identifier is equal to
         the null identifier 'P-NULL'.
@@ -688,11 +798,13 @@ cdef class PositionId(Identifier):
         Returns
         -------
         bool
+            True if NULL, else False.
 
         """
-        return self.value == _NULL_POSITION_ID.value
+        return self.value == "P-NULL"
 
-    cdef bint not_null(self) except *:
+    @property
+    def not_null(self):
         """
         Return a value indicating whether this position identifier is not equal
         to the null identifier 'P-NULL'.
@@ -700,9 +812,10 @@ cdef class PositionId(Identifier):
         Returns
         -------
         bool
+            True if not NULL, else False.
 
         """
-        return self.value != _NULL_POSITION_ID.value
+        return self.value != "P-NULL"
 
 
 cdef class ExecutionId(Identifier):

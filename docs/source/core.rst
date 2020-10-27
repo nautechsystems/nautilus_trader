@@ -2,11 +2,7 @@ Core
 ====
 
 .. automodule:: nautilus_trader.core
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Cache
 -----

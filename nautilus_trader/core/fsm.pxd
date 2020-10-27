@@ -22,15 +22,7 @@ cdef class FiniteStateMachine:
     cdef dict _state_transition_table
     cdef object _trigger_parser
     cdef object _state_parser
+    cdef int _state
 
-    cdef readonly int state
-    """
-    Returns
-    -------
-    int (C enum)
-        The current state of the FSM.
-
-    """
-
+    cdef str state_string(self)
     cpdef void trigger(self, int trigger) except *
-    cpdef str state_as_string(self)

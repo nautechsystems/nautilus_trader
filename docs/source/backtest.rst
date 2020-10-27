@@ -2,11 +2,7 @@ Backtest
 ========
 
 .. automodule:: nautilus_trader.backtest
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Config
 ------

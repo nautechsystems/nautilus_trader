@@ -18,23 +18,8 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 
 cdef class Symbol(Identifier):
-    cdef readonly str code
-    """
-    Returns
-    -------
-    str
-        The code for the symbol.
-
-    """
-
-    cdef readonly Venue venue
-    """
-    Returns
-    -------
-    Venue
-        The venue for the symbol.
-
-    """
+    cdef str _code
+    cdef Venue _venue
 
     @staticmethod
     cdef Symbol from_string_c(str value)
@@ -57,21 +42,19 @@ cdef class IdTag(Identifier):
 
 
 cdef class TraderId(Identifier):
-    cdef readonly str name
-    cdef readonly IdTag tag
+    cdef str _name
+    cdef IdTag _tag
 
     @staticmethod
     cdef TraderId from_string_c(str value)
 
 
 cdef class StrategyId(Identifier):
-    cdef readonly str name
-    cdef readonly IdTag tag
+    cdef str _name
+    cdef IdTag _tag
 
     @staticmethod
     cdef StrategyId null()
-    cdef bint is_null(self) except *
-    cdef bint not_null(self) except *
 
     @staticmethod
     cdef StrategyId from_string_c(str value)
@@ -82,9 +65,9 @@ cdef class Issuer(Identifier):
 
 
 cdef class AccountId(Identifier):
-    cdef readonly Issuer issuer
-    cdef readonly Identifier identifier
-    cdef readonly AccountType account_type
+    cdef Issuer _issuer
+    cdef Identifier _identifier
+    cdef AccountType _account_type
 
     cdef Venue issuer_as_venue(self)
 
@@ -112,8 +95,6 @@ cdef class PositionId(Identifier):
 
     @staticmethod
     cdef PositionId null()
-    cdef bint is_null(self) except *
-    cdef bint not_null(self) except *
 
 
 cdef class ExecutionId(Identifier):

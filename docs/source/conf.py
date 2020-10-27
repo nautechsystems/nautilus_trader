@@ -42,6 +42,7 @@ release = version
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    "autoapi.extension",
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.coverage",
@@ -49,6 +50,8 @@ extensions = [
     "sphinx.ext.viewcode",
     "numpydoc",
 ]
+
+autoapi_dirs = ['../../nautilus_trader']
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
@@ -65,7 +68,8 @@ pygments_style = 'sphinx'
 add_module_names = False
 todo_include_todos = False
 
-autosummary_generate = True
+autosummary_generate = False
+autodoc_member_order = 'bysource'
 numpydoc_show_class_members = True
 
 # Add any paths that contain templates here, relative to this directory.

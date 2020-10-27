@@ -18,71 +18,22 @@ from nautilus_trader.model.bar cimport BarType
 
 
 cdef class BarData:
-    cdef readonly BarType bar_type
-    """
-    Returns
-    -------
-    BarType
-        The type of the bar data.
-    """
-
-    cdef readonly Bar bar
-    """
-    Returns
-    -------
-    Bar
-        The bar data.
-
-    """
+    cdef BarType _bar_type
+    cdef Bar _bar
 
 
 cdef class BarDataBlock:
-    cdef readonly BarType bar_type
-    """
-    Returns
-    -------
-    BarType
-        The type of the bar data.
-    """
-
-    cdef readonly list bars
-    """
-    Returns
-    -------
-    list[Bar]
-        The bars data.
-
-    """
+    cdef BarType _bar_type
+    cdef list _bars
 
 
 cdef class QuoteTickDataBlock:
-    cdef readonly list ticks
-    """
-    Returns
-    -------
-    list[QuoteTick]
-        The ticks data.
-
-    """
+    cdef list _ticks
 
 
 cdef class TradeTickDataBlock:
-    cdef readonly list ticks
-    """
-    Returns
-    -------
-    list[TradeTick]
-        The ticks data.
-
-    """
+    cdef list _ticks
 
 
 cdef class InstrumentDataBlock:
-    cdef readonly list instruments
-    """
-    Returns
-    -------
-    list[Instrument]
-        The instruments data.
-
-    """
+    cdef list _instruments

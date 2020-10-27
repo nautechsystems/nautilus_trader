@@ -35,7 +35,7 @@ cdef class Quantity(Decimal):
 
     """
 
-    def __init__(self, value="0", precision=None):
+    def __init__(self, value=0, precision=None):
         """
         Initialize a new instance of the Quantity class.
 
@@ -66,10 +66,11 @@ cdef class Quantity(Decimal):
 
     cpdef str to_string(self):
         """
+        The formatted string representation of the quantity.
+
         Returns
         -------
         str
-            The formatted string representation of this object.
 
         """
         return f"{self._value:,}"
@@ -89,7 +90,7 @@ cdef class Price(Decimal):
 
     """
 
-    def __init__(self, value="0", precision=None):
+    def __init__(self, value=0, precision=None):
         """
         Initialize a new instance of the Price class.
 
@@ -136,52 +137,66 @@ cdef class Money(Decimal):
 
         """
         if value is None:
-            value = "0"
+            value = 0
         super().__init__(value, currency.precision)
 
-        self.currency = currency
+        self._currency = currency
 
     def __eq__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value == other._value
+        return self._currency == other.currency and self._value == other._value
 
     def __ne__(self, Money other) -> bool:
         return not self == other
 
     def __lt__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value < other._value
+        return self._currency == other.currency and self._value < other._value
 
     def __le__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value <= other._value
+        return self._currency == other.currency and self._value <= other._value
 
     def __gt__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value > other._value
+        return self._currency == other.currency and self._value > other._value
 
     def __ge__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value >= other._value
+        return self._currency == other.currency and self._value >= other._value
 
     def __hash__(self) -> int:
-        return hash((self._value, self.currency))
+        return hash((self._value, self._currency))
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self._value}', {self.currency})"
+        return f"{type(self).__name__}('{self._value}', {self._currency})"
+
+    @property
+    def currency(self):
+        """
+        The currency of the money.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self._currency
 
     @property
     def amount(self) -> Decimal:
         """
+        The amount of money as a decimal.
+
         Returns
         -------
         Decimal
-            The amount of money as a decimal.
 
         """
         return Decimal(self._value)
 
     cpdef str to_string(self):
         """
+        The formatted string representation of the money.
+
         Returns
         -------
         str
-            The formatted string representation of this object.
 
         """
-        return f"{self._value:,} {self.currency}"
+        return f"{self._value:,} {self._currency}"

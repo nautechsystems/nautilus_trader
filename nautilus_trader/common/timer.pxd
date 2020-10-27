@@ -22,7 +22,7 @@ from nautilus_trader.core.uuid cimport UUID
 
 
 cdef class TimeEvent(Event):
-    cdef readonly str name
+    cdef str _name
 
 
 cdef class TimeEventHandler:
@@ -33,13 +33,13 @@ cdef class TimeEventHandler:
 
 
 cdef class Timer:
-    cdef readonly str name
-    cdef readonly object callback
-    cdef readonly timedelta interval
-    cdef readonly datetime start_time
-    cdef readonly datetime next_time
-    cdef readonly datetime stop_time
-    cdef readonly bint expired
+    cdef str _name
+    cdef object _callback
+    cdef timedelta _interval
+    cdef datetime _start_time
+    cdef datetime _next_time
+    cdef datetime _stop_time
+    cdef bint _expired
 
     cpdef TimeEvent pop_event(self, UUID event_id)
     cpdef void iterate_next_time(self, datetime now) except *

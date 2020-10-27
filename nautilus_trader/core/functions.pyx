@@ -66,7 +66,7 @@ cpdef inline double fast_mean_iterated(
 
     Parameters
     ----------
-    values : list of doubles
+    values : list[double]
         The values for the calculation.
     next_value : double
         The next input value for the average.
@@ -118,7 +118,7 @@ cpdef inline double fast_std_with_mean(list values, double mean):
 
     Parameters
     ----------
-    values : list of double
+    values : list[double]
         The iterable of values to evaluate.
     mean : double
         The pre-calculated mean of the given values.

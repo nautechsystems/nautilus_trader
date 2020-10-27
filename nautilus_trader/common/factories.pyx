@@ -75,9 +75,8 @@ cdef class OrderFactory:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-
-        self.trader_id = trader_id
-        self.strategy_id = strategy_id
+        self._trader_id = trader_id
+        self._strategy_id = strategy_id
 
         self._id_generator = OrderIdGenerator(
             id_tag_trader=trader_id.tag,
@@ -86,9 +85,37 @@ cdef class OrderFactory:
             initial_count=initial_count,
         )
 
-    cpdef int count(self) except *:
+    @property
+    def trader_id(self):
         """
-        Return the internal order identifier generator count.
+        The order factories trader identifier.
+
+        The `TraderId` tag will be inserted into all identifiers generated.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
+
+    def strategy_id(self):
+        """
+        The order factories trading strategy identifier.
+
+        The `StrategyId` tag will be inserted into all identifiers generated.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def count(self):
+        """
+        The internal order identifier generator count.
 
         Returns
         -------
@@ -153,7 +180,7 @@ cdef class OrderFactory:
         """
         return MarketOrder(
             self._id_generator.generate(),
-            self.strategy_id,
+            self._strategy_id,
             symbol,
             order_side,
             quantity,
@@ -212,7 +239,7 @@ cdef class OrderFactory:
         """
         return LimitOrder(
             self._id_generator.generate(),
-            self.strategy_id,
+            self._strategy_id,
             symbol,
             order_side,
             quantity,
@@ -269,7 +296,7 @@ cdef class OrderFactory:
         """
         return StopMarketOrder(
             self._id_generator.generate(),
-            self.strategy_id,
+            self._strategy_id,
             symbol,
             order_side,
             quantity,

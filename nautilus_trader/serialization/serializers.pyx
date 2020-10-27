@@ -21,7 +21,6 @@ from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.core.cache cimport ObjectCache
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
@@ -266,7 +265,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
         cdef Quantity quantity = Quantity(unpacked[QUANTITY].decode(UTF8))
         cdef TimeInForce time_in_force = time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8))
-        cdef UUID init_id = UUID(unpacked[INIT_ID].decode(UTF8))
+        cdef UUID init_id = UUID.from_string(unpacked[INIT_ID].decode(UTF8))
         cdef datetime timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if order_type == OrderType.MARKET:
@@ -415,7 +414,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: {str, bytes}
 
         cdef str command_type = unpacked[TYPE].decode(UTF8)
-        cdef UUID command_id = UUID(unpacked[ID].decode(UTF8))
+        cdef UUID command_id = UUID.from_string(unpacked[ID].decode(UTF8))
         cdef datetime command_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if command_type == SubmitOrder.__name__:
@@ -628,7 +627,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: {str, bytes}
 
         cdef str event_type = unpacked[TYPE].decode(UTF8)
-        cdef UUID event_id = UUID(unpacked[ID].decode(UTF8))
+        cdef UUID event_id = UUID.from_string(unpacked[ID].decode(UTF8))
         cdef datetime event_timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         cdef Currency currency

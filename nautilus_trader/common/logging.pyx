@@ -22,7 +22,6 @@ import sys
 import threading
 import traceback
 
-import cython
 import numpy as np
 import pandas as pd
 import psutil
@@ -294,9 +293,19 @@ cdef class LoggerAdapter:
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
+        self._component_name = component_name
 
-        self.component_name = component_name
-        self.bypassed = logger.bypass_logging
+    @property
+    def bypassed(self):
+        """
+        If the underlying logger is in bypass mode.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._logger.bypass_logging
 
     cpdef Logger get_logger(self):
         """
@@ -426,7 +435,7 @@ cdef class LoggerAdapter:
 
     cdef str _format_message(self, str message):
         # Add the components name to the front of the log message
-        return f"{self.component_name}: {message}"
+        return f"{self._component_name}: {message}"
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:

@@ -2,11 +2,7 @@ Indicators
 ==========
 
 .. automodule:: nautilus_trader.indicators
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Adaptive Moving Average (AMA)
 -----------------------------

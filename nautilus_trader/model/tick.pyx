@@ -51,32 +51,56 @@ cdef class Tick:
             The tick timestamp (UTC).
 
         """
-        self.symbol = symbol
-        self.timestamp = timestamp
+        self._symbol = symbol
+        self._timestamp = timestamp
 
     def __eq__(self, Tick other) -> bool:
-        return self.timestamp == other.timestamp
+        return self._timestamp == other.timestamp
 
     def __ne__(self, Tick other) -> bool:
-        return other.timestamp != other.timestamp
+        return self._timestamp != other.timestamp
 
     def __lt__(self, Tick other) -> bool:
-        return self.timestamp < other.timestamp
+        return self._timestamp < other.timestamp
 
     def __le__(self, Tick other) -> bool:
-        return self.timestamp <= other.timestamp
+        return self._timestamp <= other.timestamp
 
     def __gt__(self, Tick other) -> bool:
-        return self.timestamp > other.timestamp
+        return self._timestamp > other.timestamp
 
     def __ge__(self, Tick other) -> bool:
-        return self.timestamp >= other.timestamp
+        return self._timestamp >= other.timestamp
 
     def __hash__(self) -> int:
-        return hash(self.timestamp)
+        return hash(self._timestamp)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    @property
+    def symbol(self):
+        """
+        The ticks symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
+
+    @property
+    def timestamp(self):
+        """
+        The ticks timestamp.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._timestamp
 
     cpdef str to_serializable_string(self):
         # Abstract method
@@ -118,18 +142,66 @@ cdef class QuoteTick(Tick):
         """
         super().__init__(symbol, timestamp)
 
-        self.bid = bid
-        self.ask = ask
-        self.bid_size = bid_size
-        self.ask_size = ask_size
+        self._bid = bid
+        self._ask = ask
+        self._bid_size = bid_size
+        self._ask_size = ask_size
 
     def __str__(self) -> str:
-        return (f"{self.symbol},"
-                f"{self.bid},"
-                f"{self.ask},"
-                f"{self.bid_size},"
-                f"{self.ask_size},"
-                f"{format_iso8601(self.timestamp)}")
+        return (f"{self._symbol},"
+                f"{self._bid},"
+                f"{self._ask},"
+                f"{self._bid_size},"
+                f"{self._ask_size},"
+                f"{format_iso8601(self._timestamp)}")
+
+    @property
+    def bid(self):
+        """
+        The ticks best quoted bid price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._bid
+
+    @property
+    def ask(self):
+        """
+        The ticks best quoted ask price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._ask
+
+    @property
+    def bid_size(self):
+        """
+        The ticks quoted bid size.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._bid_size
+
+    @property
+    def ask_size(self):
+        """
+        The ticks quoted ask size.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._ask_size
 
     cpdef Price extract_price(self, PriceType price_type):
         """
@@ -146,11 +218,11 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Price((self.bid + self.ask) / 2)
+            return Price((self._bid + self._ask) / 2)
         elif price_type == PriceType.BID:
-            return self.bid
+            return self._bid
         elif price_type == PriceType.ASK:
-            return self.ask
+            return self._ask
         else:
             raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
 
@@ -169,11 +241,11 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Quantity(self.bid_size + self.ask_size)
+            return Quantity(self._bid_size + self._ask_size)
         elif price_type == PriceType.BID:
-            return self.bid_size
+            return self._bid_size
         elif price_type == PriceType.ASK:
-            return self.ask_size
+            return self._ask_size
         else:
             raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
 
@@ -246,7 +318,7 @@ cdef class QuoteTick(Tick):
         str
 
         """
-        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{long(self.timestamp.timestamp())}"
+        return f"{self._bid},{self._ask},{self._bid_size},{self._ask_size},{long(self._timestamp.timestamp())}"
 
 
 cdef class TradeTick(Tick):
@@ -284,18 +356,66 @@ cdef class TradeTick(Tick):
         """
         super().__init__(symbol, timestamp)
 
-        self.price = price
-        self.size = size
-        self.maker = maker
-        self.match_id = match_id
+        self._price = price
+        self._size = size
+        self._maker = maker
+        self._match_id = match_id
 
     def __str__(self) -> str:
-        return (f"{self.symbol},"
-                f"{self.price},"
-                f"{self.size},"
-                f"{maker_to_string(self.maker)},"
-                f"{self.match_id},"
-                f"{format_iso8601(self.timestamp)}")
+        return (f"{self._symbol},"
+                f"{self._price},"
+                f"{self._size},"
+                f"{maker_to_string(self._maker)},"
+                f"{self._match_id},"
+                f"{format_iso8601(self._timestamp)}")
+
+    @property
+    def price(self):
+        """
+        The ticks traded price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._price
+
+    @property
+    def size(self):
+        """
+        The ticks traded size.
+
+        Returns
+        -------
+
+        """
+        return self._size
+
+    @property
+    def maker(self):
+        """
+        The ticks trade maker side.
+
+        Returns
+        -------
+        Maker
+            BUYER or SELLER.
+
+        """
+        return self._maker
+
+    @property
+    def match_id(self):
+        """
+        The ticks trade match identifier.
+
+        Returns
+        -------
+        TradeMatchId
+
+        """
+        return self._match_id
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values):
@@ -366,8 +486,8 @@ cdef class TradeTick(Tick):
         str
 
         """
-        return (f"{self.price},"
-                f"{self.size},"
-                f"{maker_to_string(self.maker)},"
-                f"{self.match_id},"
-                f"{long(self.timestamp.timestamp())}")
+        return (f"{self._price},"
+                f"{self._size},"
+                f"{maker_to_string(self._maker)},"
+                f"{self._match_id},"
+                f"{long(self._timestamp.timestamp())}")

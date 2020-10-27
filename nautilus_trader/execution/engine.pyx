@@ -377,7 +377,7 @@ cdef class ExecutionEngine:
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Invalid command
 
-        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
+        if command.position_id.not_null and not self.cache.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")
             return  # Invalid command
 
@@ -524,7 +524,7 @@ cdef class ExecutionEngine:
         self.cache.update_order(order)
 
         # Update portfolio
-        if order.is_working() or order.is_completed():
+        if order.is_working or order.is_completed:
             self.portfolio.update_order(order)
 
         if isinstance(event, OrderFilled):
@@ -550,7 +550,7 @@ cdef class ExecutionEngine:
 
         # Get StrategyId corresponding to fill
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
-        if strategy_id is None and fill.position_id.not_null():
+        if strategy_id is None and fill.position_id.not_null:
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
@@ -558,7 +558,7 @@ cdef class ExecutionEngine:
                             f"{repr(fill.position_id)} not found.")
             return  # Cannot process event further
 
-        if fill.position_id.is_null():  # Exchange not assigning position_ids
+        if fill.position_id.is_null:  # Exchange not assigning position_ids
             self._fill_system_assigned_ids(position_id, fill, strategy_id)
         else:
             self._fill_exchange_assigned_ids(position_id, fill, strategy_id)
@@ -569,7 +569,7 @@ cdef class ExecutionEngine:
             OrderFilled fill,
             StrategyId strategy_id,
     ) except *:
-        if position_id.is_null():  # No position yet
+        if position_id.is_null:  # No position yet
             # Generate identifier
             position_id = self._pos_id_generator.generate(fill.symbol)
             fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
@@ -616,7 +616,7 @@ cdef class ExecutionEngine:
         self.cache.update_position(position)
 
         cdef PositionEvent position_event
-        if position.is_closed():
+        if position.is_closed:
             position_event = self._pos_closed_event(position, fill)
         else:
             position_event = self._pos_modified_event(position, fill)
