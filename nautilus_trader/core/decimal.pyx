@@ -26,7 +26,7 @@ cdef class Decimal:
 
     """
 
-    def __init__(self, value="0", precision=None):
+    def __init__(self, value=0, precision=None):
         """
         Initialize a new instance of the Decimal class.
 
@@ -232,30 +232,33 @@ cdef class Decimal:
     @property
     def precision(self):
         """
+        The precision of the decimal.
+
         Returns
         -------
         int
-            The precision of the decimal.
 
         """
         return abs(self._value.as_tuple().exponent)
 
     cpdef object as_decimal(self):
         """
+        The value of the decimal as a built-in `decimal.Decimal`.
+
         Returns
         -------
         decimal.Decimal
-            The value of this object as a built-in `decimal.Decimal`.
 
         """
         return self._value
 
     cpdef double as_double(self) except *:
         """
+        The value of the decimal as a `double`.
+
         Returns
         -------
         double
-            The value of this object as a `double`.
 
         """
         return float(self._value)

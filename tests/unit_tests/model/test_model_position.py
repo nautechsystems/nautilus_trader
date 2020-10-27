@@ -118,8 +118,8 @@ class PositionTests(unittest.TestCase):
         self.assertIsNone(position.open_duration)
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
-        self.assertEqual({order.cl_ord_id}, position.cl_ord_ids)
-        self.assertEqual({ExecutionId("E-19700101-000000-000-001-1")}, position.execution_ids)
+        self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
         self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertTrue(position.is_long)
@@ -165,7 +165,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
-        self.assertEqual({ExecutionId("E-19700101-000000-000-001-1")}, position.execution_ids)
+        self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
         self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertFalse(position.is_long)
@@ -401,7 +401,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(Decimal("1.0"), position.avg_open)
         self.assertEqual(3, position.event_count)
-        self.assertEqual({order1.cl_ord_id, order2.cl_ord_id}, position.cl_ord_ids)
+        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
         self.assertEqual(Decimal("1.00002"), position.avg_close)
         self.assertFalse(position.is_long)
@@ -452,11 +452,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(Decimal("1.0"), position.avg_open)
         self.assertEqual(2, position.event_count)
-        self.assertEqual({order1.cl_ord_id, order2.cl_ord_id}, position.cl_ord_ids)
-        self.assertEqual({
+        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual([
             ExecutionId("E-19700101-000000-000-001-1"),
             ExecutionId("E-19700101-000000-000-001-2")
-        },
+        ],
             position.execution_ids,
         )
         self.assertEqual(UNIX_EPOCH, position.closed_time)
@@ -514,7 +514,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(Decimal("1.000005"), position.avg_open)
         self.assertEqual(3, position.event_count)
-        self.assertEqual({order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id}, position.cl_ord_ids)
+        self.assertEqual([order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.cl_ord_ids)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
         self.assertEqual(Decimal("1.0001"), position.avg_close)
         self.assertFalse(position.is_long)
