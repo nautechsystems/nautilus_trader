@@ -163,4 +163,5 @@ class AverageTrueRangeTests(unittest.TestCase):
         self.atr.reset()
 
         # Assert
-        self.assertEqual(0.0, self.atr.value)  # No assertion errors.
+        self.assertFalse(self.atr.initialized)
+        self.assertEqual(0, self.atr.value)

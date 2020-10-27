@@ -161,15 +161,15 @@ cdef class DonchianChannel(Indicator):
             The price for the lower channel.
 
         """
-        # Initialization logic
-        if not self.initialized:
-            self._set_has_inputs(True)
-            if len(self._upper) >= self._period and len(self._lower) >= self._period:
-                self._set_initialized(True)
-
         # Add data to queues
         self._upper.append(high)
         self._lower.append(low)
+
+        # Initialization logic
+        if not self._initialized:
+            self._set_has_inputs(True)
+            if len(self._upper) >= self._period and len(self._lower) >= self._period:
+                self._set_initialized(True)
 
         # Set values
         self._value_upper = max(self._upper)

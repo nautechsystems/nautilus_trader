@@ -130,3 +130,15 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Assert
         self.assertTrue(sma_for_ticks.has_inputs)
         self.assertEqual(1.00001, sma_for_ticks.value)
+
+    def test_reset_successfully_returns_indicator_to_fresh_state(self):
+        # Arrange
+        for _i in range(1000):
+            self.sma.update_raw(1.00000)
+
+        # Act
+        self.sma.reset()
+
+        # Assert
+        self.assertFalse(self.sma.initialized)
+        self.assertEqual(0, self.sma.value)

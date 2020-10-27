@@ -112,4 +112,7 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         self.macd.update_raw(1.00050)
 
         # Act
-        self.macd.reset()  # No assertion errors.
+        self.macd.reset()
+
+        # Assert
+        self.assertFalse(self.macd.initialized)

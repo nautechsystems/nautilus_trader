@@ -43,9 +43,9 @@ cpdef inline double fast_mean(list values):
     cdef int length = len(values)
 
     if length == 0:
-        return 0.0
+        return 0
 
-    cdef double total = 0.0
+    cdef double total = 0
     cdef int i
     for i in range(length):
         total += values[i]

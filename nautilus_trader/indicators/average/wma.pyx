@@ -61,7 +61,7 @@ cdef class WeightedMovingAverage(MovingAverage):
 
         self._inputs = deque(maxlen=self.period)
         self.weights = weights
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """

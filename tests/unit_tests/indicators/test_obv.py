@@ -103,4 +103,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act
-        self.obv.reset()  # No assertion errors.
+        self.obv.reset()
+
+        # Assert
+        self.assertFalse(self.obv.initialized)

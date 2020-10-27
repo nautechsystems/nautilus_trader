@@ -106,4 +106,7 @@ class PressureTests(unittest.TestCase):
             self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act
-        self.pressure.reset()  # No assertion errors.
+        self.pressure.reset()
+
+        # Assert
+        self.assertFalse(self.pressure.initialized)

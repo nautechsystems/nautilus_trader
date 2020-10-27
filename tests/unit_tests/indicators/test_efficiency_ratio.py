@@ -134,4 +134,5 @@ class EfficiencyRatioTests(unittest.TestCase):
         self.er.reset()
 
         # Assert
-        self.assertEqual(0, self.er.value)  # No assertion errors.
+        self.assertFalse(self.er.initialized)
+        self.assertEqual(0, self.er.value)

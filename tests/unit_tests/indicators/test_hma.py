@@ -96,4 +96,7 @@ class HullMovingAverageTests(unittest.TestCase):
         self.hma.update_raw(1.00050)
 
         # Act
-        self.hma.reset()  # No assertion errors.
+        self.hma.reset()
+
+        # Assert
+        self.assertFalse(self.hma.initialized)
