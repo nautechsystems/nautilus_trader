@@ -218,15 +218,15 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
-        self.assertEqual(1, order.event_count())
-        self.assertTrue(isinstance(order.last_event(), OrderInitialized))
-        self.assertFalse(order.is_working())
-        self.assertFalse(order.is_completed())
-        self.assertTrue(order.is_buy())
-        self.assertFalse(order.is_sell())
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+        self.assertEqual(1, order.event_count)
+        self.assertTrue(isinstance(order.last_event, OrderInitialized))
+        self.assertFalse(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertTrue(order.is_buy)
+        self.assertFalse(order.is_sell)
         self.assertEqual(None, order.filled_timestamp)
-        self.assertEqual(UNIX_EPOCH, order.last_event().timestamp)
+        self.assertEqual(UNIX_EPOCH, order.last_event.timestamp)
 
     def test_initialize_sell_market_order(self):
         # Arrange
@@ -238,13 +238,13 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
-        self.assertEqual(1, order.event_count())
-        self.assertTrue(isinstance(order.last_event(), OrderInitialized))
-        self.assertFalse(order.is_working())
-        self.assertFalse(order.is_completed())
-        self.assertFalse(order.is_buy())
-        self.assertTrue(order.is_sell())
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+        self.assertEqual(1, order.event_count)
+        self.assertTrue(isinstance(order.last_event, OrderInitialized))
+        self.assertFalse(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertFalse(order.is_buy)
+        self.assertTrue(order.is_sell)
         self.assertEqual(None, order.filled_timestamp)
 
     def test_order_str_and_repr(self):
@@ -272,9 +272,9 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
+        self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
-        self.assertFalse(order.is_completed())
+        self.assertFalse(order.is_completed)
 
     def test_initialize_limit_order_with_expire_time(self):
         # Arrange
@@ -292,10 +292,10 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(AUDUSD_FXCM, order.symbol)
         self.assertEqual(OrderType.LIMIT, order.type)
         self.assertEqual(Price("1.00000"), order.price)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
+        self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.GTD, order.time_in_force)
         self.assertEqual(UNIX_EPOCH, order.expire_time)
-        self.assertFalse(order.is_completed())
+        self.assertFalse(order.is_completed)
 
     def test_initialize_stop_order(self):
         # Arrange
@@ -309,9 +309,9 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
-        self.assertEqual(OrderState.INITIALIZED, order.state())
+        self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
-        self.assertFalse(order.is_completed())
+        self.assertFalse(order.is_completed)
 
     def test_initialize_bracket_order_market_with_no_take_profit(self):
         # Arrange
@@ -407,10 +407,10 @@ class OrderTests(unittest.TestCase):
         order.apply(submitted)
 
         # Assert
-        self.assertEqual(OrderState.SUBMITTED, order.state())
-        self.assertEqual(2, order.event_count())
-        self.assertEqual(submitted, order.last_event())
-        self.assertFalse(order.is_completed())
+        self.assertEqual(OrderState.SUBMITTED, order.state)
+        self.assertEqual(2, order.event_count)
+        self.assertEqual(submitted, order.last_event)
+        self.assertFalse(order.is_completed)
 
     def test_apply_order_accepted_event_to_order(self):
         # Arrange
@@ -428,8 +428,8 @@ class OrderTests(unittest.TestCase):
         order.apply(accepted)
 
         # Assert
-        self.assertEqual(OrderState.ACCEPTED, order.state())
-        self.assertFalse(order.is_completed())
+        self.assertEqual(OrderState.ACCEPTED, order.state)
+        self.assertFalse(order.is_completed)
 
     def test_apply_order_rejected_event_to_order(self):
         # Arrange
@@ -447,8 +447,8 @@ class OrderTests(unittest.TestCase):
         order.apply(rejected)
 
         # Assert
-        self.assertEqual(OrderState.REJECTED, order.state())
-        self.assertTrue(order.is_completed())
+        self.assertEqual(OrderState.REJECTED, order.state)
+        self.assertTrue(order.is_completed)
 
     def test_apply_order_working_event_to_stop_order(self):
         # Arrange
@@ -471,10 +471,10 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         # print(order)
-        self.assertEqual(OrderState.WORKING, order.state())
+        self.assertEqual(OrderState.WORKING, order.state)
         self.assertEqual(OrderId("1"), order.id)
-        self.assertFalse(order.is_completed())
-        self.assertTrue(order.is_working())
+        self.assertFalse(order.is_completed)
+        self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
 
     def test_apply_order_expired_event_to_stop_order(self):
@@ -500,8 +500,8 @@ class OrderTests(unittest.TestCase):
         order.apply(expired)
 
         # Assert
-        self.assertEqual(OrderState.EXPIRED, order.state())
-        self.assertTrue(order.is_completed())
+        self.assertEqual(OrderState.EXPIRED, order.state)
+        self.assertTrue(order.is_completed)
 
     def test_apply_order_cancelled_event_to_order(self):
         # Arrange
@@ -521,8 +521,8 @@ class OrderTests(unittest.TestCase):
         order.apply(cancelled)
 
         # Assert
-        self.assertEqual(OrderState.CANCELLED, order.state())
-        self.assertTrue(order.is_completed())
+        self.assertEqual(OrderState.CANCELLED, order.state)
+        self.assertTrue(order.is_completed)
 
     def test_apply_order_modified_event_to_stop_order(self):
         # Arrange
@@ -554,13 +554,13 @@ class OrderTests(unittest.TestCase):
         order.apply(modified)
 
         # Assert
-        self.assertEqual(OrderState.WORKING, order.state())
+        self.assertEqual(OrderState.WORKING, order.state)
         self.assertEqual(OrderId("1"), order.id)
         self.assertEqual(Quantity(120000), order.quantity)
         self.assertEqual(Price("1.00001"), order.price)
-        self.assertTrue(order.is_working())
-        self.assertFalse(order.is_completed())
-        self.assertEqual(5, order.event_count())
+        self.assertTrue(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertEqual(5, order.event_count)
 
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
@@ -585,10 +585,10 @@ class OrderTests(unittest.TestCase):
         order.apply(filled)
 
         # Assert
-        self.assertEqual(OrderState.FILLED, order.state())
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price("1.00001"), order.avg_price)
-        self.assertTrue(order.is_completed())
+        self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
@@ -609,7 +609,7 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
-            StrategyId("S", "NULL"),
+            StrategyId.null_py(),
             order.symbol,
             order.side,
             order.quantity,
@@ -634,12 +634,12 @@ class OrderTests(unittest.TestCase):
         order.apply(filled)
 
         # Assert
-        self.assertEqual(OrderState.FILLED, order.state())
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
         self.assertEqual(Price("1.00001"), order.avg_price)
         self.assertEqual(Decimal("0.00001"), order.slippage)
-        self.assertTrue(order.is_completed())
+        self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
@@ -660,7 +660,7 @@ class OrderTests(unittest.TestCase):
             OrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
-            StrategyId("S", "NULL"),
+            StrategyId.null_py(),
             order.symbol,
             order.side,
             Quantity(50000),
@@ -684,10 +684,10 @@ class OrderTests(unittest.TestCase):
         order.apply(partially)
 
         # Assert
-        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state())
+        self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
         self.assertEqual(Quantity(50000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
         self.assertEqual(Price("0.999999"), order.avg_price)
         self.assertEqual(Decimal("-0.000001"), order.slippage)
-        self.assertFalse(order.is_completed())
+        self.assertFalse(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)

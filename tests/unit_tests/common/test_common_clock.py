@@ -216,7 +216,7 @@ class LiveClockTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([], self.clock.timer_names)
-        self.assertTrue(len(self.handler) <= 3)
+        self.assertTrue(len(self.handler) <= 4)
 
     def test_set_repeating_timer(self):
         # Arrange
@@ -232,7 +232,7 @@ class LiveClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        time.sleep(0.4)
+        time.sleep(0.5)
 
         # Assert
         self.assertTrue(len(self.handler) >= 3)
@@ -260,7 +260,7 @@ class LiveClockTests(unittest.TestCase):
         time.sleep(0.3)
 
         # Assert
-        self.assertTrue(len(self.handler) <= 4)
+        self.assertTrue(len(self.handler) <= 5)
 
     def test_set_two_repeating_timers(self):
         # Arrange
@@ -282,7 +282,7 @@ class LiveClockTests(unittest.TestCase):
             stop_time=None,
         )
 
-        time.sleep(0.8)
+        time.sleep(0.9)
 
         # Assert
         self.assertTrue(len(self.handler) >= 8)

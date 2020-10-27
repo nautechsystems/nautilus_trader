@@ -2,11 +2,7 @@ Trading
 =======
 
 .. automodule:: nautilus_trader.trading
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Account
 -------
@@ -72,8 +68,3 @@ Trader
 ------
 
 .. automodule:: nautilus_trader.trading.trader
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource

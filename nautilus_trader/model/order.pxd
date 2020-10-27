@@ -17,11 +17,9 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -54,24 +52,23 @@ cdef class Order:
     cdef list _events
     cdef FiniteStateMachine _fsm
 
-    cdef readonly ClientOrderId cl_ord_id
-    cdef readonly StrategyId strategy_id
-    cdef readonly OrderId id
-    cdef readonly AccountId account_id
-    cdef readonly ExecutionId execution_id
-    cdef readonly PositionId position_id
-
-    cdef readonly Symbol symbol
-    cdef readonly OrderSide side
-    cdef readonly OrderType type
-    cdef readonly Quantity quantity
-    cdef readonly datetime timestamp
-    cdef readonly TimeInForce time_in_force
-    cdef readonly Quantity filled_qty
-    cdef readonly datetime filled_timestamp
-    cdef readonly Price avg_price
-    cdef readonly Decimal slippage
-    cdef readonly UUID init_id
+    cdef ClientOrderId _cl_ord_id
+    cdef StrategyId _strategy_id
+    cdef OrderId _id
+    cdef AccountId _account_id
+    cdef ExecutionId _execution_id
+    cdef PositionId _position_id
+    cdef Symbol _symbol
+    cdef OrderSide _side
+    cdef OrderType _type
+    cdef Quantity _quantity
+    cdef datetime _timestamp
+    cdef TimeInForce _time_in_force
+    cdef Quantity _filled_qty
+    cdef datetime _filled_timestamp
+    cdef Decimal _avg_price
+    cdef Decimal _slippage
+    cdef UUID _init_id
 
     @staticmethod
     cdef inline OrderSide opposite_side_c(OrderSide side) except *
@@ -79,17 +76,8 @@ cdef class Order:
     @staticmethod
     cdef inline OrderSide flatten_side_c(PositionSide side) except *
 
-    cpdef OrderState state(self)
-    cpdef Event last_event(self)
-    cpdef list execution_ids(self)
-    cpdef list events(self)
-    cpdef int event_count(self) except *
-    cpdef bint is_buy(self) except *
-    cpdef bint is_sell(self) except *
-    cpdef bint is_working(self) except *
-    cpdef bint is_completed(self) except *
-    cpdef str status_string(self)
-    cpdef str state_as_string(self)
+    cdef str state_string(self)
+    cdef str status_string(self)
     cpdef void apply(self, OrderEvent event) except *
     cdef void _invalid(self, OrderInvalid event) except *
     cdef void _denied(self, OrderDenied event) except *
@@ -104,9 +92,9 @@ cdef class Order:
 
 
 cdef class PassiveOrder(Order):
-    cdef readonly Price price
-    cdef readonly LiquiditySide liquidity_side
-    cdef readonly datetime expire_time
+    cdef Price _price
+    cdef LiquiditySide _liquidity_side
+    cdef datetime _expire_time
 
     cdef void _set_slippage(self) except *
 
@@ -122,17 +110,16 @@ cdef class StopMarketOrder(PassiveOrder):
 
 
 cdef class LimitOrder(PassiveOrder):
-    cdef readonly bint is_post_only
-    cdef readonly bint is_hidden
+    cdef bint _is_post_only
+    cdef bint _is_hidden
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized event)
 
 
 cdef class BracketOrder:
-    cdef readonly BracketOrderId id
-    cdef readonly Order entry
-    cdef readonly StopMarketOrder stop_loss
-    cdef readonly PassiveOrder take_profit
-    cdef readonly bint has_take_profit
-    cdef readonly datetime timestamp
+    cdef BracketOrderId _id
+    cdef Order _entry
+    cdef StopMarketOrder _stop_loss
+    cdef PassiveOrder _take_profit
+    cdef datetime _timestamp

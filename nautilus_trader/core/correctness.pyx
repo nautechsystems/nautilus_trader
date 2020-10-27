@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines static condition checks similar to the design by contract philosophy to
-help ensure software correctness.
+Defines static condition checks similar to the `design by contract` philosophy
+to help ensure software correctness.
 """
 
 from cpython.object cimport PyCallable_Check

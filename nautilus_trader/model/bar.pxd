@@ -23,32 +23,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BarSpecification:
-    cdef readonly int step
-    """
-    Returns
-    -------
-    int
-        The specified step size for bar aggregation.
-
-    """
-
-    cdef readonly BarAggregation aggregation
-    """
-    Returns
-    -------
-    BarAggregation
-        The specified aggregation method for bars.
-
-    """
-
-    cdef readonly PriceType price_type
-    """
-    Returns
-    -------
-    PriceType
-        The specified price type for bar aggregation.
-
-    """
+    cdef int _step
+    cdef BarAggregation _aggregation
+    cdef PriceType _price_type
 
     @staticmethod
     cdef BarSpecification from_string_c(str value)
@@ -57,23 +34,8 @@ cdef class BarSpecification:
 
 
 cdef class BarType:
-    cdef readonly Symbol symbol
-    """
-    Returns
-    -------
-    Symbol
-        The symbol of the bar type.
-
-    """
-
-    cdef readonly BarSpecification spec
-    """
-    Returns
-    -------
-    BarSpecification
-        The specification of the bar type.
-
-    """
+    cdef Symbol _symbol
+    cdef BarSpecification _spec
 
     @staticmethod
     cdef BarType from_string_c(str value)
@@ -83,68 +45,13 @@ cdef class BarType:
 
 
 cdef class Bar:
-    cdef readonly Price open
-    """
-    Returns
-    -------
-    Price
-        The open price of the bar.
-
-    """
-
-    cdef readonly Price high
-    """
-    Returns
-    -------
-    Price
-        The high price of the bar.
-
-    """
-
-    cdef readonly Price low
-    """
-    Returns
-    -------
-    Price
-        The low price of the bar.
-
-    """
-
-    cdef readonly Price close
-    """
-    Returns
-    -------
-    Price
-        The close price of the bar.
-
-    """
-
-    cdef readonly Quantity volume
-    """
-    Returns
-    -------
-    Quantity
-        The volume of the bar.
-
-    """
-
-    cdef readonly datetime timestamp
-    """
-    Returns
-    -------
-    datetime
-        The timestamp the bar closed at.
-
-    """
-
-    cdef readonly bint checked
-    """
-    Returns
-    -------
-    bool
-        If the input values were integrity checked.
-
-    """
+    cdef Price _open
+    cdef Price _high
+    cdef Price _low
+    cdef Price _close
+    cdef Quantity _volume
+    cdef datetime _timestamp
+    cdef bint _checked
 
     @staticmethod
     cdef Bar from_serializable_string_c(str value)

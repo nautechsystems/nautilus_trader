@@ -15,24 +15,8 @@
 
 
 cdef class ObjectCache:
-    cdef readonly type type_key
-    """
-    Returns
-    -------
-    type
-        The key type of the cache.
-
-    """
-
-    cdef readonly type type_value
-    """
-    Returns
-    -------
-    type
-        The value type of the cache.
-
-    """
-
+    cdef type _type_key
+    cdef type _type_value
     cdef dict _cache
     cdef object _parser
 

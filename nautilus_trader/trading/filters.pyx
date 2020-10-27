@@ -46,10 +46,10 @@ cdef class ForexSessionFilter:
     """
 
     def __init__(self):
-        self.tz_sydney = pytz.timezone("Australia/Sydney")
-        self.tz_tokyo = pytz.timezone("Asia/Tokyo")
-        self.tz_london = pytz.timezone("Europe/London")
-        self.tz_new_york = pytz.timezone("America/New_York")
+        self._tz_sydney = pytz.timezone("Australia/Sydney")
+        self._tz_tokyo = pytz.timezone("Asia/Tokyo")
+        self._tz_london = pytz.timezone("Europe/London")
+        self._tz_new_york = pytz.timezone("America/New_York")
 
     cpdef datetime local_from_utc(self, session: ForexSession, datetime time_now):
         """
@@ -77,16 +77,16 @@ cdef class ForexSessionFilter:
         Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
         if session == ForexSession.SYDNEY:
-            return time_now.astimezone(self.tz_sydney)
+            return time_now.astimezone(self._tz_sydney)
 
         if session == ForexSession.TOKYO:
-            return time_now.astimezone(self.tz_tokyo)
+            return time_now.astimezone(self._tz_tokyo)
 
         if session == ForexSession.LONDON:
-            return time_now.astimezone(self.tz_london)
+            return time_now.astimezone(self._tz_london)
 
         if session == ForexSession.NEW_YORK:
-            return time_now.astimezone(self.tz_new_york)
+            return time_now.astimezone(self._tz_new_york)
 
     cpdef datetime next_start(self, session: ForexSession, datetime time_now):
         """
@@ -127,13 +127,13 @@ cdef class ForexSessionFilter:
 
         # Local days session start
         if session == ForexSession.SYDNEY:
-            next_start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+            next_start = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
         elif session == ForexSession.TOKYO:
-            next_start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+            next_start = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
         elif session == ForexSession.LONDON:
-            next_start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            next_start = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
         elif session == ForexSession.NEW_YORK:
-            next_start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            next_start = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
 
         # Already past this days session start
         if local_now > next_start:
@@ -185,13 +185,13 @@ cdef class ForexSessionFilter:
 
         # Local days session start
         if session == ForexSession.SYDNEY:
-            prev_start = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+            prev_start = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
         elif session == ForexSession.TOKYO:
-            prev_start = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+            prev_start = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
         elif session == ForexSession.LONDON:
-            prev_start = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            prev_start = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
         elif session == ForexSession.NEW_YORK:
-            prev_start = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            prev_start = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
 
         # Prior to this days session start
         if local_now < prev_start:
@@ -243,13 +243,13 @@ cdef class ForexSessionFilter:
 
         # Local days session end
         if session == ForexSession.SYDNEY:
-            next_end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            next_end = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.TOKYO:
-            next_end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+            next_end = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
         elif session == ForexSession.LONDON:
-            next_end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            next_end = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.NEW_YORK:
-            next_end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+            next_end = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
 
         # Already past this days session end
         if local_now > next_end:
@@ -301,13 +301,13 @@ cdef class ForexSessionFilter:
 
         # Local days session end
         if session == ForexSession.SYDNEY:
-            prev_end = self.tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            prev_end = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.TOKYO:
-            prev_end = self.tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+            prev_end = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
         elif session == ForexSession.LONDON:
-            prev_end = self.tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            prev_end = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
         elif session == ForexSession.NEW_YORK:
-            prev_end = self.tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+            prev_end = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
 
         # Prior to this days session end
         if local_now < prev_end:
@@ -355,10 +355,58 @@ cdef class NewsEvent:
         currency : str
             The currency the economic news event is expected to affect.
         """
-        self.timestamp = timestamp
-        self.impact = impact
-        self.name = name
-        self.currency = currency
+        self._timestamp = timestamp
+        self._impact = impact
+        self._name = name
+        self._currency = currency
+
+    @property
+    def timestamp(self):
+        """
+        The news events timestamp.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._timestamp
+
+    @property
+    def impact(self):
+        """
+        The expected news impact.
+
+        Returns
+        -------
+        NewsImpact
+
+        """
+        return self._impact
+
+    @property
+    def name(self):
+        """
+        The descriptive name of the news event.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._name
+
+    @property
+    def currency(self):
+        """
+        The currency affected by the news event.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._currency
 
 
 cdef class EconomicNewsEventFilter:
@@ -377,9 +425,9 @@ cdef class EconomicNewsEventFilter:
 
         Parameters
         ----------
-        currencies : list of str
+        currencies : list[str]
             The list of three letter currency symbols to filter.
-        impacts : list of str
+        impacts : list[str]
             The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
         news_csv_path : str
             The path to the news data csv.
@@ -388,16 +436,64 @@ cdef class EconomicNewsEventFilter:
         if news_csv_path == "default":
             news_csv_path = os.path.join(PACKAGE_ROOT + "/_internal/news/", "news_events.csv")
 
-        self.currencies = currencies
-        self.impacts = impacts
+        self._currencies = currencies
+        self._impacts = impacts
 
         news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
-        self.unfiltered_data_start = news_data.index[0]
-        self.unfiltered_data_end = news_data.index[-1]
+        self._unfiltered_data_start = news_data.index[0]
+        self._unfiltered_data_end = news_data.index[-1]
 
         self._news_data = news_data[
             news_data["Currency"].isin(currencies) & news_data["Impact"].isin(impacts)
         ]
+
+    @property
+    def unfiltered_data_start(self):
+        """
+        The start of the raw data.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._unfiltered_data_start
+
+    @property
+    def unfiltered_data_end(self):
+        """
+        The end of the raw data.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._unfiltered_data_end
+
+    @property
+    def currencies(self):
+        """
+        The currencies the data is filtered on.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return self._currencies
+
+    @property
+    def impacts(self):
+        """
+        The news impacts the data is filtered on.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return self._impacts
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """
@@ -425,13 +521,13 @@ cdef class EconomicNewsEventFilter:
         """
         Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
-        if time_now < self.unfiltered_data_start:
+        if time_now < self._unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
-                             f"available news data start at {self.unfiltered_data_start}")
+                             f"available news data start at {self._unfiltered_data_start}")
 
-        if time_now > self.unfiltered_data_end:
+        if time_now > self._unfiltered_data_end:
             raise ValueError(f"The given time_now at {time_now} was after the "
-                             f"available news data end at {self.unfiltered_data_end}")
+                             f"available news data end at {self._unfiltered_data_end}")
 
         events = self._news_data[self._news_data.index >= time_now]
 
@@ -468,13 +564,13 @@ cdef class EconomicNewsEventFilter:
         """
         Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
 
-        if time_now < self.unfiltered_data_start:
+        if time_now < self._unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
-                             f"available news data start at {self.unfiltered_data_start}")
+                             f"available news data start at {self._unfiltered_data_start}")
 
-        if time_now > self.unfiltered_data_end:
+        if time_now > self._unfiltered_data_end:
             raise ValueError(f"The given time_now at {time_now} was after the "
-                             f"available news data end at {self.unfiltered_data_end}")
+                             f"available news data end at {self._unfiltered_data_end}")
 
         events = self._news_data[self._news_data.index <= time_now]
         if events.empty:

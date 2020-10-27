@@ -75,7 +75,7 @@ cdef class PerformanceAnalyzer:
 
         self._account_currency = account.currency
         self._account_balance = account.balance()
-        self._account_starting_balance = account.events()[0].balance
+        self._account_starting_balance = account.events[0].balance
 
         self._daily_returns = pd.Series(dtype=float64)
         self._realized_pnls = pd.Series(dtype=float64)
@@ -96,7 +96,7 @@ cdef class PerformanceAnalyzer:
 
         cdef Position position
         for position in positions:
-            if position.is_closed():
+            if position.is_closed:
                 self.add_trade(position.id, position.realized_pnl)
                 self.add_return(position.closed_time, position.realized_return)
 

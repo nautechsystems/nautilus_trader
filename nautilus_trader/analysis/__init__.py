@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `analysis` sub-package groups components relating to trading performance
-statistics and analysis.
+"""
+The `analysis` sub-package groups components relating to trading performance statistics and analysis.
+
+More description to follow (silence Codacy).
 """

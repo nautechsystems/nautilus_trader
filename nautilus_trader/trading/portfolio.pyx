@@ -26,7 +26,7 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Symbol, AccountId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
@@ -147,7 +147,8 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(account, "account")
         Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
 
-        self._accounts[account.id.issuer_as_venue()] = account
+        cdef AccountId account_id = account.id
+        self._accounts[account_id.issuer_as_venue()] = account
         account.register_portfolio(self)
 
     cpdef void update_instrument(self, Instrument instrument) except *:
@@ -205,7 +206,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Order order
         cdef set orders_working
         for order in orders:
-            if order.is_working():
+            if order.is_working:
                 orders_working = self._orders_working.get(order.symbol.venue, set())
                 orders_working.add(order)
                 self._orders_working[order.symbol.venue] = orders_working
@@ -232,11 +233,11 @@ cdef class Portfolio(PortfolioFacade):
         cdef Venue venue = order.symbol.venue
 
         cdef set orders_working = self._orders_working.get(venue, set())
-        if order.is_working():
+        if order.is_working:
             orders_working.add(order)
             self._orders_working[venue] = orders_working
             self._log.debug(f"Added working {order}")
-        elif order.is_completed():
+        elif order.is_completed:
             orders_working.discard(order)
 
         self._update_order_margin(venue)
@@ -264,13 +265,13 @@ cdef class Portfolio(PortfolioFacade):
         cdef int open_count = 0
         cdef int closed_count = 0
         for position in positions:
-            if position.is_open():
+            if position.is_open:
                 positions_open = self._positions_open.get(position.symbol.venue, set())
                 positions_open.add(position)
                 self._positions_open[position.symbol.venue] = positions_open
                 self._log.debug(f"Added open {position}")
                 open_count += 1
-            elif position.is_closed():
+            elif position.is_closed:
                 positions_closed = self._positions_closed.get(position.symbol.venue, set())
                 positions_closed.add(position)
                 self._positions_closed[position.symbol.venue] = positions_closed
@@ -712,7 +713,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Decimal net_position = Decimal()
         for position in positions_open:
             if position.symbol == symbol:
-                net_position += position.relative_quantity()
+                net_position += position.relative_quantity
 
         self._net_positions[symbol] = net_position
         self._log.info(f"{symbol} net position = {net_position}")

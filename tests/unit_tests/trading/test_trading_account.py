@@ -90,7 +90,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(AccountId.from_string("BITMEX-1513111-SIMULATED"), self.account.id)
         self.assertEqual(BTC, self.account.currency)
         self.assertEqual(Money(10, BTC), self.account.balance())
-        self.assertEqual(UNIX_EPOCH, self.account.last_event().timestamp)
+        self.assertEqual(UNIX_EPOCH, self.account.last_event.timestamp)
 
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
@@ -109,8 +109,8 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(9.5, BTC), self.account.balance())
-        self.assertEqual(event, self.account.last_event())
-        self.assertEqual(2, self.account.event_count())
+        self.assertEqual(event, self.account.last_event)
+        self.assertEqual(2, self.account.event_count)
 
     def test_update_order_margin(self):
         # Arrange

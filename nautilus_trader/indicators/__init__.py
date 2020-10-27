@@ -13,6 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `indicator` sub-package groups all indicators and analyzers for signal
-discovery and filtering.
-"""
+"""The `indicator` sub-package groups all indicators and analyzers used for signal discovery and filtering."""

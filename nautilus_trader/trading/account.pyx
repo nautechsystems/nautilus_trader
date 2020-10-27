@@ -34,9 +34,9 @@ cdef class Account:
         """
         Condition.not_none(event, "event")
 
-        self.id = event.account_id
-        self.account_type = self.id.account_type
-        self.currency = event.currency
+        self._id = event.account_id
+        self._account_type = self._id.account_type
+        self._currency = event.currency
 
         self._events = [event]
         self._portfolio = None
@@ -45,20 +45,88 @@ cdef class Account:
         self._position_margin = Money(0, self.currency)
 
     def __eq__(self, Account other) -> bool:
-        Condition.not_none(other, "other")
-
-        return self.id == other.id
+        return self._id == other.id
 
     def __ne__(self, Account other) -> bool:
-        Condition.not_none(other, "other")
-
-        return self.id != other.id
+        return self._id != other.id
 
     def __hash__(self) -> int:
-        return hash(self.id.value)
+        return hash(self._id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value})"
+        return f"{type(self).__name__}(id={self._id.value})"
+
+    @property
+    def id(self):
+        """
+        The accounts identifier.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._id
+
+    @property
+    def account_type(self):
+        """
+        The accounts type.
+
+        Returns
+        -------
+        AccountType
+
+        """
+        return self._account_type
+
+    @property
+    def currency(self):
+        """
+        The accounts currency.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self._currency
+
+    @property
+    def last_event(self):
+        """
+        Return the accounts last state event.
+
+        Returns
+        -------
+        AccountState
+
+        """
+        return self._events[-1]
+
+    @property
+    def events(self):
+        """
+        Return all events received by the account.
+
+        Returns
+        -------
+        list[AccountState]
+
+        """
+        return self._events.copy()
+
+    @property
+    def event_count(self):
+        """
+        Return the count of events.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self._events)
 
     cpdef void register_portfolio(self, PortfolioFacade portfolio):
         """
@@ -85,7 +153,7 @@ cdef class Account:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(self.id, event.account_id, "id", "event.account_id")
+        Condition.equal(self._id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
         self._balance = event.balance
@@ -106,7 +174,7 @@ cdef class Account:
 
         """
         Condition.not_none(margin, "money")
-        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
+        Condition.equal(margin.currency, self._currency, "margin.currency", "self.currency")
 
         self._order_margin = margin
 
@@ -126,7 +194,7 @@ cdef class Account:
 
         """
         Condition.not_none(margin, "money")
-        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
+        Condition.equal(margin.currency, self._currency, "margin.currency", "self.currency")
 
         self._position_margin = margin
 
@@ -153,7 +221,7 @@ cdef class Account:
         if self._portfolio is None:
             return None
 
-        return self._portfolio.unrealized_pnl_for_venue(self.id.issuer_as_venue())
+        return self._portfolio.unrealized_pnl_for_venue(self._id.issuer_as_venue())
 
     cpdef Money margin_balance(self):
         """
@@ -174,7 +242,7 @@ cdef class Account:
         if unrealized_pnl is None:
             return None
 
-        return Money(self._balance + unrealized_pnl, self.currency)
+        return Money(self._balance + unrealized_pnl, self._currency)
 
     cpdef Money margin_available(self):
         """
@@ -192,7 +260,7 @@ cdef class Account:
         if margin_balance is None:
             return None
 
-        return Money(margin_balance - self._order_margin - self._position_margin, self.currency)
+        return Money(margin_balance - self._order_margin - self._position_margin, self._currency)
 
     cpdef Money order_margin(self):
         """
@@ -215,36 +283,3 @@ cdef class Account:
 
         """
         return self._position_margin
-
-    cpdef AccountState last_event(self):
-        """
-        Return the accounts last state event.
-
-        Returns
-        -------
-        AccountState
-
-        """
-        return self._events[-1]
-
-    cpdef list events(self):
-        """
-        Return all events received by the account.
-
-        Returns
-        -------
-        list[AccountState]
-
-        """
-        return self._events.copy()
-
-    cpdef int event_count(self) except *:
-        """
-        Return the count of events.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self._events)

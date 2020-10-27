@@ -17,10 +17,10 @@ from cpython.datetime cimport datetime
 
 
 cdef class ForexSessionFilter:
-    cdef readonly object tz_sydney
-    cdef readonly object tz_tokyo
-    cdef readonly object tz_london
-    cdef readonly object tz_new_york
+    cdef object _tz_sydney
+    cdef object _tz_tokyo
+    cdef object _tz_london
+    cdef object _tz_new_york
 
     cpdef datetime local_from_utc(self, session, datetime time_now)
     cpdef datetime next_start(self, session, datetime time_now)
@@ -30,19 +30,19 @@ cdef class ForexSessionFilter:
 
 
 cdef class NewsEvent:
-    cdef readonly datetime timestamp
-    cdef readonly object impact
-    cdef readonly str name
-    cdef readonly str currency
+    cdef datetime _timestamp
+    cdef object _impact
+    cdef str _name
+    cdef str _currency
 
 
 cdef class EconomicNewsEventFilter:
     cdef object _news_data
 
-    cdef readonly datetime unfiltered_data_start
-    cdef readonly datetime unfiltered_data_end
-    cdef readonly list currencies
-    cdef readonly list impacts
+    cdef datetime _unfiltered_data_start
+    cdef datetime _unfiltered_data_end
+    cdef list _currencies
+    cdef list _impacts
 
     cpdef NewsEvent next_event(self, datetime time_now)
     cpdef NewsEvent prev_event(self, datetime time_now)

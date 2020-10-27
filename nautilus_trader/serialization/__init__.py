@@ -13,6 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `serialization` sub-package groups all serialization components and
-serializer implementations.
-"""
+"""The `serialization` sub-package groups all serialization components and serializer implementations."""

@@ -77,16 +77,76 @@ cdef class AccountState(Event):
         """
         super().__init__(event_id, event_timestamp)
 
-        self.account_id = account_id
-        self.currency = currency
-        self.balance = balance
-        self.margin_balance = margin_balance
-        self.margin_available = margin_available
+        self._account_id = account_id
+        self._currency = currency
+        self._balance = balance
+        self._margin_balance = margin_balance
+        self._margin_available = margin_available
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id.value}, "
-                f"balance={self.balance.to_string()})")
+                f"account_id={self._account_id.value}, "
+                f"balance={self._balance.to_string()})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def currency(self):
+        """
+        The currency of the event.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self._currency
+
+    @property
+    def balance(self):
+        """
+        The account balance of the event.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._balance
+
+    @property
+    def margin_balance(self):
+        """
+        The margin balance of the event.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._margin_balance
+
+    @property
+    def margin_available(self):
+        """
+        The margin available of the event.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._margin_available
 
 
 cdef class OrderEvent(Event):
@@ -115,10 +175,35 @@ cdef class OrderEvent(Event):
         """
         super().__init__(event_id, event_timestamp)
 
-        self.cl_ord_id = cl_ord_id
+        self._cl_ord_id = cl_ord_id
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
+        return f"{type(self).__name__}(cl_ord_id={self._cl_ord_id}, id={self._id})"
+
+    @property
+    def cl_ord_id(self):
+        """
+        Returns
+        -------
+        ClientOrderId
+            The client order identifier associated with the event.
+
+        """
+        return self._cl_ord_id
+
+    @property
+    def is_completion_trigger(self):
+        """
+        If this event represents an `Order` completion trigger (where an order
+        will subsequently be considered `completed` when this event is applied).
+
+        Returns
+        -------
+        bool
+            True if completion trigger, else False.
+
+        """
+        return self._is_completion_trigger
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -184,63 +269,99 @@ cdef class OrderInitialized(OrderEvent):
             event_timestamp,
         )
 
-        self.cl_ord_id = cl_ord_id
-        self.strategy_id = strategy_id
-        self.symbol = symbol
-        self.order_side = order_side
-        self.order_type = order_type
-        self.quantity = quantity
-        self.time_in_force = time_in_force
-        self.options = options
-        self.is_completion_trigger = False
+        self._cl_ord_id = cl_ord_id
+        self._strategy_id = strategy_id
+        self._symbol = symbol
+        self._order_side = order_side
+        self._order_type = order_type
+        self._quantity = quantity
+        self._time_in_force = time_in_force
+        self._options = options
+        self._is_completion_trigger = False
 
-
-cdef class OrderSubmitted(OrderEvent):
-    """
-    Represents an event where an order has been submitted by the system to the
-    broker/exchange.
-    """
-
-    def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            datetime submitted_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
-    ):
+    @property
+    def strategy_id(self):
         """
-        Initialize a new instance of the OrderSubmitted class.
+        The strategy identifier associated with the event.
 
-        Parameters
-        ----------
-        account_id : AccountId
-            The account identifier.
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-        submitted_time : datetime
-            The order submitted time.
-        event_id : UUID
-            The event identifier.
-        event_timestamp : datetime
-            The event timestamp.
+        Returns
+        -------
+        StrategyId
 
         """
-        super().__init__(
-            cl_ord_id,
-            event_id,
-            event_timestamp,
-        )
+        return self._strategy_id
 
-        self.account_id = account_id
-        self.submitted_time = submitted_time
-        self.is_completion_trigger = False
+    @property
+    def symbol(self):
+        """
+        The order symbol of the event.
 
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"id={self.id})")
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
+
+    @property
+    def order_side(self):
+        """
+        The order side of the event.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return self._order_side
+
+    @property
+    def order_type(self):
+        """
+        The order type of the event.
+
+        Returns
+        -------
+        OrderType
+
+        """
+        return self._order_type
+
+    @property
+    def quantity(self):
+        """
+        The order quantity of the event.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._quantity
+
+    @property
+    def time_in_force(self):
+        """
+        The order time-in-force of the event.
+
+        Returns
+        -------
+        TimeInForce
+
+        """
+        return self._time_in_force
+
+    @property
+    def options(self):
+        """
+        The order initialization options of the event.
+
+        Returns
+        -------
+        dict
+
+        """
+        return self._options
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -283,14 +404,26 @@ cdef class OrderInvalid(OrderEvent):
             event_timestamp,
         )
 
-        self.reason = reason
-        self.is_completion_trigger = True
+        self._reason = reason
+        self._is_completion_trigger = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason}, "
-                f"id={self.id})")
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"reason={self._reason}, "
+                f"id={self._id})")
+
+    @property
+    def reason(self):
+        """
+        The reason the order was considered invalid.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._reason
 
 
 cdef class OrderDenied(OrderEvent):
@@ -332,14 +465,96 @@ cdef class OrderDenied(OrderEvent):
             event_timestamp,
         )
 
-        self.reason = reason
-        self.is_completion_trigger = True
+        self._reason = reason
+        self._is_completion_trigger = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason}, "
-                f"id={self.id})")
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"reason={self._reason}, "
+                f"id={self._id})")
+
+    @property
+    def reason(self):
+        """
+        The reason the order was denied.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._reason
+
+
+cdef class OrderSubmitted(OrderEvent):
+    """
+    Represents an event where an order has been submitted by the system to the
+    broker/exchange.
+    """
+
+    def __init__(
+            self,
+            AccountId account_id not None,
+            ClientOrderId cl_ord_id not None,
+            datetime submitted_time not None,
+            UUID event_id not None,
+            datetime event_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the OrderSubmitted class.
+
+        Parameters
+        ----------
+        account_id : AccountId
+            The account identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier.
+        submitted_time : datetime
+            The order submitted time.
+        event_id : UUID
+            The event identifier.
+        event_timestamp : datetime
+            The event timestamp.
+
+        """
+        super().__init__(
+            cl_ord_id,
+            event_id,
+            event_timestamp,
+        )
+
+        self._account_id = account_id
+        self._submitted_time = submitted_time
+        self._is_completion_trigger = False
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        Returns
+        -------
+        AccountId
+            The account identifier associated with the event.
+
+        """
+        return self._account_id
+
+    @property
+    def submitted_time(self):
+        """
+        Returns
+        -------
+        datetime
+            The order submitted time of the event.
+
+        """
+        return self._submitted_time
 
 
 cdef class OrderRejected(OrderEvent):
@@ -387,17 +602,53 @@ cdef class OrderRejected(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.rejected_time = rejected_time
-        self.reason = reason
-        self.is_completion_trigger = True
+        self._account_id = account_id
+        self._rejected_time = rejected_time
+        self._reason = reason
+        self._is_completion_trigger = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"reason={self._reason}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def rejected_time(self):
+        """
+        The order rejected time of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._rejected_time
+
+    @property
+    def reason(self):
+        """
+        The reason the order was rejected.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._reason
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -439,17 +690,50 @@ cdef class OrderAccepted(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.order_id = order_id
-        self.accepted_time = accepted_time
-        self.is_completion_trigger = False
+        self._account_id = account_id
+        self._order_id = order_id
+        self._accepted_time = accepted_time
+        self._is_completion_trigger = False
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"order_id={self._order_id}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        Returns
+        -------
+        AccountId
+            The account identifier associated with the event.
+
+        """
+        return self._account_id
+
+    @property
+    def order_id(self):
+        """
+        Returns
+        -------
+        OrderId
+            The order identifier associated with the event.
+
+        """
+        return self._order_id
+
+    @property
+    def accepted_time(self):
+        """
+        Returns
+        -------
+        datetime
+            The order accepted time of the event.
+
+        """
+        return self._accepted_time
 
 
 cdef class OrderWorking(OrderEvent):
@@ -526,28 +810,148 @@ cdef class OrderWorking(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.order_id = order_id
-        self.symbol = symbol
-        self.order_side = order_side
-        self.order_type = order_type
-        self.quantity = quantity
-        self.price = price
-        self.time_in_force = time_in_force
-        self.expire_time = expire_time
-        self.working_time = working_time
-        self.is_completion_trigger = False
+        self._account_id = account_id
+        self._order_id = order_id
+        self._symbol = symbol
+        self._order_side = order_side
+        self._order_type = order_type
+        self._quantity = quantity
+        self._price = price
+        self._time_in_force = time_in_force
+        self._expire_time = expire_time
+        self._working_time = working_time
+        self._is_completion_trigger = False
 
     def __repr__(self) -> str:
-        cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
+        cdef str expire_time = "" if self._expire_time is None else f" {format_iso8601(self._expire_time)}"
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"{order_side_to_string(self.order_side)} {self.quantity.to_string()} "
-                f"{self.symbol} {order_type_to_string(self.order_type)} @ "
-                f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"order_id={self._order_id}, "
+                f"{order_side_to_string(self._order_side)} {self._quantity.to_string()} "
+                f"{self._symbol} {order_type_to_string(self._order_type)} @ "
+                f"{self._price} {time_in_force_to_string(self._time_in_force)}{expire_time}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def order_id(self):
+        """
+        The order identifier associated with the event.
+
+        Returns
+        -------
+        OrderId
+
+        """
+        return self._order_id
+
+    @property
+    def symbol(self):
+        """
+        The order symbol of the event.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
+
+    @property
+    def order_side(self):
+        """
+        The order symbol of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._order_side
+
+    @property
+    def order_type(self):
+        """
+        The order type of the event.
+
+        Returns
+        -------
+        OrderType
+
+        """
+        return self._order_type
+
+    @property
+    def quantity(self):
+        """
+        The order quantity of the event.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._quantity
+
+    @property
+    def price(self):
+        """
+        The order price of the event.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._price
+
+    @property
+    def time_in_force(self):
+        """
+        The order time-in-force of the event.
+
+        Returns
+        -------
+        TimeInForce
+
+        """
+        return self._time_in_force
+
+    @property
+    def expire_time(self):
+        """
+        The order expire time of the event.
+
+        Returns
+        -------
+        datetime or None
+
+        """
+        return self._expire_time
+
+    @property
+    def working_time(self):
+        """
+        The order working time of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._working_time
 
 
 cdef class OrderCancelReject(OrderEvent):
@@ -602,19 +1006,67 @@ cdef class OrderCancelReject(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.rejected_time = rejected_time
-        self.response_to = response_to
-        self.reason = reason
-        self.is_completion_trigger = False
+        self._account_id = account_id
+        self._rejected_time = rejected_time
+        self._response_to = response_to
+        self._reason = reason
+        self._is_completion_trigger = False
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"response_to={self.response_to}, "
-                f"reason={self.reason}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"response_to={self._response_to}, "
+                f"reason={self._reason}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def rejected_time(self):
+        """
+        The requests rejected time of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._rejected_time
+
+    @property
+    def response_to(self):
+        """
+        The cancel rejection response to.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._response_to
+
+    @property
+    def reason(self):
+        """
+        The reason for order cancel rejection.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._reason
 
 
 cdef class OrderCancelled(OrderEvent):
@@ -657,17 +1109,53 @@ cdef class OrderCancelled(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.order_id = order_id
-        self.cancelled_time = cancelled_time
-        self.is_completion_trigger = True
+        self._account_id = account_id
+        self._order_id = order_id
+        self._cancelled_time = cancelled_time
+        self._is_completion_trigger = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"order_id={self._order_id}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def order_id(self):
+        """
+        The order identifier associated with the event.
+
+        Returns
+        -------
+        OrderId
+
+        """
+        return self._order_id
+
+    @property
+    def cancelled_time(self):
+        """
+        The order cancelled time of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._cancelled_time
 
 
 cdef class OrderModified(OrderEvent):
@@ -716,21 +1204,81 @@ cdef class OrderModified(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.order_id = order_id
-        self.modified_quantity = modified_quantity
-        self.modified_price = modified_price
-        self.modified_time = modified_time
-        self.is_completion_trigger = False
+        self._account_id = account_id
+        self._order_id = order_id
+        self._modified_quantity = modified_quantity
+        self._modified_price = modified_price
+        self._modified_time = modified_time
+        self._is_completion_trigger = False
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_order_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"qty={self.modified_quantity.to_string()}, "
-                f"price={self.modified_price}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_order_id={self._cl_ord_id}, "
+                f"order_id={self._order_id}, "
+                f"qty={self._modified_quantity.to_string()}, "
+                f"price={self._modified_price}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def order_id(self):
+        """
+        The order identifier associated with the event.
+
+        Returns
+        -------
+        OrderId
+
+        """
+        return self._order_id
+
+    @property
+    def modified_quantity(self):
+        """
+        The order quantity of the event.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._modified_quantity
+
+    @property
+    def modified_price(self):
+        """
+        The order price of the event.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._modified_price
+
+    @property
+    def modified_time(self):
+        """
+        The order modified time of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._modified_time
 
 
 cdef class OrderExpired(OrderEvent):
@@ -772,17 +1320,53 @@ cdef class OrderExpired(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.order_id = order_id
-        self.expired_time = expired_time
-        self.is_completion_trigger = True
+        self._account_id = account_id
+        self._order_id = order_id
+        self._expired_time = expired_time
+        self._is_completion_trigger = True
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"order_id={self._order_id}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def order_id(self):
+        """
+        The order identifier associated with the event.
+
+        Returns
+        -------
+        OrderId
+
+        """
+        return self._order_id
+
+    @property
+    def expired_time(self):
+        """
+        The order expired time of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._expired_time
 
 
 cdef class OrderFilled(OrderEvent):
@@ -803,7 +1387,7 @@ cdef class OrderFilled(OrderEvent):
             Quantity filled_qty not None,
             Quantity cumulative_qty not None,
             Quantity leaves_qty not None,
-            Price avg_price not None,
+            Decimal avg_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
             Currency base_currency not None,
@@ -840,8 +1424,8 @@ cdef class OrderFilled(OrderEvent):
             The total filled quantity for the order.
         leaves_qty : Quantity
             The quantity open for further execution.
-        avg_price : Price
-            The calculated average price of all fills on this order.
+        avg_price : Decimal
+            The average price of all fills on this order.
         liquidity_side : LiquiditySide
             The execution liquidity side.
         base_currency : Currency
@@ -866,25 +1450,25 @@ cdef class OrderFilled(OrderEvent):
             event_timestamp,
         )
 
-        self.account_id = account_id
-        self.order_id = order_id
-        self.execution_id = execution_id
-        self.position_id = position_id
-        self.strategy_id = strategy_id
-        self.symbol = symbol
-        self.order_side = order_side
-        self.filled_qty = filled_qty
-        self.cumulative_qty = cumulative_qty
-        self.leaves_qty = leaves_qty
-        self.is_partial_fill = self.leaves_qty > 0
-        self.avg_price = avg_price
-        self.commission = commission
-        self.liquidity_side = liquidity_side
-        self.base_currency = base_currency
-        self.quote_currency = quote_currency
-        self.is_inverse = is_inverse
-        self.execution_time = execution_time
-        self.is_completion_trigger = not self.is_partial_fill
+        self._account_id = account_id
+        self._order_id = order_id
+        self._execution_id = execution_id
+        self._position_id = position_id
+        self._strategy_id = strategy_id
+        self._symbol = symbol
+        self._order_side = order_side
+        self._filled_qty = filled_qty
+        self._cumulative_qty = cumulative_qty
+        self._leaves_qty = leaves_qty
+        self._is_partial_fill = self._leaves_qty > 0
+        self._avg_price = avg_price
+        self._commission = commission
+        self._liquidity_side = liquidity_side
+        self._base_currency = base_currency
+        self._quote_currency = quote_currency
+        self._is_inverse = is_inverse
+        self._execution_time = execution_time
+        self._is_completion_trigger = not self._is_partial_fill
 
     cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id):
         """
@@ -906,49 +1490,266 @@ cdef class OrderFilled(OrderEvent):
             If strategy_id is not null and self.strategy_id does not match.
 
         """
-        if self.position_id.not_null():
-            Condition.equal(position_id, self.position_id, "position_id", "self.position_id")
-        if self.strategy_id.not_null():
-            Condition.equal(strategy_id, self.strategy_id, "strategy_id", "self.strategy_id")
+        if self._position_id.not_null:
+            Condition.equal(position_id, self._position_id, "position_id", "self.position_id")
+        if self._strategy_id.not_null:
+            Condition.equal(strategy_id, self._strategy_id, "strategy_id", "self.strategy_id")
 
         return OrderFilled(
-            self.account_id,
-            self.cl_ord_id,
-            self.order_id,
-            self.execution_id,
+            self._account_id,
+            self._cl_ord_id,
+            self._order_id,
+            self._execution_id,
             position_id,  # Set identifier
             strategy_id,  # Set identifier
-            self.symbol,
-            self.order_side,
-            self.filled_qty,
-            self.cumulative_qty,
-            self.leaves_qty,
-            self.avg_price,
-            self.commission,
-            self.liquidity_side,
-            self.base_currency,
-            self.quote_currency,
-            self.is_inverse,
-            self.execution_time,
-            self.id,
-            self.timestamp
+            self._symbol,
+            self._order_side,
+            self._filled_qty,
+            self._cumulative_qty,
+            self._leaves_qty,
+            self._avg_price,
+            self._commission,
+            self._liquidity_side,
+            self._base_currency,
+            self._quote_currency,
+            self._is_inverse,
+            self._execution_time,
+            self._id,
+            self._timestamp
         )
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"cl_ord_id={self.cl_ord_id}, "
-                f"order_id={self.order_id}, "
-                f"position_id={self.position_id}, "
-                f"strategy_id={self.strategy_id}, "
-                f"symbol={self.symbol}, "
-                f"side={order_side_to_string(self.order_side)}"
-                f"-{liquidity_side_to_string(self.liquidity_side)}, "
-                f"filled_qty={self.filled_qty.to_string()}, "
-                f"leaves_qty={self.leaves_qty.to_string()}, "
-                f"avg_price={self.avg_price}, "
-                f"commission={self.commission.to_string()}, "
-                f"id={self.id})")
+                f"account_id={self._account_id}, "
+                f"cl_ord_id={self._cl_ord_id}, "
+                f"order_id={self._order_id}, "
+                f"position_id={self._position_id}, "
+                f"strategy_id={self._strategy_id}, "
+                f"symbol={self._symbol}, "
+                f"side={order_side_to_string(self._order_side)}"
+                f"-{liquidity_side_to_string(self._liquidity_side)}, "
+                f"filled_qty={self._filled_qty.to_string()}, "
+                f"leaves_qty={self._leaves_qty.to_string()}, "
+                f"avg_price={self._avg_price}, "
+                f"commission={self._commission.to_string()}, "
+                f"id={self._id})")
+
+    @property
+    def account_id(self):
+        """
+        The account identifier associated with the event.
+
+        Returns
+        -------
+        AccountId
+
+        """
+        return self._account_id
+
+    @property
+    def order_id(self):
+        """
+        The order identifier associated with the event.
+
+        Returns
+        -------
+        OrderId
+
+        """
+        return self._order_id
+
+    @property
+    def execution_id(self):
+        """
+        The execution identifier associated with the event.
+
+        Returns
+        -------
+        ExecutionId
+
+        """
+        return self._execution_id
+
+    @property
+    def position_id(self):
+        """
+        The position identifier associated with the event.
+
+        Returns
+        -------
+        PositionId
+
+        """
+        return self._position_id
+
+    @property
+    def strategy_id(self):
+        """
+        The strategy identifier associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return self._strategy_id
+
+    @property
+    def symbol(self):
+        """
+        The order symbol of the event.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
+
+    @property
+    def order_side(self):
+        """
+        The order side of the event.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return self._order_side
+
+    @property
+    def filled_qty(self):
+        """
+        The order filled quantity of the event.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._filled_qty
+
+    @property
+    def cumulative_qty(self):
+        """
+        The cumulative filled quantity of the order.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._cumulative_qty
+
+    @property
+    def leaves_qty(self):
+        """
+        The quantity quantity remaining to be filled of the order.
+
+        Returns
+        -------
+        Quantity
+
+        """
+        return self._leaves_qty
+
+    @property
+    def is_partial_fill(self):
+        """
+        If the event represents a partial fill of the order.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._is_partial_fill
+
+    @property
+    def avg_price(self):
+        """
+        The average fill price of the event.
+
+        Returns
+        -------
+        Decimal
+
+        """
+        return self._avg_price
+
+    @property
+    def commission(self):
+        """
+        The commission generated from the fill event.
+
+        Returns
+        -------
+        Money
+
+        """
+        return self._commission
+
+    @property
+    def liquidity_side(self):
+        """
+        The liquidity side of the event (if the order was MAKER or TAKER).
+
+        Returns
+        -------
+        LiquiditySide
+
+        """
+        return self._liquidity_side
+
+    @property
+    def base_currency(self):
+        """
+        The base currency of the event.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self._base_currency
+
+    @property
+    def quote_currency(self):
+        """
+        The quote currency of the event.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self._quote_currency
+
+    @property
+    def is_inverse(self):
+        """
+        If the instrument associated with the event is inverse.
+
+        Returns
+        -------
+        bool
+            True if instrument is inverse, else False.
+
+        """
+        return self._is_inverse
+
+    @property
+    def execution_time(self):
+        """
+        The execution timestamp of the event.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._execution_time
 
 
 cdef class PositionEvent(Event):
@@ -979,8 +1780,32 @@ cdef class PositionEvent(Event):
 
         """
         super().__init__(event_id, event_timestamp)
-        self.position = position
-        self.order_fill = order_fill
+        self._position = position
+        self._order_fill = order_fill
+
+    @property
+    def position(self):
+        """
+        The position associated with the event.
+
+        Returns
+        -------
+        Position
+
+        """
+        return self._position
+
+    @property
+    def order_fill(self):
+        """
+        The order fill of the event.
+
+        Returns
+        -------
+        OrderFilled
+
+        """
+        return self._order_fill
 
 
 cdef class PositionOpened(PositionEvent):
@@ -1019,13 +1844,13 @@ cdef class PositionOpened(PositionEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"strategy_id={self.position.strategy_id}, "
-                f"entry={order_side_to_string(self.position.entry)}, "
-                f"avg_open={round(self.position.avg_open, 5)}, "
-                f"{self.position.status_string()}, "
-                f"id={self.id})")
+                f"account_id={self._position.account_id}, "
+                f"position_id={self._position.id}, "
+                f"strategy_id={self._position.strategy_id}, "
+                f"entry={order_side_to_string(self._position.entry)}, "
+                f"avg_open={round(self._position.avg_open, 5)}, "
+                f"{self._position.status_string()}, "
+                f"id={self._id})")
 
 
 cdef class PositionModified(PositionEvent):
@@ -1060,7 +1885,7 @@ cdef class PositionModified(PositionEvent):
             If position is not open.
 
         """
-        Condition.true(position.is_open(), "position.is_open()")
+        Condition.true(position.is_open, "position.is_open")
         super().__init__(
             position,
             order_fill,
@@ -1070,16 +1895,16 @@ cdef class PositionModified(PositionEvent):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"strategy_id={self.position.strategy_id}, "
-                f"entry={order_side_to_string(self.position.entry)}, "
-                f"avg_open={self.position.avg_open}, "
-                f"realized_points={self.position.realized_points}, "
-                f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string()}, "
-                f"{self.position.status_string()}, "
-                f"id={self.id})")
+                f"account_id={self._position.account_id}, "
+                f"position_id={self._position.id}, "
+                f"strategy_id={self._position.strategy_id}, "
+                f"entry={order_side_to_string(self._position.entry)}, "
+                f"avg_open={self._position.avg_open}, "
+                f"realized_points={self._position.realized_points}, "
+                f"realized_return={round(self._position.realized_return * 100, 3)}%, "
+                f"realized_pnl={self._position.realized_pnl.to_string()}, "
+                f"{self._position.status_string()}, "
+                f"id={self._id})")
 
 
 cdef class PositionClosed(PositionEvent):
@@ -1114,7 +1939,7 @@ cdef class PositionClosed(PositionEvent):
             If position is not closed.
 
         """
-        Condition.true(position.is_closed(), "position.is_closed()")
+        Condition.true(position.is_closed, "position.is_closed")
         super().__init__(
             position,
             order_fill,
@@ -1123,16 +1948,16 @@ cdef class PositionClosed(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        cdef str duration = str(self.position.open_duration).replace("0 days ", "")
+        cdef str duration = str(self._position.open_duration).replace("0 days ", "")
         return (f"{type(self).__name__}("
-                f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"strategy_id={self.position.strategy_id}, "
-                f"entry={order_side_to_string(self.position.entry)}, "
+                f"account_id={self._position.account_id}, "
+                f"position_id={self._position.id}, "
+                f"strategy_id={self._position.strategy_id}, "
+                f"entry={order_side_to_string(self._position.entry)}, "
                 f"duration={duration}, "
-                f"avg_open={self.position.avg_open}, "
-                f"avg_close={self.position.avg_close}, "
-                f"realized_points={round(self.position.realized_points, 5)}, "
-                f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string()}, "
-                f"id={self.id})")
+                f"avg_open={self._position.avg_open}, "
+                f"avg_close={self._position.avg_close}, "
+                f"realized_points={round(self._position.realized_points, 5)}, "
+                f"realized_return={round(self._position.realized_return * 100, 3)}%, "
+                f"realized_pnl={self._position.realized_pnl.to_string()}, "
+                f"id={self._id})")

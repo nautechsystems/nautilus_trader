@@ -23,7 +23,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -38,51 +37,36 @@ cdef class Position:
     cdef Quantity _sell_quantity
     cdef Decimal _relative_quantity
 
-    cdef readonly PositionId id
-    cdef readonly AccountId account_id
-    cdef readonly ClientOrderId from_order
-    cdef readonly StrategyId strategy_id
-
-    cdef readonly datetime timestamp
-    cdef readonly Symbol symbol
-    cdef readonly OrderSide entry
-    cdef readonly PositionSide side
-    cdef readonly Quantity quantity
-    cdef readonly Quantity peak_quantity
-    cdef readonly Currency base_currency
-    cdef readonly Currency quote_currency
-    cdef readonly datetime opened_time
-    cdef readonly datetime closed_time
-    cdef readonly timedelta open_duration
-    cdef readonly Decimal avg_open
-    cdef readonly Decimal avg_close
-    cdef readonly Decimal realized_points
-    cdef readonly Decimal realized_return
-    cdef readonly Money realized_pnl
-    cdef readonly Money commission
-    cdef readonly QuoteTick last_tick
+    cdef PositionId _id
+    cdef AccountId _account_id
+    cdef ClientOrderId _from_order
+    cdef StrategyId _strategy_id
+    cdef datetime _timestamp
+    cdef Symbol _symbol
+    cdef OrderSide _entry
+    cdef PositionSide _side
+    cdef Quantity _quantity
+    cdef Quantity _peak_quantity
+    cdef Currency _base_currency
+    cdef Currency _quote_currency
+    cdef datetime _opened_time
+    cdef datetime _closed_time
+    cdef timedelta _open_duration
+    cdef Decimal _avg_open
+    cdef Decimal _avg_close
+    cdef Decimal _realized_points
+    cdef Decimal _realized_return
+    cdef Money _realized_pnl
+    cdef Money _commission
 
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
     cpdef void apply(self, OrderFilled event) except *
-    cpdef str side_as_string(self)
-    cpdef str status_string(self)
-    cpdef OrderFilled last_event(self)
-    cpdef ExecutionId last_execution_id(self)
-    cpdef set cl_ord_ids(self)
-    cpdef set order_ids(self)
-    cpdef set execution_ids(self)
-    cpdef list events(self)
-    cpdef int event_count(self) except *
-    cpdef bint is_open(self) except *
-    cpdef bint is_closed(self) except *
-    cpdef bint is_long(self) except *
-    cpdef bint is_short(self) except *
-    cpdef Decimal relative_quantity(self)
+
+    cdef str status_string(self)
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
-
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
     cdef inline Decimal _calculate_cost(self, Decimal avg_price, Quantity total_quantity)

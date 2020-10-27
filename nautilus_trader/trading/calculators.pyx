@@ -245,7 +245,6 @@ cdef class RolloverInterestCalculator:
     cpdef double calc_overnight_rate(self, Symbol symbol, date date) except *:
         """
         Return the rollover interest rate between the given base currency and quote currency.
-        Note: 1% = 0.01 bp
 
         Parameters
         ----------
@@ -262,6 +261,10 @@ cdef class RolloverInterestCalculator:
         ------
         ValueError
             If symbol.code length is not in range [6, 7].
+
+        Notes
+        -----
+        1% = 0.01 bp
 
         """
         Condition.not_none(symbol, "symbol")
