@@ -40,7 +40,7 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class BacktestEnginePerformanceTests(unittest.TestCase):
 
     @staticmethod
-    def test_run_with_empty_strategy(self):
+    def test_run_with_empty_strategy():
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
@@ -70,8 +70,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
-        self.assertTrue(True)
-
         # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
         #          3490226 function calls in 0.623 seconds
         #          5407539 function calls (5407535 primitive calls) in 1.187 seconds
@@ -88,7 +86,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 10/02/20   713938 function calls (713572 primitive calls) in 2.670 seconds (something changed)
 
     @staticmethod
-    def test_run_for_tick_processing(self):
+    def test_run_for_tick_processing():
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
@@ -127,7 +125,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s.strip_dirs().sort_stats("time").print_stats()
 
     @staticmethod
-    def test_run_with_ema_cross_strategy(self):
+    def test_run_with_ema_cross_strategy():
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
