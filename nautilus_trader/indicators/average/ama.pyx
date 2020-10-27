@@ -128,7 +128,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
 
         """
         # Check if this is the initial input (then initialize variables)
-        if not self.has_inputs:
+        if not self._has_inputs:
             self.value = value
 
         self._increment_input()

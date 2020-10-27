@@ -103,7 +103,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
 
         """
         # Check if this is the initial input
-        if not self.has_inputs:
+        if not self._has_inputs:
             self._increment_input()
             self.value = value
             return

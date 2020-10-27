@@ -17,7 +17,6 @@ from datetime import timedelta
 import unittest
 
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
-from tests.test_kit.series import BatterySeries
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -28,21 +27,16 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         # Arrange
         self.vwap = VolumeWeightedAveragePrice()
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("VolumeWeightedAveragePrice", self.vwap.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("VolumeWeightedAveragePrice()", str(self.vwap))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.vwap).startswith("<VolumeWeightedAveragePrice() object at"))
-        self.assertTrue(repr(self.vwap).endswith(">"))
+        self.assertEqual("VolumeWeightedAveragePrice()", repr(self.vwap))
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
@@ -132,18 +126,8 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
             self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Act
-        self.vwap.reset()  # No assertion errors.
-        self.assertFalse(self.vwap.initialized)
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.vwap.update_raw(point, 10000, UNIX_EPOCH)
-            output.append(self.vwap.value)
+        self.vwap.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.vwap.initialized)
+        self.assertEqual(0, self.vwap.value)

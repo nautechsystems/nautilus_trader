@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.volatility_ratio import VolatilityRatio
-from tests.test_kit.series import BatterySeries
 
 
 class VolatilityCompressionRatioTests(unittest.TestCase):
@@ -27,21 +26,16 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         # Arrange
         self.vcr = VolatilityRatio(10, 100)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("VolatilityRatio", self.vcr.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("VolatilityRatio(10, 100, SIMPLE, True, 0.0)", str(self.vcr))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.vcr).startswith("<VolatilityRatio(10, 100, SIMPLE, True, 0.0) object at"))
-        self.assertTrue(repr(self.vcr).endswith(">"))
+        self.assertEqual("VolatilityRatio(10, 100, SIMPLE, True, 0.0)", repr(self.vcr))
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
@@ -139,17 +133,4 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         self.vcr.reset()
 
         # Assert
-        self.assertEqual(0.0, self.vcr.value)  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.vcr.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
-            output.append(self.vcr.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertEqual(0, self.vcr.value)

@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.average.hma import HullMovingAverage
-from tests.test_kit.series import BatterySeries
 
 
 class HullMovingAverageTests(unittest.TestCase):
@@ -26,21 +25,16 @@ class HullMovingAverageTests(unittest.TestCase):
         # Arrange
         self.hma = HullMovingAverage(10)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("HullMovingAverage", self.hma.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("HullMovingAverage(10)", str(self.hma))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.hma).startswith("<HullMovingAverage(10) object at"))
-        self.assertTrue(repr(self.hma).endswith(">"))
+        self.assertEqual("HullMovingAverage(10)", repr(self.hma))
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -103,16 +97,3 @@ class HullMovingAverageTests(unittest.TestCase):
 
         # Act
         self.hma.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.hma.update_raw(point)
-            output.append(self.hma.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
