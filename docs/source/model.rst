@@ -2,11 +2,7 @@ Model
 =====
 
 .. automodule:: nautilus_trader.model
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Bar
 ---

@@ -2,11 +2,7 @@ Execution
 =========
 
 .. automodule:: nautilus_trader.execution
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
+
 
 Base
 ----
