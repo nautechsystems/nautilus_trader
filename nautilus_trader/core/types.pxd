@@ -19,5 +19,5 @@ cdef class ValidString:
 
 
 cdef class Identifier:
-    cdef str _id_type
+    cdef type _id_type
     cdef str _value
