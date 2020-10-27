@@ -23,7 +23,6 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_from_string
 from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.identifiers cimport AccountId
@@ -81,22 +80,79 @@ cdef class Trader:
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
 
+        self._id = trader_id
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self.id = trader_id
-        self._log = LoggerAdapter(f"Trader-{self.id.value}", logger)
+        self._log = LoggerAdapter(f"Trader-{self._id.value}", logger)
+        self._fsm = create_component_fsm()
         self._data_engine = data_engine
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
+        self._strategies = []
+        self._portfolio = self._exec_engine.portfolio
+        self._analyzer = PerformanceAnalyzer()
 
-        self.portfolio = self._exec_engine.portfolio
-        self.analyzer = PerformanceAnalyzer()
-
-        self._fsm = create_component_fsm()
-
-        self.strategies = []
-        self.strategy_ids = set()
         self.initialize_strategies(strategies)
+
+    @property
+    def id(self):
+        """
+        The trader identifier.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._id
+
+    @property
+    def strategies(self):
+        """
+        The traders strategies.
+
+        Returns
+        -------
+        list[TradingStrategy]
+
+        """
+        return self._strategies
+
+    @property
+    def portfolio(self):
+        """
+        The portfolio for the trader.
+
+        Returns
+        -------
+        Portfolio
+
+        """
+        return self._portfolio
+
+    @property
+    def analyzer(self):
+        """
+        The traders performance analyzer
+
+        Returns
+        -------
+        PerformanceAnalyzer
+
+        """
+        return self._analyzer
+
+    @property
+    def strategy_ids(self):
+        """
+        The traders strategy identifiers.
+
+        Returns
+        -------
+        set[StrategyId]
+
+        """
+        return {strategy.id for strategy in self._strategies}
 
     cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
         """
@@ -125,30 +181,30 @@ cdef class Trader:
         self._log.info(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             # Design assumption that no strategies are running
             assert not strategy.state == ComponentState.RUNNING
 
         # Dispose of current strategies
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             self._exec_engine.deregister_strategy(strategy)
             strategy.dispose()
 
-        self.strategies.clear()
-        self.strategy_ids.clear()
+        self._strategies.clear()
 
+        cdef set strategy_ids = set()
         # Initialize strategies
         for strategy in strategies:
             # Check strategy_ids are unique
-            if strategy.id not in self.strategy_ids:
-                self.strategy_ids.add(strategy.id)
+            if strategy.id not in strategy_ids:
+                strategy_ids.add(strategy.id)
             else:
                 raise ValueError(f"The strategy_id {strategy.id} was not unique "
                                  f"(duplicate strategy_ids)")
 
             # Wire trader into strategy
             strategy.register_trader(
-                self.id,
+                self._id,
                 self._clock.__class__(),  # Clock per strategy
                 self._uuid_factory,
                 self._log.get_logger(),
@@ -161,7 +217,7 @@ cdef class Trader:
             self._exec_engine.register_strategy(strategy)
 
             # Add to internal strategies
-            self.strategies.append(strategy)
+            self._strategies.append(strategy)
 
             self._log.info(f"Initialized {strategy}.")
 
@@ -178,12 +234,12 @@ cdef class Trader:
 
         self._log.info(f"state={self._fsm.state_string()}...")
 
-        if not self.strategies:
+        if not self._strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
             return
 
         cdef TradingStrategy strategy
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             strategy.start()
 
         self._fsm.trigger(ComponentTrigger.RUNNING)
@@ -202,7 +258,7 @@ cdef class Trader:
         self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef TradingStrategy strategy
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             if strategy.state == ComponentState.RUNNING:
                 strategy.stop()
             else:
@@ -221,14 +277,14 @@ cdef class Trader:
         """
         Save all strategy states to the execution cache.
         """
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             self._exec_engine.cache.update_strategy(strategy)
 
     cpdef void load(self) except *:
         """
         Load all strategy states from the execution cache.
         """
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             self._exec_engine.cache.load_strategy(strategy)
 
     cpdef void reset(self) except *:
@@ -250,11 +306,11 @@ cdef class Trader:
 
         self._log.info(f"state={self._fsm.state_string()}...")
 
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             strategy.reset()
 
-        self.portfolio.reset()
-        self.analyzer.reset()
+        self._portfolio.reset()
+        self._analyzer.reset()
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self._log.info(f"state={self._fsm.state_string()}.")
@@ -273,7 +329,7 @@ cdef class Trader:
 
         self._log.info(f"state={self._fsm.state_string()}...")
 
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             strategy.dispose()
 
         self._fsm.trigger(ComponentTrigger.DISPOSED)
@@ -315,7 +371,7 @@ cdef class Trader:
         """
         cdef dict states = {}
         cdef TradingStrategy strategy
-        for strategy in self.strategies:
+        for strategy in self._strategies:
             states[strategy.id] = strategy.state_string()
 
         return states

@@ -36,7 +36,19 @@ cdef class PositionSizer:
             The instrument for position sizing.
 
         """
-        self.instrument = instrument
+        self._instrument = instrument
+
+    @property
+    def instrument(self):
+        """
+        The instrument for the position sizer.
+
+        Returns
+        -------
+        Instrument
+
+        """
+        return self._instrument
 
     cpdef void update_instrument(self, Instrument instrument) except *:
         """
@@ -56,7 +68,7 @@ cdef class PositionSizer:
         Condition.not_none(instrument, "instrument")
         Condition.equal(self.instrument.symbol, instrument.symbol, "instrument.symbol", "instrument.symbol")
 
-        self.instrument = instrument
+        self._instrument = instrument
 
     cpdef Quantity calculate(
             self,
@@ -175,21 +187,21 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_negative_int(unit_batch_size, "unit_batch_size")
 
         if exchange_rate == 0:
-            return Quantity(precision=self.instrument.size_precision)
+            return Quantity(precision=self._instrument.size_precision)
 
         cdef Decimal risk_points = self._calculate_risk_ticks(entry, stop_loss)
         cdef Decimal risk_money = self._calculate_riskable_money(equity, risk, commission_rate)
 
         if risk_points <= 0:
             # Divide by zero protection
-            return Quantity(precision=self.instrument.size_precision)
+            return Quantity(precision=self._instrument.size_precision)
 
         # Calculate position size
-        cdef Decimal position_size = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size
+        cdef Decimal position_size = ((risk_money / exchange_rate) / risk_points) / self._instrument.tick_size
 
         # Limit size on hard limit
         if hard_limit > 0:
-            position_size = min(position_size, Decimal(hard_limit, self.instrument.size_precision))
+            position_size = min(position_size, Decimal(hard_limit, self._instrument.size_precision))
 
         # Batch into units
         cdef Decimal position_size_batched = max(Decimal(), position_size / units)
@@ -199,6 +211,6 @@ cdef class FixedRiskSizer(PositionSizer):
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
         # Limit size on max trade size
-        cdef Decimal final_size = min(position_size_batched, self.instrument.max_quantity)
+        cdef Decimal final_size = min(position_size_batched, self._instrument.max_quantity)
 
-        return Quantity(final_size, precision=self.instrument.size_precision)
+        return Quantity(final_size, precision=self._instrument.size_precision)
