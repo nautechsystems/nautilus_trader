@@ -345,8 +345,8 @@ cdef class TestTimer(Timer):
 
     cpdef list advance(self, datetime to_time):
         """
-        Return a list of time events by advancing the test timer forward to
-        the given time. A time event is appended for each time a next event is
+        Advance the test timer forward to the given time, generating a sequence
+        of events. A time event is appended for each time a next event is
         <= the given to_time.
 
         Parameters

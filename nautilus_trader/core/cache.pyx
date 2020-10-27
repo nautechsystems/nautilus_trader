@@ -65,7 +65,7 @@ cdef class ObjectCache:
 
     cpdef list keys(self):
         """
-        The list of the keys held in the cache.
+        The keys held in the cache.
 
         Returns
         -------
