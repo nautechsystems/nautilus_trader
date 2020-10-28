@@ -33,10 +33,8 @@ cdef class DataClient:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef DataEngine _engine
-
-    cdef readonly Venue venue
-    cdef readonly int command_count
-    cdef readonly int data_count
+    cdef Venue _venue
+    cdef bint _is_connected
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -89,5 +87,3 @@ cdef class DataClient:
     cpdef void handle_bars(self, BarType bar_type, list bars) except *
     cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_instruments(self, list instruments) except *
-
-    cdef void _reset(self) except *

@@ -13,6 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `DataClient` class is responsible for interfacing with a particular API
+which may be presented directly by an exchange, or broker intermediary. It
+could also be possible to write clients for specialized data provides as long
+as all abstract methods are implemented.
+"""
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
@@ -66,12 +73,35 @@ cdef class DataClient:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(f"{type(self).__name__}-{venue.value}", logger)
         self._engine = engine
-
-        self.venue = venue
-        self.command_count = 0
-        self.data_count = 0
+        self._venue = venue
+        self._is_connected = False
 
         self._log.info("Initialized.")
+
+    @property
+    def venue(self):
+        """
+        The data clients venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
+
+    @property
+    def is_connected(self):
+        """
+        If the data client is currently connected.
+
+        Returns
+        -------
+        bool
+            True if connected, else False.
+
+        """
+        return self._is_connected
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -194,8 +224,3 @@ cdef class DataClient:
     cpdef void handle_instruments(self, list instruments) except *:
         cdef InstrumentDataBlock data = InstrumentDataBlock(instruments)
         self._engine.process(instruments)
-
-    cdef void _reset(self) except *:
-        # Reset the class to its initial state
-        self.command_count = 0
-        self.data_count = 0

@@ -41,7 +41,7 @@ cdef class ObjectCache:
     @property
     def type_key(self):
         """
-        The key type of the cache.
+        The caches key type.
 
         Returns
         -------
@@ -54,7 +54,7 @@ cdef class ObjectCache:
     @property
     def type_value(self):
         """
-        The value type of the cache.
+        The caches value type.
 
         Returns
         -------

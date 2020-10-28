@@ -13,6 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `DataEngine` is the central component of the entire data stack for the platform.
+
+Its primary responsibility is to orchestrate interactions between the individual
+`DataClient` instances, and the rest of the platform. This is could include
+ongoing subscriptions to specific data types, for particular endpoints.
+
+Beneath it sits the `DataCache` layer which presents a read-only facade
+to its clients to consume cached data through.
+"""
+
 import cython
 
 from cpython.datetime cimport datetime

@@ -32,7 +32,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class BarSpecification:
     """
-    Represents the specification of a financial market trade bar.
+    Represents an aggregation specification for generating bars.
     """
     def __init__(
             self,
@@ -216,7 +216,7 @@ cdef list _TIME_BARS = [
 
 cdef class BarType:
     """
-    Represents a financial market symbol and bar specification.
+    Represents the symbol and bar specification or a bar or block of bars.
     """
 
     def __init__(
@@ -368,7 +368,7 @@ cdef class BarType:
 
 cdef class Bar:
     """
-    Represents a financial market trade bar.
+    Represents an aggregated bar.
     """
 
     def __init__(

@@ -70,13 +70,14 @@ platform itself.
 To be continued (WIP)...
 
 
-
 Index
 -----
 * :ref:`genindex`
 * :ref:`search`
 
+
 .. toctree::
+    :glob:
     :maxdepth: 2
     :caption: Getting Started
     :hidden:
@@ -84,8 +85,9 @@ Index
     getting_started/installation
 
 .. toctree::
+    :glob:
     :maxdepth: 2
-    :caption: Module API
+    :caption: API Reference
     :hidden:
 
     analysis
@@ -102,6 +104,7 @@ Index
     trading
 
 .. toctree::
+    :glob:
     :maxdepth: 2
     :caption: Adapters
     :hidden:
