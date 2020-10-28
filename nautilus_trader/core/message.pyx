@@ -56,10 +56,10 @@ cdef class Message:
         self._timestamp = timestamp
 
     def __eq__(self, Message other) -> bool:
-        return self._message_type == other.message_type and self._id == other.id
+        return self._message_type == other.type and self._id == other.id
 
     def __ne__(self, Message other) -> bool:
-        return self._message_type != other.message_type or self._id != other.id
+        return self._message_type != other.type or self._id != other.id
 
     def __hash__(self) -> int:
         return hash(self._id)
@@ -68,7 +68,7 @@ cdef class Message:
         return f"{type(self).__name__}(id={self._id}, timestamp={self._timestamp})"
 
     @property
-    def message_type(self):
+    def type(self):
         """
         The generic message type.
 

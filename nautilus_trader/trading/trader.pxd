@@ -34,11 +34,10 @@ cdef class Trader:
     cdef FiniteStateMachine _fsm
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
-    cdef ReportProvider _report_provider
-    cdef list _strategies
-
     cdef Portfolio _portfolio
     cdef PerformanceAnalyzer _analyzer
+    cdef ReportProvider _report_provider
+    cdef list _strategies
 
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *

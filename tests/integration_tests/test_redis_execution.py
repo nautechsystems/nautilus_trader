@@ -76,16 +76,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 
-    def test_keys(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertEqual("Trader-TESTER-000", self.database.key_trader)
-        self.assertEqual("Trader-TESTER-000:Accounts:", self.database.key_accounts)
-        self.assertEqual("Trader-TESTER-000:Orders:", self.database.key_orders)
-        self.assertEqual("Trader-TESTER-000:Positions:", self.database.key_positions)
-        self.assertEqual("Trader-TESTER-000:Strategies:", self.database.key_strategies)
-
     # TODO: TypeError: Expected bytes, got list
     # def test_add_account(self):
     #     # Arrange
@@ -156,31 +146,30 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     #     # Assert
     #     self.assertEqual(account, self.database.load_account(account.id))
 
-    # TODO: Dictionary serialization
-    # def test_update_order_for_working_order(self):
-    #     # Arrange
-    #     order = self.strategy.order_factory.stop_market(
-    #         AUDUSD_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #         Price("1.00000"),
-    #     )
-    #
-    #     position_id = PositionId('P-1')
-    #     self.database.add_order(order, position_id)
-    #
-    #     order.apply(TestStubs.event_order_submitted(order))
-    #     self.database.update_order(order)
-    #
-    #     order.apply(TestStubs.event_order_accepted(order))
-    #     self.database.update_order(order)
-    #
-    #     # Act
-    #     order.apply(TestStubs.event_order_working(order))
-    #     self.database.update_order(order)
-    #
-    #     # Assert
-    #     self.assertEqual(order, self.database.load_order(order.cl_ord_id))
+    def test_update_order_for_working_order(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
+        )
+
+        position_id = PositionId('P-1')
+        self.database.add_order(order, position_id)
+
+        order.apply(TestStubs.event_order_submitted(order))
+        self.database.update_order(order)
+
+        order.apply(TestStubs.event_order_accepted(order))
+        self.database.update_order(order)
+
+        # Act
+        order.apply(TestStubs.event_order_working(order))
+        self.database.update_order(order)
+
+        # Assert
+        self.assertEqual(order, self.database.load_order(order.cl_ord_id))
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -403,32 +392,31 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, self.database.load_positions())
 
-    # TODO: Dictionary serialization
-    # def test_load_positions_cache_when_one_position_in_database(self):
-    #     # Arrange
-    #     order1 = self.strategy.order_factory.stop_market(
-    #         AUDUSD_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #         Price("1.00000"),
-    #     )
-    #
-    #     position_id = PositionId('P-1')
-    #     self.database.add_order(order1, position_id)
-    #
-    #     order1.apply(TestStubs.event_order_submitted(order1))
-    #     order1.apply(TestStubs.event_order_accepted(order1))
-    #     order1.apply(TestStubs.event_order_working(order1))
-    #     order1.apply(TestStubs.event_order_filled(order1, position_id=position_id, fill_price=Price("1.00001")))
-    #
-    #     position = Position(order1.last_event)
-    #     self.database.add_position(position)
-    #
-    #     # Act
-    #     result = self.database.load_positions()
-    #
-    #     # Assert
-    #     self.assertEqual({position.id: position}, result)
+    def test_load_positions_cache_when_one_position_in_database(self):
+        # Arrange
+        order1 = self.strategy.order_factory.stop_market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
+        )
+
+        position_id = PositionId('P-1')
+        self.database.add_order(order1, position_id)
+
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(TestStubs.event_order_working(order1))
+        order1.apply(TestStubs.event_order_filled(order1, position_id=position_id, fill_price=Price("1.00001")))
+
+        position = Position(order1.last_event)
+        self.database.add_position(position)
+
+        # Act
+        result = self.database.load_positions()
+
+        # Assert
+        self.assertEqual({position.id: position}, result)
 
     def test_can_delete_strategy(self):
         # Arrange
@@ -439,43 +427,42 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, result)
 
-    # TODO: Dictionary serialization
-    # def test_can_flush(self):
-    #     # Arrange
-    #     order1 = self.strategy.order_factory.market(
-    #         AUDUSD_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #     )
-    #
-    #     position1_id = PositionId('P-1')
-    #     self.database.add_order(order1, position1_id)
-    #
-    #     filled = TestStubs.event_order_filled(order1, position_id=position1_id, fill_price=Price("1.00000"))
-    #     position1 = Position(filled)
-    #     self.database.update_order(order1)
-    #     self.database.add_position(position1)
-    #
-    #     order2 = self.strategy.order_factory.stop_market(
-    #         AUDUSD_FXCM,
-    #         OrderSide.BUY,
-    #         Quantity(100000),
-    #         Price("1.00000"),
-    #     )
-    #
-    #     position2_id = PositionId('P-2')
-    #     self.database.add_order(order2, position2_id)
-    #
-    #     order2.apply(TestStubs.event_order_submitted(order2))
-    #     order2.apply(TestStubs.event_order_accepted(order2))
-    #     order2.apply(TestStubs.event_order_working(order2))
-    #
-    #     self.database.update_order(order2)
-    #
-    #     # Act
-    #     self.database.flush()
-    #
-    #     # Assert
-    #     self.assertIsNone(self.database.load_order(order1.cl_ord_id))
-    #     self.assertIsNone(self.database.load_order(order2.cl_ord_id))
-    #     self.assertIsNone(self.database.load_position(position1.id))
+    def test_can_flush(self):
+        # Arrange
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        position1_id = PositionId('P-1')
+        self.database.add_order(order1, position1_id)
+
+        filled = TestStubs.event_order_filled(order1, position_id=position1_id, fill_price=Price("1.00000"))
+        position1 = Position(filled)
+        self.database.update_order(order1)
+        self.database.add_position(position1)
+
+        order2 = self.strategy.order_factory.stop_market(
+            AUDUSD_FXCM,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
+        )
+
+        position2_id = PositionId('P-2')
+        self.database.add_order(order2, position2_id)
+
+        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestStubs.event_order_working(order2))
+
+        self.database.update_order(order2)
+
+        # Act
+        self.database.flush()
+
+        # Assert
+        self.assertIsNone(self.database.load_order(order1.cl_ord_id))
+        self.assertIsNone(self.database.load_order(order2.cl_ord_id))
+        self.assertIsNone(self.database.load_position(position1.id))
