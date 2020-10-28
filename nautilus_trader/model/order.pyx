@@ -17,8 +17,6 @@
 Defines various order types to be used for trading.
 """
 
-import pandas as pd
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.constants cimport *  # str constants
@@ -52,6 +50,9 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.parsing cimport convert_datetime_to_string
+from nautilus_trader.model.parsing cimport convert_string_to_datetime
+from nautilus_trader.model.parsing cimport convert_string_to_price
 
 
 # States which represent a 'completed' order
@@ -748,8 +749,8 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        options[PRICE] = price
-        options[EXPIRE_TIME] = expire_time
+        options[PRICE] = str(price)  # price should never be None
+        options[EXPIRE_TIME] = convert_datetime_to_string(expire_time)
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
@@ -1086,9 +1087,9 @@ cdef class LimitOrder(PassiveOrder):
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=event.options.get(PRICE),
+            price=convert_string_to_price(event.options.get(PRICE)),
             time_in_force=event.time_in_force,
-            expire_time=event.options.get(EXPIRE_TIME),
+            expire_time=convert_string_to_datetime(event.options[EXPIRE_TIME]),
             init_id=event.id,
             timestamp=event.timestamp,
             post_only=event.options.get(POST_ONLY),
@@ -1210,21 +1211,15 @@ cdef class StopMarketOrder(PassiveOrder):
         """
         Condition.not_none(event, "event")
 
-        cdef str price_string = event.options['Price']
-        cdef str expire_time_string = event.options['ExpireTime']
-
-        cdef datetime expire_time = None if expire_time_string == str(None) else pd.to_datetime(expire_time_string)
-        cdef Price price = Price(price_string)
-
         return StopMarketOrder(
             cl_ord_id=event.cl_ord_id,
             strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
-            price=price,
+            price=convert_string_to_price(event.options.get(PRICE)),
             time_in_force=event.time_in_force,
-            expire_time=expire_time,
+            expire_time=convert_string_to_datetime(event.options[EXPIRE_TIME]),
             init_id=event.id,
             timestamp=event.timestamp,
         )
