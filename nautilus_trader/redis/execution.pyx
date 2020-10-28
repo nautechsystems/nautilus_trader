@@ -88,11 +88,11 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader     = f"{_TRADER}-{trader_id.value}"       # noqa
-        self.key_accounts   = f"{self.key_trader}:{_ACCOUNTS}:"    # noqa
-        self.key_orders     = f"{self.key_trader}:{_ORDERS}:"      # noqa
-        self.key_positions  = f"{self.key_trader}:{_POSITIONS}:"   # noqa
-        self.key_strategies = f"{self.key_trader}:{_STRATEGIES}:"  # noqa
+        self._key_trader     = f"{_TRADER}-{trader_id.value}"        # noqa
+        self._key_accounts   = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
+        self._key_orders     = f"{self._key_trader}:{_ORDERS}:"      # noqa
+        self._key_positions  = f"{self._key_trader}:{_POSITIONS}:"   # noqa
+        self._key_strategies = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
 
         # Serializers
         self._command_serializer = command_serializer
@@ -123,7 +123,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef dict accounts = {}
 
-        cdef list account_keys = self._redis.keys(f"{self.key_accounts}*")
+        cdef list account_keys = self._redis.keys(f"{self._key_accounts}*")
         if not account_keys:
             return accounts
 
@@ -150,7 +150,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef dict orders = {}
 
-        cdef list order_keys = self._redis.keys(f"{self.key_orders}*")
+        cdef list order_keys = self._redis.keys(f"{self._key_orders}*")
         if not order_keys:
             return orders
 
@@ -177,7 +177,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         cdef dict positions = {}
 
-        cdef list position_keys = self._redis.keys(f"{self.key_positions}*")
+        cdef list position_keys = self._redis.keys(f"{self._key_positions}*")
         if not position_keys:
             return positions
 
@@ -209,7 +209,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(account_id, "account_id")
 
-        cdef list events = self._redis.lrange(name=self.key_accounts + account_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(name=self._key_accounts + account_id.value, start=0, end=-1)
         if not events:
             return None
 
@@ -236,7 +236,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
-        cdef list events = self._redis.lrange(name=self.key_orders + cl_ord_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(name=self._key_orders + cl_ord_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
         if not events:
@@ -276,7 +276,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position_id, "position_id")
 
-        cdef list events = self._redis.lrange(name=self.key_positions + position_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(name=self._key_positions + position_id.value, start=0, end=-1)
 
         # Check there is at least one event to pop
         if not events:
@@ -303,7 +303,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        return self._redis.hgetall(name=self.key_strategies + strategy_id.value + ":State")
+        return self._redis.hgetall(name=self._key_strategies + strategy_id.value + ":State")
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         """
@@ -318,7 +318,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        self._redis.delete(self.key_strategies + strategy_id.value)
+        self._redis.delete(self._key_strategies + strategy_id.value)
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
 
@@ -336,7 +336,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self.key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
+        pipe.rpush(self._key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -362,7 +362,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(position_id, "position_id")
 
         cdef bytes last_event = self._event_serializer.serialize(order.last_event)
-        cdef int reply = self._redis.rpush(self.key_orders + order.cl_ord_id.value, last_event)
+        cdef int reply = self._redis.rpush(self._key_orders + order.cl_ord_id.value, last_event)
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
@@ -381,7 +381,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(position, "position")
 
         cdef bytes last_event = self._event_serializer.serialize(position.last_event)
-        cdef int reply = self._redis.rpush(self.key_positions + position.id.value, last_event)
+        cdef int reply = self._redis.rpush(self._key_positions + position.id.value, last_event)
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
@@ -406,7 +406,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         for key, value in state.items():
-            pipe.hset(name=self.key_strategies + strategy.id.value + ":State", key=key, value=value)
+            pipe.hset(name=self._key_strategies + strategy.id.value + ":State", key=key, value=value)
             self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
         cdef list reply = pipe.execute()
 
@@ -424,7 +424,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(account, "account")
 
         cdef bytes serialized_event = self._event_serializer.serialize(account.last_event)
-        self._redis.rpush(self.key_accounts + account.id.value, serialized_event)
+        self._redis.rpush(self._key_accounts + account.id.value, serialized_event)
 
         self._log.debug(f"Updated Account(id={account.id}).")
 
@@ -441,7 +441,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(order, "order")
 
         cdef bytes serialized_event = self._event_serializer.serialize(order.last_event)
-        cdef int reply = self._redis.rpush(self.key_orders + order.cl_ord_id.value, serialized_event)
+        cdef int reply = self._redis.rpush(self._key_orders + order.cl_ord_id.value, serialized_event)
 
         # Check data integrity of reply
         if reply == 1:  # Reply = The length of the list after the push operation
@@ -462,7 +462,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         Condition.not_none(position, "position")
 
         cdef bytes serialized_event = self._event_serializer.serialize(position.last_event)
-        cdef int reply = self._redis.rpush(self.key_positions + position.id.value, serialized_event)
+        cdef int reply = self._redis.rpush(self._key_positions + position.id.value, serialized_event)
 
         # Check data integrity of reply
         if reply == 1:  # Reply = The length of the list after the push operation

@@ -76,16 +76,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
         pass
 
-    def test_keys(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertEqual("Trader-TESTER-000", self.database.key_trader)
-        self.assertEqual("Trader-TESTER-000:Accounts:", self.database.key_accounts)
-        self.assertEqual("Trader-TESTER-000:Orders:", self.database.key_orders)
-        self.assertEqual("Trader-TESTER-000:Positions:", self.database.key_positions)
-        self.assertEqual("Trader-TESTER-000:Strategies:", self.database.key_strategies)
-
     # TODO: TypeError: Expected bytes, got list
     # def test_add_account(self):
     #     # Arrange
