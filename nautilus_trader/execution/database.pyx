@@ -43,8 +43,20 @@ cdef class ExecutionDatabase:
             The logger for the database.
 
         """
-        self.trader_id = trader_id
+        self._trader_id = trader_id
         self._log = LoggerAdapter(type(self).__name__, logger)
+
+    @property
+    def trader_id(self):
+        """
+        The trader identifier associated with the database.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return self._trader_id
 
     cpdef void flush(self) except *:
         # Abstract method

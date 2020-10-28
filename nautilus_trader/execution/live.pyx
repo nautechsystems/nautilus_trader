@@ -118,9 +118,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         while True:
             message = self._queue.get()
 
-            if message.message_type == MessageType.EVENT:
+            if message.type == MessageType.EVENT:
                 self._handle_event(message)
-            elif message.message_type == MessageType.COMMAND:
+            elif message.type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
                 self._log.error(f"Invalid message type on queue ({repr(message)}).")
