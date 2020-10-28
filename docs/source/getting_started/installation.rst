@@ -7,7 +7,9 @@ addressed.
 
 The latest version is available for download via `PyPI`.
 
-    $ pip install nautilus_trader
+.. code-block::
+
+   pip install nautilus_trader
 
 The master branch will always reflect the code of the latest release version.
 Also, the documentation found here on `readthedocs` is always current to the

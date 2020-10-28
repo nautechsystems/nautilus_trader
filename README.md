@@ -66,29 +66,11 @@ Latest version;
 
     $ pip install nautilus_trader
 
-## Development
+## Contributing
 
-[Development Documentation](docs/development/)
+All forms of contribution are welcome. Please see the guide on how to contribute.
 
-We recommend the PyCharm Professional edition IDE as it interprets Cython syntax.
-Unfortunately the Community edition will not interpret Cython syntax.
-
-> https://www.jetbrains.com/pycharm/
-
-To run code or tests from the source code, first compile the C extensions for the package.
-
-    $ python setup.py build_ext --inplace
-
-All tests can be run via the `run_tests.sh` script, or through pytest.
-
-## Code Style
-
-_Black_ is a PEP-8 compliant opinionated formatter.
-
-> https://github.com/psf/black
-
-We philosophically agree with _Black_, however it does not currently run over
-Cython code. So you could say we are "handcrafting towards" _Blacks_ stylistic conventions.
+[Contributing](CONTRIBUTING.md)
 
 ---
 

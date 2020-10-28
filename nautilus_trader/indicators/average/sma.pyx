@@ -50,7 +50,7 @@ cdef class SimpleMovingAverage(MovingAverage):
         super().__init__(period, params=[period], price_type=price_type)
 
         self._inputs = deque(maxlen=period)
-        self.value = 0.0
+        self._value = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -107,7 +107,7 @@ cdef class SimpleMovingAverage(MovingAverage):
         self._increment_input()
         self._inputs.append(value)
 
-        self.value = fast_mean(list(self._inputs))
+        self._value = fast_mean(list(self._inputs))
 
     cpdef void reset(self) except *:
         """
