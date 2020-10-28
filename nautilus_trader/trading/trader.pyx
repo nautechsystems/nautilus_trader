@@ -87,10 +87,10 @@ cdef class Trader:
         self._fsm = create_component_fsm()
         self._data_engine = data_engine
         self._exec_engine = exec_engine
-        self._report_provider = ReportProvider()
-        self._strategies = []
         self._portfolio = self._exec_engine.portfolio
         self._analyzer = PerformanceAnalyzer()
+        self._report_provider = ReportProvider()
+        self._strategies = []
 
         self.initialize_strategies(strategies)
 
