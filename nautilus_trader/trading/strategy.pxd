@@ -104,7 +104,17 @@ cdef class TradingStrategy:
     cpdef void handle_data(self, object data) except *
     cpdef void handle_event(self, Event event) except *
 
-# -- DATA METHODS ----------------------------------------------------------------------------------
+# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+
+    cpdef void start(self) except *
+    cpdef void stop(self) except *
+    cpdef void resume(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
+    cpdef dict save(self)
+    cpdef void load(self, dict state) except *
+
+# -- DATA COMMANDS ---------------------------------------------------------------------------------
 
     cpdef void request_quote_ticks(self, Symbol symbol) except *
     cpdef void request_trade_ticks(self, Symbol symbol) except *
@@ -118,15 +128,8 @@ cdef class TradingStrategy:
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- TRADING COMMANDS ------------------------------------------------------------------------------
 
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cpdef void resume(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
-    cpdef dict save(self)
-    cpdef void load(self, dict state) except *
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
     cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
