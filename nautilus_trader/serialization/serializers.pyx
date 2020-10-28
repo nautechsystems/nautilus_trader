@@ -68,13 +68,13 @@ from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.order cimport StopMarketOrder
+from nautilus_trader.model.parsing cimport convert_datetime_to_string
+from nautilus_trader.model.parsing cimport convert_price_to_string
+from nautilus_trader.model.parsing cimport convert_string_to_datetime
+from nautilus_trader.model.parsing cimport convert_string_to_price
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport OrderSerializer
-from nautilus_trader.serialization.common cimport convert_datetime_to_string
-from nautilus_trader.serialization.common cimport convert_price_to_string
-from nautilus_trader.serialization.common cimport convert_string_to_datetime
-from nautilus_trader.serialization.common cimport convert_string_to_price
 
 
 cdef class MsgPackSerializer:
