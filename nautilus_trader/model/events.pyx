@@ -490,7 +490,7 @@ cdef class OrderDenied(OrderEvent):
 cdef class OrderSubmitted(OrderEvent):
     """
     Represents an event where an order has been submitted by the system to the
-    broker/exchange.
+    exchange/broker.
     """
 
     def __init__(
@@ -559,7 +559,7 @@ cdef class OrderSubmitted(OrderEvent):
 
 cdef class OrderRejected(OrderEvent):
     """
-    Represents an event where an order has been rejected by the broker/exchange.
+    Represents an event where an order has been rejected by the exchange/broker.
     """
 
     def __init__(
@@ -653,7 +653,7 @@ cdef class OrderRejected(OrderEvent):
 
 cdef class OrderAccepted(OrderEvent):
     """
-    Represents an event where an order has been accepted by the broker/exchange.
+    Represents an event where an order has been accepted by the exchange/broker.
     """
 
     def __init__(
@@ -675,7 +675,7 @@ cdef class OrderAccepted(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
-            The broker/exchange order identifier.
+            The exchange/broker order identifier.
         accepted_time : datetime
             The order accepted time.
         event_id : UUID
@@ -738,7 +738,7 @@ cdef class OrderAccepted(OrderEvent):
 
 cdef class OrderWorking(OrderEvent):
     """
-    Represents an event where an order is working with the broker/exchange.
+    Represents an event where an order is working with the exchange/broker.
     """
 
     def __init__(
@@ -767,7 +767,7 @@ cdef class OrderWorking(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
-            The broker/exchange order identifier.
+            The exchange/broker order identifier.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide
@@ -957,7 +957,7 @@ cdef class OrderWorking(OrderEvent):
 cdef class OrderCancelReject(OrderEvent):
     """
     Represents an event where an order cancel or modify command has been
-    rejected by the broker/exchange.
+    rejected by the exchange/broker.
     """
 
     def __init__(
@@ -1072,7 +1072,7 @@ cdef class OrderCancelReject(OrderEvent):
 cdef class OrderCancelled(OrderEvent):
     """
     Represents an event where an order has been cancelled with the
-    broker/exchange.
+    exchange/broker.
     """
 
     def __init__(
@@ -1094,7 +1094,7 @@ cdef class OrderCancelled(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
-            The broker/exchange order identifier.
+            The exchange/broker order identifier.
         cancelled_time : datetime
             The event order cancelled time.
         event_id : UUID
@@ -1161,7 +1161,7 @@ cdef class OrderCancelled(OrderEvent):
 cdef class OrderModified(OrderEvent):
     """
     Represents an event where an order has been modified with the
-    broker/exchange.
+    exchange/broker.
     """
 
     def __init__(
@@ -1185,7 +1185,7 @@ cdef class OrderModified(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
-            The broker/exchange order identifier.
+            The exchange/broker order identifier.
         modified_quantity : Quantity
             The modified quantity.
         modified_price : Price
@@ -1283,7 +1283,7 @@ cdef class OrderModified(OrderEvent):
 
 cdef class OrderExpired(OrderEvent):
     """
-    Represents an event where an order has expired with the broker/exchange.
+    Represents an event where an order has expired with the exchange/broker.
     """
 
     def __init__(
@@ -1305,7 +1305,7 @@ cdef class OrderExpired(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
-            The broker/exchange order identifier.
+            The exchange/broker order identifier.
         expired_time : datetime
             The order expired time.
         event_id : UUID
@@ -1407,11 +1407,11 @@ cdef class OrderFilled(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         order_id : OrderId
-            The broker/exchange order identifier.
+            The exchange/broker order identifier.
         execution_id : ExecutionId
             The execution identifier.
         position_id : PositionId
-            The broker/exchange position identifier.
+            The exchange/broker position identifier.
         strategy_id : StrategyId
             The strategy identifier.
         symbol : Symbol
@@ -1633,7 +1633,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def cumulative_qty(self):
         """
-        The cumulative filled quantity of the order.
+        The order cumulative filled quantity.
 
         Returns
         -------
@@ -1645,7 +1645,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def leaves_qty(self):
         """
-        The quantity quantity remaining to be filled of the order.
+        The order quantity remaining to be filled.
 
         Returns
         -------

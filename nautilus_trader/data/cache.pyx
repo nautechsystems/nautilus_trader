@@ -55,10 +55,10 @@ cdef class DataCache(DataCacheFacade):
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Capacities
-        self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
-        self.bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
-        Condition.positive_int(self.tick_capacity, "tick_capacity")
-        Condition.positive_int(self.bar_capacity, "bar_capacity")
+        self._tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
+        self._bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
+        Condition.positive_int(self._tick_capacity, "tick_capacity")
+        Condition.positive_int(self._bar_capacity, "bar_capacity")
 
         # Cached data
         self._instruments = {}  # type: {Symbol, Instrument}
@@ -121,13 +121,13 @@ cdef class DataCache(DataCacheFacade):
 
         if ticks is None:
             # The symbol was not registered
-            ticks = deque(maxlen=self.tick_capacity)
+            ticks = deque(maxlen=self._tick_capacity)
             self._quote_ticks[symbol] = ticks
 
         cdef int ticks_length = len(ticks)
         if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
             # TODO: Test this logic
-            if ticks_length < self.tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
+            if ticks_length < self._tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
                 ticks.append(tick)
             return  # Ticks previously handled
 
@@ -152,12 +152,12 @@ cdef class DataCache(DataCacheFacade):
 
         if ticks is None:
             # The symbol was not registered
-            ticks = deque(maxlen=self.tick_capacity)
+            ticks = deque(maxlen=self._tick_capacity)
             self._trade_ticks[symbol] = ticks
 
         cdef int ticks_length = len(ticks)
         if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
-            if ticks_length < self.tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
+            if ticks_length < self._tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
                 ticks.append(tick)
             return  # Tick previously handled
 
@@ -183,12 +183,12 @@ cdef class DataCache(DataCacheFacade):
 
         if bars is None:
             # The bar type was not registered
-            bars = deque(maxlen=self.bar_capacity)
+            bars = deque(maxlen=self._bar_capacity)
             self._bars[bar_type] = bars
 
         cdef int bars_length = len(bars)
         if bars_length > 0 and bar.timestamp <= bars[0].timestamp:
-            if bars_length < self.bar_capacity and bar.timestamp > bars[bars_length - 1].timestamp:
+            if bars_length < self._bar_capacity and bar.timestamp > bars[bars_length - 1].timestamp:
                 bars.append(bar)
             return  # Bar previously handled
 

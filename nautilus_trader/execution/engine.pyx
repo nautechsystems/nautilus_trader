@@ -13,6 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `ExecutionEngine` is the central component of the entire execution stack for the platform.
+
+Its primary responsibility is to orchestrate interactions between the individual
+`DataClient` instances, and the rest of the platform. This is could include
+ongoing subscriptions to specific data types, for particular endpoints.
+
+Beneath it sits the `DataCache` layer which presents a read-only facade
+to its clients to consume cached data through.
+"""
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD

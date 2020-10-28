@@ -80,7 +80,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.debug(f"Resetting...")
 
-        self._reset()
+        # Nothing to do
 
         self._log.info("Reset.")
 

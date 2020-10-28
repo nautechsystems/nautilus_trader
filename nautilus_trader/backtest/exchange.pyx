@@ -97,7 +97,7 @@ cdef class SimulatedExchange:
         venue : Venue
             The venue to simulate for the backtest.
         oms_type : OMSType
-            The order management employed by the broker/exchange for this market.
+            The order management employed by the exchange/broker for this market.
         exec_cache : ExecutionCache
             The execution cache for the backtest.
         instruments : dict[Symbol, Instrument]

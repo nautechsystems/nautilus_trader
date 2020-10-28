@@ -42,16 +42,12 @@ release = version
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "autoapi.extension",
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.coverage",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
     "numpydoc",
 ]
-
-autoapi_dirs = ['../../nautilus_trader']
 
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
@@ -68,7 +64,7 @@ pygments_style = 'sphinx'
 add_module_names = False
 todo_include_todos = False
 
-autosummary_generate = False
+autosummary_generate = True
 autodoc_member_order = 'bysource'
 numpydoc_show_class_members = True
 
@@ -94,3 +90,13 @@ html_show_sourcelink = True
 html_static_path = ["_static"]
 html_style = "css/nautilus.css"
 html_logo = "_static/img/nautilus-black.png"
+
+
+def skip(app, what, name, obj, would_skip, options):
+    if name == "__init__":
+        return False
+    return would_skip
+
+
+def setup(app):
+    app.connect("autodoc-skip-member", skip)

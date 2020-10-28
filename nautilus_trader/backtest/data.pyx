@@ -359,7 +359,6 @@ cdef class BacktestDataClient(DataClient):
         self._index = 0
         self._index_last = len(self._tick_data) - 1
         self.has_data = False
-        self._reset()
 
         self._log.info("Reset.")
 

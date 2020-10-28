@@ -155,7 +155,7 @@ cdef class Order:
     @property
     def cl_ord_id(self):
         """
-        The client order identifier of the order.
+        The orders client order identifier.
 
         Returns
         -------
@@ -181,6 +181,8 @@ cdef class Order:
         """
         The order identifier.
 
+        This can be assigned by the exchange/broker, or be system generated.
+
         Returns
         -------
         OrderId or None
@@ -203,7 +205,7 @@ cdef class Order:
     @property
     def execution_id(self):
         """
-        The last execution identifier of the order.
+        The orders last execution identifier.
 
         Returns
         -------
@@ -1236,7 +1238,7 @@ cdef class BracketOrder:
     low-side sell stop order. A SELL order is bracketed by a high-side buy stop
     order and a low side buy limit order.
     Once the 'parent' entry order is triggered the 'child' OCO orders being a
-    STOP and optional LIMIT automatically become working on the broker/exchange side.
+    STOP and optional LIMIT automatically become working on the exchange/broker side.
     """
     def __init__(
             self,

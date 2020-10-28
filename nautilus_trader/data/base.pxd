@@ -25,8 +25,10 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class DataCacheFacade:
+    cdef int _tick_capacity
+    cdef int _bar_capacity
 
-# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list symbols(self)
     cpdef list instruments(self)
@@ -50,6 +52,3 @@ cdef class DataCacheFacade:
         Currency to_currency,
         PriceType price_type=*,
     ) except *
-
-    cdef readonly int tick_capacity
-    cdef readonly int bar_capacity
