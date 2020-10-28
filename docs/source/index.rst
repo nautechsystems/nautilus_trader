@@ -11,7 +11,7 @@ adoption within the trading community, assisting with safe, reliable and efficie
 trading operations - utilizing the latest advanced technologies. The platform aims
 to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
 Thus the platform can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, CFDs or Crypto. Across multiple venues simultaneously.
+including FX, Equities, Futures, CFDs or Crypto - across multiple venues simultaneously.
 
 One of the key value propositions of `NautilusTrader` is that it addresses the
 challenge of keeping the backtest environment consistent with the production
@@ -27,21 +27,21 @@ platform was designed from the ground up to hold its own in terms of performance
 and enterprise grade quality. Python has simply caught right up on performance
 (via Cython offering C level speed) and general tooling, making it a suitable language for implementing
 a large system such as this. The benefit here being that a Python native environment
-with C level speed can now be offered to professional quantitative traders and
-hedge funds, to meet their rigorous standards.
+can now be offered to professional quantitative traders and hedge funds, to meet
+their rigorous standards.
 
+Why Python?
+-----------
 Python was originally created decades ago as a simple scripting language with a
 clean straight forward syntax. It has since evolved into a fully fledged general
 purpose object-oriented programming language.
 Not only that, Python has become the `de facto lingua franca` of data science,
 machine learning, and artificial intelligence.
 
-The language (out of the box) is not without its drawbacks however, especially in the context of implementing
+The language out of the box is not without its drawbacks however, especially in the context of implementing
 a large system such as that offered with the `NautilusTrader` package. Cython has addressed some of these issues, offering all the advantages
 of a statically typed language, embedded into Pythons rich ecosystem of software
 libraries and developer/user communities.
-
-What exactly does `production-grade` or `enterprise-grade` mean?
 
 Architectural Overview
 ----------------------
@@ -83,6 +83,19 @@ Index
     :hidden:
 
     getting_started/installation
+    getting_started/core_concepts
+
+.. toctree::
+    :glob:
+    :maxdepth: 2
+    :caption: Guides
+    :hidden:
+
+    guides/writing_strategies
+    guides/writing_indicators
+    guides/backtesting
+    guides/deploying_live
+    guides/framework
 
 .. toctree::
     :glob:
@@ -90,18 +103,18 @@ Index
     :caption: API Reference
     :hidden:
 
-    analysis
-    backtest
-    common
-    core
-    data
-    execution
-    indicators
-    model
-    postgres
-    redis
-    serialization
-    trading
+    api/analysis
+    api/backtest
+    api/common
+    api/core
+    api/data
+    api/execution
+    api/indicators
+    api/model
+    api/postgres
+    api/redis
+    api/serialization
+    api/trading
 
 .. toctree::
     :glob:
@@ -109,7 +122,28 @@ Index
     :caption: Adapters
     :hidden:
 
-    adapters.binance
-    adapters.bitmex
-    adapters.ccxt
-    adapters.tda
+    adapters/binance
+    adapters/bitmex
+    adapters/ccxt
+    adapters/tda
+
+.. toctree::
+    :glob:
+    :maxdepth: 2
+    :caption: Development
+    :hidden:
+
+    development/overview
+    development/environment
+    development/coding_standards
+    development/testing
+
+.. toctree::
+    :glob:
+    :maxdepth: 2
+    :caption: Resources
+    :hidden:
+
+    resources/research
+    resources/further_reading
+
