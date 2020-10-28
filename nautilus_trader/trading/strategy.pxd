@@ -109,7 +109,6 @@ cdef class TradingStrategy:
     cpdef void request_quote_ticks(self, Symbol symbol) except *
     cpdef void request_trade_ticks(self, Symbol symbol) except *
     cpdef void request_bars(self, BarType bar_type) except *
-
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -118,11 +117,6 @@ cdef class TradingStrategy:
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-
-# -- INDICATOR METHODS -----------------------------------------------------------------------------
-
-    cpdef readonly list registered_indicators(self)
-    cpdef readonly bint indicators_initialized(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

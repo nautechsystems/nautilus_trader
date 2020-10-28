@@ -131,7 +131,7 @@ class TickTock(TradingStrategy):
         self.store.append(event)
 
 
-class TestStrategy1(TradingStrategy):
+class TestStrategy(TradingStrategy):
     """
     A simple strategy for unit testing.
     """
@@ -140,7 +140,7 @@ class TestStrategy1(TradingStrategy):
 
     def __init__(self, bar_type: BarType):
         """
-        Initialize a new instance of the TestStrategy1 class.
+        Initialize a new instance of the TestStrategy class.
 
         Parameters
         ----------
@@ -170,26 +170,27 @@ class TestStrategy1(TradingStrategy):
     def on_bar(self, bar_type, bar):
         self.object_storer.store((bar_type, Bar))
 
-        if bar_type == self.bar_type:
-            if self.ema1.value > self.ema2.value:
-                buy_order = self.order_factory.market(
-                    self.bar_type.symbol,
-                    OrderSide.BUY,
-                    100000,
-                )
+        if bar_type != self.bar_type:
+            return
 
-                self.submit_order(buy_order)
-                self.position_id = buy_order.cl_ord_id
+        if self.ema1.value > self.ema2.value:
+            buy_order = self.order_factory.market(
+                self.bar_type.symbol,
+                OrderSide.BUY,
+                100000,
+            )
 
-            elif self.ema1.value < self.ema2.value:
-                sell_order = self.order_factory.market(
-                    self.bar_type.symbol,
-                    OrderSide.SELL,
-                    100000,
-                )
+            self.submit_order(buy_order)
+            self.position_id = buy_order.cl_ord_id
+        elif self.ema1.value < self.ema2.value:
+            sell_order = self.order_factory.market(
+                self.bar_type.symbol,
+                OrderSide.SELL,
+                100000,
+            )
 
-                self.submit_order(sell_order)
-                self.position_id = sell_order.cl_ord_id
+            self.submit_order(sell_order)
+            self.position_id = sell_order.cl_ord_id
 
     def on_instrument(self, instrument):
         self.object_storer.store(instrument)
@@ -310,7 +311,7 @@ class EMACross(TradingStrategy):
         self.log.info(f"Received {bar_type} Bar({bar})")
 
         # Check if indicators ready
-        if not self.indicators_initialized():
+        if not self.indicators_initialized:
             self.log.info(f"Waiting for indicators to warm up "
                           f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
