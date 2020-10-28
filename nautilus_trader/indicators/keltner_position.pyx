@@ -36,7 +36,7 @@ cdef class KeltnerPosition(Indicator):
             ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
             ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
             bint use_previous=True,
-            double atr_floor=0.0,
+            double atr_floor=0,
     ):
         """
         Initialize a new instance of the KeltnerChannel class.
@@ -83,7 +83,7 @@ cdef class KeltnerPosition(Indicator):
             atr_floor,
         )
 
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -132,10 +132,10 @@ cdef class KeltnerPosition(Indicator):
 
         cdef double k_width = (self._kc.value_upper_band - self._kc.value_lower_band) / 2
 
-        if k_width > 0.0:
+        if k_width > 0:
             self.value = (close - self._kc.value_middle_band) / k_width
         else:
-            self.value = 0.0
+            self.value = 0
 
     cpdef void reset(self) except *:
         """
@@ -146,4 +146,4 @@ cdef class KeltnerPosition(Indicator):
         """
         self._reset_base()
         self._kc.reset()
-        self.value = 0.0
+        self.value = 0

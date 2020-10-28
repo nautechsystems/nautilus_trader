@@ -38,10 +38,12 @@ cdef class MovingAverage(Indicator):
     The base class for all moving average type indicators.
     """
 
-    def __init__(self,
-                 int period,
-                 list params not None,
-                 PriceType price_type):
+    def __init__(
+            self,
+            int period,
+            list params not None,
+            PriceType price_type,
+    ):
         """
         Initialize a new instance of the abstract MovingAverage class.
 
@@ -58,21 +60,66 @@ cdef class MovingAverage(Indicator):
         Condition.positive_int(period, "period")
         super().__init__(params)
 
-        self.period = period
-        self.count = 0
-        self.value = 0.0
+        self._period = period
         self._price_type = price_type
+        self._count = 0
+        self._value = 0
+
+    @property
+    def period(self):
+        """
+        The indicators moving average period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._period
+
+    @property
+    def price_type(self):
+        """
+        The specified price type for extracting values from quote ticks.
+
+        Returns
+        -------
+        PriceType
+
+        """
+        return self._price_type
+
+    @property
+    def count(self):
+        """
+        The count of inputs received by the indicator.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._count
+
+    @property
+    def value(self):
+        """
+        The current moving average value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cdef void _increment_input(self) except *:
-        """
-        Update the indicator count and initialization properties.
-        """
-        self.count += 1
+        self._count += 1
 
         # Initialization logic
         if not self._initialized:
             self._set_has_inputs(True)
-            if self.count >= self.period:
+            if self._count >= self.period:
                 self._set_initialized(True)
 
     cdef void _reset_ma(self) except *:
@@ -83,5 +130,5 @@ cdef class MovingAverage(Indicator):
 
         """
         self._reset_base()
-        self.count = 0
-        self.value = 0.0
+        self._count = 0
+        self._value = 0

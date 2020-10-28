@@ -33,7 +33,7 @@ cdef class Pressure(Indicator):
             self,
             int period,
             ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-            double atr_floor=0.0,
+            double atr_floor=0,
     ):
         """
         Initialize a new instance of the Pressure class.
@@ -68,8 +68,8 @@ cdef class Pressure(Indicator):
         self.period = period
         self._atr = AverageTrueRange(period, MovingAverageType.EXPONENTIAL, atr_floor)
         self._average_volume = MovingAverageFactory.create(period, ma_type)
-        self.value = 0.0
-        self.value_cumulative = 0.0  # The sum of the pressure across the period
+        self.value = 0
+        self.value_cumulative = 0  # The sum of the pressure across the period
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -122,8 +122,8 @@ cdef class Pressure(Indicator):
                 self._set_initialized(True)
 
         # Guard against zero values
-        if self._average_volume.value == 0.0 or self._atr.value == 0.0:
-            self.value = 0.0
+        if self._average_volume.value == 0 or self._atr.value == 0:
+            self.value = 0
             return
 
         cdef double relative_volume = volume / self._average_volume.value
@@ -143,5 +143,5 @@ cdef class Pressure(Indicator):
         self._reset_base()
         self._atr.reset()
         self._average_volume.reset()
-        self.value = 0.0
-        self.value_cumulative = 0.0
+        self.value = 0
+        self.value_cumulative = 0

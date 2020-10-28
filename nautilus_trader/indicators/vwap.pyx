@@ -32,9 +32,9 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         super().__init__(params=[])
 
         self._day = 0
-        self._price_volume = 0.0
-        self._volume_total = 0.0
-        self.value = 0.0
+        self._price_volume = 0
+        self._volume_total = 0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -80,12 +80,12 @@ cdef class VolumeWeightedAveragePrice(Indicator):
             self.value = price
 
         # Initialization logic
-        if not self.initialized:
+        if not self._initialized:
             self._set_has_inputs(True)
             self._set_initialized(True)
 
         # No weighting for this price (also avoiding divide by zero)
-        if volume == 0.0:
+        if volume == 0:
             return
 
         self._price_volume += price * volume
@@ -101,6 +101,6 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         """
         self._reset_base()
         self._day = 0
-        self._price_volume = 0.0
-        self._volume_total = 0.0
-        self.value = 0.0
+        self._price_volume = 0
+        self._volume_total = 0
+        self.value = 0

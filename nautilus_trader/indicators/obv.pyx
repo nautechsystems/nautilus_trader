@@ -45,7 +45,7 @@ cdef class OnBalanceVolume(Indicator):
 
         self.period = period
         self._obv = deque(maxlen=None if self.period == 0 else self.period)
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """

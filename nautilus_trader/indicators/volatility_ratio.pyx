@@ -33,7 +33,7 @@ cdef class VolatilityRatio(Indicator):
             int slow_period,
             ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
             bint use_previous=True,
-            double value_floor=0.0,
+            double value_floor=0,
     ):
         """
         Initialize a new instance of the MovingAverageConvergenceDivergence class.
@@ -81,7 +81,7 @@ cdef class VolatilityRatio(Indicator):
         self._slow_period = slow_period
         self._atr_fast = AverageTrueRange(fast_period, ma_type, use_previous, value_floor)
         self._atr_slow = AverageTrueRange(slow_period, ma_type, use_previous, value_floor)
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -123,7 +123,7 @@ cdef class VolatilityRatio(Indicator):
         self._atr_fast.update_raw(high, low, close)
         self._atr_slow.update_raw(high, low, close)
 
-        if self._atr_fast.value > 0.0:  # Guard against divide by zero
+        if self._atr_fast.value > 0:  # Guard against divide by zero
             self.value = self._atr_slow.value / self._atr_fast.value
 
         self._check_initialized()
@@ -145,4 +145,4 @@ cdef class VolatilityRatio(Indicator):
         self._reset_base()
         self._atr_fast.reset()
         self._atr_slow.reset()
-        self.value = 0.0
+        self.value = 0

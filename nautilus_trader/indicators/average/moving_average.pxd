@@ -18,11 +18,10 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 
 
 cdef class MovingAverage(Indicator):
-    cdef readonly PriceType _price_type
-
-    cdef readonly int period
-    cdef readonly int count
-    cdef readonly double value
+    cdef int _period
+    cdef PriceType _price_type
+    cdef int _count
+    cdef double _value
 
     cdef void _increment_input(self) except *
     cdef void _reset_ma(self) except *

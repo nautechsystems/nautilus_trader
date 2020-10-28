@@ -37,7 +37,7 @@ cdef class KeltnerChannel(Indicator):
             ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
             ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
             bint use_previous=True,
-            double atr_floor=0.0,
+            double atr_floor=0,
     ):
         """
         Initialize a new instance of the KeltnerChannel class.
@@ -76,9 +76,9 @@ cdef class KeltnerChannel(Indicator):
         self.k_multiplier = k_multiplier
         self._moving_average = MovingAverageFactory.create(self.period, ma_type)
         self._atr = AverageTrueRange(self.period, ma_type_atr, use_previous, atr_floor)
-        self.value_upper_band = 0.0
-        self.value_middle_band = 0.0
-        self.value_lower_band = 0.0
+        self.value_upper_band = 0
+        self.value_middle_band = 0
+        self.value_lower_band = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -142,6 +142,6 @@ cdef class KeltnerChannel(Indicator):
         self._reset_base()
         self._moving_average.reset()
         self._atr.reset()
-        self.value_upper_band = 0.0
-        self.value_middle_band = 0.0
-        self.value_lower_band = 0.0
+        self.value_upper_band = 0
+        self.value_middle_band = 0
+        self.value_lower_band = 0
