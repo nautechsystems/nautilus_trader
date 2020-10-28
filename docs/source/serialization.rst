@@ -14,15 +14,6 @@ Base
    :undoc-members:
    :member-order: bysource
 
-Common
-------
-
-.. automodule:: nautilus_trader.serialization.common
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
 
 Serializers
 -----------

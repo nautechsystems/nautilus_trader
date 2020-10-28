@@ -100,6 +100,7 @@ cdef class DataEngine:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._portfolio = portfolio
+        self._cache = DataCache(logger)
         self._use_previous_close = config.get('use_previous_close', True)
         self._clients = {}              # type: {Venue, DataClient}
 
@@ -112,12 +113,48 @@ cdef class DataEngine:
         # Aggregators
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
 
-        self.cache = DataCache(logger)
-        self.command_count = 0
-        self.data_count = 0
+        # Counters
+        self._command_count = 0
+        self._data_count = 0
 
         self._log.info("Initialized.")
         self._log.info(f"use_previous_close={self._use_previous_close}")
+
+    @property
+    def cache(self):
+        """
+        The engines data cache.
+
+        Returns
+        -------
+        DataCache
+
+        """
+        return self._cache
+
+    @property
+    def command_count(self):
+        """
+        The total count of commands received by the engine.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._command_count
+
+    @property
+    def data_count(self):
+        """
+        The total count of data objects received by the engine.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._data_count
 
 # --REGISTRATIONS ----------------------------------------------------------------------------------
 
@@ -257,7 +294,7 @@ cdef class DataEngine:
             client.reset()
 
         self._log.debug("Reset.")
-        self.cache.reset()
+        self._cache.reset()
         self._instrument_handlers.clear()
         self._quote_tick_handlers.clear()
         self._trade_tick_handlers.clear()
@@ -265,8 +302,8 @@ cdef class DataEngine:
         self._bar_handlers.clear()
         self._clock.cancel_all_timers()
 
-        self.command_count = 0
-        self.data_count = 0
+        self._command_count = 0
+        self._data_count = 0
 
     cpdef void dispose(self) except *:
         """
@@ -299,7 +336,7 @@ cdef class DataEngine:
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
-        self.command_count += 1
+        self._command_count += 1
 
         if isinstance(command, Connect):
             self._handle_connect(command)
@@ -580,7 +617,7 @@ cdef class DataEngine:
 # -- DATA HANDLERS -------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, object data) except *:
-        self.data_count += 1
+        self._data_count += 1
 
         if isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
@@ -602,7 +639,7 @@ cdef class DataEngine:
             self._log.error(f"Cannot handle data ({data} is unrecognized).")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
-        self.cache.add_instrument(instrument)
+        self._cache.add_instrument(instrument)
 
         self._portfolio.update_instrument(instrument)
 
@@ -617,7 +654,7 @@ cdef class DataEngine:
             self._handle_instrument(instrument)
 
     cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
-        self.cache.add_quote_tick(tick)
+        self._cache.add_quote_tick(tick)
 
         if not send_to_handlers:
             return
@@ -649,7 +686,7 @@ cdef class DataEngine:
     cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=True) except *:
         cdef Symbol symbol = tick.symbol
 
-        self.cache.add_trade_tick(tick)
+        self._cache.add_trade_tick(tick)
 
         if not send_to_handlers:
             return
@@ -676,7 +713,7 @@ cdef class DataEngine:
             self._handle_trade_tick(ticks[i], send_to_handlers=False)
 
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=True) except *:
-        self.cache.add_bar(bar_type, bar)
+        self._cache.add_bar(bar_type, bar)
 
         if not send_to_handlers:
             return

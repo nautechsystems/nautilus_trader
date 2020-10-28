@@ -104,6 +104,17 @@ Order
    :undoc-members:
    :member-order: bysource
 
+Parsing
+-------
+
+.. automodule:: nautilus_trader.model.parsing
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :undoc-members:
+   :member-order: bysource
+
+
 Position
 --------
 

@@ -45,17 +45,17 @@ cdef class DataEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef Portfolio _portfolio
+    cdef DataCache _cache
     cdef bint _use_previous_close
+    cdef int _command_count
+    cdef int _data_count
+
     cdef dict _clients
     cdef dict _instrument_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
-
-    cdef readonly DataCache cache
-    cdef readonly int command_count
-    cdef readonly int data_count
 
 # -- REGISTRATIONS ---------------------------------------------------------------------------------
 
