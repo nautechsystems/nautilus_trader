@@ -48,15 +48,14 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef TraderId _trader_id
+    cdef ExecutionCache _cache
+    cdef Portfolio _portfolio
     cdef PositionIdGenerator _pos_id_generator
     cdef dict _clients
     cdef dict _strategies
-
-    cdef readonly TraderId trader_id
-    cdef readonly ExecutionCache cache
-    cdef readonly Portfolio portfolio
-    cdef readonly int command_count
-    cdef readonly int event_count
+    cdef int _command_count
+    cdef int _event_count
 
 # -- REGISTRATIONS ---------------------------------------------------------------------------------
 
