@@ -48,7 +48,7 @@ cdef class EfficiencyRatio(Indicator):
         self.period = period
         self._inputs = deque(maxlen=self.period)
         self._deltas = deque(maxlen=self.period)
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -91,10 +91,10 @@ cdef class EfficiencyRatio(Indicator):
         cdef double net_diff = abs(self._inputs[0] - self._inputs[-1])
         cdef double sum_deltas = sum(self._deltas)
 
-        if sum_deltas > 0.0:
+        if sum_deltas > 0:
             self.value = net_diff / sum_deltas
         else:
-            self.value = 0.0
+            self.value = 0
 
     cpdef void reset(self) except *:
         """
@@ -106,4 +106,4 @@ cdef class EfficiencyRatio(Indicator):
         self._reset_base()
         self._inputs.clear()
         self._deltas.clear()
-        self.value = 0.0
+        self.value = 0

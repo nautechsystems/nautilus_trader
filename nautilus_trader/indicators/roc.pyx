@@ -50,7 +50,7 @@ cdef class RateOfChange(Indicator):
         self.period = period
         self._use_log = use_log
         self._prices = deque(maxlen=self.period)
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -97,4 +97,4 @@ cdef class RateOfChange(Indicator):
         """
         self._reset_base()
         self._prices.clear()
-        self.value = 0.0
+        self.value = 0

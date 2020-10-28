@@ -73,7 +73,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._alpha_diff = self._alpha_fast - self._alpha_slow
         self._efficiency_ratio = EfficiencyRatio(self._period_er)
         self._prior_value = 0
-        self.value = 0
+        self._value = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -129,17 +129,17 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         """
         # Check if this is the initial input (then initialize variables)
         if not self._has_inputs:
-            self.value = value
+            self._value = value
 
         self._increment_input()
         self._efficiency_ratio.update_raw(value)
-        self._prior_value = self.value
+        self._prior_value = self._value
 
         # Calculate smoothing constant (sc)
-        sc = pow(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
+        cdef double sc = pow(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
 
         # Calculate AMA
-        self.value = self._prior_value + sc * (value - self._prior_value)
+        self._value = self._prior_value + sc * (value - self._prior_value)
 
     cpdef void reset(self) except *:
         """

@@ -70,7 +70,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._slow_period = slow_period
         self._fast_ma = MovingAverageFactory.create(fast_period, ma_type)
         self._slow_ma = MovingAverageFactory.create(slow_period, ma_type)
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -116,4 +116,4 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._reset_base()
         self._fast_ma.reset()
         self._slow_ma.reset()
-        self.value = 0.0
+        self.value = 0

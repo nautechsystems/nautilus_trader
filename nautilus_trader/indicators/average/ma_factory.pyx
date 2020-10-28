@@ -33,7 +33,7 @@ cdef class MovingAverageFactory:
     def create(
         int period,
         object ma_type: MovingAverageType,
-        **kwargs
+        **kwargs,
     ) -> MovingAverage:
         """
         Create a moving average indicator corresponding to the given ma_type.
