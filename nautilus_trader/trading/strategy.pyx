@@ -289,6 +289,38 @@ cdef class TradingStrategy:
         return self._order_factory
 
     @property
+    def registered_indicators(self):
+        """
+        Return the registered indicators for the strategy.
+
+        Returns
+        -------
+        list[Indicator]
+
+        """
+        return self._indicators.copy()
+
+    @property
+    def indicators_initialized(self):
+        """
+        If all indicators are initialized.
+
+        Returns
+        -------
+        bool
+            True if all initialized, else False
+
+        """
+        if not self._indicators:
+            return False
+
+        cdef Indicator indicator
+        for indicator in self._indicators:
+            if not indicator.initialized:
+                return False
+        return True
+
+    @property
     def state(self):
         """
         The trading strategies current state.
@@ -404,8 +436,11 @@ cdef class TradingStrategy:
 
         Create and return a state dictionary of values to be saved.
 
-        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        Notes
+        -----
+        'OrderIdCount' and 'PositionIdCount' are reserved keys for
         the returned state dictionary.
+
         """
         return {}  # Optionally override in subclass
 
@@ -1101,34 +1136,6 @@ cdef class TradingStrategy:
         self._data_engine.execute(unsubscribe)
 
         self._log.info(f"Unsubscribed from {symbol} <Instrument> data.")
-
-# -- INDICATOR METHODS -----------------------------------------------------------------------------
-
-    cpdef list registered_indicators(self):
-        """
-        Return the registered indicators for the strategy (returns copy of internal list).
-
-        Returns
-        -------
-        list[Indicator]
-
-        """
-        return self._indicators.copy()
-
-    cpdef bint indicators_initialized(self) except *:
-        """
-        Return a value indicating whether all indicators are initialized.
-
-        Returns
-        -------
-        bool
-
-        """
-        cdef Indicator indicator
-        for indicator in self._indicators:
-            if indicator.initialized is False:
-                return False
-        return True
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

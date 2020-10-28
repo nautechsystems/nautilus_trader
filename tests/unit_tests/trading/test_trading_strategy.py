@@ -37,18 +37,15 @@ from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
-from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.position import Position
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.strategies import TestStrategy1
+from tests.test_kit.strategies import TestStrategy
 from tests.test_kit.stubs import TestStubs
 
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
@@ -123,19 +120,6 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 
-        self.strategy = TradingStrategy(order_id_tag="001")
-        self.strategy.register_trader(
-            trader_id=TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-        )
-
-        self.strategy.register_data_engine(self.data_engine)
-        self.strategy.register_execution_engine(self.exec_engine)
-
-        print("\n")
-
     def test_strategy_equality(self):
         # Arrange
         strategy1 = TradingStrategy(order_id_tag="001")
@@ -153,14 +137,16 @@ class TradingStrategyTests(unittest.TestCase):
 
     def test_strategy_is_hashable(self):
         # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
         # Act
-        result = self.strategy.__hash__()
+        result = strategy.__hash__()
 
         # Assert
         # If this passes then result must be an int
-        self.assertTrue(result != 0)
+        self.assertTrue(type(result) == int)
 
-    def test_strategy_str_and_repr(self):
+    def test_str_and_repr(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="GBP/USD-MM")
 
@@ -171,19 +157,21 @@ class TradingStrategyTests(unittest.TestCase):
 
     def test_get_strategy_id(self):
         # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
         # Act
         # Assert
-        self.assertEqual(StrategyId("TradingStrategy", "001"), self.strategy.id)
+        self.assertEqual(StrategyId.from_string("TradingStrategy-001"), strategy.id)
 
     def test_initialization(self):
         # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TradingStrategy(order_id_tag="001")
 
         # Act
         # Assert
         self.assertTrue(ComponentState.INITIALIZED, strategy.state)
-        self.assertFalse(strategy.indicators_initialized())
+        self.assertEqual([], strategy.registered_indicators)
+        self.assertFalse(strategy.indicators_initialized)
 
     def test_register_strategy_with_exec_client(self):
         # Arrange
@@ -201,10 +189,27 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertIsNotNone(strategy.execution)
 
+    def test_registered_indicators(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Act
+        result = strategy.registered_indicators
+
+        # Assert
+        self.assertEqual([strategy.ema1, strategy.ema2], result)
+
     def test_start(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -214,21 +219,17 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        result1 = strategy.state
-
         # Act
         strategy.start()
-        result2 = strategy.state
 
         # Assert
-        self.assertEqual(ComponentState.INITIALIZED, result1)
-        self.assertEqual(ComponentState.RUNNING, result2)
+        self.assertEqual(ComponentState.RUNNING, strategy.state)
         self.assertIn("custom start logic", strategy.object_storer.get_store())
 
     def test_stop(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -246,10 +247,33 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(ComponentState.STOPPED, strategy.state)
         self.assertIn("custom stop logic", strategy.object_storer.get_store())
 
+    def test_resume(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = TestStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        strategy.start()
+        strategy.stop()
+
+        # Act
+        strategy.resume()
+
+        # Assert
+        self.assertEqual(ComponentState.RUNNING, strategy.state)
+        self.assertIn("custom start logic", strategy.object_storer.get_store())
+
     def test_reset(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -278,10 +302,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(0, strategy.ema2.count)
         self.assertIn("custom reset logic", strategy.object_storer.get_store())
 
-    def test_registered_indicators(self):
+    def test_dispose(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -289,16 +313,18 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        strategy.reset()
+
         # Act
-        result = strategy.registered_indicators()
+        strategy.dispose()
 
         # Assert
-        self.assertEqual([strategy.ema1, strategy.ema2], result)
+        self.assertEqual(ComponentState.DISPOSED, strategy.state)
 
     def test_handle_bar_updates_indicators(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -325,7 +351,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_stop_cancels_a_running_time_alert(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -349,7 +375,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_stop_cancels_a_running_timer(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
+        strategy = TestStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -370,7 +396,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, strategy.object_storer.count)
 
-    def test_submit_order_with_valid_order_successfully_works_order(self):
+    def test_submit_order_with_valid_order_successfully_submits(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -397,7 +423,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertFalse(strategy.execution.is_order_working(order.cl_ord_id))
         self.assertTrue(strategy.execution.is_order_completed(order.cl_ord_id))
 
-    def test_submit_bracket_order_with_valid_order_successfully_works_order(self):
+    def test_submit_bracket_order_with_valid_order_successfully_submits(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -543,6 +569,9 @@ class TradingStrategyTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
+
+        # Wire strategy into system
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
@@ -553,22 +582,13 @@ class TradingStrategyTests(unittest.TestCase):
 
         strategy.submit_order(order)
 
-        filled = TestStubs.event_order_filled(
-            order,
-            position_id=PositionId("B-USD/JPY-1"),
-            strategy_id=strategy.id,
-        )
-        position = Position(filled)
+        position = strategy.execution.positions_open()[0]
 
         # Act
         strategy.flatten_position(position)
 
         # Assert
-        self.assertIn(order, strategy.execution.orders())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
-        self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[0].side)
-        self.assertTrue(strategy.execution.positions()[0].is_closed)
-        self.assertTrue(PositionId("B-USD/JPY-1"), strategy.execution.position_closed_ids())
+        self.assertEqual(OrderState.FILLED, order.state)
         self.assertTrue(strategy.portfolio.is_completely_flat())
 
     def test_flatten_all_positions(self):
@@ -580,7 +600,13 @@ class TradingStrategyTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
+
+        # Wire strategy into system
+        self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
+
+        # Start strategy and submit orders to open positions
+        strategy.start()
 
         order1 = strategy.order_factory.market(
             USDJPY_FXCM,
@@ -597,99 +623,10 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order1)
         strategy.submit_order(order2)
 
-        filled1 = TestStubs.event_order_filled(
-            order1,
-            position_id=PositionId("B-USD/JPY-1"),
-            strategy_id=strategy.id,
-        )
-
-        filled2 = TestStubs.event_order_filled(
-            order2,
-            position_id=PositionId("B-USD/JPY-2"),
-            strategy_id=strategy.id,
-        )
-
-        position1 = Position(filled1)
-        position2 = Position(filled2)
-
         # Act
         strategy.flatten_all_positions(USDJPY_FXCM)
 
         # Assert
-        self.assertIn(order1, strategy.execution.orders())
-        self.assertIn(order2, strategy.execution.orders())
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[0].state)
-        self.assertEqual(OrderState.FILLED, strategy.execution.orders()[1].state)
-        self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[0].side)
-        self.assertEqual(PositionSide.FLAT, strategy.execution.positions()[1].side)
-        self.assertIn(position1.id, strategy.execution.position_closed_ids())
-        self.assertIn(position2.id, strategy.execution.position_closed_ids())
-        self.assertTrue(strategy.portfolio.is_completely_flat())
-
-    def test_track_orders_for_an_opened_position(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-        )
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        strategy.submit_order(order)
-
-        # Act
-        # Assert
-        self.assertIn(order, strategy.execution.orders())
-        self.assertIn(PositionId("B-USD/JPY-1"), strategy.execution.position_ids())
-        self.assertEqual(0, len(strategy.execution.orders_working()))
-        self.assertIn(order, strategy.execution.orders_completed())
-        self.assertEqual(0, len(strategy.execution.positions_closed()))
-        self.assertIn(order, strategy.execution.orders_completed())
-        self.assertIn(PositionId("B-USD/JPY-1"), strategy.execution.position_open_ids())
-        self.assertFalse(strategy.portfolio.is_completely_flat())
-
-    def test_track_orders_for_a_closing_position(self):
-        # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy1(bar_type)
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=self.uuid_factory,
-            logger=self.logger,
-        )
-        self.exec_engine.register_strategy(strategy)
-
-        order1 = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        order2 = strategy.order_factory.market(
-            USDJPY_FXCM,
-            OrderSide.SELL,
-            Quantity(100000),
-        )
-
-        strategy.submit_order(order1)
-        strategy.submit_order(order2, PositionId("B-USD/JPY-1"))  # Position identifier generated by exchange
-
-        # Act
-        print(self.exec_engine.cache.orders())
-        # Assert
-        self.assertEqual(0, len(self.exec_engine.cache.orders_working()))
-        self.assertIn(order1, self.exec_engine.cache.orders_completed())
-        self.assertIn(order2, self.exec_engine.cache.orders_completed())
-        self.assertEqual(1, len(self.exec_engine.cache.positions_closed()))
-        self.assertEqual(0, len(self.exec_engine.cache.positions_open()))
+        self.assertEqual(OrderState.FILLED, order1.state)
+        self.assertEqual(OrderState.FILLED, order2.state)
         self.assertTrue(strategy.portfolio.is_completely_flat())
