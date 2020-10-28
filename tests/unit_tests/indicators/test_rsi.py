@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.rsi import RelativeStrengthIndex
-from tests.test_kit.series import BatterySeries
 
 
 class RelativeStrengthIndexTests(unittest.TestCase):
@@ -26,22 +25,16 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         # Arrange
         self.rsi = RelativeStrengthIndex(10)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("RelativeStrengthIndex", self.rsi.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", str(self.rsi))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.rsi).startswith(
-            "<RelativeStrengthIndex(10, EXPONENTIAL) object at"))
-        self.assertTrue(repr(self.rsi).endswith(">"))
+        self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", repr(self.rsi))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -135,17 +128,8 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         self.rsi.update_raw(1.00050)
 
         # Act
-        self.rsi.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.rsi.update_raw(point)
-            output.append(self.rsi.value)
+        self.rsi.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.rsi.initialized)
+        self.assertEqual(0, self.rsi.value)

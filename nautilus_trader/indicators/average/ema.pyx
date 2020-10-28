@@ -48,7 +48,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         super().__init__(period, params=[period], price_type=price_type)
 
         self.alpha = 2.0 / (period + 1.0)
-        self.value = 0.0
+        self.value = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -103,7 +103,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
 
         """
         # Check if this is the initial input
-        if not self.has_inputs:
+        if not self._has_inputs:
             self._increment_input()
             self.value = value
             return

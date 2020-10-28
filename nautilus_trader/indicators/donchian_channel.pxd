@@ -13,33 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
-import unittest
-
-from nautilus_trader.common.clock import TestClock
-from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.stubs import UNIX_EPOCH
-
-clock = TestClock()
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-class TestClockTests:
+cdef class DonchianChannel(Indicator):
+    cdef int _period
+    cdef object _upper
+    cdef object _lower
+    cdef double _value_upper
+    cdef double _value_middle
+    cdef double _value_lower
 
-    @staticmethod
-    def advance_time():
-        test_time = UNIX_EPOCH
-        for _i in range(1000000):
-            test_time += timedelta(seconds=1)
-        clock.advance_time(test_time)
-
-
-class TestClockPerformanceTests(unittest.TestCase):
-
-    def test_advance_time(self):
-        store = []
-        clock.set_timer("test", timedelta(seconds=1), handler=store.append)
-
-        iterations = 1
-        result = PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)
-        # ~1484ms (1484100μs) minimum of 1 runs @ 1000000 iterations each run.
-        self.assertTrue(result < 2.0)
+    cpdef void update_raw(self, double high, double low) except *

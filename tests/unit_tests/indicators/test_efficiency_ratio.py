@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.efficiency_ratio import EfficiencyRatio
-from tests.test_kit.series import BatterySeries
 
 
 class EfficiencyRatioTests(unittest.TestCase):
@@ -26,21 +25,16 @@ class EfficiencyRatioTests(unittest.TestCase):
         # Arrange
         self.er = EfficiencyRatio(10)
 
-    def test_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("EfficiencyRatio", self.er.name)
 
-    def test_str(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("EfficiencyRatio(10)", str(self.er))
-
-    def test_repr(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.er).startswith("<EfficiencyRatio(10) object at"))
-        self.assertTrue(repr(self.er).endswith(">"))
+        self.assertEqual("EfficiencyRatio(10)", repr(self.er))
 
     def test_period(self):
         # Act
@@ -140,17 +134,5 @@ class EfficiencyRatioTests(unittest.TestCase):
         self.er.reset()
 
         # Assert
-        self.assertEqual(0, self.er.value)  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.er.update_raw(point)
-            output.append(self.er.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.er.initialized)
+        self.assertEqual(0, self.er.value)

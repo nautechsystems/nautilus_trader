@@ -30,6 +30,5 @@ class OrderPerformanceTests(unittest.TestCase):
         self.generator = OrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
 
     def test_order_id_generator(self):
-        result = PerformanceHarness.profile_function(self.generator.generate, 3, 10000)
+        PerformanceHarness.profile_function(self.generator.generate, 3, 10000)
         # ~30ms (18831μs) minimum of 5 runs @ 10000 iterations
-        self.assertTrue(result < 0.05)

@@ -17,7 +17,6 @@ import sys
 import unittest
 
 from nautilus_trader.indicators.atr import AverageTrueRange
-from tests.test_kit.series import BatterySeries
 
 
 class AverageTrueRangeTests(unittest.TestCase):
@@ -27,21 +26,16 @@ class AverageTrueRangeTests(unittest.TestCase):
         # Arrange
         self.atr = AverageTrueRange(10)
 
-    def test_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual('AverageTrueRange', self.atr.name)
 
-    def test_str(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual('AverageTrueRange(10, SIMPLE, True, 0.0)', str(self.atr))
-
-    def test_repr(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.atr).startswith('<AverageTrueRange(10, SIMPLE, True, 0.0) object at'))
-        self.assertTrue(repr(self.atr).endswith('>'))
+        self.assertEqual('AverageTrueRange(10, SIMPLE, True, 0.0)', repr(self.atr))
 
     def test_period(self):
         # Act
@@ -169,17 +163,5 @@ class AverageTrueRangeTests(unittest.TestCase):
         self.atr.reset()
 
         # Assert
-        self.assertEqual(0.0, self.atr.value)  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.atr.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
-            output.append(self.atr.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.atr.initialized)
+        self.assertEqual(0, self.atr.value)

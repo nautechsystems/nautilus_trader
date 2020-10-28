@@ -27,11 +27,9 @@ from nautilus_trader.model.identifiers cimport Venue
 cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef ExecutionEngine _engine
-
-    cdef readonly Venue venue
-    cdef readonly AccountId account_id
-    cdef readonly int command_count
-    cdef readonly int event_count
+    cdef Venue _venue
+    cdef AccountId _account_id
+    cdef bint _is_connected
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -47,4 +45,3 @@ cdef class ExecutionClient:
 # --------------------------------------------------------------------------------------------------
 
     cpdef void handle_event(self, Event event) except *
-    cdef void _reset(self) except *

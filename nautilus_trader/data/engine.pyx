@@ -13,6 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `DataEngine` is the central component of the entire data stack for the platform.
+
+Its primary responsibility is to orchestrate interactions between the individual
+`DataClient` instances, and the rest of the platform. This is could include
+ongoing subscriptions to specific data types, for particular endpoints.
+
+Beneath it sits the `DataCache` layer which presents a read-only facade
+to its clients to consume cached data through.
+"""
+
 import cython
 
 from cpython.datetime cimport datetime
@@ -53,7 +64,8 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class DataEngine:
     """
-    Provides a generic data engine for managing many data clients.
+    Provides a high-performance data engine for managing many `DataClient`
+    instances, for the asynchronous ingest of data.
     """
 
     def __init__(

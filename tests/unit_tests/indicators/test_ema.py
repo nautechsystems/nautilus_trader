@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from tests.test_kit.series import BatterySeries
 
 
 class ExponentialMovingAverageTests(unittest.TestCase):
@@ -26,21 +25,16 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         # Arrange
         self.ema = ExponentialMovingAverage(10)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual('ExponentialMovingAverage', self.ema.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual('ExponentialMovingAverage(10)', str(self.ema))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.ema).startswith('<ExponentialMovingAverage(10) object at'))
-        self.assertTrue(repr(self.ema).endswith('>'))
+        self.assertEqual('ExponentialMovingAverage(10)', repr(self.ema))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -102,17 +96,5 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         self.ema.reset()
 
         # Assert
-        self.assertEqual(0.0, self.ema.value)  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.ema.update_raw(point)
-            output.append(self.ema.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.ema.initialized)
+        self.assertEqual(0.0, self.ema.value)

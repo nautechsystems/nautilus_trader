@@ -36,7 +36,8 @@ cdef class KeltnerPosition(Indicator):
             ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
             ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
             bint use_previous=True,
-            double atr_floor=0.0):
+            double atr_floor=0.0,
+    ):
         """
         Initialize a new instance of the KeltnerChannel class.
 
@@ -124,9 +125,9 @@ cdef class KeltnerPosition(Indicator):
         self._kc.update_raw(high, low, close)
 
         # Initialization logic
-        if not self.initialized:
+        if not self._initialized:
             self._set_has_inputs(True)
-            if self._kc.initialized:
+            if self._kc._initialized:
                 self._set_initialized(True)
 
         cdef double k_width = (self._kc.value_upper_band - self._kc.value_lower_band) / 2

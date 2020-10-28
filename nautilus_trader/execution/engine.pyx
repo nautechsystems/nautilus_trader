@@ -13,6 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `ExecutionEngine` is the central component of the entire execution stack for the platform.
+
+Its primary responsibility is to orchestrate interactions between the individual
+`DataClient` instances, and the rest of the platform. This is could include
+ongoing subscriptions to specific data types, for particular endpoints.
+
+Beneath it sits the `DataCache` layer which presents a read-only facade
+to its clients to consume cached data through.
+"""
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
@@ -58,7 +69,9 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionEngine:
     """
-    Provides a high-performance execution engine.
+    Provides a high-performance execution engine for the management of many
+    `ExecutionClient` instances, and the asynchronous ingest of trading related
+    events.
     """
 
     def __init__(

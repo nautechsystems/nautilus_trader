@@ -3,7 +3,6 @@ Core
 
 .. automodule:: nautilus_trader.core
 
-
 Cache
 -----
 

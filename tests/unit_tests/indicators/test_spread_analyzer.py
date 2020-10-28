@@ -83,3 +83,14 @@ class SpreadAnalyzerTests(unittest.TestCase):
         # Assert
         self.assertAlmostEqual(6e-05, analyzer.current)
         self.assertAlmostEqual(8e-05, analyzer.average)
+
+    def test_reset_successfully_returns_indicator_to_fresh_state(self):
+        # Arrange
+        instance = SpreadAnalyzer(AUDUSD_FXCM, 1000)
+
+        # Act
+        instance.reset()
+
+        # Assert
+        self.assertFalse(instance.initialized)
+        self.assertEqual(0, instance.current)

@@ -78,7 +78,7 @@ cdef class RateOfChange(Indicator):
         """
         self._prices.append(price)
 
-        if not self.initialized:
+        if not self._initialized:
             self._set_has_inputs(True)
             if len(self._prices) >= self.period:
                 self._set_initialized(True)

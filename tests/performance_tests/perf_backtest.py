@@ -39,7 +39,8 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
 
-    def test_run_with_empty_strategy(self):
+    @staticmethod
+    def test_run_with_empty_strategy():
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
@@ -69,8 +70,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
-        self.assertTrue(True)
-
         # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
         #          3490226 function calls in 0.623 seconds
         #          5407539 function calls (5407535 primitive calls) in 1.187 seconds
@@ -86,7 +85,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 14/01/20   20964 function calls   (20758 primitive calls) in 0.695 seconds (performance check)
         # 10/02/20   713938 function calls (713572 primitive calls) in 2.670 seconds (something changed)
 
-    def test_run_for_tick_processing(self):
+    @staticmethod
+    def test_run_for_tick_processing():
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
@@ -124,9 +124,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
 
-        self.assertTrue(True)
-
-    def test_run_with_ema_cross_strategy(self):
+    @staticmethod
+    def test_run_with_ema_cross_strategy():
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
@@ -163,8 +162,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         cProfile.runctx("engine.run(start, stop)", globals(), locals(), stats_file)
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()
-
-        self.assertTrue(True)
 
         # 05/10/20 Change to simple EMA Cross - 1 month.
         # start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
