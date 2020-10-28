@@ -113,7 +113,7 @@ cdef class MovingAverage(Indicator):
         """
         return self._value
 
-    cdef void _increment_input(self) except *:
+    cdef void _increment_count(self) except *:
         self._count += 1
 
         # Initialization logic

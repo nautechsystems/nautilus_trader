@@ -120,7 +120,7 @@ cdef class HullMovingAverage(MovingAverage):
             The update value.
 
         """
-        self._increment_input()
+        self._increment_count()
 
         self._ma1.update_raw(value)
         self._ma2.update_raw(value)

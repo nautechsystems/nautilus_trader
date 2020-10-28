@@ -177,7 +177,7 @@ class TraderTests(unittest.TestCase):
         self.assertTrue(strategies[1].id in self.trader.strategy_states())
         self.assertEqual(2, len(self.trader.strategy_states()))
 
-    def test_trader_detects_none_unique_identifiers(self):
+    def test_trader_detects_duplicate_identifiers(self):
         # Arrange
         strategies = [
             EmptyStrategy("000"),
