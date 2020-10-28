@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import unittest
 
 from nautilus_trader.indicators.obv import OnBalanceVolume
-from tests.test_kit.series import BatterySeries
 
 
 class OnBalanceVolumeTests(unittest.TestCase):
@@ -27,21 +25,16 @@ class OnBalanceVolumeTests(unittest.TestCase):
         # Arrange
         self.obv = OnBalanceVolume(100)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("OnBalanceVolume", self.obv.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("OnBalanceVolume(100)", str(self.obv))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.obv).startswith("<OnBalanceVolume(100) object at"))
-        self.assertTrue(repr(self.obv).endswith(">"))
+        self.assertEqual("OnBalanceVolume(100)", repr(self.obv))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -110,17 +103,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
         # Act
-        self.obv.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.obv.update_raw(sys.float_info.epsilon, point, 10000)
-            output.append(self.obv.value)
+        self.obv.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.obv.initialized)

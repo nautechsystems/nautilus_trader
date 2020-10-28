@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.average.ama import AdaptiveMovingAverage
-from tests.test_kit.series import BatterySeries
 
 
 class AdaptiveMovingAverageTests(unittest.TestCase):
@@ -26,21 +25,16 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         # Arrange
         self.ama = AdaptiveMovingAverage(10, 2, 30)
 
-    def test_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("AdaptiveMovingAverage", self.ama.name)
 
-    def test_str(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", str(self.ama))
-
-    def test_repr(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.ama).startswith("<AdaptiveMovingAverage(10, 2, 30) object at"))
-        self.assertTrue(repr(self.ama).endswith(">"))
+        self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", repr(self.ama))
 
     def test_period(self):
         # Act
@@ -88,17 +82,5 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         self.ama.reset()
 
         # Assert
-        self.assertEqual(0.0, self.ama.value)  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.ama.update_raw(point)
-            output.append(self.ama.value)
-
-        # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.ama.initialized)
+        self.assertEqual(0, self.ama.value)

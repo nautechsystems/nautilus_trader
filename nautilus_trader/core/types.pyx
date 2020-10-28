@@ -101,7 +101,7 @@ cdef class Identifier:
         """
         Condition.valid_string(value, "value")
 
-        self._id_type = type(self).__name__
+        self._id_type = type(self)
         self._value = value
 
     def __eq__(self, Identifier other) -> bool:
@@ -131,7 +131,7 @@ cdef class Identifier:
         return self._value
 
     def __repr__(self) -> str:
-        return f"{self._id_type}('{self._value}')"
+        return f"{self._id_type.__name__}('{self._value}')"
 
     @property
     def id_type(self):
@@ -140,7 +140,7 @@ cdef class Identifier:
 
         Returns
         -------
-        str
+        type
 
         """
         return self._id_type

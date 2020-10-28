@@ -13,12 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import unittest
 
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.pressure import Pressure
-from tests.test_kit.series import BatterySeries
 
 
 class PressureTests(unittest.TestCase):
@@ -28,21 +26,16 @@ class PressureTests(unittest.TestCase):
         # Arrange
         self.pressure = Pressure(10, MovingAverageType.EXPONENTIAL)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("Pressure", self.pressure.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", str(self.pressure))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.pressure).startswith("<Pressure(10, EXPONENTIAL, 0.0) object at"))
-        self.assertTrue(repr(self.pressure).endswith(">"))
+        self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", repr(self.pressure))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -113,17 +106,7 @@ class PressureTests(unittest.TestCase):
             self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
         # Act
-        self.pressure.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.pressure.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon, point)
-            output.append(self.pressure.value)
+        self.pressure.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.pressure.initialized)

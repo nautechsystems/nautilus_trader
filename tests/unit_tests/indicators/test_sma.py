@@ -13,12 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
 import unittest
 
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit.series import BatterySeries
 from tests.test_kit.stubs import TestStubs
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -31,21 +29,16 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Arrange
         self.sma = SimpleMovingAverage(10)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("SimpleMovingAverage", self.sma.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("SimpleMovingAverage(10)", str(self.sma))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.sma).startswith("<SimpleMovingAverage(10) object at"))
-        self.assertTrue(repr(self.sma).endswith(">"))
+        self.assertEqual("SimpleMovingAverage(10)", repr(self.sma))
 
     def test_period_returns_expected_value(self):
         # Act
@@ -138,18 +131,14 @@ class SimpleMovingAverageTests(unittest.TestCase):
         self.assertTrue(sma_for_ticks.has_inputs)
         self.assertEqual(1.00001, sma_for_ticks.value)
 
-    def test_with_battery_signal(self):
+    def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        tt = time.time()
-        battery_signal = BatterySeries.create(length=1000000)
-        output = []
+        for _i in range(1000):
+            self.sma.update_raw(1.00000)
 
         # Act
-        for point in battery_signal:
-            self.sma.update_raw(point)
-            output.append(self.sma.value)
+        self.sma.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
-        print(self.sma.value)
-        print(time.time() - tt)
+        self.assertFalse(self.sma.initialized)
+        self.assertEqual(0, self.sma.value)

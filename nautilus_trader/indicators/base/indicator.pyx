@@ -21,7 +21,7 @@ cdef class Indicator:
 
     def __init__(self, list params not None):
         """
-        Initialize a new instance of the abstract Indicator class.
+        Initialize a new instance of the Indicator abstract class.
 
         Parameters
         ----------
@@ -29,16 +29,63 @@ cdef class Indicator:
             The initialization parameters for the indicator.
 
         """
-        self.name = type(self).__name__
-        self.params = '' if params is [] else str(params)[1:-1].replace("'", '').strip('()')
-        self.has_inputs = False
-        self.initialized = False
-
-    def __str__(self) -> str:
-        return f"{self.name}({self.params})"
+        self._name = type(self).__name__
+        self._params = params
+        self._has_inputs = False
+        self._initialized = False
 
     def __repr__(self) -> str:
-        return f"<{str(self)} object at {id(self)}>"
+        return f"{self.name}({self._params_str()})"
+
+    @property
+    def name(self):
+        """
+        The name of the indicator.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._name
+
+    @property
+    def params(self):
+        """
+        The indicators parameter values.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._params.copy()
+
+    @property
+    def has_inputs(self):
+        """
+        If the indicator has received inputs.
+
+        Returns
+        -------
+        bool
+            True if inputs received, else False.
+
+        """
+        return self._has_inputs
+
+    @property
+    def initialized(self):
+        """
+        If the indicator is warmed up and initialized.
+
+        Returns
+        -------
+        bool
+            True if initialized, else False.
+
+        """
+        return self._initialized
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         # Abstract method
@@ -56,12 +103,15 @@ cdef class Indicator:
         # Override should call _reset_base()
         raise NotImplemented("method must be implemented in the subclass")
 
+    cdef str _params_str(self):
+        return str(self._params)[1:-1].replace("'", '').strip('()') if self._params else ''
+
     cdef void _set_has_inputs(self, bint setting) except *:
-        self.has_inputs = setting
+        self._has_inputs = setting
 
     cdef void _set_initialized(self, bint setting) except *:
-        self.initialized = setting
+        self._initialized = setting
 
     cdef void _reset_base(self) except *:
-        self.has_inputs = False
-        self.initialized = False
+        self._has_inputs = False
+        self._initialized = False

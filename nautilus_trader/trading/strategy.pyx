@@ -1275,7 +1275,7 @@ cdef class TradingStrategy:
         """
         Return the strategy state dictionary to be saved.
         """
-        cpdef dict state = {"OrderIdCount": self._order_factory.count()}
+        cpdef dict state = {"OrderIdCount": self._order_factory.count}
 
         try:
             user_state = self.on_save()

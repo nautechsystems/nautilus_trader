@@ -19,16 +19,17 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class Indicator:
-    cdef readonly str name
-    cdef readonly str params
-    cdef readonly bint has_inputs
-    cdef readonly bint initialized
+    cdef str _name
+    cdef list _params
+    cdef bint _has_inputs
+    cdef bint _initialized
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void reset(self) except *
 
+    cdef str _params_str(self)
     cdef void _set_has_inputs(self, bint setting) except *
     cdef void _set_initialized(self, bint setting) except *
     cdef void _reset_base(self) except *

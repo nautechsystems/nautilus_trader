@@ -13,32 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections import deque
 import unittest
-import uuid
 
-from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.performance import PerformanceHarness
 
 
-class UUIDTests:
+class PythonDequePerformanceTests(unittest.TestCase):
 
-    @staticmethod
-    def make_builtin_uuid():
-        uuid.uuid4()
+    def setUp(self):
+        self.deque = deque(maxlen=1000)
+        self.deque.append(1.0)
 
-    @staticmethod
-    def make_nautilus_uuid():
-        uuid4()
+    def append(self):
+        self.deque.append(1.0)
 
+    def peek(self):
+        return self.deque[0]
 
-class UUIDPerformanceTests(unittest.TestCase):
+    def test_append(self):
+        PerformanceHarness.profile_function(self.append, 3, 100000)
+        # ~10ms (10767μs) minimum of 3 runs @ 100,000 iterations each run.
 
-    def test_make_builtin_uuid(self):
-        result = PerformanceHarness.profile_function(UUIDTests.make_builtin_uuid, 3, 100000)
-        # ~279ms (279583μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 1.2)
-
-    def test_make_nautilus_uuid(self):
-        result = PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 3, 100000)
-        # ~215ms (215908μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 1.2)
+    def test_peek(self):
+        PerformanceHarness.profile_function(self.peek, 3, 100000)
+        # ~8ms (8367μs) minimum of 3 runs @ 100,000 iterations each run.

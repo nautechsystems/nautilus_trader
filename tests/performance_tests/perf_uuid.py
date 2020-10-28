@@ -13,13 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `data` sub-package groups components relating to the data stack for the platform.
+import unittest
+import uuid
 
-Due to the high-performance, the core components are reusable between both
-backtest and live implementations - helping to ensure consistent logic for
-trading operations. The layered architecture of the data stack somewhat mirrors the
-execution stack with a central engine, cache layer beneath, database layer beneath, with alternative
-(live) implementations able to be written on top - which just need to override
-the engines `execute` and `process` methods.
-"""
+from nautilus_trader.core.uuid import uuid4
+from tests.test_kit.performance import PerformanceHarness
+
+
+class UUIDTests:
+
+    @staticmethod
+    def make_builtin_uuid():
+        uuid.uuid4()
+
+    @staticmethod
+    def make_nautilus_uuid():
+        uuid4()
+
+
+class UUIDPerformanceTests(unittest.TestCase):
+
+    @staticmethod
+    def test_make_builtin_uuid():
+        PerformanceHarness.profile_function(UUIDTests.make_builtin_uuid, 3, 100000)
+        # ~279ms (279583μs) minimum of 3 runs @ 100,000 iterations each run.
+
+    @staticmethod
+    def test_make_nautilus_uuid():
+        PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 3, 100000)
+        # ~215ms (215908μs) minimum of 3 runs @ 100,000 iterations each run.

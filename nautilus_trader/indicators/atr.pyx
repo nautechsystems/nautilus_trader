@@ -32,7 +32,7 @@ cdef class AverageTrueRange(Indicator):
             int period,
             ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
             bint use_previous=True,
-            double value_floor=0.0,
+            double value_floor=0,
             bint check_inputs=False,
     ):
         """
@@ -66,11 +66,11 @@ cdef class AverageTrueRange(Indicator):
         )
 
         self.period = period
-        self._moving_average = MovingAverageFactory.create(self.period, ma_type)
+        self._ma = MovingAverageFactory.create(self.period, ma_type)
         self._use_previous = use_previous
         self._value_floor = value_floor
-        self._previous_close = 0.0
-        self.value = 0.0
+        self._previous_close = 0
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -107,21 +107,21 @@ cdef class AverageTrueRange(Indicator):
         """
         # Calculate average
         if self._use_previous:
-            if not self.has_inputs:
+            if not self._has_inputs:
                 self._previous_close = close
-            self._moving_average.update_raw(max(self._previous_close, high) - min(low, self._previous_close))
+            self._ma.update_raw(max(self._previous_close, high) - min(low, self._previous_close))
             self._previous_close = close
         else:
-            self._moving_average.update_raw(high - low)
+            self._ma.update_raw(high - low)
 
         self._floor_value()
         self._check_initialized()
 
     cdef void _floor_value(self) except *:
         if self._value_floor == 0:
-            self.value = self._moving_average.value
-        elif self._value_floor < self._moving_average.value:
-            self.value = self._moving_average.value
+            self.value = self._ma.value
+        elif self._value_floor < self._ma.value:
+            self.value = self._ma.value
         else:
             # Floor the value
             self.value = self._value_floor
@@ -130,9 +130,9 @@ cdef class AverageTrueRange(Indicator):
         """
         Initialization logic.
         """
-        if not self.initialized:
+        if not self._initialized:
             self._set_has_inputs(True)
-            if self._moving_average.initialized:
+            if self._ma.initialized:
                 self._set_initialized(True)
 
     cpdef void reset(self) except *:
@@ -143,6 +143,6 @@ cdef class AverageTrueRange(Indicator):
 
         """
         self._reset_base()
-        self._moving_average.reset()
-        self._previous_close = 0.0
-        self.value = 0.0
+        self._ma.reset()
+        self._previous_close = 0
+        self.value = 0

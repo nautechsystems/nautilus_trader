@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import sys
 import unittest
 
 from nautilus_trader.indicators.keltner_position import KeltnerPosition
-from tests.test_kit.series import BatterySeries
 
 
 class KeltnerPositionTests(unittest.TestCase):
@@ -27,22 +25,16 @@ class KeltnerPositionTests(unittest.TestCase):
         # Arrange
         self.kp = KeltnerPosition(10, 2.5)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("KeltnerPosition", self.kp.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.kp).startswith(
-            "<KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0) object at"))
-        self.assertTrue(repr(self.kp).endswith(">"))
+        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp))
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
@@ -74,7 +66,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.kp.value)
+        self.assertEqual(0, self.kp.value)
 
     def test_value_with_zero_width_input_returns_zero(self):
         # Arrange
@@ -84,7 +76,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.kp.value)
+        self.assertEqual(0, self.kp.value)
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -150,18 +142,7 @@ class KeltnerPositionTests(unittest.TestCase):
         self.kp.update_raw(1.00040, 1.00020, 1.00030)
 
         # Act
-        self.kp.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        self.kp = KeltnerPosition(10, 2.5, atr_floor=0.00010)
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in BatterySeries.create():
-            self.kp.update_raw(point, sys.float_info.epsilon, sys.float_info.epsilon)
-            output.append(self.kp.value)
+        self.kp.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.kp.initialized)

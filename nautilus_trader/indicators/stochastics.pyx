@@ -97,14 +97,14 @@ cdef class Stochastics(Indicator):
 
         """
         # Check if first input
-        if not self.has_inputs:
+        if not self._has_inputs:
             self._set_has_inputs(True)
 
         self._highs.append(high)
         self._lows.append(low)
 
         # Initialization logic
-        if not self.initialized:
+        if not self._initialized:
             if len(self._highs) == self.period_k and len(self._lows) == self.period_k:
                 self._set_initialized(True)
 

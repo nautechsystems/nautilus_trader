@@ -55,13 +55,47 @@ cdef class ExecutionClient:
 
         self._engine = engine
         self._log = LoggerAdapter(type(self).__name__, logger)
-
-        self.venue = venue
-        self.account_id = account_id
-        self.command_count = 0
-        self.event_count = 0
+        self._venue = venue
+        self._account_id = account_id
 
         self._log.info(f"Initialized.")
+
+    @property
+    def venue(self):
+        """
+        The execution clients venue.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._venue
+
+    @property
+    def account_id(self):
+        """
+        The execution clients account identifier.
+
+        Returns
+        -------
+        Venue
+
+        """
+        return self._account_id
+
+    @property
+    def is_connected(self):
+        """
+        If the execution client is currently connected.
+
+        Returns
+        -------
+        bool
+            True if connected, else False.
+
+        """
+        return self._is_connected
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -110,8 +144,3 @@ cdef class ExecutionClient:
 
         """
         self._engine.process(event)
-
-    cdef void _reset(self) except *:
-        # Reset the class to its initial state
-        self.command_count = 0
-        self.event_count = 0

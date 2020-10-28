@@ -13,30 +13,33 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from collections import deque
+from datetime import timedelta
 import unittest
 
+from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
+from tests.test_kit.stubs import UNIX_EPOCH
+
+clock = TestClock()
 
 
-class PythonDequePerformanceTests(unittest.TestCase):
+class TestClockTests:
 
-    def setUp(self):
-        self.deque = deque(maxlen=1000)
-        self.deque.append(1.0)
+    @staticmethod
+    def advance_time():
+        test_time = UNIX_EPOCH
+        for _i in range(1000000):
+            test_time += timedelta(seconds=1)
+        clock.advance_time(test_time)
 
-    def append(self):
-        self.deque.append(1.0)
 
-    def peek(self):
-        return self.deque[0]
+class TestClockPerformanceTests(unittest.TestCase):
 
-    def test_append(self):
-        result = PerformanceHarness.profile_function(self.append, 3, 100000)
-        # ~10ms (10767μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 0.05)
+    @staticmethod
+    def test_advance_time():
+        store = []
+        clock.set_timer("test", timedelta(seconds=1), handler=store.append)
 
-    def test_peek(self):
-        result = PerformanceHarness.profile_function(self.peek, 3, 100000)
-        # ~8ms (8367μs) minimum of 3 runs @ 100,000 iterations each run.
-        self.assertTrue(result < 0.05)
+        iterations = 1
+        PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)
+        # ~1484ms (1484100μs) minimum of 1 runs @ 1000000 iterations each run.

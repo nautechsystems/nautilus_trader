@@ -36,9 +36,6 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self._volume_total = 0.0
         self.value = 0.0
 
-        self.has_inputs = False
-        self.initialized = False
-
     cpdef void handle_bar(self, Bar bar) except *:
         """
         Update the indicator with the given bar.

@@ -521,7 +521,7 @@ cdef class AccountId(Identifier):
         Parameters
         ----------
         issuer : str
-            The issuer identifier value (broker/exchange).
+            The issuer identifier value (exchange/broker).
         identifier : str
             The account identifier value.
         account_type : AccountType
@@ -725,7 +725,7 @@ cdef class OrderId(Identifier):
         Parameters
         ----------
         value : str
-            The broker/exchange assigned order identifier value.
+            The exchange/broker assigned order identifier value.
 
         Raises
         ------
@@ -750,7 +750,7 @@ cdef class PositionId(Identifier):
         Parameters
         ----------
         value : str
-            The broker/exchange assigned position identifier value.
+            The exchange/broker assigned position identifier value.
 
         Raises
         ------

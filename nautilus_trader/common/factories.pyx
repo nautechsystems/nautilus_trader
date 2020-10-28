@@ -51,9 +51,9 @@ cdef class OrderFactory:
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier (only numerical tag sent to broker/exchange).
-        strategy_id : StrategyId
-            The strategy identifier (only numerical tag sent to broker/exchange).
+            The trader identifier (only numerical tag sent to exchange/broker).
+exchange/broker        strategy_id : StrategyId
+            The strategy identifier (only numerical tag sent to exchange/broker).
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory

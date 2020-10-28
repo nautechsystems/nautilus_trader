@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
-from tests.test_kit.series import BatterySeries
 
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
@@ -26,22 +25,16 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         # Arrange
         self.macd = MovingAverageConvergenceDivergence(3, 10)
 
-    def test_name_returns_expected_name(self):
+    def test_name_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("MovingAverageConvergenceDivergence", self.macd.name)
 
-    def test_str_returns_expected_string(self):
+    def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
         self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd))
-
-    def test_repr_returns_expected_string(self):
-        # Act
-        # Assert
-        self.assertTrue(repr(self.macd).startswith(
-            "<MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL) object at"))
-        self.assertTrue(repr(self.macd).endswith('>'))
+        self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", repr(self.macd))
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
@@ -119,17 +112,7 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         self.macd.update_raw(1.00050)
 
         # Act
-        self.macd.reset()  # No assertion errors.
-
-    def test_with_battery_signal(self):
-        # Arrange
-        battery_signal = BatterySeries.create()
-        output = []
-
-        # Act
-        for point in battery_signal:
-            self.macd.update_raw(point)
-            output.append(self.macd.value)
+        self.macd.reset()
 
         # Assert
-        self.assertEqual(len(battery_signal), len(output))
+        self.assertFalse(self.macd.initialized)
