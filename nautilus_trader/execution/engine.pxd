@@ -57,14 +57,12 @@ cdef class ExecutionEngine:
     cdef int _command_count
     cdef int _event_count
 
-# -- REGISTRATIONS ---------------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *
     cpdef void deregister_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
-    cpdef set registered_venues(self)
-    cpdef set registered_strategies(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

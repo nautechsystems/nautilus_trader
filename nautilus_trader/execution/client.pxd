@@ -42,6 +42,6 @@ cdef class ExecutionClient:
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
 
-# --------------------------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_event(self, Event event) except *

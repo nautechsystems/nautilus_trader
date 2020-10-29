@@ -78,7 +78,7 @@ cdef class TradingStrategy:
     cpdef void on_load(self, dict state) except *
     cpdef void on_dispose(self) except *
 
-# -- REGISTRATION METHODS --------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
         self,
@@ -93,7 +93,7 @@ cdef class TradingStrategy:
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
     cpdef void handle_quote_ticks(self, list ticks) except *

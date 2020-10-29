@@ -57,18 +57,11 @@ cdef class DataEngine:
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
 
-# -- REGISTRATIONS ---------------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef list registered_venues(self)
-
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef list subscribed_instruments(self)
-    cpdef list subscribed_quote_ticks(self)
-    cpdef list subscribed_trade_ticks(self)
-    cpdef list subscribed_bars(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

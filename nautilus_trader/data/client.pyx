@@ -194,7 +194,7 @@ cdef class DataClient:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.process(tick)
