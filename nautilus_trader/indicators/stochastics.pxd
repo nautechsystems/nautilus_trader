@@ -17,14 +17,13 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class Stochastics(Indicator):
+    cdef int _period_k
+    cdef int _period_d
     cdef object _highs
     cdef object _lows
     cdef object _c_sub_l
     cdef object _h_sub_l
-
-    cdef readonly int period_k
-    cdef readonly int period_d
-    cdef readonly double value_k
-    cdef readonly double value_d
+    cdef double _value_k
+    cdef double _value_d
 
     cpdef void update_raw(self, double high, double low, double close) except *

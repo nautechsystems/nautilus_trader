@@ -6,7 +6,7 @@ Introduction
 Welcome to the documentation for `NautilusTrader`, an open-source, high-performance,
 production-grade trading platform. It is hoped that this project gains wide
 adoption within the trading community, assisting with safe, reliable and efficient
-trading operations - utilizing the latest advanced technologies.
+trading operations.
 
 The platform aims
 to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
@@ -26,11 +26,10 @@ more suitable for large enterprise systems.
 
 The value of `NautilusTrader` here is that this re-implementation step is circumvented, as the
 platform was designed from the ground up to hold its own in terms of performance
-and enterprise grade quality. Python has simply caught up in performance
+and quality. Python has simply caught up in performance
 (via Cython offering C level speed) and general tooling, making it a suitable language for implementing
 a large system such as this. The benefit here being that a Python native environment
-can be offered to professional quantitative traders and hedge funds, to meet
-their rigorous standards.
+can be offered suitable for professional quantitative traders and hedge funds.
 
 Why Python?
 -----------
@@ -41,7 +40,7 @@ Not only that, Python has become the `de facto lingua franca` of data science,
 machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of implementing
-a large system such as that offered with the `NautilusTrader` package. Cython has addressed some of these issues, offering all the advantages
+large systems. Cython has addressed some of these issues, offering all the advantages
 of a statically typed language, embedded into Pythons rich ecosystem of software
 libraries and developer/user communities.
 

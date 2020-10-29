@@ -18,8 +18,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 cdef class OnBalanceVolume(Indicator):
     cdef object _obv
-
-    cdef readonly int period
-    cdef readonly double value
+    cdef int _period
+    cdef double _value
 
     cpdef void update_raw(self, double open_price, double close_price, double volume) except *

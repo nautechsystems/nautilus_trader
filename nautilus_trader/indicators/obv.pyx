@@ -43,9 +43,33 @@ cdef class OnBalanceVolume(Indicator):
         Condition.not_negative(period, "period")
         super().__init__(params=[period])
 
-        self.period = period
-        self._obv = deque(maxlen=None if self.period == 0 else self.period)
-        self.value = 0
+        self._period = period
+        self._obv = deque(maxlen=None if period == 0 else period)
+        self._value = 0
+
+    @property
+    def period(self):
+        """
+        The indicators window period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._period
+
+    @property
+    def value(self):
+        """
+        The indicators current value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -91,12 +115,12 @@ cdef class OnBalanceVolume(Indicator):
         else:
             self._obv.append(0)
 
-        self.value = sum(self._obv)
+        self._value = sum(self._obv)
 
         # Initialization logic
         if not self._initialized:
             self._set_has_inputs(True)
-            if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
+            if (self._period == 0 and len(self._obv) > 0) or len(self._obv) >= self._period:
                 self._set_initialized(True)
 
     cpdef void reset(self) except *:
