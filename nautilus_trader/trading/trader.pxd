@@ -27,11 +27,12 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class Trader:
-    cdef TraderId _id
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
+
+    cdef TraderId _id
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef Portfolio _portfolio

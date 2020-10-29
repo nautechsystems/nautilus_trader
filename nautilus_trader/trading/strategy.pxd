@@ -42,12 +42,16 @@ from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy:
-    cdef StrategyId _id
-    cdef TraderId _trader_id
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
+
+    cdef StrategyId _id
+    cdef TraderId _trader_id
+    cdef DataEngine _data_engine
     cdef DataCacheFacade _data
+    cdef ExecutionEngine _exec_engine
     cdef ExecutionCacheFacade _execution
     cdef PortfolioFacade _portfolio
     cdef OrderFactory _order_factory
@@ -56,10 +60,6 @@ cdef class TradingStrategy:
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
-
-    cdef DataEngine _data_engine
-    cdef ExecutionEngine _exec_engine
-    cdef FiniteStateMachine _fsm
 
     cdef str state_string(self)
 

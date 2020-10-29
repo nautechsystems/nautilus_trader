@@ -27,12 +27,14 @@ import cython
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport Connect
 from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
+from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -40,6 +42,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -95,9 +98,12 @@ cdef class DataEngine:
         if config is None:
             config = {}
 
+        # Core components
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(type(self).__name__, logger)
+        self._fsm = create_component_fsm()
+
         self._portfolio = portfolio
         self._cache = DataCache(logger)
         self._use_previous_close = config.get('use_previous_close', True)
@@ -289,13 +295,18 @@ cdef class DataEngine:
         """
         Reset the class to its initial state.
         """
-        self._log.info("Resetting all clients...")
+        try:
+            self._fsm.trigger(ComponentTrigger.RESET)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef DataClient client
         for client in self._clients.values():
             client.reset()
 
-        self._log.debug("Reset.")
         self._cache.reset()
         self._instrument_handlers.clear()
         self._quote_tick_handlers.clear()
@@ -303,19 +314,30 @@ cdef class DataEngine:
         self._bar_aggregators.clear()
         self._bar_handlers.clear()
         self._clock.cancel_all_timers()
-
         self._command_count = 0
         self._data_count = 0
+
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void dispose(self) except *:
         """
         Dispose all data clients.
         """
-        self._log.info("Disposing all clients...")
+        try:
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef DataClient client
-        for client in self._clients:
+        for client in self._clients.values():
             client.dispose()
+
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void update_instruments(self, Venue venue) except *:
         """

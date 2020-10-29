@@ -39,11 +39,11 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport TickDataWrangler
+from nautilus_trader.data.wrappers cimport InstrumentDataBlock
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.data cimport InstrumentDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
