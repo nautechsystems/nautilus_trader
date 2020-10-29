@@ -156,6 +156,18 @@ cdef class DataEngine:
         return self._data_count
 
     @property
+    def registered_venues(self):
+        """
+        The venues registered with the data engine.
+
+        Returns
+        -------
+        list[Venue]
+
+        """
+        return list(self._clients.keys())
+
+    @property
     def subscribed_quote_ticks(self):
         """
         Return the quote tick symbols subscribed to.
@@ -243,17 +255,6 @@ cdef class DataEngine:
 
         self._log.info(f"Registered {strategy}.")
 
-    cpdef list registered_venues(self):
-        """
-        Return the venues registered with the data engine.
-
-        Returns
-        -------
-        list[Venue]
-
-        """
-        return list(self._clients.keys())
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *:
@@ -323,15 +324,25 @@ cdef class DataEngine:
         Condition.not_none(venue, "venue")
         Condition.is_in(venue, self._clients, "venue", "_clients")
 
-        self._clients[venue].request_instruments(self._internal_update_instruments)
+        cdef RequestData request = RequestData(
+            data_type=Instrument,
+            options={
+                VENUE: venue,
+                HANDLER: self._internal_update_instruments,
+            },
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
+        )
+
+        self.execute(request)
 
     cpdef void update_instruments_all(self) except *:
         """
         Update all instruments for every venue.
         """
-        cdef DataClient client
-        for client in self._clients.values():
-            client.request_instruments(self._internal_update_instruments)
+        cdef Venue venue
+        for venue in self.registered_venues:
+            self.update_instruments(venue)
 
 # -- COMMAND-HANDLERS ------------------------------------------------------------------------------
 
