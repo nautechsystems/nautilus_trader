@@ -344,7 +344,7 @@ cdef class DataEngine:
         for venue in self.registered_venues:
             self.update_instruments(venue)
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")

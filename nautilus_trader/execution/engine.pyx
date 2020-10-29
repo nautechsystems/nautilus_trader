@@ -369,7 +369,7 @@ cdef class ExecutionEngine:
         """
         self._cache.flush_db()
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
@@ -529,7 +529,7 @@ cdef class ExecutionEngine:
 
         self._handle_event(denied)
 
-# -- EVENT-HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
