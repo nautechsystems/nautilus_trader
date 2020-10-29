@@ -181,3 +181,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 22/10/20 20505398 function calls (20338534 primitive calls) in 14.170 seconds (improve portfolio calculation efficiency)
         # 25/10/20  4345869 function calls (4320566 primitive calls) in 5.519 seconds (improved efficiency of analyzers)
         # 28/10/20  4345843 function calls (4320540 primitive calls) in 5.964 seconds (implement @property were appropriate)
+        # 29/10/20  4305523 function calls (4280220 primitive calls) in 5.876 seconds (simplifications)
