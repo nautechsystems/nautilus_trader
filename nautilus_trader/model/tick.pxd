@@ -23,31 +23,30 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick:
+cdef class QuoteTick:
     cdef Symbol _symbol
-    cdef datetime _timestamp
-
-    cpdef str to_serializable_string(self)
-
-
-cdef class QuoteTick(Tick):
     cdef Price _bid
     cdef Price _ask
     cdef Quantity _bid_size
     cdef Quantity _ask_size
+    cdef datetime _timestamp
 
     cpdef Price extract_price(self, PriceType price_type)
     cpdef Quantity extract_volume(self, PriceType price_type)
 
     @staticmethod
     cdef QuoteTick from_serializable_string_c(Symbol symbol, str values)
+    cpdef str to_serializable_string(self)
 
 
-cdef class TradeTick(Tick):
+cdef class TradeTick:
+    cdef Symbol _symbol
     cdef Price _price
     cdef Quantity _size
     cdef Maker _maker
     cdef TradeMatchId _match_id
+    cdef datetime _timestamp
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values)
+    cpdef str to_serializable_string(self)
