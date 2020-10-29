@@ -17,11 +17,15 @@
 The `ExecutionEngine` is the central component of the entire execution stack for the platform.
 
 Its primary responsibility is to orchestrate interactions between the individual
-`DataClient` instances, and the rest of the platform. This is could include
+`DataClient` instances, and the rest of the platform. This includes
 ongoing subscriptions to specific data types, for particular endpoints.
 
 Beneath it sits the `DataCache` layer which presents a read-only facade
 to its clients to consume cached data through.
+
+The engine employs a simple fan-in fan-out messaging pattern to receive events
+from the `ExecutionClient` instances, and sending those to the registered
+handlers, namely `TradingStrategy` instances.
 """
 
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
@@ -345,7 +349,9 @@ cdef class ExecutionEngine:
 
     cpdef void reset(self) except *:
         """
-        Reset the execution engine by clearing all stateful values.
+        Reset the execution engine.
+
+        All stateful values are reset to their initial value.
         """
         try:
             self._fsm.trigger(ComponentTrigger.RESET)

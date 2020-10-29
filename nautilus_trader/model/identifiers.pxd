@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+
+
+cdef class Identifier:
+    cdef str _value
 
 
 cdef class Symbol(Identifier):

@@ -71,8 +71,8 @@ cdef class KeltnerPosition(Indicator):
             ]
         )
 
-        self.period = period
-        self.k_multiplier = k_multiplier
+        self._period = period
+        self._k_multiplier = k_multiplier
 
         self._kc = KeltnerChannel(
             period,
@@ -83,7 +83,43 @@ cdef class KeltnerPosition(Indicator):
             atr_floor,
         )
 
-        self.value = 0
+        self._value = 0
+
+    @property
+    def period(self):
+        """
+        The indicators window period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._period
+
+    @property
+    def k_multiplier(self):
+        """
+        The indicators k multiplier.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._k_multiplier
+
+    @property
+    def value(self):
+        """
+        The indicators current value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -130,20 +166,19 @@ cdef class KeltnerPosition(Indicator):
             if self._kc._initialized:
                 self._set_initialized(True)
 
-        cdef double k_width = (self._kc.value_upper_band - self._kc.value_lower_band) / 2
+        cdef double k_width = (self._kc.upper - self._kc.lower) / 2
 
         if k_width > 0:
-            self.value = (close - self._kc.value_middle_band) / k_width
+            self._value = (close - self._kc.middle) / k_width
         else:
-            self.value = 0
+            self._value = 0
 
     cpdef void reset(self) except *:
         """
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._kc.reset()
-        self.value = 0
+        self._value = 0

@@ -22,7 +22,6 @@ cdef class VolumeWeightedAveragePrice(Indicator):
     cdef int _day
     cdef double _price_volume
     cdef double _volume_total
-
-    cdef readonly double value
+    cdef double _value
 
     cpdef void update_raw(self, double price, double volume, datetime timestamp) except *

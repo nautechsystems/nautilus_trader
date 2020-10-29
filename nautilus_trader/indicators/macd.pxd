@@ -22,7 +22,6 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     cdef int _slow_period
     cdef MovingAverage _fast_ma
     cdef MovingAverage _slow_ma
-
-    cdef readonly double value
+    cdef double _value
 
     cpdef void update_raw(self, double close) except *

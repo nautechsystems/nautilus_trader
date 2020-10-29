@@ -34,7 +34,19 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self._day = 0
         self._price_volume = 0
         self._volume_total = 0
-        self.value = 0
+        self._value = 0
+
+    @property
+    def value(self):
+        """
+        The indicators current value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -77,7 +89,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         if timestamp.day != self._day:
             self.reset()
             self._day = timestamp.day
-            self.value = price
+            self._value = price
 
         # Initialization logic
         if not self._initialized:
@@ -90,17 +102,16 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
         self._price_volume += price * volume
         self._volume_total += volume
-        self.value = self._price_volume / self._volume_total
+        self._value = self._price_volume / self._volume_total
 
     cpdef void reset(self) except *:
         """
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._day = 0
         self._price_volume = 0
         self._volume_total = 0
-        self.value = 0
+        self._value = 0

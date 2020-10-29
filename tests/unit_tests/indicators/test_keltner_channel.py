@@ -75,9 +75,9 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0006, self.kc.value_upper_band)
-        self.assertEqual(1.0001, self.kc.value_middle_band)
-        self.assertEqual(0.9996, self.kc.value_lower_band)
+        self.assertEqual(1.0006, self.kc.upper)
+        self.assertEqual(1.0001, self.kc.middle)
+        self.assertEqual(0.9996, self.kc.lower)
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -87,9 +87,9 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0006512396694212, self.kc.value_upper_band)
-        self.assertEqual(1.0001512396694212, self.kc.value_middle_band)
-        self.assertEqual(0.9996512396694213, self.kc.value_lower_band)
+        self.assertEqual(1.0006512396694212, self.kc.upper)
+        self.assertEqual(1.0001512396694212, self.kc.middle)
+        self.assertEqual(0.9996512396694213, self.kc.lower)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange

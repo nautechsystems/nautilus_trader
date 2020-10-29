@@ -47,10 +47,34 @@ cdef class RateOfChange(Indicator):
         Condition.true(period > 1, "period > 1")
 
         super().__init__(params=[period])
-        self.period = period
+        self._period = period
         self._use_log = use_log
-        self._prices = deque(maxlen=self.period)
-        self.value = 0
+        self._prices = deque(maxlen=period)
+        self._value = 0
+
+    @property
+    def period(self):
+        """
+        The indicators window period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._period
+
+    @property
+    def value(self):
+        """
+        The indicators current value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -80,21 +104,20 @@ cdef class RateOfChange(Indicator):
 
         if not self._initialized:
             self._set_has_inputs(True)
-            if len(self._prices) >= self.period:
+            if len(self._prices) >= self._period:
                 self._set_initialized(True)
 
         if self._use_log:
-            self.value = log(price / self._prices[0])
+            self._value = log(price / self._prices[0])
         else:
-            self.value = (price - self._prices[0]) / self._prices[0]
+            self._value = (price - self._prices[0]) / self._prices[0]
 
     cpdef void reset(self) except *:
         """
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._prices.clear()
-        self.value = 0
+        self._value = 0

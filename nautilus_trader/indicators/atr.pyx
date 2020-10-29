@@ -65,12 +65,36 @@ cdef class AverageTrueRange(Indicator):
             ],
         )
 
-        self.period = period
-        self._ma = MovingAverageFactory.create(self.period, ma_type)
+        self._period = period
+        self._ma = MovingAverageFactory.create(period, ma_type)
         self._use_previous = use_previous
         self._value_floor = value_floor
         self._previous_close = 0
-        self.value = 0
+        self._value = 0
+
+    @property
+    def period(self):
+        """
+        The indicators window period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._period
+
+    @property
+    def value(self):
+        """
+        The indicators current value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -119,12 +143,12 @@ cdef class AverageTrueRange(Indicator):
 
     cdef void _floor_value(self) except *:
         if self._value_floor == 0:
-            self.value = self._ma.value
+            self._value = self._ma.value
         elif self._value_floor < self._ma.value:
-            self.value = self._ma.value
+            self._value = self._ma.value
         else:
             # Floor the value
-            self.value = self._value_floor
+            self._value = self._value_floor
 
     cdef void _check_initialized(self) except *:
         """
@@ -140,9 +164,8 @@ cdef class AverageTrueRange(Indicator):
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._ma.reset()
         self._previous_close = 0
-        self.value = 0
+        self._value = 0

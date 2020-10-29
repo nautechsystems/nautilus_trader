@@ -68,7 +68,11 @@ cdef class BidAskMinMax(Indicator):
         self._set_initialized(True)
 
     cpdef void reset(self) except *:
-        """Reset the instance to like-new."""
+        """
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+        """
         self._reset_base()
 
         # Reset the windows
@@ -131,10 +135,10 @@ cdef class WindowedMinMaxPrices:
         self.max_price = max([p[1] for p in self._max_prices])
 
     cpdef void reset(self) except *:
-        """Reset the indicator.
+        """
+        Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         # Set the min/max marks as None until we have data
         self.min_price = None
