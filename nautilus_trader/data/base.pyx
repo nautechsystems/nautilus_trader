@@ -29,30 +29,6 @@ cdef class DataCacheFacade:
     Provides a read-only facade for a `DataCache`.
     """
 
-    @property
-    def tick_capacity(self):
-        """
-        The caches tick capacity per symbol.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._tick_capacity
-
-    @property
-    def bar_capacity(self):
-        """
-        The caches bar capacity per symbol.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._bar_capacity
-
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list symbols(self):

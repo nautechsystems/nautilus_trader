@@ -26,7 +26,8 @@ from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 cdef class DataCache(DataCacheFacade):
     cdef LoggerAdapter _log
-
+    cdef int _tick_capacity
+    cdef int _bar_capacity
     cdef dict _instruments
     cdef dict _bid_quotes
     cdef dict _ask_quotes
