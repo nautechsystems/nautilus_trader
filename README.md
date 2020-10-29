@@ -34,10 +34,6 @@ is written mostly in Python with optional additional C-inspired syntax.
 
 > https://cython.org
 
-To run code or tests from the source code, first compile the C extensions for the package.
-
-    $ python setup.py build_ext --inplace
-
 ## Documentation
 
 > https://nautilus-trader.readthedocs.io
@@ -65,6 +61,12 @@ To run code or tests from the source code, first compile the C extensions for th
 Latest version;
 
     $ pip install nautilus_trader
+
+## Development
+
+To run code or tests from the source code, first compile the C extensions for the package.
+
+    $ python setup.py build_ext --inplace
 
 ## Contributing
 
