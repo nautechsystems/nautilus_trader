@@ -71,7 +71,7 @@ cdef class DataEngine:
     cpdef void update_instruments(self, Venue venue) except *
     cpdef void update_instruments_all(self) except *
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *
     cdef inline void _handle_connect(self, Connect command) except *
@@ -115,7 +115,7 @@ cdef class DataEngine:
     ) except *
 
 
-# -- DATA-HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, object data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *

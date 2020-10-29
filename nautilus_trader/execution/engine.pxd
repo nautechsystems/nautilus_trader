@@ -75,7 +75,7 @@ cdef class ExecutionEngine:
     cpdef void dispose(self) except *
     cpdef void flush_db(self) except *
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *
     cdef inline void _handle_connect(self, Connect command) except *
@@ -87,7 +87,7 @@ cdef class ExecutionEngine:
     cdef inline void _invalidate_order(self, Order order, str reason) except *
     cdef inline void _deny_order(self, Order order, str reason) except *
 
-# -- EVENT-HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *
     cdef inline void _handle_account_event(self, AccountState event) except *
