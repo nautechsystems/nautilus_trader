@@ -144,7 +144,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         # If this passes then result must be an int
-        self.assertTrue(type(result) == int)
+        self.assertTrue(isinstance(result, int))
 
     def test_str_and_repr(self):
         # Arrange
