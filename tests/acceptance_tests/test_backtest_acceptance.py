@@ -72,30 +72,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
     def tearDown(self):
         self.engine.dispose()
 
-    def test_run_empty_strategy(self):
-        # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
-
-        # Act
-        self.engine.run(start, stop)
-
-        # Assert
-        self.assertEqual(2720, self.engine.iteration)
-
-    def test_reset_engine(self):
-        # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
-
-        self.engine.run(start, stop)
-
-        # Act
-        self.engine.reset()
-
-        # Assert
-        self.assertEqual(0, self.engine.iteration)  # No exceptions raised
-
     def test_run_ema_cross_strategy(self):
         # Arrange
         strategies = [EMACross(symbol=self.usdjpy.symbol,
@@ -109,7 +85,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         # Act
         self.engine.run(start, stop, strategies=strategies)
 
-        # Assert
+        # Assert - Should return expected PNL
         self.assertEqual(559, strategies[0].fast_ema.count)
         self.assertEqual(-142.33, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 

@@ -114,7 +114,8 @@ class BulkTickBarBuilderTests(unittest.TestCase):
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data})
+            data_bars_ask={BarAggregation.MINUTE: ask_data},
+        )
         self.wrangler.pre_process(0)
 
         bar_store = ObjectStorer()
