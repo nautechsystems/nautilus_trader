@@ -19,11 +19,11 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class Pressure(Indicator):
+    cdef int _period
     cdef AverageTrueRange _atr
     cdef MovingAverage _average_volume
 
-    cdef readonly int period
-    cdef readonly double value
-    cdef readonly double value_cumulative
+    cdef double _value
+    cdef double _value_cumulative
 
     cpdef void update_raw(self, double high, double low, double close, double volume) except *
