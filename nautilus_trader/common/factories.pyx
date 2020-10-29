@@ -139,7 +139,9 @@ exchange/broker        strategy_id : StrategyId
 
     cpdef void reset(self) except *:
         """
-        Reset the order factory by clearing all stateful values.
+        Reset the order factory.
+
+        All stateful values are reset to their initial value.
         """
         self._id_generator.reset()
 

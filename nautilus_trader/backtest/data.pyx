@@ -353,7 +353,9 @@ cdef class BacktestDataClient(DataClient):
 
     cpdef void reset(self) except *:
         """
-        Reset the client to its initial state.
+        Reset the data client.
+
+        All stateful values are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 

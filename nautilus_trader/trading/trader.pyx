@@ -295,9 +295,10 @@ cdef class Trader:
 
         All stateful values of the portfolio, and every strategy are reset.
 
-        Notes
-        -----
-        The trader cannot be running otherwise an error is logged.
+        Raises
+        ------
+        InvalidStateTrigger
+            If trader state is RUNNING.
 
         """
         try:

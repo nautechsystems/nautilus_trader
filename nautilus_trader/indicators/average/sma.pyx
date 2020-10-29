@@ -114,7 +114,6 @@ cdef class SimpleMovingAverage(MovingAverage):
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_ma()
         self._inputs.clear()

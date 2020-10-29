@@ -294,6 +294,8 @@ cdef class DataEngine:
     cpdef void reset(self) except *:
         """
         Reset the class to its initial state.
+
+        All stateful values are reset to their initial value.
         """
         try:
             self._fsm.trigger(ComponentTrigger.RESET)
@@ -322,7 +324,9 @@ cdef class DataEngine:
 
     cpdef void dispose(self) except *:
         """
-        Dispose all data clients.
+        Dispose the data engine
+
+        All registered data clients are disposed.
         """
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)

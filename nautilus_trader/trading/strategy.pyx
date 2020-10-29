@@ -926,8 +926,14 @@ cdef class TradingStrategy:
         """
         Reset the trading strategy.
 
-        Calls on_reset().
-        All stateful values are reset to their initial value.
+        All stateful values are reset to their initial value, then calls
+        `on_reset()`.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If strategy state is RUNNING.
+
         """
         try:
             self._fsm.trigger(ComponentTrigger.RESET)
