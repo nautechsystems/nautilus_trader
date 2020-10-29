@@ -70,6 +70,30 @@ cdef class DataCache(DataCacheFacade):
 
         self._log.info("Initialized.")
 
+    @property
+    def tick_capacity(self):
+        """
+        The caches tick capacity per symbol.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._tick_capacity
+
+    @property
+    def bar_capacity(self):
+        """
+        The caches bar capacity per symbol.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._bar_capacity
+
 # -- COMMANDS ---------------------------------------------------------------------------------------
 
     cpdef void reset(self) except *:

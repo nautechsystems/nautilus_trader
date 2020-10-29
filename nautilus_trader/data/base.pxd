@@ -25,10 +25,8 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class DataCacheFacade:
-    cdef int _tick_capacity
-    cdef int _bar_capacity
 
-# -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
     cpdef list symbols(self)
     cpdef list instruments(self)
