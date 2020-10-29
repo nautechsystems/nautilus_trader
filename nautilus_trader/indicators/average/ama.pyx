@@ -146,7 +146,6 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_ma()
         self._efficiency_ratio.reset()

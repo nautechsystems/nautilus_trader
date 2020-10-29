@@ -315,8 +315,9 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef void reset(self) except *:
         """
-        Reset the portfolio by returning all stateful values to their initial
-        value.
+        Reset the portfolio.
+
+        All stateful values are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 

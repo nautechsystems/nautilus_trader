@@ -15,10 +15,12 @@
 
 import unittest
 
-from nautilus_trader.core.types import Identifier
+from parameterized import parameterized
+
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import Issuer
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -28,6 +30,57 @@ from nautilus_trader.model.identifiers import Venue
 
 
 class IdentifierTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [None, TypeError],
+        ["", ValueError],
+        [" ", ValueError],
+        ["  ", ValueError],
+        [1234, TypeError],
+    ])
+    def test_instantiate_given_various_invalid_values_raises_exception(self, value, ex):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ex, Identifier, value)
+
+    def test_equality(self):
+        # Arrange
+        string1 = Identifier("abc123")
+        string2 = Identifier("abc123")
+        string3 = Identifier("def456")
+
+        # Act
+        # Assert
+        self.assertTrue("abc123", string1.value)
+        self.assertTrue(string1 == string1)
+        self.assertTrue(string1 == string2)
+        self.assertTrue(string1 != string3)
+
+    def test_comparison(self):
+        # Arrange
+        string1 = Identifier("123")
+        string2 = Identifier("456")
+        string3 = Identifier("abc")
+        string4 = Identifier("def")
+
+        # Act
+        # Assert
+        self.assertTrue(string1 <= string1)
+        self.assertTrue(string1 <= string2)
+        self.assertTrue(string1 < string2)
+        self.assertTrue(string2 > string1)
+        self.assertTrue(string2 >= string1)
+        self.assertTrue(string2 >= string2)
+        self.assertTrue(string3 <= string4)
+
+    def test_hash_returns_int_type(self):
+        # Arrange
+        value = Identifier("abc")
+
+        # Act
+        # Assert
+        self.assertEqual(int, type(hash(value)))
 
     def test_identifier_equality(self):
         # Arrange

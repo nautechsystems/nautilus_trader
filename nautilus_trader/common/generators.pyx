@@ -95,8 +95,9 @@ cdef class IdentifierGenerator:
 
     cpdef void reset(self) except *:
         """
-        Reset the identifier generator by setting all stateful values to their
-        default value.
+        Reset the identifier generator.
+
+        All stateful values are reset to their initial value.
         """
         self._count = 0
 
@@ -206,8 +207,9 @@ cdef class PositionIdGenerator:
 
     cpdef void reset(self) except *:
         """
-        Reset the identifier generator by setting all stateful values to their
-        default value.
+        Reset the identifier generator.
+
+        All stateful values are reset to their initial value.
         """
         self._counts = {}
 

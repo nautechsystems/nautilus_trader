@@ -73,16 +73,6 @@ Message
    :undoc-members:
    :member-order: bysource
 
-Types
------
-
-.. automodule:: nautilus_trader.core.types
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
-
 UUID
 ----
 

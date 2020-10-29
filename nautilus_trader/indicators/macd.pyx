@@ -70,7 +70,43 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._slow_period = slow_period
         self._fast_ma = MovingAverageFactory.create(fast_period, ma_type)
         self._slow_ma = MovingAverageFactory.create(slow_period, ma_type)
-        self.value = 0
+        self._value = 0
+
+    @property
+    def fast_period(self):
+        """
+        The indicators fast window period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._fast_period
+
+    @property
+    def slow_period(self):
+        """
+        The indicators slow window period.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._slow_period
+
+    @property
+    def value(self):
+        """
+        The indicators current value.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -98,7 +134,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         """
         self._fast_ma.update_raw(close)
         self._slow_ma.update_raw(close)
-        self.value = self._fast_ma.value - self._slow_ma.value
+        self._value = self._fast_ma.value - self._slow_ma.value
 
         # Initialization logic
         if not self._initialized:
@@ -111,9 +147,8 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._fast_ma.reset()
         self._slow_ma.reset()
-        self.value = 0
+        self._value = 0

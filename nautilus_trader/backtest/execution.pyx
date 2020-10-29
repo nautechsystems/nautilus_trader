@@ -76,7 +76,9 @@ cdef class BacktestExecClient(ExecutionClient):
 
     cpdef void reset(self) except *:
         """
-        Return the client to its initial state preserving tick data.
+        Return the client.
+
+        All stateful values are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 

@@ -17,10 +17,9 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class EfficiencyRatio(Indicator):
+    cdef int _period
     cdef object _inputs
     cdef object _deltas
-
-    cdef readonly int period
-    cdef readonly double value
+    cdef double _value
 
     cpdef void update_raw(self, double price) except *

@@ -22,8 +22,7 @@ cdef class VolatilityRatio(Indicator):
     cdef int _slow_period
     cdef AverageTrueRange _atr_fast
     cdef AverageTrueRange _atr_slow
-
-    cdef readonly double value
+    cdef double _value
 
     cpdef void update_raw(self, double high, double low, double close) except *
     cdef void _check_initialized(self) except *
