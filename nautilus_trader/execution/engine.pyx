@@ -153,7 +153,7 @@ cdef class ExecutionEngine:
     @property
     def portfolio(self):
         """
-        The
+        The portfolio wired to the execution engine.
 
         Returns
         -------
