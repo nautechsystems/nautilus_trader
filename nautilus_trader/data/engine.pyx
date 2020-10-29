@@ -18,42 +18,44 @@ The `DataEngine` is the central component of the entire data stack for the platf
 
 Its primary responsibility is to orchestrate interactions between the individual
 `DataClient` instances, and the rest of the platform. This is could include
-ongoing subscriptions to specific data types, for particular endpoints.
-
-Beneath it sits the `DataCache` layer which presents a read-only facade
-to its clients to consume cached data through.
+ongoing subscriptions to specific data types, for particular endpoints. As well as
+hydrating a `DataCache` layer which presents a read-only facade for its clients
+to consume cached data through.
 """
 
 import cython
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport Connect
 from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
-from nautilus_trader.common.constants cimport *  # str constants
+from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.wrappers cimport BarData
+from nautilus_trader.data.wrappers cimport BarDataBlock
+from nautilus_trader.data.wrappers cimport InstrumentDataBlock
+from nautilus_trader.data.wrappers cimport QuoteTickDataBlock
+from nautilus_trader.data.wrappers cimport TradeTickDataBlock
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.data cimport BarData
-from nautilus_trader.model.data cimport BarDataBlock
-from nautilus_trader.model.data cimport InstrumentDataBlock
-from nautilus_trader.model.data cimport QuoteTickDataBlock
-from nautilus_trader.model.data cimport TradeTickDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -96,9 +98,12 @@ cdef class DataEngine:
         if config is None:
             config = {}
 
+        # Core components
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(type(self).__name__, logger)
+        self._fsm = create_component_fsm()
+
         self._portfolio = portfolio
         self._cache = DataCache(logger)
         self._use_previous_close = config.get('use_previous_close', True)
@@ -156,7 +161,67 @@ cdef class DataEngine:
         """
         return self._data_count
 
-# --REGISTRATIONS ----------------------------------------------------------------------------------
+    @property
+    def registered_venues(self):
+        """
+        The venues registered with the data engine.
+
+        Returns
+        -------
+        list[Venue]
+
+        """
+        return list(self._clients.keys())
+
+    @property
+    def subscribed_quote_ticks(self):
+        """
+        Return the quote tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return list(self._quote_tick_handlers.keys())
+
+    @property
+    def subscribed_trade_ticks(self):
+        """
+        Return the trade tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return list(self._trade_tick_handlers.keys())
+
+    @property
+    def subscribed_bars(self):
+        """
+        Return the bar types subscribed to.
+
+        Returns
+        -------
+        list[BarType]
+
+        """
+        return list(self._bar_handlers.keys())
+
+    @property
+    def subscribed_instruments(self):
+        """
+        Return the instruments subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return list(self._instrument_handlers.keys())
+
+# --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
         """
@@ -196,63 +261,6 @@ cdef class DataEngine:
 
         self._log.info(f"Registered {strategy}.")
 
-    cpdef list registered_venues(self):
-        """
-        Return the venues registered with the data engine.
-
-        Returns
-        -------
-        list[Venue]
-
-        """
-        return list(self._clients.keys())
-
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef list subscribed_quote_ticks(self):
-        """
-        Return the quote tick symbols subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return list(self._quote_tick_handlers.keys())
-
-    cpdef list subscribed_trade_ticks(self):
-        """
-        Return the trade tick symbols subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return list(self._trade_tick_handlers.keys())
-
-    cpdef list subscribed_bars(self):
-        """
-        Return the bar types subscribed to.
-
-        Returns
-        -------
-        list[BarType]
-
-        """
-        return list(self._bar_handlers.keys())
-
-    cpdef list subscribed_instruments(self):
-        """
-        Return the instruments subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return list(self._instrument_handlers.keys())
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *:
@@ -287,13 +295,18 @@ cdef class DataEngine:
         """
         Reset the class to its initial state.
         """
-        self._log.info("Resetting all clients...")
+        try:
+            self._fsm.trigger(ComponentTrigger.RESET)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef DataClient client
         for client in self._clients.values():
             client.reset()
 
-        self._log.debug("Reset.")
         self._cache.reset()
         self._instrument_handlers.clear()
         self._quote_tick_handlers.clear()
@@ -301,19 +314,30 @@ cdef class DataEngine:
         self._bar_aggregators.clear()
         self._bar_handlers.clear()
         self._clock.cancel_all_timers()
-
         self._command_count = 0
         self._data_count = 0
+
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void dispose(self) except *:
         """
         Dispose all data clients.
         """
-        self._log.info("Disposing all clients...")
+        try:
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef DataClient client
-        for client in self._clients:
+        for client in self._clients.values():
             client.dispose()
+
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void update_instruments(self, Venue venue) except *:
         """
@@ -322,17 +346,27 @@ cdef class DataEngine:
         Condition.not_none(venue, "venue")
         Condition.is_in(venue, self._clients, "venue", "_clients")
 
-        self._clients[venue].request_instruments(self._internal_update_instruments)
+        cdef RequestData request = RequestData(
+            data_type=Instrument,
+            options={
+                VENUE: venue,
+                HANDLER: self._internal_update_instruments,
+            },
+            command_id=self._uuid_factory.generate(),
+            command_timestamp=self._clock.utc_now(),
+        )
+
+        self.execute(request)
 
     cpdef void update_instruments_all(self) except *:
         """
         Update all instruments for every venue.
         """
-        cdef DataClient client
-        for client in self._clients.values():
-            client.request_instruments(self._internal_update_instruments)
+        cdef Venue venue
+        for venue in self.registered_venues:
+            self.update_instruments(venue)
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
@@ -1000,13 +1034,14 @@ cdef class BulkTickBarBuilder:
     @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
-        Receives the bulk list of ticks and builds aggregated tick
-        bars. Then sends the bar type and bars list on to the registered callback.
+        Receive the bulk list of ticks and build aggregated bars.
+
+        Then send the bar type and bars list on to the registered callback.
 
         Parameters
         ----------
         ticks : list[Tick]
-            The bulk ticks for aggregation into tick bars.
+            The ticks for aggregation.
 
         """
         Condition.not_none(ticks, "ticks")
@@ -1047,12 +1082,12 @@ cdef class BulkTimeBarUpdater:
     @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
-        Receives the bulk list of ticks and updates the aggregator.
+        Receive the bulk list of ticks and update the aggregator.
 
         Parameters
         ----------
         ticks : list[Tick]
-            The bulk ticks for updating the aggregator.
+            The ticks for updating.
 
         """
         cdef int i

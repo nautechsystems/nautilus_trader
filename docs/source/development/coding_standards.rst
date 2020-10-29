@@ -4,6 +4,10 @@ Coding Standards
 - PEP-8 and variations
 - Cython specifics
 - NumPy docstrings
+- flake8 usage and ignores
+- pre-commit hook setup and usage
+- isort usage
+- darglint usage
 
 Code Style
 ----------

@@ -23,5 +23,5 @@ cdef class MovingAverage(Indicator):
     cdef int _count
     cdef double _value
 
-    cdef void _increment_input(self) except *
+    cdef void _increment_count(self) except *
     cdef void _reset_ma(self) except *

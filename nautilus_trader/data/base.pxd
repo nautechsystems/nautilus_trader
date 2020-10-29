@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -25,10 +25,8 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class DataCacheFacade:
-    cdef int _tick_capacity
-    cdef int _bar_capacity
 
-# -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
     cpdef list symbols(self)
     cpdef list instruments(self)

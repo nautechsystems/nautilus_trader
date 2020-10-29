@@ -64,6 +64,24 @@ class DataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
+    def test_reset(self):
+        # Arrange
+        # Act
+        self.data_engine.reset()
+
+        # Assert
+        self.assertEqual(0, self.data_engine.command_count)
+        self.assertEqual(0, self.data_engine.data_count)
+
+    def test_dispose(self):
+        # Arrange
+        # Act
+        self.data_engine.dispose()
+
+        # Assert
+        self.assertEqual(0, self.data_engine.command_count)
+        self.assertEqual(0, self.data_engine.data_count)
+
     def test_get_exchange_rate_returns_correct_rate(self):
         # Arrange
         tick = QuoteTick(
@@ -114,7 +132,8 @@ class BulkTickBarBuilderTests(unittest.TestCase):
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data})
+            data_bars_ask={BarAggregation.MINUTE: ask_data},
+        )
         self.wrangler.pre_process(0)
 
         bar_store = ObjectStorer()

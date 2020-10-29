@@ -19,6 +19,7 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport CancelOrder
@@ -48,6 +49,8 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
+
     cdef TraderId _trader_id
     cdef ExecutionCache _cache
     cdef Portfolio _portfolio
@@ -57,20 +60,17 @@ cdef class ExecutionEngine:
     cdef int _command_count
     cdef int _event_count
 
-# -- REGISTRATIONS ---------------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_client(self, ExecutionClient exec_client) except *
-    cpdef void deregister_client(self, ExecutionClient exec_client) except *
+    cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
+    cpdef void deregister_client(self, ExecutionClient client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
-    cpdef set registered_venues(self)
-    cpdef set registered_strategies(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
     cpdef void integrity_check(self) except *
-    cpdef void _set_position_symbol_counts(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
@@ -78,7 +78,7 @@ cdef class ExecutionEngine:
     cpdef void dispose(self) except *
     cpdef void flush_db(self) except *
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *
     cdef inline void _handle_connect(self, Connect command) except *
@@ -90,7 +90,7 @@ cdef class ExecutionEngine:
     cdef inline void _invalidate_order(self, Order order, str reason) except *
     cdef inline void _deny_order(self, Order order, str reason) except *
 
-# -- EVENT-HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *
     cdef inline void _handle_account_event(self, AccountState event) except *
@@ -107,3 +107,7 @@ cdef class ExecutionEngine:
     cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_symbol_counts(self) except *

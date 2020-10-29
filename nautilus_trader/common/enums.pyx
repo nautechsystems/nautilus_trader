@@ -13,22 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
+"""
+Provides the C enums as Python enums for external use.
 
-import os
+isort:skip_file
+"""
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
-
-
-__author__ = "Nautech Systems"
-
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 83
-_PATCH_VERSION = 8
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+from nautilus_trader.model.c_enums.component_state import ComponentState      # noqa F401 (being used)
+from nautilus_trader.model.c_enums.component_trigger import ComponentTrigger  # noqa F401 (being used)

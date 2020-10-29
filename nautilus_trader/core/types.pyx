@@ -101,14 +101,13 @@ cdef class Identifier:
         """
         Condition.valid_string(value, "value")
 
-        self._id_type = type(self)
         self._value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return self._id_type == other.id_type and self._value == other.value
+        return type(self) == type(other) and self._value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return self._id_type != other.id_type or self._value != other.value
+        return type(self) != type(other) or self._value != other.value
 
     def __lt__(self, Identifier other) -> bool:
         return self._value < other.value
@@ -123,27 +122,13 @@ cdef class Identifier:
         return self._value >= other.value
 
     def __hash__(self) -> int:
-        # This method seems redundant as it exists on the base class, however
-        # TypeError: unhashable type gets thrown if not present.
-        return hash(self.value)
+        return hash(self._value)
 
     def __str__(self) -> str:
         return self._value
 
     def __repr__(self) -> str:
-        return f"{self._id_type.__name__}('{self._value}')"
-
-    @property
-    def id_type(self):
-        """
-        The identifier type.
-
-        Returns
-        -------
-        type
-
-        """
-        return self._id_type
+        return f"{type(self).__name__}('{self._value}')"
 
     @property
     def value(self):

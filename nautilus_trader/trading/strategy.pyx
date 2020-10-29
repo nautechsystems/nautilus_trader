@@ -15,12 +15,14 @@
 
 import cython
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
+from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
 from nautilus_trader.common.component cimport create_component_fsm
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -29,6 +31,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.engine cimport DataEngine
@@ -36,9 +39,6 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
-from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -84,23 +84,20 @@ cdef class TradingStrategy:
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        # Identifiers
-        self._id = StrategyId(type(self).__name__, order_id_tag)
-        self._trader_id = None     # Initialized when registered with a trader
-
-        # Public components
+        # Core components
         self._clock = None          # Initialized when registered with a trader
         self._uuid_factory = None   # Initialized when registered with a trader
         self._log = None            # Initialized when registered with a trader
+        self._fsm = create_component_fsm()
+
+        self._id = StrategyId(type(self).__name__, order_id_tag)
+        self._trader_id = None      # Initialized when registered with a trader
+        self._data_engine = None    # Initialized when registered with the data engine
         self._data = None           # Initialized when registered with the data engine
+        self._exec_engine = None    # Initialized when registered with the execution engine
         self._execution = None      # Initialized when registered with the execution engine
         self._portfolio = None      # Initialized when registered with the execution engine
         self._order_factory = None  # Initialized when registered with a trader
-
-        # Private components
-        self._data_engine = None   # Initialized when registered with the data engine
-        self._exec_engine = None   # Initialized when registered with the execution engine
-        self._fsm = create_component_fsm()
 
         # Indicators
         self._indicators = []              # type: [Indicator]
@@ -289,6 +286,38 @@ cdef class TradingStrategy:
         return self._order_factory
 
     @property
+    def registered_indicators(self):
+        """
+        Return the registered indicators for the strategy.
+
+        Returns
+        -------
+        list[Indicator]
+
+        """
+        return self._indicators.copy()
+
+    @property
+    def indicators_initialized(self):
+        """
+        If all indicators are initialized.
+
+        Returns
+        -------
+        bool
+            True if all initialized, else False
+
+        """
+        if not self._indicators:
+            return False
+
+        cdef Indicator indicator
+        for indicator in self._indicators:
+            if not indicator.initialized:
+                return False
+        return True
+
+    @property
     def state(self):
         """
         The trading strategies current state.
@@ -404,8 +433,11 @@ cdef class TradingStrategy:
 
         Create and return a state dictionary of values to be saved.
 
-        Note: 'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        Notes
+        -----
+        'OrderIdCount' and 'PositionIdCount' are reserved keys for
         the returned state dictionary.
+
         """
         return {}  # Optionally override in subclass
 
@@ -425,7 +457,7 @@ cdef class TradingStrategy:
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION METHODS --------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
             self,
@@ -579,7 +611,7 @@ cdef class TradingStrategy:
         else:
             self._log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """"
@@ -800,7 +832,184 @@ cdef class TradingStrategy:
                 self._log.exception(ex)
                 self.stop()  # Halt strategy
 
-# -- DATA METHODS ----------------------------------------------------------------------------------
+# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+
+    cpdef void start(self) except *:
+        """
+        Start the trading strategy.
+
+        Calls on_start().
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.START)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            self.stop()  # Do not start strategy in an invalid state
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
+
+        if self._data_engine is None:
+            self._log.error("Cannot start strategy (the data engine is not registered).")
+            return
+
+        if self._exec_engine is None:
+            self._log.error("Cannot start strategy (the execution engine is not registered).")
+            return
+
+        try:
+            self.on_start()
+        except Exception as ex:
+            self._log.exception(ex)
+            self.stop()
+            return
+
+        self._fsm.trigger(ComponentTrigger.RUNNING)
+        self._log.info(f"state={self._fsm.state_string()}.")
+
+    cpdef void stop(self) except *:
+        """
+        Stop the trading strategy.
+
+        Calls on_stop().
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.STOP)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
+
+        # Clean up clock
+        cdef list timer_names = self._clock.timer_names
+        self._clock.cancel_all_timers()
+
+        cdef str name
+        for name in timer_names:
+            self._log.info(f"Cancelled Timer(name={name}).")
+
+        try:
+            self.on_stop()
+        except Exception as ex:
+            self._log.exception(ex)
+
+        self._fsm.trigger(ComponentTrigger.STOPPED)
+        self._log.info(f"state={self._fsm.state_string()}.")
+
+    cpdef void resume(self) except *:
+        """
+        Resume the trading strategy.
+
+        Calls on_resume().
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.RESUME)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            self.stop()  # Do not start strategy in an invalid state
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
+
+        try:
+            self.on_resume()
+        except Exception as ex:
+            self._log.exception(ex)
+            self.stop()
+            return
+
+        self._fsm.trigger(ComponentTrigger.RUNNING)
+        self._log.info(f"state={self._fsm.state_string()}.")
+
+    cpdef void reset(self) except *:
+        """
+        Reset the trading strategy.
+
+        Calls on_reset().
+        All stateful values are reset to their initial value.
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.RESET)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
+
+        if self._order_factory:
+            self._order_factory.reset()
+
+        self._indicators.clear()
+        self._indicators_for_quotes.clear()
+        self._indicators_for_trades.clear()
+        self._indicators_for_bars.clear()
+
+        try:
+            self.on_reset()
+        except Exception as ex:
+            self._log.exception(ex)
+
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
+        self._log.info(f"state={self._fsm.state_string()}.")
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the trading strategy.
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
+
+        try:
+            self.on_dispose()
+        except Exception as ex:
+            self._log.exception(ex)
+
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
+        self._log.info(f"state={self._fsm.state_string()}.")
+
+    cpdef dict save(self):
+        """
+        Return the strategy state dictionary to be saved.
+        """
+        cpdef dict state = {"OrderIdCount": self._order_factory.count}
+
+        try:
+            user_state = self.on_save()
+        except Exception as ex:
+            self._log.exception(ex)
+
+        return {**state, **user_state}
+
+    cpdef void load(self, dict state) except *:
+        """
+        Load the strategy state from the give state dictionary.
+
+        Parameters
+        ----------
+        state : dict[str, object]
+            The state dictionary.
+
+        """
+        Condition.not_empty(state, "state")
+
+        order_id_count = state.get(b'OrderIdCount')
+        if order_id_count is not None:
+            order_id_count = int(order_id_count.decode("utf8"))
+            self._order_factory.set_count(order_id_count)
+            self._log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
+
+        try:
+            self.on_load(state)
+        except Exception as ex:
+            self._log.exception(ex)
+
+# -- DATA COMMANDS ---------------------------------------------------------------------------------
 
     cpdef void request_quote_ticks(self, Symbol symbol) except *:
         """
@@ -821,7 +1030,7 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
-                LIMIT: self._data.tick_capacity,
+                LIMIT: self._data_engine.cache.tick_capacity,
                 CALLBACK: self.handle_quote_ticks,
             },
             command_id=self._uuid_factory.generate(),
@@ -849,7 +1058,7 @@ cdef class TradingStrategy:
                 SYMBOL: symbol,
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
-                LIMIT: self._data.tick_capacity,
+                LIMIT: self._data_engine.cache.tick_capacity,
                 CALLBACK: self.handle_trade_ticks,
             },
             command_id=self._uuid_factory.generate(),
@@ -877,7 +1086,7 @@ cdef class TradingStrategy:
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: None,
                 TO_DATETIME: None,
-                LIMIT: self._data.bar_capacity,
+                LIMIT: self._data_engine.cache.bar_capacity,
                 CALLBACK: self.handle_bars,
             },
             command_id=self._uuid_factory.generate(),
@@ -1102,214 +1311,14 @@ cdef class TradingStrategy:
 
         self._log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
-# -- INDICATOR METHODS -----------------------------------------------------------------------------
-
-    cpdef list registered_indicators(self):
-        """
-        Return the registered indicators for the strategy (returns copy of internal list).
-
-        Returns
-        -------
-        list[Indicator]
-
-        """
-        return self._indicators.copy()
-
-    cpdef bint indicators_initialized(self) except *:
-        """
-        Return a value indicating whether all indicators are initialized.
-
-        Returns
-        -------
-        bool
-
-        """
-        cdef Indicator indicator
-        for indicator in self._indicators:
-            if indicator.initialized is False:
-                return False
-        return True
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void start(self) except *:
-        """
-        Start the trading strategy.
-
-        Calls on_start().
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.START)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            self.stop()  # Do not start strategy in an invalid state
-            return
-
-        self._log.info(f"state={self._fsm.state_string()}...")
-
-        if self._data_engine is None:
-            self._log.error("Cannot start strategy (the data engine is not registered).")
-            return
-
-        if self._exec_engine is None:
-            self._log.error("Cannot start strategy (the execution engine is not registered).")
-            return
-
-        try:
-            self.on_start()
-        except Exception as ex:
-            self._log.exception(ex)
-            self.stop()
-            return
-
-        self._fsm.trigger(ComponentTrigger.RUNNING)
-        self._log.info(f"state={self._fsm.state_string()}.")
-
-    cpdef void stop(self) except *:
-        """
-        Stop the trading strategy.
-
-        Calls on_stop().
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.STOP)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            return
-
-        self._log.info(f"state={self._fsm.state_string()}...")
-
-        # Clean up clock
-        cdef list timer_names = self._clock.timer_names
-        self._clock.cancel_all_timers()
-
-        cdef str name
-        for name in timer_names:
-            self._log.info(f"Cancelled Timer(name={name}).")
-
-        try:
-            self.on_stop()
-        except Exception as ex:
-            self._log.exception(ex)
-
-        self._fsm.trigger(ComponentTrigger.STOPPED)
-        self._log.info(f"state={self._fsm.state_string()}.")
-
-    cpdef void resume(self) except *:
-        """
-        Resume the trading strategy.
-
-        Calls on_resume().
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.RESUME)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            self.stop()  # Do not start strategy in an invalid state
-            return
-
-        self._log.info(f"state={self._fsm.state_string()}...")
-
-        try:
-            self.on_resume()
-        except Exception as ex:
-            self._log.exception(ex)
-            self.stop()
-            return
-
-        self._fsm.trigger(ComponentTrigger.RUNNING)
-        self._log.info(f"state={self._fsm.state_string()}.")
-
-    cpdef void reset(self) except *:
-        """
-        Reset the trading strategy.
-
-        Calls on_reset().
-        All stateful values are reset to their initial value.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.RESET)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            return
-
-        self._log.info(f"state={self._fsm.state_string()}...")
-
-        if self._order_factory:
-            self._order_factory.reset()
-
-        self._indicators.clear()
-        self._indicators_for_quotes.clear()
-        self._indicators_for_trades.clear()
-        self._indicators_for_bars.clear()
-
-        try:
-            self.on_reset()
-        except Exception as ex:
-            self._log.exception(ex)
-
-        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self._log.info(f"state={self._fsm.state_string()}.")
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the trading strategy.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.DISPOSE)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            return
-
-        self._log.info(f"state={self._fsm.state_string()}...")
-
-        try:
-            self.on_dispose()
-        except Exception as ex:
-            self._log.exception(ex)
-
-        self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self._log.info(f"state={self._fsm.state_string()}.")
-
-    cpdef dict save(self):
-        """
-        Return the strategy state dictionary to be saved.
-        """
-        cpdef dict state = {"OrderIdCount": self._order_factory.count}
-
-        try:
-            user_state = self.on_save()
-        except Exception as ex:
-            self._log.exception(ex)
-
-        return {**state, **user_state}
-
-    cpdef void load(self, dict state) except *:
-        """
-        Load the strategy state from the give state dictionary.
-
-        Parameters
-        ----------
-        state : dict[str, object]
-            The state dictionary.
-
-        """
-        Condition.not_empty(state, "state")
-
-        order_id_count = state.get(b'OrderIdCount')
-        if order_id_count is not None:
-            order_id_count = int(order_id_count.decode("utf8"))
-            self._order_factory.set_count(order_id_count)
-            self._log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
-
-        try:
-            self.on_load(state)
-        except Exception as ex:
-            self._log.exception(ex)
+# -- TRADING COMMANDS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, Order order, PositionId position_id=None) except *:
         """
-        Send a submit order command with the given order to the execution engine.
+        Submit the given order, optionally for the given position identifier.
+
+        A `SubmitOrder` command will be created and then sent to the
+        `ExecutionEngine`.
 
         Parameters
         ----------
@@ -1352,8 +1361,10 @@ cdef class TradingStrategy:
 
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
         """
-        Send a SubmitBracketOrder command with the given bracket order to the
-        execution engine.
+        Submit the given bracket order.
+
+        A `SubmitBracketOrder` command with be created and sent to the
+        `ExecutionEngine`.
 
         Parameters
         ----------
@@ -1393,11 +1404,11 @@ cdef class TradingStrategy:
             Price new_price=None,
     ) except *:
         """
-        Send a ModifyOrder command with the given new_quantity, and new_price to
-        the execution engine.
+        Modify the given order with the given quantity and/or price.
 
-        Either one or both values must differ from the original order to be
-        valid.
+        A `ModifyOrder` command is created and then sent to the
+        `ExecutionEngine`. Either one or both values must differ from the
+        original order for the command to be valid.
 
         Parameters
         ----------
@@ -1452,7 +1463,10 @@ cdef class TradingStrategy:
 
     cpdef void cancel_order(self, Order order) except *:
         """
-        Send a CancelOrder command for the given order to the execution engine.
+        Cancel the given order.
+
+        A `CancelOrder` command will be created and then sent to the
+        `ExecutionEngine`.
 
         Parameters
         ----------
@@ -1484,8 +1498,13 @@ cdef class TradingStrategy:
         """
         Cancel all orders for this strategy for the given symbol.
 
+        All working orders in turn will have a `CancelOrder` command created and
+        then sent to the `ExecutionEngine`.
+
+        Parameters
+        ----------
         symbol : Symbol, optional
-            The specific symbol for the orders to cancel.
+            The symbol for the orders to cancel.
 
         """
         Condition.not_none(self._exec_engine, "_exec_engine")
@@ -1502,8 +1521,10 @@ cdef class TradingStrategy:
 
     cpdef void flatten_position(self, Position position) except *:
         """
-        Flatten the given position by generating a market order on the opposite
-        side for the positions quantity.
+        Flatten the given position.
+
+        A closing `MarketOrder` for the position will be created, and then sent
+        to the `ExecutionEngine` via a `SubmitOrder` command.
 
         Parameters
         ----------
@@ -1547,10 +1568,13 @@ cdef class TradingStrategy:
         """
         Flatten all positions for the given symbol for this strategy.
 
+        All open positions in turn will have a closing `MarketOrder` created and
+        then sent to the `ExecutionEngine` via `SubmitOrder` commands.
+
         Parameters
         ----------
         symbol : Symbol, optional
-            The specific symbol for the positions to flatten.
+            The symbol for the positions to flatten.
 
         """
         Condition.not_none(symbol, "symbol")

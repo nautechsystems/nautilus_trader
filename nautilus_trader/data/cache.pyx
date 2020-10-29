@@ -15,9 +15,9 @@
 
 from collections import deque
 
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
@@ -69,6 +69,30 @@ cdef class DataCache(DataCacheFacade):
         self._bars = {}         # type: {BarType, [Bar]}
 
         self._log.info("Initialized.")
+
+    @property
+    def tick_capacity(self):
+        """
+        The caches tick capacity per symbol.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._tick_capacity
+
+    @property
+    def bar_capacity(self):
+        """
+        The caches bar capacity per symbol.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._bar_capacity
 
 # -- COMMANDS ---------------------------------------------------------------------------------------
 

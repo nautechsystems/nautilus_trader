@@ -13,22 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
-
-import os
-
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
-__author__ = "Nautech Systems"
+cdef class BollingerBands(Indicator):
+    cdef int _period
+    cdef double _k
+    cdef object _ma
+    cdef object _prices
+    cdef double _value_upper
+    cdef double _value_lower
 
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 83
-_PATCH_VERSION = 8
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+    cpdef void update_raw(self, double high, double low, double close) except *

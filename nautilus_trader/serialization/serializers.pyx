@@ -18,8 +18,8 @@ import msgpack
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.core.cache cimport ObjectCache
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event

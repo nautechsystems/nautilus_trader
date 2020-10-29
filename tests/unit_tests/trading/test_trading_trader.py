@@ -25,12 +25,12 @@ from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.uuid import TestUUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import ComponentState
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import IdTag
@@ -177,7 +177,7 @@ class TraderTests(unittest.TestCase):
         self.assertTrue(strategies[1].id in self.trader.strategy_states())
         self.assertEqual(2, len(self.trader.strategy_states()))
 
-    def test_trader_detects_none_unique_identifiers(self):
+    def test_trader_detects_duplicate_identifiers(self):
         # Arrange
         strategies = [
             EmptyStrategy("000"),

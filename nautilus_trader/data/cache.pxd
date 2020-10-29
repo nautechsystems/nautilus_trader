@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
@@ -26,7 +26,8 @@ from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 cdef class DataCache(DataCacheFacade):
     cdef LoggerAdapter _log
-
+    cdef int _tick_capacity
+    cdef int _bar_capacity
     cdef dict _instruments
     cdef dict _bid_quotes
     cdef dict _ask_quotes

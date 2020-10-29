@@ -24,7 +24,9 @@ Beneath it sits the `DataCache` layer which presents a read-only facade
 to its clients to consume cached data through.
 """
 
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -105,9 +107,12 @@ cdef class ExecutionEngine:
         if config is None:
             config = {}
 
+        # Core components
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
+        self._fsm = create_component_fsm()
+
         self._trader_id = database.trader_id
         self._cache = ExecutionCache(database, logger)
         self._portfolio = portfolio
@@ -148,7 +153,7 @@ cdef class ExecutionEngine:
     @property
     def portfolio(self):
         """
-        The
+        The portfolio wired to the execution engine.
 
         Returns
         -------
@@ -181,39 +186,47 @@ cdef class ExecutionEngine:
         """
         return self._event_count
 
-# -- REGISTRATIONS ---------------------------------------------------------------------------------
+    @property
+    def registered_venues(self):
+        """
+        The trading venues registered with the execution engine.
 
-    cpdef void register_client(self, ExecutionClient exec_client) except *:
+        Returns
+        -------
+        set[StrategyId]
+
+        """
+        return set(self._clients.keys())
+
+    @property
+    def registered_strategies(self):
+        """
+        The strategy identifiers registered with the execution engine.
+
+        Returns
+        -------
+        set[StrategyId]
+
+        """
+        return set(self._strategies.keys())
+
+# -- REGISTRATION ----------------------------------------------------------------------------------
+
+    cpdef void register_client(self, ExecutionClient client) except *:
         """
         Register the given execution client with the execution engine.
 
         Parameters
         ----------
-        exec_client : ExecutionClient
+        client : ExecutionClient
             The execution client to register.
 
         """
-        Condition.not_none(exec_client, "exec_client")
-        Condition.not_in(exec_client.venue, self._clients, "exec_client.venue", "_clients")
+        Condition.not_none(client, "client")
+        Condition.not_in(client.venue, self._clients, "client.venue", "_clients")
 
-        self._clients[exec_client.venue] = exec_client
-        self._log.info(f"Registered execution client for the {exec_client.venue} venue.")
-
-    cpdef void deregister_client(self, ExecutionClient exec_client) except *:
-        """
-        Deregister the given execution client from the execution engine.
-
-        Parameters
-        ----------
-        exec_client : ExecutionClient
-            The execution client to deregister.
-
-        """
-        Condition.not_none(exec_client, "exec_client")
-        Condition.is_in(exec_client.venue, self._clients, "exec_client.venue", "_clients")
-
-        del self._clients[exec_client.venue]
-        self._log.info(f"De-registered execution client for the {exec_client.venue} venue.")
+        self._clients[client.venue] = client
+        self._log.info(f"Registered {client}.")
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
@@ -235,7 +248,23 @@ cdef class ExecutionEngine:
 
         strategy.register_execution_engine(self)
         self._strategies[strategy.id] = strategy
-        self._log.info(f"Registered strategy {strategy}.")
+        self._log.info(f"Registered {strategy}.")
+
+    cpdef void deregister_client(self, ExecutionClient client) except *:
+        """
+        Deregister the given execution client from the execution engine.
+
+        Parameters
+        ----------
+        client : ExecutionClient
+            The execution client to deregister.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.is_in(client.venue, self._clients, "client.venue", "_clients")
+
+        del self._clients[client.venue]
+        self._log.info(f"De-registered {client}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
         """
@@ -256,29 +285,7 @@ cdef class ExecutionEngine:
         Condition.is_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
 
         del self._strategies[strategy.id]
-        self._log.info(f"De-registered strategy {strategy}.")
-
-    cpdef set registered_venues(self):
-        """
-        Return the trading venues registered with the execution engine.
-
-        Returns
-        -------
-        set[StrategyId]
-
-        """
-        return set(self._clients.keys())
-
-    cpdef set registered_strategies(self):
-        """
-        Return the strategy_ids registered with the execution engine.
-
-        Returns
-        -------
-        set[StrategyId]
-
-        """
-        return set(self._strategies.keys())
+        self._log.info(f"De-registered {strategy}.")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -301,28 +308,6 @@ cdef class ExecutionEngine:
         Check integrity of data within the execution cache and database.
         """
         self._cache.integrity_check()
-
-    cpdef void _set_position_symbol_counts(self) except *:
-        # For the internal position identifier generator
-        cdef list positions = self._cache.positions()
-
-        # Count positions per symbol
-        cdef dict counts = {}  # type: {Symbol: int}
-        cdef Position position
-        for position in positions:
-            if position.symbol not in counts:
-                counts[position.symbol] = 0
-            counts[position.symbol] += 1
-
-        # Reset position identifier generator
-        self._pos_id_generator.reset()
-
-        # Set counts
-        cdef Symbol symbol
-        cdef int count
-        for symbol, count in counts.items():
-            self._pos_id_generator.set_count(symbol, count)
-            self._log.info(f"Set position count {symbol} to {count}")
 
     cpdef void execute(self, Command command) except *:
         """
@@ -362,6 +347,14 @@ cdef class ExecutionEngine:
         """
         Reset the execution engine by clearing all stateful values.
         """
+        try:
+            self._fsm.trigger(ComponentTrigger.RESET)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
+
         for client in self._clients.values():
             client.reset()
         self._cache.reset()
@@ -370,15 +363,27 @@ cdef class ExecutionEngine:
         self._command_count = 0
         self._event_count = 0
 
+        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
+        self._log.info(f"state={self._fsm.state_string()}.")
+
     cpdef void dispose(self) except *:
         """
         Dispose all execution clients.
         """
-        self._log.info("Disposing all clients...")
+        try:
+            self._fsm.trigger(ComponentTrigger.DISPOSE)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            return
+
+        self._log.info(f"state={self._fsm.state_string()}...")
 
         cdef ExecutionClient client
-        for client in self._clients:
+        for client in self._clients.values():
             client.dispose()
+
+        self._fsm.trigger(ComponentTrigger.DISPOSED)
+        self._log.info(f"state={self._fsm.state_string()}.")
 
     cpdef void flush_db(self) except *:
         """
@@ -389,7 +394,7 @@ cdef class ExecutionEngine:
         """
         self._cache.flush_db()
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
@@ -549,7 +554,7 @@ cdef class ExecutionEngine:
 
         self._handle_event(denied)
 
-# -- EVENT-HANDLERS --------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
@@ -812,3 +817,27 @@ cdef class ExecutionEngine:
             return  # Cannot send to strategy
 
         strategy.handle_event(event)
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_symbol_counts(self) except *:
+        # For the internal position identifier generator
+        cdef list positions = self._cache.positions()
+
+        # Count positions per symbol
+        cdef dict counts = {}  # type: {Symbol: int}
+        cdef Position position
+        for position in positions:
+            if position.symbol not in counts:
+                counts[position.symbol] = 0
+            counts[position.symbol] += 1
+
+        # Reset position identifier generator
+        self._pos_id_generator.reset()
+
+        # Set counts
+        cdef Symbol symbol
+        cdef int count
+        for symbol, count in counts.items():
+            self._pos_id_generator.set_count(symbol, count)
+            self._log.info(f"Set position count {symbol} to {count}")
