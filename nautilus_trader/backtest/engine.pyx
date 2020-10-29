@@ -417,6 +417,8 @@ cdef class BacktestEngine:
 
         """
         self.trader.dispose()
+        self.data_engine.dispose()
+        self.exec_engine.dispose()
 
     cdef void _backtest_memory(self) except *:
         self.log.info("=================================================================")

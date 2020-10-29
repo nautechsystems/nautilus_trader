@@ -15,6 +15,9 @@
 
 import cython
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
+from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
@@ -36,9 +39,6 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
-from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -84,23 +84,20 @@ cdef class TradingStrategy:
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        # Identifiers
-        self._id = StrategyId(type(self).__name__, order_id_tag)
-        self._trader_id = None     # Initialized when registered with a trader
-
-        # Public components
+        # Core components
         self._clock = None          # Initialized when registered with a trader
         self._uuid_factory = None   # Initialized when registered with a trader
         self._log = None            # Initialized when registered with a trader
+        self._fsm = create_component_fsm()
+
+        self._id = StrategyId(type(self).__name__, order_id_tag)
+        self._trader_id = None      # Initialized when registered with a trader
+        self._data_engine = None    # Initialized when registered with the data engine
         self._data = None           # Initialized when registered with the data engine
+        self._exec_engine = None    # Initialized when registered with the execution engine
         self._execution = None      # Initialized when registered with the execution engine
         self._portfolio = None      # Initialized when registered with the execution engine
         self._order_factory = None  # Initialized when registered with a trader
-
-        # Private components
-        self._data_engine = None   # Initialized when registered with the data engine
-        self._exec_engine = None   # Initialized when registered with the execution engine
-        self._fsm = create_component_fsm()
 
         # Indicators
         self._indicators = []              # type: [Indicator]

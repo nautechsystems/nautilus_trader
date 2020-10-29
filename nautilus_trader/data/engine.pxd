@@ -24,6 +24,7 @@ from nautilus_trader.common.commands cimport Unsubscribe
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -44,6 +45,8 @@ cdef class DataEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
+
     cdef Portfolio _portfolio
     cdef DataCache _cache
     cdef bint _use_previous_close

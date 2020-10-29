@@ -13,11 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Provides the C enums for the `common` sub-package.
+
+TODO: isort currently producing a bad format for cimport component_trigger_to_string
+
+isort:skip_file
+"""
+
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
+from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
+from nautilus_trader.common.c_enums.component_trigger cimport component_trigger_to_string
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
-from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.model.c_enums.component_trigger cimport component_trigger_to_string
 
 
 cdef dict _COMPONENT_STATE_TABLE = {

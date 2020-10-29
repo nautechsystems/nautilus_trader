@@ -19,6 +19,7 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport CancelOrder
@@ -48,6 +49,8 @@ cdef class ExecutionEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
+
     cdef TraderId _trader_id
     cdef ExecutionCache _cache
     cdef Portfolio _portfolio
@@ -59,9 +62,9 @@ cdef class ExecutionEngine:
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_client(self, ExecutionClient exec_client) except *
+    cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
-    cpdef void deregister_client(self, ExecutionClient exec_client) except *
+    cpdef void deregister_client(self, ExecutionClient client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
