@@ -15,9 +15,9 @@
 
 from collections import deque
 
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar

@@ -21,9 +21,9 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator

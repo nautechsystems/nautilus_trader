@@ -134,7 +134,8 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         # Act
         serialized = self.serializer.serialize(order)
@@ -244,7 +245,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             PositionId("P-123456"),
             order,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(command)
@@ -277,7 +279,8 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             StrategyId("SCALPER", "01"),
             bracket_order,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         # Act
         serialized = self.serializer.serialize(command)

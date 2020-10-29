@@ -67,9 +67,13 @@ cdef str CURRENCY
 cdef str BALANCE
 cdef str MARGIN_BALANCE
 cdef str MARGIN_AVAILABLE
+cdef str BAR
+cdef str BAR_TYPE
 
+cdef str INSTRUMENT
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str IS_QUANTO
 cdef str IS_INVERSE
 cdef str COMMISSION_CURRENCY
 cdef str BROKER_SYMBOL
@@ -91,39 +95,10 @@ cdef str SETTLEMENT_FEE
 cdef str FUNDING_LONG
 cdef str FUNDING_SHORT
 
-cdef str AUTHENTICATION
-cdef str AUTHORIZATION
-cdef str CLIENT_ID
-cdef str SERVER_ID
-cdef str SESSION_ID
-cdef str RECEIVED_TYPE
-cdef str CORRELATION_ID
-cdef str MESSAGE
-cdef str MESSAGE_TYPE
-
-cdef str DATA
-cdef str DATA_TYPE
-cdef str DATA_ENCODING
-cdef str METADATA
 cdef str QUERY
-cdef str BAR_TYPE
-cdef str SPECIFICATION
 cdef str FROM_DATETIME
 cdef str TO_DATETIME
 cdef str LIMIT
-
-cdef str QUOTE
-cdef str TRADE
-cdef str QUOTE_TICK_ARRAY
-cdef str TRADE_TICK_ARRAY
-cdef str BAR
-cdef str BAR_ARRAY
-cdef str INSTRUMENT
-cdef str INSTRUMENT_ARRAY
-
-cdef str LOG_LEVEL
-cdef str LOG_TEXT
-cdef str THREAD_ID
 
 cdef str HANDLER
 cdef str CALLBACK
