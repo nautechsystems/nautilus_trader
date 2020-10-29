@@ -60,15 +60,14 @@ cdef class ExecutionEngine:
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *
-    cpdef void deregister_client(self, ExecutionClient exec_client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
+    cpdef void deregister_client(self, ExecutionClient exec_client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
     cpdef void integrity_check(self) except *
-    cpdef void _set_position_symbol_counts(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
@@ -105,3 +104,7 @@ cdef class ExecutionEngine:
     cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _set_position_symbol_counts(self) except *

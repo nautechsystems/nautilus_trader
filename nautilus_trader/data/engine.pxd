@@ -61,7 +61,6 @@ cdef class DataEngine:
 
     cpdef void register_client(self, DataClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
-    cpdef list registered_venues(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
