@@ -66,7 +66,7 @@ Index
 .. toctree::
     :glob:
     :maxdepth: 2
-    :caption: Guides
+    :caption: User Guide
     :hidden:
 
     user_guide/writing_strategies
@@ -97,7 +97,7 @@ Index
 .. toctree::
     :glob:
     :maxdepth: 2
-    :caption: Adapters
+    :caption: Adapter Reference
     :hidden:
 
     adapter_reference/binance
@@ -108,7 +108,7 @@ Index
 .. toctree::
     :glob:
     :maxdepth: 2
-    :caption: Development
+    :caption: Developer Guide
     :hidden:
 
     developer_guide/overview
