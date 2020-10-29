@@ -19,7 +19,7 @@ Defines various order types to be used for trading.
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.decimal cimport Decimal
