@@ -15,21 +15,22 @@
 
 import unittest
 
-import numpy as np
-
-from nautilus_trader.core.functions import fast_mean
+from nautilus_trader.common.commands import KillSwitch
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
-_AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
-_TEST_LIST = [0.0, 1.1, 2.2, 3.3, 4.4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-_MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
+AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
+MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
+
+MESSAGE1 = KillSwitch(TraderId("TESTER", "001"), uuid4(), UNIX_EPOCH)
+MESSAGE2 = KillSwitch(TraderId("TESTER", "001"), uuid4(), UNIX_EPOCH)
 
 
 class Experiments:
@@ -50,24 +51,22 @@ class Experiments:
         return x
 
     @staticmethod
-    def np_mean():
-        x = np.mean(_TEST_LIST)
-        return x
-
-    @staticmethod
-    def fast_mean():
-        x = fast_mean(_TEST_LIST)
-        return x
-
-    @staticmethod
     def is_instance():
-        x = isinstance(_MESSAGE, SubmitOrder)
+        x = isinstance(MESSAGE, SubmitOrder)
         return x
 
     @staticmethod
     def is_message_type():
-        x = 0 == _MESSAGE.message_type
+        x = 0 == MESSAGE.type
         return x
+
+    @staticmethod
+    def message_equality():
+        return MESSAGE == MESSAGE2
+
+    @staticmethod
+    def identifier_equality():
+        return MESSAGE == MESSAGE2
 
 
 class ExperimentsPerformanceTests(unittest.TestCase):
@@ -88,21 +87,21 @@ class ExperimentsPerformanceTests(unittest.TestCase):
         # ~53ms (53677μs) minimum of 3 runs @ 1,000,000 iterations each run.
 
     @staticmethod
-    def test_np_mean():
-        PerformanceHarness.profile_function(Experiments.np_mean, 3, 10000)
-        # ~53ms (53677μs) minimum of 3 runs @ 10,000 iterations each run.
-
-    @staticmethod
-    def test_fast_mean():
-        PerformanceHarness.profile_function(Experiments.fast_mean, 3, 10000)
-        # ~53ms (53677μs) minimum of 3 runs @ 10,000 iterations each run.
-
-    @staticmethod
     def test_is_instance():
-        PerformanceHarness.profile_function(Experiments.is_instance, 3, 100000)
-        # ~53ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(Experiments.is_instance, 3, 1000000)
+        # ~126ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_is_message_type():
-        PerformanceHarness.profile_function(Experiments.is_message_type, 3, 100000)
-        # ~53ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(Experiments.is_message_type, 3, 1000000)
+        # ~88ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
+
+    @staticmethod
+    def test_message_equality():
+        PerformanceHarness.profile_function(Experiments.message_equality, 3, 1000000)
+        # ~88ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
+
+    @staticmethod
+    def test_identifier_equality():
+        PerformanceHarness.profile_function(Experiments.identifier_equality, 3, 1000000)
+        # ~86ms (86857μs) minimum of 3 runs @ 1,000,000 iterations each run.
