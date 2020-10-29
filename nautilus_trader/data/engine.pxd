@@ -21,9 +21,10 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
-from nautilus_trader.common.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -44,6 +45,8 @@ cdef class DataEngine:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
+
     cdef Portfolio _portfolio
     cdef DataCache _cache
     cdef bint _use_previous_close
@@ -57,18 +60,10 @@ cdef class DataEngine:
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
 
-# -- REGISTRATIONS ---------------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
-    cpdef list registered_venues(self)
-
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef list subscribed_instruments(self)
-    cpdef list subscribed_quote_ticks(self)
-    cpdef list subscribed_trade_ticks(self)
-    cpdef list subscribed_bars(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -79,7 +74,7 @@ cdef class DataEngine:
     cpdef void update_instruments(self, Venue venue) except *
     cpdef void update_instruments_all(self) except *
 
-# -- COMMAND-HANDLERS ------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *
     cdef inline void _handle_connect(self, Connect command) except *
@@ -123,7 +118,7 @@ cdef class DataEngine:
     ) except *
 
 
-# -- DATA-HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, object data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *

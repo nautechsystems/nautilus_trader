@@ -44,16 +44,6 @@ Component
    :undoc-members:
    :member-order: bysource
 
-Constants
----------
-
-.. automodule:: nautilus_trader.common.constants
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :undoc-members:
-   :member-order: bysource
-
 Factories
 ---------
 

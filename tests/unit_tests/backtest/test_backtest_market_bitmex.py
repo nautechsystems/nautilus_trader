@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.strategies import TestStrategy1
+from tests.test_kit.strategies import TestStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -51,7 +51,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.strategies = [TestStrategy1(TestStubs.bartype_btcusdt_binance_1min_bid())]
+        self.strategies = [TestStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())]
 
         self.clock = TestClock()
         self.uuid_factory = TestUUIDFactory()
@@ -115,7 +115,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
-        self.strategy = TestStrategy1(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
+        self.strategy = TestStrategy(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
         self.strategy.register_trader(
             self.trader_id,
             self.clock,

@@ -102,7 +102,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Assert
-        self.assertIn(strategy.id, self.exec_engine.registered_strategies())
+        self.assertIn(strategy.id, self.exec_engine.registered_strategies)
 
     def test_deregister_strategy(self):
         # Arrange
@@ -120,7 +120,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.deregister_strategy(strategy)
 
         # Assert
-        self.assertNotIn(strategy.id, self.exec_engine.registered_strategies())
+        self.assertNotIn(strategy.id, self.exec_engine.registered_strategies)
 
     def test_reset_execution_engine(self):
         strategy = TradingStrategy(order_id_tag="001")
@@ -137,7 +137,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.reset()
 
         # Assert
-        self.assertIn(strategy.id, self.exec_engine.registered_strategies())
+        self.assertIn(strategy.id, self.exec_engine.registered_strategies)
 
     def test_submit_order(self):
         # Arrange

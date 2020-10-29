@@ -13,6 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `Decimal` type is used as a robust wrapper around the built-in decimal.Decimal.
+
+The type is intended to be used as both a first class value type, as well as the
+base class to fundamental domain model value types. One difference from the built-in
+decimal is that the specification of precision is more straight forward than providing
+a context. Also this type is able to be used as an operand for mathematical ops
+with `float` objects.
+"""
+
 from decimal import Decimal as PyDecimal
 
 from nautilus_trader.core.correctness cimport Condition
@@ -21,9 +31,6 @@ from nautilus_trader.core.correctness cimport Condition
 cdef class Decimal:
     """
     Represents a decimal number with a specified precision.
-
-    The type interoperates with the built-in `decimal.Decimal` correctly.
-
     """
 
     def __init__(self, value=0, precision=None):

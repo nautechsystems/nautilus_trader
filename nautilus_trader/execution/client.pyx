@@ -60,6 +60,9 @@ cdef class ExecutionClient:
 
         self._log.info(f"Initialized.")
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._venue})"
+
     @property
     def venue(self):
         """
@@ -131,7 +134,7 @@ cdef class ExecutionClient:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-# --------------------------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_event(self, Event event) except *:
         """

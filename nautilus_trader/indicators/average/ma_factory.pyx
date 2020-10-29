@@ -55,7 +55,7 @@ cdef class MovingAverageFactory:
             If period is not positive (> 0).
 
         """
-        Condition.positive(period, "period")
+        Condition.positive_int(period, "period")
 
         if ma_type == MovingAverageType.SIMPLE:
             return SimpleMovingAverage(period)

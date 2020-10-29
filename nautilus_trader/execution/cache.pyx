@@ -85,7 +85,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Clear the current accounts cache and load accounts from the execution
         database.
         """
-        self._log.info(f"Loading accounts to cache...")
+        self._log.debug(f"Loading accounts to cache...")
 
         self._cached_accounts = self._database.load_accounts()
         self._log.info(f"Cached {len(self._cached_accounts)} account(s).")
@@ -95,7 +95,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Clear the current orders cache and load orders from the execution
         database.
         """
-        self._log.info(f"Loading orders to cache...")
+        self._log.debug(f"Loading orders to cache...")
 
         self._cached_orders = self._database.load_orders()
         self._log.info(f"Cached {len(self._cached_orders)} order(s).")
@@ -105,7 +105,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Clear the current positions cache and load positions from the execution
         database.
         """
-        self._log.info(f"Loading positions to cache...")
+        self._log.debug(f"Loading positions to cache...")
 
         self._cached_positions = self._database.load_positions()
         self._log.info(f"Cached {len(self._cached_positions)} position(s).")
@@ -115,7 +115,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Clear the current cache index and re-build.
         """
         self._clear_indexes()
-        self._log.info(f"Building indexes...")
+        self._log.debug(f"Building indexes...")
 
         self._build_index_venue_account()
         self._build_indexes_from_orders()
@@ -584,12 +584,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         WARNING: Permanent data loss.
 
         """
-        self._log.info("Flushing execution database...")
+        self._log.debug("Flushing execution database...")
         self._database.flush()
         self._log.info("Execution database flushed.")
 
     cdef void _clear_indexes(self) except *:
-        self._log.info(f"Clearing indexes...")
+        self._log.debug(f"Clearing indexes...")
         self._index_venue_account.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()

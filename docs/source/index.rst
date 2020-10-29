@@ -146,4 +146,3 @@ Index
 
     resources/research
     resources/further_reading
-

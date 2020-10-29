@@ -27,13 +27,13 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.wrappers cimport BarData
+from nautilus_trader.data.wrappers cimport BarDataBlock
+from nautilus_trader.data.wrappers cimport InstrumentDataBlock
+from nautilus_trader.data.wrappers cimport QuoteTickDataBlock
+from nautilus_trader.data.wrappers cimport TradeTickDataBlock
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.data cimport BarData
-from nautilus_trader.model.data cimport BarDataBlock
-from nautilus_trader.model.data cimport InstrumentDataBlock
-from nautilus_trader.model.data cimport QuoteTickDataBlock
-from nautilus_trader.model.data cimport TradeTickDataBlock
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -77,6 +77,9 @@ cdef class DataClient:
         self._is_connected = False
 
         self._log.info("Initialized.")
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self._venue})"
 
     @property
     def venue(self):
@@ -194,7 +197,7 @@ cdef class DataClient:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.process(tick)

@@ -56,10 +56,10 @@ cdef class Message:
         self._timestamp = timestamp
 
     def __eq__(self, Message other) -> bool:
-        return self._message_type == other.type and self._id == other.id
+        return type(self) == type(other) and self._id == other.id
 
     def __ne__(self, Message other) -> bool:
-        return self._message_type != other.type or self._id != other.id
+        return type(self) != type(other) or self._id != other.id
 
     def __hash__(self) -> int:
         return hash(self._id)

@@ -60,6 +60,30 @@ class BacktestEngineTests(unittest.TestCase):
     def test_initialization(self):
         self.assertEqual(1, len(self.engine.trader.strategy_states()))
 
+    def test_reset_engine(self):
+        # Arrange
+        start = datetime(2013, 1, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
+
+        self.engine.run(start, stop)
+
+        # Act
+        self.engine.reset()
+
+        # Assert
+        self.assertEqual(0, self.engine.iteration)  # No exceptions raised
+
+    def test_run_empty_strategy(self):
+        # Arrange
+        start = datetime(2013, 1, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
+
+        # Act
+        self.engine.run(start, stop)
+
+        # Assert
+        self.assertEqual(2720, self.engine.iteration)
+
     def test_timer_and_alert_sequencing_with_bar_execution(self):
         # Arrange
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
@@ -79,7 +103,8 @@ class BacktestEngineTests(unittest.TestCase):
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             fill_model=FillModel(),
-            config=BacktestConfig())
+            config=BacktestConfig(),
+        )
 
         start = datetime(2013, 1, 1, 22, 2, 0, 0)
         stop = datetime(2013, 1, 1, 22, 5, 0, 0)

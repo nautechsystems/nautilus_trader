@@ -24,6 +24,16 @@ Exponential Moving Average (EMA)
    :undoc-members:
    :member-order: bysource
 
+Donchian Channel
+----------------
+
+.. automodule:: nautilus_trader.indicators.donchian_channel
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :undoc-members:
+   :member-order: bysource
+
 Hull Moving Average (HMA)
 -------------------------
 
@@ -74,7 +84,7 @@ Average True Range (ATR)
    :undoc-members:
    :member-order: bysource
 
-Bid Ask Min Max
+Bid-Ask Min-Max
 ---------------
 
 .. automodule:: nautilus_trader.indicators.bid_ask_min_max

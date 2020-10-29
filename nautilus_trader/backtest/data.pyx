@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""This module provides components relating to data for backtesting. A `BacktestDataContainer` is
+"""
+This module provides components relating to data for backtesting.
+
+A `BacktestDataContainer` is
 a convenient container for holding and organizing backtest related data - which can be passed
 to one or more `BacktestDataEngine`(s).
 """
@@ -36,6 +39,7 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport TickDataWrangler
+from nautilus_trader.data.wrappers cimport InstrumentDataBlock
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
@@ -368,13 +372,13 @@ cdef class BacktestDataClient(DataClient):
         """
         pass  # Nothing to dispose
 
-    # -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void connect(self) except *:
-        pass
+        pass  # NO-OP for backtest engine
 
     cpdef void disconnect(self) except *:
-        pass
+        pass  # NO-OP for backtest engine
 
     cpdef void request_quote_ticks(
             self,
@@ -384,7 +388,9 @@ cdef class BacktestDataClient(DataClient):
             int limit,
             callback: callable,
     ) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
     cpdef void request_trade_ticks(
             self,
@@ -394,7 +400,9 @@ cdef class BacktestDataClient(DataClient):
             int limit,
             callback: callable,
     ) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
     cpdef void request_bars(
             self,
@@ -404,34 +412,49 @@ cdef class BacktestDataClient(DataClient):
             int limit,
             callback: callable,
     ) except *:
-        pass
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_negative_int(limit, "limit")
+        Condition.callable(callback, "callback")
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(callback, "callback")
+
+        cdef Instrument instrument = self._data.instruments.get(symbol)
+
+        if instrument is None:
+            self._log.warning(f"No instrument found for {symbol}.")
+            return
+
+        callback(instrument)
 
     cpdef void request_instruments(self, callback: callable) except *:
-        pass
+        cdef InstrumentDataBlock instruments = InstrumentDataBlock(
+            instruments=self._data.instruments.values(),
+        )
+
+        callback(instruments)
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
-        pass
+        Condition.not_none(bar_type, "bar_type")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
-        pass
+        Condition.not_none(symbol, "symbol")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        pass
+        Condition.not_none(bar_type, "bar_type")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
-        pass
+        Condition.not_none(symbol, "symbol")

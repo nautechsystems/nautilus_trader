@@ -77,7 +77,7 @@ cdef class DataClient:
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_quote_ticks(self, list ticks) except *

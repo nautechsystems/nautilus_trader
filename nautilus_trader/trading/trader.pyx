@@ -15,6 +15,9 @@
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
+from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.component cimport create_component_fsm
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -22,9 +25,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
-from nautilus_trader.model.c_enums.component_state cimport component_state_to_string
-from nautilus_trader.model.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -80,14 +80,16 @@ cdef class Trader:
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
 
-        self._id = trader_id
+        # Core components
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(f"Trader-{self._id.value}", logger)
+        self._log = LoggerAdapter(f"Trader-{trader_id.value}", logger)
         self._fsm = create_component_fsm()
+
+        self._id = trader_id
         self._data_engine = data_engine
         self._exec_engine = exec_engine
-        self._portfolio = self._exec_engine.portfolio
+        self._portfolio = exec_engine.portfolio
         self._analyzer = PerformanceAnalyzer()
         self._report_provider = ReportProvider()
         self._strategies = []
@@ -178,7 +180,7 @@ cdef class Trader:
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        self._log.info(f"Initializing strategies...")
+        self._log.debug(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:

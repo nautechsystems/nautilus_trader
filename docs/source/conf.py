@@ -45,7 +45,8 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.coverage",
-    "sphinx.ext.intersphinx",
+    "sphinx.ext.graphviz",
+    "sphinx.ext.inheritance_diagram",
     "numpydoc",
 ]
 
@@ -76,7 +77,6 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
-
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = "sphinx_rtd_theme"
@@ -92,11 +92,11 @@ html_style = "css/nautilus.css"
 html_logo = "_static/img/nautilus-black.png"
 
 
-def skip(app, what, name, obj, would_skip, options):
+def skip(app, what, name, obj, would_skip, options):  # noqa
     if name == "__init__":
         return False
     return would_skip
 
 
-def setup(app):
+def setup(app):  # noqa
     app.connect("autodoc-skip-member", skip)

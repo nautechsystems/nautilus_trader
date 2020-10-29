@@ -13,4 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.component_state cimport ComponentState
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
