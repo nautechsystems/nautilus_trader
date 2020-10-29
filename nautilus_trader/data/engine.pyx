@@ -18,10 +18,9 @@ The `DataEngine` is the central component of the entire data stack for the platf
 
 Its primary responsibility is to orchestrate interactions between the individual
 `DataClient` instances, and the rest of the platform. This is could include
-ongoing subscriptions to specific data types, for particular endpoints.
-
-Beneath it sits the `DataCache` layer which presents a read-only facade
-to its clients to consume cached data through.
+ongoing subscriptions to specific data types, for particular endpoints. As well as
+hydrating a `DataCache` layer which presents a read-only facade for its clients
+to consume cached data through.
 """
 
 import cython
@@ -156,7 +155,55 @@ cdef class DataEngine:
         """
         return self._data_count
 
-# --REGISTRATIONS ----------------------------------------------------------------------------------
+    @property
+    def subscribed_quote_ticks(self):
+        """
+        Return the quote tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return list(self._quote_tick_handlers.keys())
+
+    @property
+    def subscribed_trade_ticks(self):
+        """
+        Return the trade tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return list(self._trade_tick_handlers.keys())
+
+    @property
+    def subscribed_bars(self):
+        """
+        Return the bar types subscribed to.
+
+        Returns
+        -------
+        list[BarType]
+
+        """
+        return list(self._bar_handlers.keys())
+
+    @property
+    def subscribed_instruments(self):
+        """
+        Return the instruments subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return list(self._instrument_handlers.keys())
+
+# --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
         """
@@ -206,52 +253,6 @@ cdef class DataEngine:
 
         """
         return list(self._clients.keys())
-
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef list subscribed_quote_ticks(self):
-        """
-        Return the quote tick symbols subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return list(self._quote_tick_handlers.keys())
-
-    cpdef list subscribed_trade_ticks(self):
-        """
-        Return the trade tick symbols subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return list(self._trade_tick_handlers.keys())
-
-    cpdef list subscribed_bars(self):
-        """
-        Return the bar types subscribed to.
-
-        Returns
-        -------
-        list[BarType]
-
-        """
-        return list(self._bar_handlers.keys())
-
-    cpdef list subscribed_instruments(self):
-        """
-        Return the instruments subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return list(self._instrument_handlers.keys())
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -1000,13 +1001,14 @@ cdef class BulkTickBarBuilder:
     @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
-        Receives the bulk list of ticks and builds aggregated tick
-        bars. Then sends the bar type and bars list on to the registered callback.
+        Receive the bulk list of ticks and build aggregated bars.
+
+        Then send the bar type and bars list on to the registered callback.
 
         Parameters
         ----------
         ticks : list[Tick]
-            The bulk ticks for aggregation into tick bars.
+            The ticks for aggregation.
 
         """
         Condition.not_none(ticks, "ticks")
@@ -1047,12 +1049,12 @@ cdef class BulkTimeBarUpdater:
     @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
         """
-        Receives the bulk list of ticks and updates the aggregator.
+        Receive the bulk list of ticks and update the aggregator.
 
         Parameters
         ----------
         ticks : list[Tick]
-            The bulk ticks for updating the aggregator.
+            The ticks for updating.
 
         """
         cdef int i

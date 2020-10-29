@@ -181,7 +181,31 @@ cdef class ExecutionEngine:
         """
         return self._event_count
 
-# -- REGISTRATIONS ---------------------------------------------------------------------------------
+    @property
+    def registered_venues(self):
+        """
+        The trading venues registered with the execution engine.
+
+        Returns
+        -------
+        set[StrategyId]
+
+        """
+        return set(self._clients.keys())
+
+    @property
+    def registered_strategies(self):
+        """
+        The strategy identifiers registered with the execution engine.
+
+        Returns
+        -------
+        set[StrategyId]
+
+        """
+        return set(self._strategies.keys())
+
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient exec_client) except *:
         """
@@ -257,28 +281,6 @@ cdef class ExecutionEngine:
 
         del self._strategies[strategy.id]
         self._log.info(f"De-registered strategy {strategy}.")
-
-    cpdef set registered_venues(self):
-        """
-        Return the trading venues registered with the execution engine.
-
-        Returns
-        -------
-        set[StrategyId]
-
-        """
-        return set(self._clients.keys())
-
-    cpdef set registered_strategies(self):
-        """
-        Return the strategy_ids registered with the execution engine.
-
-        Returns
-        -------
-        set[StrategyId]
-
-        """
-        return set(self._strategies.keys())
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

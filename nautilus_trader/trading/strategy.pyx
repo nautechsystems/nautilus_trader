@@ -460,7 +460,7 @@ cdef class TradingStrategy:
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION METHODS --------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
             self,
@@ -614,7 +614,7 @@ cdef class TradingStrategy:
         else:
             self._log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- HANDLER METHODS -------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """"

@@ -131,7 +131,7 @@ cdef class ExecutionClient:
         # Abstract method
         raise NotImplementedError("method must be implemented in the subclass")
 
-# --------------------------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_event(self, Event event) except *:
         """
