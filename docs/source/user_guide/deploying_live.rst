@@ -1,8 +1,6 @@
 Deploying Live
 ==============
 
-*** This documentation is currently a work in progress ***
-
 Encryption
 ----------
 

@@ -14,10 +14,73 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.types cimport Identifier
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
 from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
+
+
+cdef class Identifier:
+    """
+    The base class for all identifiers.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the Identifier class.
+
+        Parameters
+        ----------
+        value : str
+            The value of the identifier.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        Condition.valid_string(value, "value")
+
+        self._value = value
+
+    def __eq__(self, Identifier other) -> bool:
+        return type(self) == type(other) and self._value == other.value
+
+    def __ne__(self, Identifier other) -> bool:
+        return type(self) != type(other) or self._value != other.value
+
+    def __lt__(self, Identifier other) -> bool:
+        return self._value < other.value
+
+    def __le__(self, Identifier other) -> bool:
+        return self._value <= other.value
+
+    def __gt__(self, Identifier other) -> bool:
+        return self._value > other.value
+
+    def __ge__(self, Identifier other) -> bool:
+        return self._value >= other.value
+
+    def __hash__(self) -> int:
+        return hash(self._value)
+
+    def __str__(self) -> str:
+        return self._value
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self._value}')"
+
+    @property
+    def value(self):
+        """
+        The identifier value.
+
+        Returns
+        -------
+        str
+
+        """
+        return self._value
 
 
 cdef class Symbol(Identifier):
