@@ -124,7 +124,9 @@ class TestClockTests(unittest.TestCase):
             name=name,
             interval=timedelta(milliseconds=100),
             start_time=None,
-            stop_time=None)
+            stop_time=None,
+        )
+
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
@@ -142,7 +144,9 @@ class TestClockTests(unittest.TestCase):
             name=name,
             interval=interval,
             start_time=None,
-            stop_time=None)
+            stop_time=None,
+        )
+
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
         # Assert
@@ -158,7 +162,9 @@ class TestClockTests(unittest.TestCase):
         self.clock.set_timer(
             name=name,
             interval=interval,
-            stop_time=self.clock.utc_now() + timedelta(milliseconds=300))
+            stop_time=self.clock.utc_now() + timedelta(milliseconds=300),
+        )
+
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=300))
 
         # Assert
@@ -174,7 +180,8 @@ class TestClockTests(unittest.TestCase):
             name=name,
             interval=interval,
             start_time=self.clock.utc_now() + timedelta(milliseconds=10),
-            stop_time=None)
+            stop_time=None,
+        )
 
         # Act
         self.clock.cancel_timer(name)
@@ -192,7 +199,8 @@ class TestClockTests(unittest.TestCase):
             name=name,
             interval=interval,
             start_time=self.clock.utc_now(),
-            stop_time=None)
+            stop_time=None,
+        )
 
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=400))
 
@@ -211,7 +219,8 @@ class TestClockTests(unittest.TestCase):
             name=name,
             interval=interval,
             start_time=self.clock.utc_now(),
-            stop_time=stop_time)
+            stop_time=stop_time,
+        )
 
         # Act
         self.clock.cancel_timer(name)
@@ -229,13 +238,15 @@ class TestClockTests(unittest.TestCase):
             name="TEST_TIMER1",
             interval=interval,
             start_time=self.clock.utc_now(),
-            stop_time=None)
+            stop_time=None,
+        )
 
         self.clock.set_timer(
             name="TEST_TIMER2",
             interval=interval,
             start_time=self.clock.utc_now(),
-            stop_time=None)
+            stop_time=None,
+        )
 
         events = self.clock.advance_time(self.clock.utc_now() + timedelta(milliseconds=500))
 

@@ -257,7 +257,8 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price("1.00004"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick2 = QuoteTick(
             symbol=AUDUSD_FXCM,
@@ -265,7 +266,8 @@ class TickBarAggregatorTests(unittest.TestCase):
             ask=Price("1.00005"),
             bid_size=Quantity(1),
             ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH)
+            timestamp=UNIX_EPOCH,
+        )
 
         tick3 = QuoteTick(
             symbol=AUDUSD_FXCM,
