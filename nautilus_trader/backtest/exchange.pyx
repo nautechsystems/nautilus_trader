@@ -205,7 +205,9 @@ cdef class SimulatedExchange:
 
     cpdef void reset(self) except *:
         """
-        Return the market to its initial state.
+        Reset the simulated exchange.
+
+        All stateful values are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 

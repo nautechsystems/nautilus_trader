@@ -26,10 +26,10 @@ more suitable for large enterprise systems.
 
 The value of `NautilusTrader` here is that this re-implementation step is circumvented, as the
 platform was designed from the ground up to hold its own in terms of performance
-and enterprise grade quality. Python has simply caught right up on performance
+and enterprise grade quality. Python has simply caught up in performance
 (via Cython offering C level speed) and general tooling, making it a suitable language for implementing
 a large system such as this. The benefit here being that a Python native environment
-can now be offered to professional quantitative traders and hedge funds, to meet
+can be offered to professional quantitative traders and hedge funds, to meet
 their rigorous standards.
 
 Why Python?

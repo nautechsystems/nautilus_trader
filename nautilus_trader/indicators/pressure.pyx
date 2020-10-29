@@ -138,7 +138,6 @@ cdef class Pressure(Indicator):
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._atr.reset()

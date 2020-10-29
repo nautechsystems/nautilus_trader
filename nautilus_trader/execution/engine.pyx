@@ -349,7 +349,9 @@ cdef class ExecutionEngine:
 
     cpdef void reset(self) except *:
         """
-        Reset the execution engine by clearing all stateful values.
+        Reset the execution engine.
+
+        All stateful values are reset to their initial value.
         """
         try:
             self._fsm.trigger(ComponentTrigger.RESET)

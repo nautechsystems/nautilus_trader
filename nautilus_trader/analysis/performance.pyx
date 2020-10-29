@@ -139,7 +139,9 @@ cdef class PerformanceAnalyzer:
 
     cpdef void reset(self) except *:
         """
-        Reset the analyzer by returning all stateful values to their initial value.
+        Reset the analyzer.
+
+        All stateful values are reset to their initial value.
         """
         self._account_starting_balance = None
         self._account_balance = None

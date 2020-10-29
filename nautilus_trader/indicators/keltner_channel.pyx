@@ -137,7 +137,6 @@ cdef class KeltnerChannel(Indicator):
         Reset the indicator.
 
         All stateful values are reset to their initial value.
-
         """
         self._reset_base()
         self._moving_average.reset()

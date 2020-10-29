@@ -566,7 +566,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef void reset(self) except *:
         """
-        Reset the cache by clearing all stateful values.
+        Reset the cache.
+
+        All stateful values are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 
