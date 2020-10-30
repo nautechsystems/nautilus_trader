@@ -13,4 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `common` sub-package provides common parts for the platforms components."""
+"""
+The `common` sub-package provides common parts for the frameworks components.
+
+More domain specific concepts are introduced above the `core` base layer. The
+identifier cache is implemented, a base `Clock` with `Test` and `Live`
+implementations which can control many `Timer` instances.
+
+System level commands and enums.
+
+The base `Component` class.
+
+Trading domain specific components for generating `Order` and `Identifier` objects.
+
+Common logging components.
+
+Common `UUID` class.
+"""

@@ -13,7 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define package location and version information."""
+"""
+The `trading` sub-package groups the core trading operations components.
+
+This is a top level package where the majority of users will interface with the
+framework. Custom trading strategies can be implemented by inheriting from the
+`TradingStrategy` base class.
+"""
 
 import os
 

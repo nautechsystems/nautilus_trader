@@ -27,10 +27,10 @@ data with an event-driven engine, and also trade those same strategies live in a
 production grade environment. 
 
 The project heavily utilizes Cython, which provides
-static type safety and performance through compiled C extension modules. The libraries can be
+static type safety and performance through C extension modules. The libraries can be
 accessed from both pure Python and Cython.
 
-### Cython
+## Cython
 Cython is a compiled programming language that aims to be a superset of the
 Python programming language, designed to give C-like performance with code that
 is written mostly in Python with optional additional C-inspired syntax.
@@ -63,7 +63,7 @@ The documentation for the latest version of the package is available on _readthe
 
 ## Installation
 
-The latest version can be installed via _PyPI_ and is tested against
+The latest version can be installed via PyPI and is tested against
 Python 3.6.x - 3.8.x on _Linux_ and _MacOS_.
 
     $ pip install nautilus_trader

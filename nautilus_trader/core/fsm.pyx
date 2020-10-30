@@ -13,6 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Defines a generic `Finite-State Machine` (FSM).
+
+The FSM operates with a state-transition table of tuples and C-level enums. The
+intended use case is to ensure correct state transitions, as well as holding a
+deterministic state value.
+
+References
+----------
+https://en.wikipedia.org/wiki/Finite-state_machine
+
+"""
+
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -41,9 +54,9 @@ cdef class FiniteStateMachine:
         Parameters
         ----------
         state_transition_table : dict of tuples and states
-            The state transition table for the FSM consisting of a tuple of
+            The state-transition table for the FSM consisting of a tuple of
             starting state and trigger as keys, and resulting states as values.
-        initial_state : object
+        initial_state : int (C enum)
             The initial state for the FSM.
         trigger_parser : callable, optional
             The optional trigger parser is required to convert C enum ints into strings.
@@ -83,7 +96,8 @@ cdef class FiniteStateMachine:
 
         Returns
         -------
-        ComponentState
+        int
+            C enum.
 
         """
         return self._state
@@ -106,7 +120,7 @@ cdef class FiniteStateMachine:
 
         Parameters
         ----------
-        trigger : int (C Enum)
+        trigger : int (C enum)
             The trigger to combine with the current state providing the key for
             the transition table lookup.
 

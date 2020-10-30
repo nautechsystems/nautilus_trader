@@ -13,4 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `postgres` sub-package groups all `Postgres` implementations for the platform."""
+"""
+The `postgres` sub-package groups all `Postgres` implementations for the platform.
+
+More information to follow.
+"""
