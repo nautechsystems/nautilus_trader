@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `DataCache` provides an interface for querying for market data.
+"""
+
 from collections import deque
 
 from nautilus_trader.common.logging cimport Logger
