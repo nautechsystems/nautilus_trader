@@ -42,7 +42,8 @@ if __name__ == "__main__":
     remove_dir_if_exists("../.pytest_cache")
     remove_dir_if_exists("../__pycache__")
     remove_dir_if_exists("../build")
-    for directory in ["../nautilus_trader"]:
+    remove_dir_if_exists("../docs/build")
+    for directory in ["../nautilus_trader", "../docs"]:
         for root, _dirs, files in os.walk(directory):
             for name in files:
                 path = os.path.join(root, name)

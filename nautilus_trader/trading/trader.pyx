@@ -13,6 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `Trader` class is intended to manage a portfolio of trading strategies within
+a running instance of the platform.
+
+A running instance could be either a test/backtest or live implementation - the
+`Trader` will operate in the same way.
+"""
+
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.c_enums.component_state cimport ComponentState

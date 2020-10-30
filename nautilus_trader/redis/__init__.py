@@ -13,4 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `redis` sub-package groups all `Redis` implementations for the platform."""
+"""
+The `redis` sub-package groups all `Redis` implementations for the platform.
+
+More information to follow.
+"""

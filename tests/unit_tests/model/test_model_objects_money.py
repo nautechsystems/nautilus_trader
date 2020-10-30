@@ -57,28 +57,6 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected, money)
 
     @parameterized.expand([
-        ["0", -0, True],
-        ["-0", 0, True],
-        ["-1", -1, True],
-        ["1", 1, True],
-        ["1.1", "1.1", True],
-        ["-1.1", "-1.1", True],
-        ["0", 1, False],
-        ["-1", 0, False],
-        ["-1", -2, False],
-        ["1", 2, False],
-        ["1.1", "1.12", False],
-        ["-1.12", "-1.1", False],
-    ])
-    def test_equality_with_various_values_returns_expected_result(self, value1, value2, expected):
-        # Arrange
-        # Act
-        result = Money(value1, USD) == Money(value2, USD)
-
-        # Assert
-        self.assertEqual(expected, result)
-
-    @parameterized.expand([
         ["0", -0, False],
         ["-0", 0, False],
         ["-1", -1, False],
@@ -90,33 +68,6 @@ class MoneyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, result)
-
-    @parameterized.expand([
-        [0, 0, False, True, True, False],
-        [1, 0, True, True, False, False],
-        [-1, 0, False, False, True, True],
-    ])
-    def test_comparisons_with_various_values_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected1,
-            expected2,
-            expected3,
-            expected4,
-    ):
-        # Arrange
-        # Act
-        result1 = Money(value1, USD) > Money(value2, USD)
-        result2 = Money(value1, USD) >= Money(value2, USD)
-        result3 = Money(value1, USD) <= Money(value2, USD)
-        result4 = Money(value1, USD) < Money(value2, USD)
-
-        # Assert
-        self.assertEqual(expected1, result1)
-        self.assertEqual(expected2, result2)
-        self.assertEqual(expected3, result3)
-        self.assertEqual(expected4, result4)
 
     @parameterized.expand([
         [0, 0, False, False, False, False],
@@ -144,92 +95,6 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected2, result2)
         self.assertEqual(expected3, result3)
         self.assertEqual(expected4, result4)
-
-    @parameterized.expand([
-        [Money(0, USD), Money(0, USD), Decimal, 0],
-        [Money(0, USD), Money("1.1", USD), Decimal, Decimal("1.1")],
-        [Money(0, USD), 0, Decimal, 0],
-        [Money(0, USD), 1, Decimal, 1],
-        [Money(0, USD), 0.0, float, 0],
-        [Money(0, USD), 1.0, float, 1.0],
-        [Money("1", USD), Decimal("1.1"), Decimal, Decimal("2.1")],
-    ])
-    def test_addition_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 + value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertEqual(expected_value, result)
-
-    @parameterized.expand([
-        [Money(0, USD), Money(0, USD), Decimal, 0],
-        [Money(0, USD), Money("1.1", USD), Decimal, Decimal("-1.1")],
-        [Money(0, USD), 0, Decimal, 0],
-        [Money(0, USD), 1, Decimal, -1],
-        [Money(0, USD), 0.0, float, 0],
-        [Money(0, USD), 1.0, float, -1.0],
-        [Money("1", USD), Decimal("1.1"), Decimal, Decimal("-0.1")],
-    ])
-    def test_subtraction_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 - value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertEqual(expected_value, result)
-
-    @parameterized.expand([
-        [Money(0, USD), 0, Decimal, 0],
-        [Money(1, USD), 1, Decimal, 1],
-        [Money(2, USD), 1.0, float, 2],
-        [Money("1.1", USD), Decimal("1.1"), Decimal, Decimal("1.21")],
-    ])
-    def test_multiplication_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 * value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertEqual(expected_value, result)
-
-    @parameterized.expand([
-        [Money(0, USD), 1, Decimal, 0],
-        [Money(1, USD), 2, Decimal, 0.5],
-        [Money(2, USD), 1.0, float, 2],
-        [Money("1.1", USD), Decimal("1.2"), Decimal, 0.9166666666666666],
-    ])
-    def test_division_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 / value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertAlmostEqual(expected_value, result)
 
     def test_from_string_with_no_decimal(self):
         # Arrange

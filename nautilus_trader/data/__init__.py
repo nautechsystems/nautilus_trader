@@ -16,10 +16,11 @@
 """
 The `data` sub-package groups components relating to the data stack for the platform.
 
+The layered architecture of the data stack somewhat mirrors the
+execution stack with a central engine, cache layer beneath, database layer
+beneath, with alternative implementations able to be written on top.
+
 Due to the high-performance, the core components are reusable between both
 backtest and live implementations - helping to ensure consistent logic for
-trading operations. The layered architecture of the data stack somewhat mirrors the
-execution stack with a central engine, cache layer beneath, database layer beneath, with alternative
-(live) implementations able to be written on top - which just need to override
-the engines `execute` and `process` methods.
+trading operations.
 """

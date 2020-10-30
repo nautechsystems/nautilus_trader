@@ -233,7 +233,7 @@ class QuantityTests(unittest.TestCase):
         ["1", "1"],
         ["1.1", "1.1"],
     ])
-    def test_str_and_as_string_with_various_values_returns_expected_string(self, value, expected):
+    def test_str_repr_and_as_string_with_various_values_returns_expected_string(self, value, expected):
         # Arrange
         # Act
         quantity = Quantity(value)
