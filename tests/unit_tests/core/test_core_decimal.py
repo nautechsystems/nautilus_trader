@@ -121,6 +121,26 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(expected, result)
 
     @parameterized.expand([
+        ["0", -0, True],
+        ["-0", 0, True],
+        ["-1", -1, True],
+        ["1", 1, True],
+        ["0", 1, False],
+        ["-1", 0, False],
+        ["-1", -2, False],
+        ["1", 2, False],
+    ])
+    def test_equality_with_various_int_returns_expected_result(self, value1, value2, expected):
+        # Arrange
+        # Act
+        result1 = Decimal(value1) == value2
+        result2 = value2 == Decimal(value1)
+
+        # Assert
+        self.assertEqual(expected, result1)
+        self.assertEqual(expected, result2)
+
+    @parameterized.expand([
         [Decimal(), decimal.Decimal(), True],
         [Decimal("0"), decimal.Decimal(-0), True],
         [Decimal("1"), decimal.Decimal(), False],
@@ -168,8 +188,12 @@ class DecimalTests(unittest.TestCase):
         [Decimal(), Decimal("1.1"), Decimal, Decimal("1.1")],
         [Decimal(), 0, Decimal, 0],
         [Decimal(), 1, Decimal, 1],
+        [0, Decimal(), Decimal, 0],
+        [1, Decimal(), Decimal, 1],
         [Decimal(), 0.0, float, 0],
         [Decimal(), 1.0, float, 1.0],
+        [0.0, Decimal(), float, 0],
+        [1.0, Decimal(), float, 1.0],
         [Decimal("1"), Decimal("1.1"), Decimal, Decimal("2.1")],
         [Decimal("1"), decimal.Decimal("1.1"), Decimal, Decimal("2.1")],
     ])
@@ -192,8 +216,12 @@ class DecimalTests(unittest.TestCase):
         [Decimal(), Decimal("1.1"), Decimal, Decimal("-1.1")],
         [Decimal(), 0, Decimal, 0],
         [Decimal(), 1, Decimal, -1],
+        [0, Decimal(), Decimal, 0],
+        [1, Decimal("1"), Decimal, 0],
         [Decimal(), 0.0, float, 0],
         [Decimal(), 1.0, float, -1.0],
+        [0.1, Decimal("1"), float, -0.9],
+        [1.0, Decimal("1"), float, 0],
         [Decimal("1"), Decimal("1.1"), Decimal, Decimal("-0.1")],
         [Decimal("1"), decimal.Decimal("1.1"), Decimal, Decimal("-0.1")],
     ])
@@ -215,6 +243,8 @@ class DecimalTests(unittest.TestCase):
         [Decimal(), 0, Decimal, 0],
         [Decimal(1), 1, Decimal, 1],
         [Decimal(2), 1.0, float, 2],
+        [1, Decimal(1), Decimal, 1],
+        [1.0, Decimal(2), float, 2],
         [Decimal("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
         [Decimal("1.1"), decimal.Decimal("1.1"), Decimal, Decimal("1.21")],
     ])
@@ -233,9 +263,13 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
+        [1, Decimal(1), Decimal, 1],
+        [1.1, Decimal("1.1"), float, 1],
         [Decimal(), 1, Decimal, 0],
         [Decimal(1), 2, Decimal, 0.5],
         [Decimal(2), 1.0, float, 2],
+        [2, Decimal(1), Decimal, 0.5],
+        [1.0, Decimal(2), float, 0.5],
         [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
         [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, 0.9166666666666666],
     ])

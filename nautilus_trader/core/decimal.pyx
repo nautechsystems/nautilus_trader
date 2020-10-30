@@ -23,9 +23,26 @@ a context. Also this type is able to be used as an operand for mathematical ops
 with `float` objects.
 """
 
-from decimal import Decimal as PyDecimal
+import decimal
+
+from cpython.object cimport PyObject_RichCompareBool
+from cpython.object cimport Py_EQ
+from cpython.object cimport Py_GE
+from cpython.object cimport Py_GT
+from cpython.object cimport Py_LE
+from cpython.object cimport Py_LT
+from cpython.object cimport Py_NE
 
 from nautilus_trader.core.correctness cimport Condition
+
+
+cdef int _MATH_ADD = 0
+cdef int _MATH_SUB = 1
+cdef int _MATH_MUL = 2
+cdef int _MATH_DIV = 3
+cdef int _MATH_TRUEDIV = 4
+cdef int _MATH_FLOORDIV = 5
+cdef int _MATH_MOD = 6
 
 
 cdef class Decimal:
@@ -64,151 +81,83 @@ cdef class Decimal:
             elif isinstance(value, Decimal):
                 self._value = value._value
             else:
-                self._value = PyDecimal(value)
+                self._value = decimal.Decimal(value)
         else:
             Condition.not_negative_int(precision, "precision")
             if not isinstance(value, float):
                 value = float(value)
-            self._value = PyDecimal(f'{value:.{precision}f}')
+            self._value = decimal.Decimal(f'{value:.{precision}f}')
 
     def __eq__(self, other) -> bool:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
-        return a == b
+        return Decimal._compare(self, other, Py_EQ)
 
     def __ne__(self, other) -> bool:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
-        return a != b
+        return Decimal._compare(self, other, Py_NE)
 
     def __lt__(self, other) -> bool:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
-        return a < b
+        return Decimal._compare(self, other, Py_LT)
 
     def __le__(self, other) -> bool:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
-        return a <= b
+        return Decimal._compare(self, other, Py_LE)
 
     def __gt__(self, other) -> bool:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
-        return a > b
+        return Decimal._compare(self, other, Py_GT)
 
     def __ge__(self, other) -> bool:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
-        return a >= b
+        return Decimal._compare(self, other, Py_GE)
 
     def __add__(self, other) -> Decimal or float:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return a + b
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_ADD)
         else:
-            return Decimal(a + b)
+            return Decimal(Decimal._extract_value(self) + Decimal._extract_value(other))
 
     def __sub__(self, other) -> Decimal or float:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return a - b
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_SUB)
         else:
-            return Decimal(a - b)
+            return Decimal(Decimal._extract_value(self) - Decimal._extract_value(other))
 
     def __mul__(self, other) -> Decimal or float:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return a * b
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_MUL)
         else:
-            return Decimal(a * b)
+            return Decimal(Decimal._extract_value(self) * Decimal._extract_value(other))
 
     def __div__(self, other) -> Decimal or float:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return a / b
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_DIV)
         else:
-            return Decimal(a / b)
+            return Decimal(Decimal._extract_value(self) / Decimal._extract_value(other))
 
     def __truediv__(self, other) -> Decimal or float:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return a / b
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_TRUEDIV)
         else:
-            return Decimal(a / b)
+            return Decimal(Decimal._extract_value(self) / Decimal._extract_value(other))
 
     def __floordiv__(self, other) -> Decimal or float:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return a // b
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_FLOORDIV)
         else:
-            return Decimal(a // b)
+            return Decimal(Decimal._extract_value(self) // Decimal._extract_value(other))
 
     def __mod__(self, other) -> Decimal:
-        a, b = Decimal._convert_values(self, other)
-        if isinstance(b, float):
-            return NotImplemented
+        if isinstance(self, float) or isinstance(other, float):
+            return Decimal._eval_double(self, other, _MATH_MOD)
         else:
-            return Decimal(a % b)
+            return Decimal(Decimal._extract_value(self) % Decimal._extract_value(other))
 
     def __neg__(self):
-        """
-        Return a copy with the sign switched.
-
-        Rounds, if it has reason.
-
-        Returns
-        -------
-        Decimal
-
-        """
         return Decimal(self._value.__neg__())
 
     def __pos__(self):
-        """
-        Return a copy, unless it is a NaN.
-
-        Rounds the number (if more than precision digits)
-
-        Returns
-        -------
-        Decimal
-
-        """
         return Decimal(self._value.__pos__())
 
     def __abs__(self):
-        """
-        Returns
-        -------
-        Decimal
-            The absolute value of the decimal.
-
-        """
         return Decimal(abs(self._value))
 
     def __round__(self, ndigits=None):
-        """
-        Round the decimal.
-
-        Rounds half toward even.
-
-        Parameters
-        ----------
-        ndigits : int
-            The number of digits to round to.
-
-        Returns
-        -------
-        Decimal
-            A rounded copy of this object.
-
-        """
         return Decimal(round(self._value, ndigits))
 
     def __float__(self):
@@ -227,14 +176,40 @@ cdef class Decimal:
         return f"{type(self).__name__}('{self}')"
 
     @staticmethod
-    cdef inline tuple _convert_values(object a, object b):
+    cdef inline object _extract_value(object obj):
+        if isinstance(obj, Decimal):
+            return obj._value
+        return obj
+
+    @staticmethod
+    cdef inline bint _compare(a, b, int op) except *:
         if isinstance(a, float) or isinstance(b, float):
-            return float(a), float(b)
+            return NotImplemented
         if isinstance(a, Decimal):
-            a = a._value
+            a = <Decimal>a._value
         if isinstance(b, Decimal):
-            b = b._value
-        return a, b
+            b = <Decimal>b._value
+
+        return PyObject_RichCompareBool(a, b, op)
+
+    @staticmethod
+    cdef inline double _eval_double(double a, double b, int op) except *:
+        if op == _MATH_ADD:
+            return a + b
+        elif op == _MATH_SUB:
+            return a - b
+        elif op == _MATH_MUL:
+            return a * b
+        elif op == _MATH_DIV:
+            return a / b
+        elif op == _MATH_TRUEDIV:
+            return a / b
+        elif op == _MATH_FLOORDIV:
+            return a // b
+        elif op == _MATH_MOD:
+            return a % b
+        else:
+            return NotImplemented
 
     @property
     def precision(self):
