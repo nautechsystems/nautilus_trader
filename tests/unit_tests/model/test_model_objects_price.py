@@ -36,6 +36,15 @@ class PriceTests(unittest.TestCase):
         # Assert
         self.assertRaises(ValueError, Price, 1.11, -1)
 
+    def test_str_repr(self):
+        # Arrange
+        price = Price(1.00000, 5)
+
+        # Act
+        # Assert
+        self.assertEqual("1.00000", str(price))
+        self.assertEqual("Price('1.00000')", repr(price))
+
     @parameterized.expand([
         [0, Price()],
         [1, Price("1")],
@@ -48,7 +57,7 @@ class PriceTests(unittest.TestCase):
         [Decimal(), Price()],
         [Decimal("1.1"), Price("1.1")],
     ])
-    def test_instantiate_with_various_valid_inputs_returns_expected_decimal(self, value, expected):
+    def test_instantiate_with_various_valid_inputs_returns_expected_price(self, value, expected):
         # Arrange
         # Act
         price = Price(value)
@@ -127,99 +136,3 @@ class PriceTests(unittest.TestCase):
         self.assertEqual(expected2, result2)
         self.assertEqual(expected3, result3)
         self.assertEqual(expected4, result4)
-
-    @parameterized.expand([
-        [Price(), Price(), Decimal, 0],
-        [Price(), Price("1.1"), Decimal, Decimal("1.1")],
-        [Price(), 0, Decimal, 0],
-        [Price(), 1, Decimal, 1],
-        [Price(), 0.0, float, 0],
-        [Price(), 1.0, float, 1.0],
-        [Price("1"), Decimal("1.1"), Decimal, Decimal("2.1")],
-    ])
-    def test_addition_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 + value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertEqual(expected_value, result)
-
-    @parameterized.expand([
-        [Price(), Price(), Decimal, 0],
-        [Price(), Price("1.1"), Decimal, Decimal("-1.1")],
-        [Price(), 0, Decimal, 0],
-        [Price(), 1, Decimal, -1],
-        [Price(), 0.0, float, 0],
-        [Price(), 1.0, float, -1.0],
-        [Price("1"), Decimal("1.1"), Decimal, Decimal("-0.1")],
-    ])
-    def test_subtraction_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 - value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertEqual(expected_value, result)
-
-    @parameterized.expand([
-        [Price(), 0, Decimal, 0],
-        [Price(1), 1, Decimal, 1],
-        [Price(2), 1.0, float, 2],
-        [Price("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
-    ])
-    def test_multiplication_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 * value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertEqual(expected_value, result)
-
-    @parameterized.expand([
-        [Price(), 1, Decimal, 0],
-        [Price(1), 2, Decimal, 0.5],
-        [Price(2), 1.0, float, 2],
-        [Price("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
-    ])
-    def test_division_with_various_types_returns_expected_result(
-            self,
-            value1,
-            value2,
-            expected_type,
-            expected_value):
-        # Arrange
-        # Act
-        result = value1 / value2
-
-        # Assert
-        self.assertEqual(expected_type, type(result))
-        self.assertAlmostEqual(expected_value, result)
-
-    def test_repr(self):
-        # Arrange
-        price = Price(1.00000, 5)
-
-        # Act
-        result = repr(price)
-
-        # Assert
-        self.assertEqual("Price('1.00000')", result)

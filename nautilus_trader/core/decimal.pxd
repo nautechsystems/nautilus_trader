@@ -18,7 +18,13 @@ cdef class Decimal:
     cdef readonly object _value
 
     @staticmethod
-    cdef inline tuple _convert_values(object a, object b)
+    cdef inline object _extract_value(object obj)
+
+    @staticmethod
+    cdef inline bint _compare(a, b, int op) except *
+
+    @staticmethod
+    cdef inline double _eval_double(double a, double b, int op) except *
 
     cpdef object as_decimal(self)
     cpdef double as_double(self) except *
