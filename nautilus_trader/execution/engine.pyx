@@ -26,6 +26,9 @@ to its clients to consume cached data through.
 The engine employs a simple fan-in fan-out messaging pattern to receive events
 from the `ExecutionClient` instances, and sending those to the registered
 handlers, namely `TradingStrategy` instances.
+
+Alternative implementations can be written on top which just need to override
+the engines `execute` and `process` methods.
 """
 
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger

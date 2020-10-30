@@ -21,33 +21,34 @@
 
 ## Introduction
 
-NautilusTrader is a high-performance algorithmic trading platform allowing quantitative traders
-the ability to backtest portfolios of automated trading strategies on historical
-data with an event-driven engine, and also trade those strategies live in a
-production grade environment. The project heavily utilizes Cython to provide
-type safety and performance through C extension modules. The libraries can be
+_NautilusTrader_ is an open-source, high-performance algorithmic trading platform, providing quantitative traders
+with the ability to backtest portfolios of automated trading strategies on historical
+data with an event-driven engine, and also trade those same strategies live in a
+production grade environment. 
+
+The project heavily utilizes Cython, which provides
+static type safety and performance through C extension modules. The libraries can be
 accessed from both pure Python and Cython.
 
+## Cython
 Cython is a compiled programming language that aims to be a superset of the
 Python programming language, designed to give C-like performance with code that
 is written mostly in Python with optional additional C-inspired syntax.
 
 > https://cython.org
 
-To run code or tests from the source code, first compile the C extensions for the package.
-
-    $ python setup.py build_ext --inplace
-
 ## Documentation
+
+The documentation for the latest version of the package is available on _readthedocs_.
 
 > https://nautilus-trader.readthedocs.io
 
 ## Features
 
-- **Fast:** C level speed and type safety provided through Cython. Asynchronous networking with uvloop.
-- **Reliable:** Redis or Postgres backed performant state persistence for the live `ExecutionEngine`.
-- **Flexible:** Any FIX or REST API can be integrated into the platform, with no changes to your strategy scripts.
-- **Backtesting:** Multiple instruments and strategies simultaneously with historical tick and/or bar data.
+- **Fast:** C level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
+- **Reliable:** Redis or Postgres backed performant state persistence for live implementations.
+- **Flexible:** Any FIX, REST or WebSockets or API can be integrated into the platform.
+- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
@@ -62,15 +63,32 @@ To run code or tests from the source code, first compile the C extensions for th
 
 ## Installation
 
-Latest version;
+The latest version can be installed via PyPI and is tested against
+Python 3.6.x - 3.8.x on _Linux_ and _MacOS_.
 
     $ pip install nautilus_trader
 
+## Development
+
+We recommend the PyCharm _Professional_ edition IDE as it interprets Cython syntax.
+
+> https://www.jetbrains.com/pycharm/
+
+To run code or tests from the source code, first compile the C extensions for the package.
+
+    $ python setup.py build_ext --inplace
+
+Please refer to the _Developer Guide_ in the documentation for further details.
+
 ## Contributing
 
-All forms of contribution are welcome. Please see the guide on how to contribute.
+Involvement from the developer community is a goal for this project. All
+are welcome to open issues/discussions on GitHub for proposed enhancements, feature
+requests, and bug reports.
 
-[Contributing](CONTRIBUTING.md)
+Please refer to the below.
+
+[CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 

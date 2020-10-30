@@ -13,4 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""The `indicator` sub-package groups all indicators and analyzers used for signal discovery and filtering."""
+"""
+The `indicator` sub-package groups all indicators and analyzers
+
+These are classes which can be used for signal discovery and filtering. The idea
+is to use the provided indicators as is, or as inspiration for a trader to
+implement their own proprietary indicator algorithms with the platform.
+"""

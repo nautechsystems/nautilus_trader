@@ -30,84 +30,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class Tick:
-    """
-    The base class for all ticks.
-    """
-
-    def __init__(
-            self,
-            Symbol symbol not None,
-            datetime timestamp not None,
-    ):
-        """
-        Initialize a new instance of the Tick class.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The ticker symbol.
-        timestamp : datetime
-            The tick timestamp (UTC).
-
-        """
-        self._symbol = symbol
-        self._timestamp = timestamp
-
-    def __eq__(self, Tick other) -> bool:
-        return self._timestamp == other.timestamp
-
-    def __ne__(self, Tick other) -> bool:
-        return self._timestamp != other.timestamp
-
-    def __lt__(self, Tick other) -> bool:
-        return self._timestamp < other.timestamp
-
-    def __le__(self, Tick other) -> bool:
-        return self._timestamp <= other.timestamp
-
-    def __gt__(self, Tick other) -> bool:
-        return self._timestamp > other.timestamp
-
-    def __ge__(self, Tick other) -> bool:
-        return self._timestamp >= other.timestamp
-
-    def __hash__(self) -> int:
-        return hash(self._timestamp)
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}({self})"
-
-    @property
-    def symbol(self):
-        """
-        The ticks symbol.
-
-        Returns
-        -------
-        Symbol
-
-        """
-        return self._symbol
-
-    @property
-    def timestamp(self):
-        """
-        The ticks timestamp.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._timestamp
-
-    cpdef str to_serializable_string(self):
-        # Abstract method
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class QuoteTick(Tick):
+cdef class QuoteTick:
     """
     Represents a single quote tick in a financial market.
     """
@@ -140,12 +63,33 @@ cdef class QuoteTick(Tick):
             The tick timestamp (UTC).
 
         """
-        super().__init__(symbol, timestamp)
-
+        self._symbol = symbol
         self._bid = bid
         self._ask = ask
         self._bid_size = bid_size
         self._ask_size = ask_size
+        self._timestamp = timestamp
+
+    def __eq__(self, QuoteTick other) -> bool:
+        return self._timestamp == other.timestamp
+
+    def __ne__(self, QuoteTick other) -> bool:
+        return self._timestamp != other.timestamp
+
+    def __lt__(self, QuoteTick other) -> bool:
+        return self._timestamp < other.timestamp
+
+    def __le__(self, QuoteTick other) -> bool:
+        return self._timestamp <= other.timestamp
+
+    def __gt__(self, QuoteTick other) -> bool:
+        return self._timestamp > other.timestamp
+
+    def __ge__(self, QuoteTick other) -> bool:
+        return self._timestamp >= other.timestamp
+
+    def __hash__(self) -> int:
+        return hash(self._timestamp)
 
     def __str__(self) -> str:
         return (f"{self._symbol},"
@@ -154,6 +98,21 @@ cdef class QuoteTick(Tick):
                 f"{self._bid_size},"
                 f"{self._ask_size},"
                 f"{format_iso8601(self._timestamp)}")
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self})"
+
+    @property
+    def symbol(self):
+        """
+        The ticks symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
 
     @property
     def bid(self):
@@ -202,6 +161,18 @@ cdef class QuoteTick(Tick):
 
         """
         return self._ask_size
+
+    @property
+    def timestamp(self):
+        """
+        The ticks timestamp.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._timestamp
 
     cpdef Price extract_price(self, PriceType price_type):
         """
@@ -321,7 +292,7 @@ cdef class QuoteTick(Tick):
         return f"{self._bid},{self._ask},{self._bid_size},{self._ask_size},{long(self._timestamp.timestamp())}"
 
 
-cdef class TradeTick(Tick):
+cdef class TradeTick:
     """
     Represents a single trade tick in a financial market.
     """
@@ -353,13 +324,41 @@ cdef class TradeTick(Tick):
         timestamp : datetime
             The tick timestamp (UTC).
 
-        """
-        super().__init__(symbol, timestamp)
+        Raises
+        ------
+        ValueError
+            If maker is UNDEFINED.
 
+        """
+        Condition.not_equal(maker, Maker.UNDEFINED, "maker", "UNDEFINED")
+
+        self._symbol = symbol
         self._price = price
         self._size = size
         self._maker = maker
         self._match_id = match_id
+        self._timestamp = timestamp
+
+    def __eq__(self, TradeTick other) -> bool:
+        return self._timestamp == other.timestamp
+
+    def __ne__(self, TradeTick other) -> bool:
+        return self._timestamp != other.timestamp
+
+    def __lt__(self, TradeTick other) -> bool:
+        return self._timestamp < other.timestamp
+
+    def __le__(self, TradeTick other) -> bool:
+        return self._timestamp <= other.timestamp
+
+    def __gt__(self, TradeTick other) -> bool:
+        return self._timestamp > other.timestamp
+
+    def __ge__(self, TradeTick other) -> bool:
+        return self._timestamp >= other.timestamp
+
+    def __hash__(self) -> int:
+        return hash(self._timestamp)
 
     def __str__(self) -> str:
         return (f"{self._symbol},"
@@ -368,6 +367,21 @@ cdef class TradeTick(Tick):
                 f"{maker_to_string(self._maker)},"
                 f"{self._match_id},"
                 f"{format_iso8601(self._timestamp)}")
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self})"
+
+    @property
+    def symbol(self):
+        """
+        The ticks symbol.
+
+        Returns
+        -------
+        Symbol
+
+        """
+        return self._symbol
 
     @property
     def price(self):
@@ -416,6 +430,18 @@ cdef class TradeTick(Tick):
 
         """
         return self._match_id
+
+    @property
+    def timestamp(self):
+        """
+        The ticks timestamp.
+
+        Returns
+        -------
+        datetime
+
+        """
+        return self._timestamp
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values):

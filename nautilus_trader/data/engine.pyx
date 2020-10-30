@@ -21,6 +21,9 @@ Its primary responsibility is to orchestrate interactions between the individual
 ongoing subscriptions to specific data types, for particular endpoints. As well as
 hydrating a `DataCache` layer which presents a read-only facade for its clients
 to consume cached data through.
+
+Alternative implementations can be written on top which just need to override
+the engines `execute` and `process` methods.
 """
 
 import cython

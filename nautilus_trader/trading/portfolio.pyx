@@ -13,6 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The `Portfolio` components facilitate the management of trading operations.
+
+The intended use case is for a single `Portfolio` instance per running system,
+a fleet of trading strategies will organize around a portfolio with the help
+of the `Trader` class.
+
+The portfolio can satisfy queries for accounting information, margin balances,
+total risk exposures and total net positions.
+"""
+
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
