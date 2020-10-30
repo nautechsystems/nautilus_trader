@@ -13,6 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Defines a generic object cache.
+
+The intended use is to reduce the creation of duplicate objects such as
+identifiers, which represent the same thing.
+"""
+
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -101,6 +108,6 @@ cdef class ObjectCache:
 
     cpdef void clear(self) except *:
         """
-        Clears all cached values.
+        Clear all cached values.
         """
         self._cache.clear()

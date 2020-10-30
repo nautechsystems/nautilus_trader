@@ -43,7 +43,7 @@ Decimal
    :undoc-members:
    :member-order: bysource
 
-Finite State Machine (fsm)
+Finite State Machine (FSM)
 --------------------------------
 
 .. automodule:: nautilus_trader.core.fsm
