@@ -41,7 +41,7 @@ cdef class TickDataWrangler:
             dict data_bars_ask=None,
     ):
         """
-        Initialize a new instance of the TickDataWrangler class.
+        Initialize a new instance of the `TickDataWrangler` class.
 
         Parameters
         ----------
@@ -249,7 +249,7 @@ cdef class BarDataWrangler:
             data: pd.DataFrame=None,
     ):
         """
-        Initialize a new instance of the BarDataWrangler class.
+        Initialize a new instance of the `BarDataWrangler` class.
 
         Parameters
         ----------

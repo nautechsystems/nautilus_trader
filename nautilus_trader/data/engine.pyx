@@ -84,7 +84,7 @@ cdef class DataEngine:
             dict config=None,
     ):
         """
-        Initialize a new instance of the DataEngine class.
+        Initialize a new instance of the `DataEngine` class.
 
         Parameters
         ----------
@@ -1016,7 +1016,7 @@ cdef class BulkTickBarBuilder:
             callback not None: callable,
     ):
         """
-        Initialize a new instance of the BulkTickBarBuilder class.
+        Initialize a new instance of the `BulkTickBarBuilder` class.
 
         Parameters
         ----------
@@ -1078,7 +1078,7 @@ cdef class BulkTimeBarUpdater:
 
     def __init__(self, TimeBarAggregator aggregator not None):
         """
-        Initialize a new instance of the BulkTimeBarUpdater class.
+        Initialize a new instance of the `BulkTimeBarUpdater` class.
 
         Parameters
         ----------

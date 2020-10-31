@@ -47,7 +47,7 @@ cdef class QuoteTick:
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the QuoteTick class.
+        Initialize a new instance of the `QuoteTick` class.
 
         Parameters
         ----------
@@ -311,7 +311,7 @@ cdef class TradeTick:
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the TradeTick class.
+        Initialize a new instance of the `TradeTick` class.
 
         Parameters
         ----------

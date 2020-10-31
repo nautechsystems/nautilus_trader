@@ -36,7 +36,7 @@ cdef class AverageTrueRange(Indicator):
             bint check_inputs=False,
     ):
         """
-        Initialize a new instance of the AverageTrueRange class.
+        Initialize a new instance of the `AverageTrueRange` class.
 
         Parameters
         ----------

@@ -36,7 +36,7 @@ class PyStrategy(TradingStrategy):
 
     def __init__(self, bar_type: BarType):
         """
-        Initialize a new instance of the PyStrategy class.
+        Initialize a new instance of the `PyStrategy` class.
 
         Parameters
         ----------
@@ -66,7 +66,7 @@ class EmptyStrategy(TradingStrategy):
 
     def __init__(self, order_id_tag: str):
         """
-        Initialize a new instance of the EmptyStrategy class.
+        Initialize a new instance of the `EmptyStrategy` class.
 
         Parameters
         ----------
@@ -84,7 +84,7 @@ class TickTock(TradingStrategy):
 
     def __init__(self, instrument: Instrument, bar_type: BarType):
         """
-        Initialize a new instance of the TickTock class.
+        Initialize a new instance of the `TickTock` class.
 
         Parameters
         ----------
@@ -140,7 +140,7 @@ class TestStrategy(TradingStrategy):
 
     def __init__(self, bar_type: BarType):
         """
-        Initialize a new instance of the TestStrategy class.
+        Initialize a new instance of the `TestStrategy` class.
 
         Parameters
         ----------
@@ -232,7 +232,7 @@ class EMACross(TradingStrategy):
             extra_id_tag: str="",
     ):
         """
-        Initialize a new instance of the EMACross class.
+        Initialize a new instance of the `EMACross` class.
 
         Parameters
         ----------

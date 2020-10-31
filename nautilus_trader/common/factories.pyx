@@ -48,7 +48,7 @@ cdef class OrderFactory:
             int initial_count=0,
     ):
         """
-        Initialize a new instance of the OrderFactory class.
+        Initialize a new instance of the `OrderFactory` class.
 
         Parameters
         ----------

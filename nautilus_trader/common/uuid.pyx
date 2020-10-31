@@ -35,7 +35,7 @@ cdef class TestUUIDFactory(UUIDFactory):
 
     def __init__(self):
         """
-        Initialize a new instance of the TestUUIDFactory class.
+        Initialize a new instance of the `TestUUIDFactory` class.
         """
         super().__init__()
 
@@ -60,7 +60,7 @@ cdef class LiveUUIDFactory(UUIDFactory):
 
     def __init__(self):
         """
-        Initialize a new instance of the LiveUUIDFactory class.
+        Initialize a new instance of the `LiveUUIDFactory` class.
         """
         super().__init__()
 

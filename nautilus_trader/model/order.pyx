@@ -103,7 +103,7 @@ cdef class Order:
 
     def __init__(self, OrderInitialized event not None):
         """
-        Initialize a new instance of the Order class.
+        Initialize a new instance of the `Order` class.
 
         Parameters
         ----------
@@ -701,7 +701,7 @@ cdef class PassiveOrder(Order):
             dict options not None: Dict[str, str],
     ):
         """
-        Initialize a new instance of the PassiveOrder class.
+        Initialize a new instance of the `PassiveOrder` class.
 
         Parameters
         ----------
@@ -880,7 +880,7 @@ cdef class MarketOrder(Order):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the MarketOrder class.
+        Initialize a new instance of the `MarketOrder` class.
 
         Parameters
         ----------
@@ -1010,7 +1010,7 @@ cdef class LimitOrder(PassiveOrder):
             bint hidden=False,
     ):
         """
-        Initialize a new instance of the LimitOrder class.
+        Initialize a new instance of the `LimitOrder` class.
 
         Parameters
         ----------
@@ -1153,7 +1153,7 @@ cdef class StopMarketOrder(PassiveOrder):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the StopMarketOrder class.
+        Initialize a new instance of the `StopMarketOrder` class.
 
         Parameters
         ----------
@@ -1255,7 +1255,7 @@ cdef class BracketOrder:
             LimitOrder take_profit=None,
     ):
         """
-        Initialize a new instance of the BracketOrder class.
+        Initialize a new instance of the `BracketOrder` class.
 
         Parameters
         ----------

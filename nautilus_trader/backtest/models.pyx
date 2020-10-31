@@ -39,7 +39,7 @@ cdef class FillModel:
             random_seed=None,
     ):
         """
-        Initialize a new instance of the FillModel class.
+        Initialize a new instance of the `FillModel` class.
 
         Parameters
         ----------

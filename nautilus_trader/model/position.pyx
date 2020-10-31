@@ -34,7 +34,7 @@ cdef class Position:
 
     def __init__(self, OrderFilled event not None):
         """
-        Initialize a new instance of the Position class.
+        Initialize a new instance of the `Position` class.
 
         Parameters
         ----------

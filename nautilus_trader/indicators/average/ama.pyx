@@ -41,7 +41,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
             PriceType price_type=PriceType.UNDEFINED,
     ):
         """
-        Initialize a new instance of the AdaptiveMovingAverage class.
+        Initialize a new instance of the `AdaptiveMovingAverage` class.
 
         Parameters
         ----------

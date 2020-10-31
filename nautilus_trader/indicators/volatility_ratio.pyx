@@ -36,7 +36,7 @@ cdef class VolatilityRatio(Indicator):
             double value_floor=0,
     ):
         """
-        Initialize a new instance of the MovingAverageConvergenceDivergence class.
+        Initialize a new instance of the `MovingAverageConvergenceDivergence` class.
 
         Parameters
         ----------

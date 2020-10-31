@@ -30,7 +30,7 @@ cdef class ObjectCache:
 
     def __init__(self, type type_value not None, parser not None: callable):
         """
-        Initialize a new instance of the ObjectCache class.
+        Initialize a new instance of the `ObjectCache` class.
 
         Parameters
         ----------

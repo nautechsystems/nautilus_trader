@@ -67,7 +67,7 @@ cdef class LogMessage:
             long thread_id=0,
     ):
         """
-        Initialize a new instance of the LogMessage class.
+        Initialize a new instance of the `LogMessage` class.
 
         Parameters
         ----------
@@ -128,7 +128,7 @@ cdef class Logger:
             str log_file_path not None="log/",
     ):
         """
-        Initialize a new instance of the Logger class.
+        Initialize a new instance of the `Logger` class.
 
         Parameters
         ----------
@@ -280,7 +280,7 @@ cdef class LoggerAdapter:
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the LoggerAdapter class.
+        Initialize a new instance of the `LoggerAdapter` class.
 
         Parameters
         ----------
@@ -507,7 +507,7 @@ cdef class LiveLogger(Logger):
             str log_file_path not None="logs/",
     ):
         """
-        Initialize a new instance of the LiveLogger class.
+        Initialize a new instance of the `LiveLogger` class.
 
         Parameters
         ----------

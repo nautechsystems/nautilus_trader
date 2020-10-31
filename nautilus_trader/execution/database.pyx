@@ -33,7 +33,7 @@ cdef class ExecutionDatabase:
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the ExecutionDatabase class.
+        Initialize a new instance of the `ExecutionDatabase` class.
 
         Parameters
         ----------
@@ -131,7 +131,7 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
         """
-        Initialize a new instance of the BypassExecutionDatabase class.
+        Initialize a new instance of the `BypassExecutionDatabase` class.
 
         Parameters
         ----------

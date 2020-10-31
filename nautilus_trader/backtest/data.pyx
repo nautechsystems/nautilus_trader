@@ -61,7 +61,7 @@ cdef class BacktestDataContainer:
 
     def __init__(self):
         """
-        Initialize a new instance of the BacktestDataContainer class.
+        Initialize a new instance of the `BacktestDataContainer` class.
         """
         self.symbols = set()   # type: {Instrument}
         self.instruments = {}  # type: {Symbol, Instrument}
@@ -201,7 +201,7 @@ cdef class BacktestDataClient(DataClient):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the BacktestDataClient class.
+        Initialize a new instance of the `BacktestDataClient` class.
 
         venue : Venue
             The venue the client can provide data for.

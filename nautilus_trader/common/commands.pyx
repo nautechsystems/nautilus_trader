@@ -31,7 +31,7 @@ cdef class Connect(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Connect class.
+        Initialize a new instance of the `Connect` class.
 
         Parameters
         ----------
@@ -79,7 +79,7 @@ cdef class Disconnect(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Disconnect class.
+        Initialize a new instance of the `Disconnect` class.
 
         Parameters
         ----------
@@ -128,7 +128,7 @@ cdef class DataCommand(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the DataCommand class.
+        Initialize a new instance of the `DataCommand` class.
 
         Parameters
         ----------
@@ -192,7 +192,7 @@ cdef class Subscribe(DataCommand):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Subscribe class.
+        Initialize a new instance of the `Subscribe` class.
 
         Parameters
         ----------
@@ -227,7 +227,7 @@ cdef class Unsubscribe(DataCommand):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Unsubscribe class.
+        Initialize a new instance of the `Unsubscribe` class.
 
         Parameters
         ----------
@@ -262,7 +262,7 @@ cdef class RequestData(DataCommand):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the RequestData class.
+        Initialize a new instance of the `RequestData` class.
 
         Parameters
         ----------
@@ -298,7 +298,7 @@ cdef class KillSwitch(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the KillSwitch class.
+        Initialize a new instance of the `KillSwitch` class.
 
         Parameters
         ----------

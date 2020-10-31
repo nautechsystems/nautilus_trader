@@ -53,7 +53,7 @@ cdef class Trader:
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the Trader class.
+        Initialize a new instance of the `Trader` class.
 
         Parameters
         ----------

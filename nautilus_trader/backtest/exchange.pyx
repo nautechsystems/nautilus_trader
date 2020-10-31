@@ -92,7 +92,7 @@ cdef class SimulatedExchange:
             TestLogger logger not None,
     ):
         """
-        Initialize a new instance of the SimulatedExchange class.
+        Initialize a new instance of the `SimulatedExchange` class.
 
         Parameters
         ----------

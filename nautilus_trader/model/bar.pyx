@@ -41,7 +41,7 @@ cdef class BarSpecification:
             PriceType price_type,
     ):
         """
-        Initialize a new instance of the BarSpecification class.
+        Initialize a new instance of the `BarSpecification` class.
 
         Parameters
         ----------
@@ -225,7 +225,7 @@ cdef class BarType:
             BarSpecification bar_spec not None,
     ):
         """
-        Initialize a new instance of the BarType class.
+        Initialize a new instance of the `BarType` class.
 
         Parameters
         ----------
@@ -382,7 +382,7 @@ cdef class Bar:
             bint check=False,
     ):
         """
-        Initialize a new instance of the Bar class.
+        Initialize a new instance of the `Bar` class.
 
         Parameters
         ----------

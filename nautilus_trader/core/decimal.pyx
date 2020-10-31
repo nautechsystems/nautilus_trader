@@ -52,7 +52,7 @@ cdef class Decimal:
 
     def __init__(self, value=0, precision=None):
         """
-        Initialize a new instance of the Decimal class.
+        Initialize a new instance of the `Decimal` class.
 
         Parameters
         ----------

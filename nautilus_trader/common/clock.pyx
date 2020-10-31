@@ -40,7 +40,7 @@ cdef class Clock:
 
     def __init__(self, UUIDFactory uuid_factory not None):
         """
-        Initialize a new instance of the Clock class.
+        Initialize a new instance of the `Clock` class.
 
         Parameters
         ----------
@@ -450,7 +450,7 @@ cdef class TestClock(Clock):
 
     def __init__(self, datetime initial_time not None=UNIX_EPOCH):
         """
-        Initialize a new instance of the TestClock class.
+        Initialize a new instance of the `TestClock` class.
 
         Parameters
         ----------
@@ -548,7 +548,7 @@ cdef class LiveClock(Clock):
 
     def __init__(self):
         """
-        Initialize a new instance of the LiveClock class.
+        Initialize a new instance of the `LiveClock` class.
         """
         super().__init__(LiveUUIDFactory())
 

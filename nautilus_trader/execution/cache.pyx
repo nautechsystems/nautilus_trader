@@ -44,7 +44,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             ExecutionDatabase database not None,
             Logger logger not None):
         """
-        Initialize a new instance of the ExecutionCache class.
+        Initialize a new instance of the `ExecutionCache` class.
 
         Parameters
         ----------
