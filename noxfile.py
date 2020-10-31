@@ -63,17 +63,7 @@ def performance_tests(session: Session) -> None:
     _run_pytest(session, "tests/performance_tests/")
 
 
-@nox.session
-def annotate(session: Session) -> None:
-    """Annotate _without_ coverage. Faster, but not as useful."""
-    _setup_poetry(session, env={"ANNOTATION_MODE": "true"})
-
-
-@nox.session
-def coverage(session: Session) -> None:
-    """Annotate with coverage."""
-    _setup_poetry(session, env={"PROFILING_MODE": "true"})
-
+def _run_coverage(session):
     _run_pytest(
         session,
         "--ignore=tests/performance_tests/",
@@ -84,6 +74,20 @@ def coverage(session: Session) -> None:
         # so we have to run tests single-threaded here.
         parallel=False,
     )
+
+
+@nox.session
+def coverage(session: Session) -> None:
+    """Annotate with coverage."""
+    _setup_poetry(session, env={"PROFILING_MODE": "true"})
+    _run_coverage(session)
+
+
+@nox.session
+def coverage_and_annotation(session: Session) -> None:
+    """Annotate with coverage."""
+    _setup_poetry(session, env={"PROFILING_MODE": "true"})
+    _run_coverage(session)
     session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
 
 

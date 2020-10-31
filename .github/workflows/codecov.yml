@@ -1,0 +1,58 @@
+name: codecov
+
+on:
+  push:
+    branches-ignore:
+      - "dependabot/**"
+
+jobs:
+  codecov:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      # Setup Pip caching
+      - name: Get Pip cache dir
+        id: pip-cache
+        run: echo "::set-output name=dir::$(pip cache dir)"
+
+      - name: Pip cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.pip-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pip
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox --use-feature=2020-resolver
+
+      # Setup Poetry caching
+      - name: Get Poetry cache dir
+        id: poetry-cache
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+
+      - name: Poetry/Nox cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ steps.poetry-cache.outputs.dir }}
+            .nox
+            .pytest_cache
+            build
+          key: ${{ runner.os }}-${{ matrix.python-version }}-codecov-poetry_nox-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-codecov-poetry_nox-
+
+      # Run coverage
+      - name: Run coverage
+        run: nox -s coverage
+
+      # Upload to codecov
+      - uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          verbose: true

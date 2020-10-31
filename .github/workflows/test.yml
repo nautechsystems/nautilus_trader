@@ -56,7 +56,7 @@ jobs:
 
       # Run tests
       - name: Run general test suite
-        run: nox -s tests --non-interactive
+        run: nox -s tests
 
       - name: Install Redis (Linux)
         if: runner.os == 'Linux'
@@ -68,5 +68,5 @@ jobs:
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
           redis-server --daemonize yes
-          nox -s integration_tests --non-interactive
+          nox -s integration_tests
           redis-cli shutdown
