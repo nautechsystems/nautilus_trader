@@ -80,7 +80,7 @@ cdef class BarBuilder:
 
         Parameters
         ----------
-        tick : TradeTick
+        tick : QuoteTick
             The tick to update with.
 
         """
@@ -386,7 +386,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         Parameters
         ----------
-        tick : QuoteTick
+        tick : TradeTick
             The tick for the update.
 
         """

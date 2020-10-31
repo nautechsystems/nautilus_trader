@@ -335,7 +335,6 @@ cdef class BacktestEngine:
         self.trader.start()
 
         cdef QuoteTick tick
-
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_client.has_data:
             tick = self.data_client.generate_tick()

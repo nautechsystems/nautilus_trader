@@ -57,11 +57,11 @@ cdef class TickDataWrangler:
         Raises
         ------
         ValueError
-            If tick_data is a type other than None or DataFrame.
+            If tick_data not type None or DataFrame.
         ValueError
-            If bid_data is a type other than None or dict.
+            If bid_data not type None or dict.
         ValueError
-            If ask_data is a type other than None or dict.
+            If ask_data not type None or dict.
         ValueError
             If tick_data is None and the bars data is None.
 
@@ -268,7 +268,7 @@ cdef class BarDataWrangler:
         ValueError
             If volume_multiple is not positive (> 0).
         ValueError
-            If data is a type other than DataFrame.
+            If data not type DataFrame.
 
         """
         Condition.not_negative_int(precision, "precision")
