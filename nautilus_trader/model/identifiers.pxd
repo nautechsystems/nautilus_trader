@@ -17,12 +17,15 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 
 cdef class Identifier:
-    cdef str _value
+    cdef readonly str value
+    """The identifier value.\n\n:returns: `str`"""
 
 
 cdef class Symbol(Identifier):
-    cdef str _code
-    cdef Venue _venue
+    cdef readonly str code
+    """The symbol code.\n\n:returns: `str`"""
+    cdef readonly Venue venue
+    """The symbol venue.\n\n:returns: `Venue`"""
 
     @staticmethod
     cdef Symbol from_string_c(str value)

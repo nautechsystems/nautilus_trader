@@ -39,6 +39,8 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class AccountState(Event):
     """
     Represents an event which includes information on the state of the account.

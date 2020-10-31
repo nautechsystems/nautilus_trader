@@ -118,7 +118,7 @@ cdef class SimulatedExchange:
         Raises
         ------
         TypeError
-            If instruments contains a type other than Instrument.
+            If instruments value not type Instrument.
 
         """
         Condition.dict_types(instruments, Symbol, Instrument, "instruments")

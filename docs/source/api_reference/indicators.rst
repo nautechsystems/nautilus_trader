@@ -85,6 +85,15 @@ Bid-Ask Min-Max
    :members:
    :member-order: bysource
 
+Bollinger Bands
+---------------
+
+.. automodule:: nautilus_trader.indicators.bollinger_bands
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Efficiency Ratio
 ----------------
 

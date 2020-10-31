@@ -41,46 +41,34 @@ cdef class Identifier:
         """
         Condition.valid_string(value, "value")
 
-        self._value = value
+        self.value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return type(self) == type(other) and self._value == other.value
+        return type(self) == type(other) and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return type(self) != type(other) or self._value != other.value
+        return type(self) != type(other) or self.value != other.value
 
     def __lt__(self, Identifier other) -> bool:
-        return self._value < other.value
+        return self.value < other.value
 
     def __le__(self, Identifier other) -> bool:
-        return self._value <= other.value
+        return self.value <= other.value
 
     def __gt__(self, Identifier other) -> bool:
-        return self._value > other.value
+        return self.value > other.value
 
     def __ge__(self, Identifier other) -> bool:
-        return self._value >= other.value
+        return self.value >= other.value
 
     def __hash__(self) -> int:
-        return hash(self._value)
+        return hash(self.value)
 
     def __str__(self) -> str:
-        return self._value
+        return self.value
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self._value}')"
-
-    @property
-    def value(self):
-        """
-        The identifier value.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._value
+        return f"{type(self).__name__}('{self.value}')"
 
 
 cdef class Symbol(Identifier):
@@ -110,30 +98,8 @@ cdef class Symbol(Identifier):
         Condition.valid_string(code, "code")
         super().__init__(f"{code}.{venue.value}")
 
-        self._code = code
-        self._venue = venue
-
-    @property
-    def code(self):
-        """
-        Returns
-        -------
-        str
-            The identifier code for the symbol.
-
-        """
-        return self._code
-
-    @property
-    def venue(self):
-        """
-        Returns
-        -------
-        Venue
-            The venue for the symbol.
-
-        """
-        return self._venue
+        self.code = code
+        self.venue = venue
 
     @staticmethod
     cdef Symbol from_string_c(str value):
