@@ -25,6 +25,8 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class ReportProvider:
     """
     Provides various trading reports.

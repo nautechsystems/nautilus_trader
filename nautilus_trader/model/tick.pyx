@@ -30,6 +30,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class QuoteTick:
     """
     Represents a single quote tick in a financial market.
@@ -292,6 +294,8 @@ cdef class QuoteTick:
         return f"{self._bid},{self._ask},{self._bid_size},{self._ask_size},{long(self._timestamp.timestamp())}"
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TradeTick:
     """
     Represents a single trade tick in a financial market.

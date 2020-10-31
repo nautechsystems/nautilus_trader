@@ -17,6 +17,8 @@
 Defines various order types to be used for trading.
 """
 
+from typing import Dict
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.constants cimport *  # str constants
@@ -92,6 +94,8 @@ cdef dict _ORDER_STATE_TABLE = {
 }
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class Order:
     """
     The base class for all orders.
@@ -602,8 +606,6 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(self._cl_ord_id, event.cl_ord_id, "id", "event.order_id")
-        if self.account_id:
-            Condition.equal(self.account_id, event.account_id, "account_id", "event.account_id")
 
         # Update events
         self._events.append(event)
@@ -677,6 +679,8 @@ cdef class Order:
         raise NotImplemented("method must be implemented in subclass")
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class PassiveOrder(Order):
     """
     The base class for all passive orders.
@@ -694,7 +698,7 @@ cdef class PassiveOrder(Order):
             datetime expire_time,  # Can be None
             UUID init_id not None,
             datetime timestamp not None,
-            dict options not None,
+            dict options not None: Dict[str, str],
     ):
         """
         Initialize a new instance of the PassiveOrder class.
@@ -840,10 +844,11 @@ cdef class PassiveOrder(Order):
 
     cdef void _set_slippage(self) except *:
 
+        cdef Decimal price
         if self.side == OrderSide.BUY:
-            self._slippage = Decimal(self.avg_price - self.price)
+            self._slippage = Decimal(self._avg_price - self._price)
         else:  # self.side == OrderSide.SELL:
-            self._slippage = Decimal(self.price - self.avg_price)
+            self._slippage = Decimal(self._price - self._avg_price)
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -852,6 +857,8 @@ cdef set _MARKET_ORDER_VALID_TIF = {
     TimeInForce.FOC,
 }
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class MarketOrder(Order):
     """
     A market order is an order to buy or sell an instrument immediately. This
@@ -977,6 +984,8 @@ cdef class MarketOrder(Order):
         self._avg_price = event.avg_price
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class LimitOrder(PassiveOrder):
     """
     Limit orders are used to specify a maximum or minimum price the trader is
@@ -1123,6 +1132,8 @@ cdef class LimitOrder(PassiveOrder):
         return self._is_hidden
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class StopMarketOrder(PassiveOrder):
     """
     Represents a stop market order. Once the price crosses the predefined
@@ -1225,6 +1236,8 @@ cdef class StopMarketOrder(PassiveOrder):
         )
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BracketOrder:
     """
     A bracket orders is designed to help limit a traders loss and optionally

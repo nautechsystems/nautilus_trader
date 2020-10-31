@@ -284,6 +284,8 @@ cdef class RequestData(DataCommand):
         )
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class KillSwitch(Command):
     """
     Represents a command to aggressively shutdown the trading system.

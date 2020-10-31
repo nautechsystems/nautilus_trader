@@ -28,6 +28,8 @@ from cpython.unicode cimport PyUnicode_Contains
 from nautilus_trader.core.correctness cimport Condition
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cpdef bint is_datetime_utc(datetime timestamp) except *:
     """
     Checks if the given timestamp is timezone aware UTC.
@@ -49,6 +51,8 @@ cpdef bint is_datetime_utc(datetime timestamp) except *:
     return timestamp.tzinfo == pytz.utc
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cpdef bint is_tz_aware(time_object) except *:
     """
     Checks if the given object is timezone aware.
@@ -92,6 +96,8 @@ cpdef bint is_tz_naive(time_object) except *:
     return not is_tz_aware(time_object)
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cpdef datetime as_utc_timestamp(datetime timestamp):
     """
     Ensure the given timestamp is a tz-aware UTC pd.Timestamp.

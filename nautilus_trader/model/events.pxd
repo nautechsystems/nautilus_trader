@@ -134,7 +134,6 @@ cdef class OrderFilled(OrderEvent):
     cdef Quantity _filled_qty
     cdef Quantity _cumulative_qty
     cdef Quantity _leaves_qty
-    cdef bint _is_partial_fill
     cdef Decimal _avg_price
     cdef Money _commission
     cdef LiquiditySide _liquidity_side
@@ -142,8 +141,6 @@ cdef class OrderFilled(OrderEvent):
     cdef Currency _quote_currency
     cdef bint _is_inverse
     cdef datetime _execution_time
-
-    cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id)
 
 
 cdef class PositionEvent(Event):

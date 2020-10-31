@@ -63,7 +63,8 @@ cdef inline MessageType message_type_from_string(str value):
 
 
 cdef class Message:
-    cdef MessageType _message_type
+    # Properties
+    cdef MessageType _type
     cdef UUID _id
     cdef datetime _timestamp
 

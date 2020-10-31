@@ -76,6 +76,8 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class ExecutionEngine:
     """
     Provides a high-performance execution engine for the management of many
@@ -659,14 +661,14 @@ cdef class ExecutionEngine:
             StrategyId strategy_id,
     ) except *:
         if position_id.is_null:  # No position yet
-            # Generate identifier
-            position_id = self._pos_id_generator.generate(fill.symbol)
-            fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
+            # Generate identifier and assign
+            fill._position_id = self._pos_id_generator.generate(fill.symbol)
 
             # Create new position
             self._open_position(fill)
         else:  # Position exists
-            fill = fill.clone(position_id=position_id, strategy_id=strategy_id)
+            fill._position_id = position_id
+            fill._strategy_id = strategy_id
             self._update_position(fill)
 
     cdef inline void _fill_exchange_assigned_ids(
@@ -675,7 +677,7 @@ cdef class ExecutionEngine:
             OrderFilled fill,
             StrategyId strategy_id,
     ) except *:
-        fill = fill.clone(position_id=fill.position_id, strategy_id=strategy_id)
+        fill._strategy_id = strategy_id
         if position_id is None:  # No position
             self._open_position(fill)
         else:
