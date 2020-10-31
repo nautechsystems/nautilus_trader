@@ -1460,7 +1460,6 @@ cdef class OrderFilled(OrderEvent):
         self._filled_qty = filled_qty
         self._cumulative_qty = cumulative_qty
         self._leaves_qty = leaves_qty
-        self._is_partial_fill = self._leaves_qty > 0
         self._avg_price = avg_price
         self._commission = commission
         self._liquidity_side = liquidity_side
@@ -1468,55 +1467,7 @@ cdef class OrderFilled(OrderEvent):
         self._quote_currency = quote_currency
         self._is_inverse = is_inverse
         self._execution_time = execution_time
-        self._is_completion_trigger = not self._is_partial_fill
-
-    cdef OrderFilled clone(self, PositionId position_id, StrategyId strategy_id):
-        """
-        Clone this event with the position identifier changed to that given.
-        The original position_id must be null, otherwise an exception is raised.
-
-        Parameters
-        ----------
-        position_id : PositionId, optional
-            The position identifier to set.
-        strategy_id : StrategyId, optional
-            The strategy identifier to set.
-
-        Raises
-        ------
-        ValueError
-            If position_id is not null and self.position_id does not match.
-        ValueError
-            If strategy_id is not null and self.strategy_id does not match.
-
-        """
-        if self._position_id.not_null:
-            Condition.equal(position_id, self._position_id, "position_id", "self.position_id")
-        if self._strategy_id.not_null:
-            Condition.equal(strategy_id, self._strategy_id, "strategy_id", "self.strategy_id")
-
-        return OrderFilled(
-            self._account_id,
-            self._cl_ord_id,
-            self._order_id,
-            self._execution_id,
-            position_id,  # Set identifier
-            strategy_id,  # Set identifier
-            self._symbol,
-            self._order_side,
-            self._filled_qty,
-            self._cumulative_qty,
-            self._leaves_qty,
-            self._avg_price,
-            self._commission,
-            self._liquidity_side,
-            self._base_currency,
-            self._quote_currency,
-            self._is_inverse,
-            self._execution_time,
-            self._id,
-            self._timestamp
-        )
+        self._is_completion_trigger = leaves_qty == 0  # Completely filled
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -1664,7 +1615,7 @@ cdef class OrderFilled(OrderEvent):
         bool
 
         """
-        return self._is_partial_fill
+        return self._leaves_qty > 0
 
     @property
     def avg_price(self):
@@ -1808,6 +1759,8 @@ cdef class PositionEvent(Event):
         return self._order_fill
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class PositionOpened(PositionEvent):
     """
     Represents an event where a position has been opened.
@@ -1853,6 +1806,8 @@ cdef class PositionOpened(PositionEvent):
                 f"id={self._id})")
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class PositionModified(PositionEvent):
     """
     Represents an event where a position has been modified.
@@ -1885,7 +1840,7 @@ cdef class PositionModified(PositionEvent):
             If position is not open.
 
         """
-        Condition.true(position.is_open, "position.is_open")
+        assert position.is_open
         super().__init__(
             position,
             order_fill,
@@ -1907,6 +1862,8 @@ cdef class PositionModified(PositionEvent):
                 f"id={self._id})")
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class PositionClosed(PositionEvent):
     """
     Represents an event where a position has been closed.
@@ -1939,7 +1896,7 @@ cdef class PositionClosed(PositionEvent):
             If position is not closed.
 
         """
-        Condition.true(position.is_closed, "position.is_closed")
+        assert position.is_closed
         super().__init__(
             position,
             order_fill,

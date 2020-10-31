@@ -11,7 +11,6 @@ Execution
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Redis
@@ -21,5 +20,4 @@ Redis
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource

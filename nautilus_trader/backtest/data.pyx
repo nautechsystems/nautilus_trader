@@ -52,6 +52,8 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BacktestDataContainer:
     """
     Provides a container for backtest data.
@@ -182,6 +184,8 @@ cdef class BacktestDataContainer:
         return size
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for backtesting.

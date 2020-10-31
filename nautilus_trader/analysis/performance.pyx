@@ -36,12 +36,15 @@ from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class PerformanceAnalyzer:
     """
     Provides a performance analyzer for tracking and generating performance
@@ -75,7 +78,9 @@ cdef class PerformanceAnalyzer:
 
         self._account_currency = account.currency
         self._account_balance = account.balance()
-        self._account_starting_balance = account.events[0].balance
+
+        cdef AccountState initial = account.events[0]
+        self._account_starting_balance = initial.balance
 
         self._daily_returns = pd.Series(dtype=float64)
         self._realized_pnls = pd.Series(dtype=float64)
@@ -117,6 +122,8 @@ cdef class PerformanceAnalyzer:
 
         self._realized_pnls.loc[position_id.value] = realized_pnl.as_double()
 
+    # noinspection: Object has warned attribute
+    # noinspection PyUnresolvedReferences
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
         Add return data to the analyzer.

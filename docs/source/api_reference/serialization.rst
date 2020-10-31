@@ -11,7 +11,6 @@ Base
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 
@@ -22,5 +21,4 @@ Serializers
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource

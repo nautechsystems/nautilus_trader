@@ -31,6 +31,8 @@ from nautilus_trader.core.correctness cimport Condition
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class Clock:
     """
     The base class for all clocks. All times are timezone aware UTC.
@@ -438,6 +440,8 @@ cdef class Clock:
         self._next_event_time = next_time
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TestClock(Clock):
     """
     Provides a clock for backtesting and unit testing.
@@ -535,6 +539,8 @@ cdef class TestClock(Clock):
         )
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class LiveClock(Clock):
     """
     Provides a clock for live trading. All times are timezone aware UTC.

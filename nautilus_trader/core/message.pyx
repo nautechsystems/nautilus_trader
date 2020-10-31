@@ -27,7 +27,7 @@ cdef class Message:
 
     def __init__(
             self,
-            MessageType message_type,
+            MessageType msg_type,
             UUID identifier not None,
             datetime timestamp not None,
     ):
@@ -36,7 +36,7 @@ cdef class Message:
 
         Parameters
         ----------
-        message_type : MessageType
+        msg_type : MessageType
             The message type.
         identifier : UUID
             The message identifier.
@@ -49,9 +49,9 @@ cdef class Message:
             If message_type is UNDEFINED.
 
         """
-        Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
+        Condition.not_equal(msg_type, MessageType.UNDEFINED, "msg_type", "UNDEFINED")
 
-        self._message_type = message_type
+        self._type = msg_type
         self._id = identifier
         self._timestamp = timestamp
 
@@ -77,7 +77,7 @@ cdef class Message:
         MessageType
 
         """
-        return self._message_type
+        return self._type
 
     @property
     def id(self):

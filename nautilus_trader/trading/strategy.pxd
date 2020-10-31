@@ -35,6 +35,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -132,7 +133,7 @@ cdef class TradingStrategy:
 
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void modify_order(self, Order order, Quantity new_quantity=*, Price new_price=*) except *
+    cpdef void modify_order(self, PassiveOrder order, Quantity new_quantity=*, Price new_price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self, Symbol symbol) except *
     cpdef void flatten_position(self, Position position) except *

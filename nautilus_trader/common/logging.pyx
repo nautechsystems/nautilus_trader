@@ -423,7 +423,7 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(ex_string + stack_trace_lines)
+        self.error(f"{ex_string}{ stack_trace_lines}")
 
     cdef void _send_to_logger(self, LogLevel level, str message) except *:
         if not self.bypassed:

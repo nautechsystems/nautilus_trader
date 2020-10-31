@@ -419,8 +419,8 @@ cdef class Condition:
 
         """
         Condition.not_none(argument, param, ex_type)
-        Condition.list_type(list(argument.keys()), key_type, param + " keys", ex_type)
-        Condition.list_type(list(argument.values()), value_type, param + " values", ex_type)
+        Condition.list_type(list(argument.keys()), key_type, f"{param} keys", ex_type)
+        Condition.list_type(list(argument.values()), value_type, f"{param} values", ex_type)
 
     @staticmethod
     cdef void is_in(

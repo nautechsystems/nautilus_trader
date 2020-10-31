@@ -71,6 +71,8 @@ from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class SimulatedExchange:
     """
     Provides a simulated financial market exchange.
@@ -979,7 +981,7 @@ cdef class SimulatedExchange:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
         if order.is_completed:
-            self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
+            self._log.debug(f"Cannot cancel order, state was already {order.state_string()}.")
             return
 
         # Generate event
@@ -997,7 +999,7 @@ cdef class SimulatedExchange:
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         if order.is_completed:
-            self._log.debug(f"Cannot cancel order, state was already {order.state_as_string()}.")
+            self._log.debug(f"Cannot cancel order, state was already {order.state_string()}.")
             return
 
         # Generate event

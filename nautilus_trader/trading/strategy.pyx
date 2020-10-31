@@ -67,11 +67,14 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TradingStrategy:
     """
     The base class for all trading strategies.
@@ -1415,7 +1418,7 @@ cdef class TradingStrategy:
 
     cpdef void modify_order(
             self,
-            Order order,
+            PassiveOrder order,
             Quantity new_quantity=None,
             Price new_price=None,
     ) except *:
@@ -1428,7 +1431,7 @@ cdef class TradingStrategy:
 
         Parameters
         ----------
-        order : Order
+        order : PassiveOrder
             The order to modify.
         new_quantity : Quantity, optional
             The new quantity for the given order.

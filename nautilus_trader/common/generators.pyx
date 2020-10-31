@@ -23,6 +23,8 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class IdentifierGenerator:
     """
     Provides a generator for unique identifier strings.
@@ -187,6 +189,8 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         return ClientOrderId(self._generate())
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class PositionIdGenerator:
     """
     Provides a generator for unique PositionId(s).

@@ -30,6 +30,8 @@ from nautilus_trader.core.uuid cimport UUID
 _UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.
@@ -99,6 +101,8 @@ cdef class TimeEvent(Event):
         return self._name
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TimeEventHandler:
     """
     Represents a bundled event and handler.
@@ -130,6 +134,8 @@ cdef class TimeEventHandler:
         return self.event.timestamp >= other.event.timestamp
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class Timer:
     """
     The base class for all timers.
