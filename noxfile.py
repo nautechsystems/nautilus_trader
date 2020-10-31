@@ -80,7 +80,9 @@ def coverage(session: Session) -> None:
         "--cov-report=term",
         "--cov-report=xml",
         "--cov=nautilus_trader",
-        parallel=False,  # Odd Coverage/Cython bug when using pytest-xdist
+        # There is an odd Coverage/Cython bug when using pytest-xdist
+        # so we have to run tests single-threaded here.
+        parallel=False,
     )
     session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
 

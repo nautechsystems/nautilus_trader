@@ -87,7 +87,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
     elif ANNOTATION_MODE:
         build_dir = "build/annotated"
     else:
-        build_dir = "build"
+        build_dir = "build/optimized"
 
     distribution = Distribution(
         dict(
