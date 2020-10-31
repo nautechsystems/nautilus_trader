@@ -21,7 +21,7 @@ cdef class Indicator:
 
     def __init__(self, list params not None):
         """
-        Initialize a new instance of the Indicator abstract class.
+        Initialize a new instance of the `Indicator` class.
 
         Parameters
         ----------

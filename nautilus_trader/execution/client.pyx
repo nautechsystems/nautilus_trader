@@ -37,7 +37,7 @@ cdef class ExecutionClient:
             ExecutionEngine engine not None,
             Logger logger not None):
         """
-        Initialize a new instance of the ExecutionClient class.
+        Initialize a new instance of the `ExecutionClient` class.
 
         Parameters
         ----------

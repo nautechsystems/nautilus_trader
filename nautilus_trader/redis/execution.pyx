@@ -60,7 +60,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             dict config,
     ):
         """
-        Initialize a new instance of the RedisExecutionDatabase class.
+        Initialize a new instance of the `RedisExecutionDatabase` class.
 
         Parameters
         ----------

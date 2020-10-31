@@ -57,7 +57,7 @@ cdef class AccountState(Event):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the AccountState class.
+        Initialize a new instance of the `AccountState` class.
 
         Parameters
         ----------
@@ -163,7 +163,7 @@ cdef class OrderEvent(Event):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderEvent base class.
+        Initialize a new instance of the `OrderEvent` base class.
 
         Parameters
         ----------
@@ -227,7 +227,7 @@ cdef class OrderInitialized(OrderEvent):
             dict options not None,
     ):
         """
-        Initialize a new instance of the OrderInitialized class.
+        Initialize a new instance of the `OrderInitialized` class.
 
         Parameters
         ----------
@@ -380,7 +380,7 @@ cdef class OrderInvalid(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderInvalid class.
+        Initialize a new instance of the `OrderInvalid` class.
 
         Parameters
         ----------
@@ -441,7 +441,7 @@ cdef class OrderDenied(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderDenied class.
+        Initialize a new instance of the `OrderDenied` class.
 
         Parameters
         ----------
@@ -504,7 +504,7 @@ cdef class OrderSubmitted(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderSubmitted class.
+        Initialize a new instance of the `OrderSubmitted` class.
 
         Parameters
         ----------
@@ -574,7 +574,7 @@ cdef class OrderRejected(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderRejected class.
+        Initialize a new instance of the `OrderRejected` class.
 
         Parameters
         ----------
@@ -668,7 +668,7 @@ cdef class OrderAccepted(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderAccepted class.
+        Initialize a new instance of the `OrderAccepted` class.
 
         Parameters
         ----------
@@ -760,7 +760,7 @@ cdef class OrderWorking(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderWorking class.
+        Initialize a new instance of the `OrderWorking` class.
 
         Parameters
         ----------
@@ -973,7 +973,7 @@ cdef class OrderCancelReject(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderCancelReject class.
+        Initialize a new instance of the `OrderCancelReject` class.
 
         Parameters
         ----------
@@ -1087,7 +1087,7 @@ cdef class OrderCancelled(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderCancelled class.
+        Initialize a new instance of the `OrderCancelled` class.
 
         Parameters
         ----------
@@ -1178,7 +1178,7 @@ cdef class OrderModified(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderModified class.
+        Initialize a new instance of the `OrderModified` class.
 
         Parameters
         ----------
@@ -1298,7 +1298,7 @@ cdef class OrderExpired(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderExpired class.
+        Initialize a new instance of the `OrderExpired` class.
 
         Parameters
         ----------
@@ -1400,7 +1400,7 @@ cdef class OrderFilled(OrderEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the OrderFilled class.
+        Initialize a new instance of the `OrderFilled` class.
 
         Parameters
         ----------
@@ -1718,7 +1718,7 @@ cdef class PositionEvent(Event):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the PositionEvent base class.
+        Initialize a new instance of the `PositionEvent` class.
 
         Parameters
         ----------
@@ -1776,7 +1776,7 @@ cdef class PositionOpened(PositionEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the PositionOpened class.
+        Initialize a new instance of the `PositionOpened` class.
 
         Parameters
         ----------
@@ -1823,7 +1823,7 @@ cdef class PositionModified(PositionEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the PositionModified class.
+        Initialize a new instance of the `PositionModified` class.
 
         Parameters
         ----------
@@ -1879,7 +1879,7 @@ cdef class PositionClosed(PositionEvent):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the PositionClosed class.
+        Initialize a new instance of the `PositionClosed` class.
 
         Parameters
         ----------

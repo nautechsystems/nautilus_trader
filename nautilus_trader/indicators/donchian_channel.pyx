@@ -34,7 +34,7 @@ cdef class DonchianChannel(Indicator):
 
     def __init__(self, int period):
         """
-        Initialize a new instance of the DonchianChannel class.
+        Initialize a new instance of the `DonchianChannel` class.
 
         Parameters
         ----------

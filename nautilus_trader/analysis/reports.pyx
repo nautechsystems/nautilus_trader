@@ -34,7 +34,7 @@ cdef class ReportProvider:
 
     def __init__(self):
         """
-        Initialize a new instance of the ReportProvider class.
+        Initialize a new instance of the `ReportProvider` class.
         """
 
     cpdef object generate_orders_report(self, list orders):

@@ -37,7 +37,7 @@ cdef class WeightedMovingAverage(MovingAverage):
             PriceType price_type=PriceType.UNDEFINED,
     ):
         """
-        Initialize a new instance of the SimpleMovingAverage class.
+        Initialize a new instance of the `SimpleMovingAverage` class.
 
         Parameters
         ----------

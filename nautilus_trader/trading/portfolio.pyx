@@ -111,7 +111,7 @@ cdef class Portfolio(PortfolioFacade):
             Logger logger=None,
     ):
         """
-        Initialize a new instance of the Portfolio class.
+        Initialize a new instance of the `Portfolio` class.
 
         Parameters
         ----------

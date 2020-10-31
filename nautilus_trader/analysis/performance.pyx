@@ -53,7 +53,7 @@ cdef class PerformanceAnalyzer:
 
     def __init__(self):
         """
-        Initialize a new instance of the PerformanceAnalyzer class.
+        Initialize a new instance of the `PerformanceAnalyzer` class.
         """
         self._account_starting_balance = None
         self._account_balance = None

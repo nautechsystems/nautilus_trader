@@ -57,7 +57,7 @@ cdef class DataClient:
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the DataClient class.
+        Initialize a new instance of the `DataClient` class.
 
         venue : Venue
             The venue the client can provide data for.

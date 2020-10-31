@@ -45,7 +45,7 @@ cdef class MovingAverage(Indicator):
             PriceType price_type,
     ):
         """
-        Initialize a new instance of the abstract MovingAverage class.
+        Initialize a new instance of the `MovingAverage` class.
 
         Parameters
         ----------

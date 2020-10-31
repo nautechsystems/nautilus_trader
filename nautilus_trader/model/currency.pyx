@@ -95,7 +95,7 @@ cdef class Currency:
             CurrencyType currency_type,
     ):
         """
-        Initialize a new instance of the Currency class.
+        Initialize a new instance of the `Currency` class.
 
         Parameters
         ----------

@@ -73,7 +73,7 @@ cdef class BacktestEngine:
             FillModel fill_model=None,
     ):
         """
-        Initialize a new instance of the BacktestEngine class.
+        Initialize a new instance of the `BacktestEngine` class.
 
         Parameters
         ----------

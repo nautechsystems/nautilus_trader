@@ -44,7 +44,7 @@ cdef class TimeEvent(Event):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the TimeEvent class.
+        Initialize a new instance of the `TimeEvent` class.
 
         Parameters
         ----------
@@ -150,7 +150,7 @@ cdef class Timer:
             datetime stop_time=None,  # Can be None
     ):
         """
-        Initialize a new instance of the Timer class.
+        Initialize a new instance of the `Timer` class.
 
         Parameters
         ----------
@@ -328,7 +328,7 @@ cdef class TestTimer(Timer):
             datetime stop_time=None
     ):
         """
-        Initialize a new instance of the TestTimer class.
+        Initialize a new instance of the `TestTimer` class.
 
         Parameters
         ----------
@@ -415,7 +415,7 @@ cdef class LiveTimer(Timer):
             datetime stop_time=None,
     ):
         """
-        Initialize a new instance of the LiveTimer class.
+        Initialize a new instance of the `LiveTimer` class.
 
         Parameters
         ----------

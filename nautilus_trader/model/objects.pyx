@@ -37,7 +37,7 @@ cdef class Quantity(Decimal):
 
     def __init__(self, value=0, precision=None):
         """
-        Initialize a new instance of the Quantity class.
+        Initialize a new instance of the `Quantity` class.
 
         Parameters
         ----------
@@ -92,7 +92,7 @@ cdef class Price(Decimal):
 
     def __init__(self, value=0, precision=None):
         """
-        Initialize a new instance of the Price class.
+        Initialize a new instance of the `Price` class.
 
         Parameters
         ----------
@@ -126,7 +126,7 @@ cdef class Money(Decimal):
 
     def __init__(self, value, Currency currency not None):
         """
-        Initialize a new instance of the Money class.
+        Initialize a new instance of the `Money` class.
 
         Parameters
         ----------

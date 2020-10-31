@@ -42,7 +42,7 @@ cdef class BarBuilder:
 
     def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
         """
-        Initialize a new instance of the BarBuilder class.
+        Initialize a new instance of the `BarBuilder` class.
 
         Parameters
         ----------
@@ -199,7 +199,7 @@ cdef class BarAggregator:
             bint use_previous_close,
     ):
         """
-        Initialize a new instance of the BarAggregator class.
+        Initialize a new instance of the `BarAggregator` class.
 
         Parameters
         ----------
@@ -247,7 +247,7 @@ cdef class TickBarAggregator(BarAggregator):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the TickBarBuilder class.
+        Initialize a new instance of the `TickBarBuilder` class.
 
         Parameters
         ----------
@@ -326,7 +326,7 @@ cdef class TimeBarAggregator(BarAggregator):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the TimeBarAggregator class.
+        Initialize a new instance of the `TimeBarAggregator` class.
 
         Parameters
         ----------

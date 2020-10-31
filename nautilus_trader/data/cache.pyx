@@ -44,7 +44,7 @@ cdef class DataCache(DataCacheFacade):
 
     def __init__(self, Logger logger not None, dict config=None):
         """
-        Initialize a new instance of the DataEngine class.
+        Initialize a new instance of the `DataEngine` class.
 
         Parameters
         ----------

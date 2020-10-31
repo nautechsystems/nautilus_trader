@@ -43,7 +43,7 @@ cdef class SubmitOrder(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the SubmitOrder class.
+        Initialize a new instance of the `SubmitOrder` class.
 
         Parameters
         ----------
@@ -172,7 +172,7 @@ cdef class SubmitBracketOrder(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the SubmitBracketOrder class.
+        Initialize a new instance of the `SubmitBracketOrder` class.
 
         Parameters
         ----------
@@ -292,7 +292,7 @@ cdef class ModifyOrder(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the ModifyOrder class.
+        Initialize a new instance of the `ModifyOrder` class.
 
         Parameters
         ----------
@@ -421,7 +421,7 @@ cdef class CancelOrder(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the CancelOrder class.
+        Initialize a new instance of the `CancelOrder` class.
 
         Parameters
         ----------

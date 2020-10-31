@@ -49,7 +49,7 @@ cdef class UUID:
 
     def __init__(self, bytes value not None):
         """
-        Initialize a new instance of the UUID class.
+        Initialize a new instance of the `UUID` class.
 
         Parameters
         ----------

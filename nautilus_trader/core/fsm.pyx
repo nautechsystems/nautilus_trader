@@ -49,7 +49,7 @@ cdef class FiniteStateMachine:
             state_parser=str,
     ):
         """
-        Initialize a new instance of the FiniteStateMachine class.
+        Initialize a new instance of the `FiniteStateMachine` class.
 
         Parameters
         ----------
