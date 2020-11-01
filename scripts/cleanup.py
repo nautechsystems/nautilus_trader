@@ -33,7 +33,6 @@ DIRS_TO_CLEAN = {
     ".pytest_cache",
     "__pycache__",
     "build",
-    "build_annotated",
     "dist",
     "docs/build",
     "coverage.xml",
