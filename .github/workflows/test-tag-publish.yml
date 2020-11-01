@@ -54,8 +54,8 @@ jobs:
             .nox
             .pytest_cache
             build
-          key: ${{ runner.os }}-${{ matrix.python-version }}-test-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-test
+          key: ${{ runner.os }}-${{ matrix.python-version }}-test-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-test-poetry-
 
       # Run tests
       - name: Install Redis (Linux)
@@ -106,7 +106,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.pip-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-tag-pip
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pip
 
       # Install build dependencies
       - name: Install build dependencies
@@ -123,8 +123,8 @@ jobs:
           path: |
             ${{ steps.poetry-cache.outputs.dir }}
             build
-          key: ${{ runner.os }}-${{ matrix.python-version }}-tag-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-tag
+          key: ${{ runner.os }}-${{ matrix.python-version }}-tag-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-tag-poetry-
 
       # Install
       - name: Install
@@ -168,7 +168,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.pip-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-publish-pip
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pip
 
       # Install build dependencies
       - name: Install build dependencies
@@ -185,8 +185,8 @@ jobs:
           path: |
             ${{ steps.poetry-cache.outputs.dir }}
             build
-          key: ${{ runner.os }}-${{ matrix.python-version }}-publish-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-publish-
+          key: ${{ runner.os }}-${{ matrix.python-version }}-publish-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-publish-poetry-
 
       # Install
       - name: Install

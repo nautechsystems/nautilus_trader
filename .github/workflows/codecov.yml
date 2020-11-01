@@ -47,15 +47,20 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            ${{ steps.poetry-cache.outputs.dir }}
+            {{ steps.poetry-cache.outputs.dir }}
             .nox
             .pytest_cache
             build
-          key: ${{ runner.os }}-${{ matrix.python-version }}-codecov-poetry_nox-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-codecov-poetry_nox-
+          key: ${{ runner.os }}-${{ matrix.python-version }}-codecov-poetry-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-codecov-poetry-
 
       - name: Install Redis
         run: sudo apt-get install redis-server
+
+      - name: check .nox dir
+        run: |
+          ls -la .nox || echo ".nox does not exist"
+          ls -la .nox/coverage || echo ".nox/coverage does not exist"
 
       # Run coverage
       - name: Run coverage
