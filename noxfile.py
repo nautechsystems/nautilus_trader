@@ -7,12 +7,11 @@ nox.options.error_on_external_run = True
 
 
 def _setup_poetry(session: Session, *args, **kwargs) -> None:
-    """Ensure that our environment is peaceful before running the session.
+    """Ensure that our environment is peaceful before running the session."""
+    # Makes sure that poetry and our build requirements are installed.
+    # Once they are, the package dependencies can be installed and the
+    # actual package can be compiled.
 
-    This makes sure that poetry and our build requirements are installed.
-    Once they are, the package dependencies can be installed and the
-    actual package can be compiled.
-    """
     # No need to copy built *.so files back into the source tree
     env = kwargs.get("env", {})
     # Skip the build copy when using Nox.
