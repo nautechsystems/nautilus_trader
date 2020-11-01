@@ -5,12 +5,12 @@ on:
     branches-ignore: [develop, master]
 
 jobs:
-  run:
+  test:
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest ]
-        python-version: [ 3.8 ]
+        python-version: [ 3.6, 3.7, 3.8 ]
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 

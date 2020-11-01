@@ -1,8 +1,8 @@
-name: test-publish
+name: test-tag-publish
 
-on:
-  push:
-    branches: [develop, master]
+# This performs more thorough
+
+on: push
 
 jobs:
   test:
@@ -49,47 +49,105 @@ jobs:
           path: |
             ${{ steps.poetry-cache.outputs.dir }}
             .nox
+            .pytest_cache
+            build
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-${{ hashFiles('**/poetry.lock') }}
           restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-
 
       # Run tests
-      - name: Run general test suite
-        run: nox -s tests --non-interactive
-
       - name: Install Redis (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get install redis-server
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
         run: brew install redis
-      - name: Run integration test suite (Linux/macOS)
+
+      - name: Run tests (with integrations test suite) [Linux/macOS]
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
           redis-server --daemonize yes
-          nox -s integration_tests --non-interactive
+          nox -s tests_with_integration
           redis-cli shutdown
 
+      - name: Run tests (without integrations test suite) [Windows]
+        if: runner.os == 'Windows'
+        run: nox -s tests_without_integration
+
+
   tag:
-    needs: [test]
-    runs-on: ubuntu-latest
-    name: Commit tagging
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: salsify/action-detect-and-tag-new-version@v2
-        with:
-          create-tag: ${{ github.ref == 'refs/heads/master' }} # only create new tag on master
-          version-command: poetry version
-
-  publish:
     if: github.ref == 'refs/heads/master'
-    needs: [test]
+    needs: [ test ]
+
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        # We only actually run on a single OS/Python pair, but use the matrix
+        # form so that our Action calls can mirror the main test flow.
+        python-version: [ 3.8 ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # Python setup
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Setup Pip caching
+      - name: Get Pip cache dir
+        id: pip-cache
+        run: echo "::set-output name=dir::$(pip cache dir)"
+
+      - name: Pip cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.pip-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-pip
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox --use-feature=2020-resolver
+
+      # Setup Poetry caching
+      - name: Get Poetry cache dir
+        id: poetry-cache
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+
+      - name: Poetry/Nox cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ steps.poetry-cache.outputs.dir }}
+            .nox
+            .pytest_cache
+            build
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-
+
+      # Install
+      - name: Install
+        run: poetry install
+
+      # Tag the commit with the library version
+      - name: Create git tag
+        uses: salsify/action-detect-and-tag-new-version@v2
+        with:
+          version-command: poetry version
+
+
+  # Publish if we're on master and the commit is tagged
+  publish:
+    if: github.ref == 'refs/heads/master'
+    needs: [ test, tag ]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
         python-version: [ 3.6, 3.7, 3.8 ]
-    name: publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -132,32 +190,14 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-${{ hashFiles('**/poetry.lock') }}
           restore-keys: ${{ runner.os }}-${{ matrix.python-version }}-poetry_nox-
 
-      # Install/build
+      # Install
       - name: Install/build
-        run: |
-          poetry install
-          poetry build
-
-      # Tag the commit with the library version (if master)
-      - name: Create git tag
-        uses: salsify/action-detect-and-tag-new-version@v2
-        if: github.ref == 'refs/heads/master'
-        with:
-          version-command: poetry version
+        run: poetry install
 
       # Publish
-      - name: Publish to test PyPi (if on develop)
-        if: github.ref == 'refs/heads/develop'
+      - name: Publish to production PyPi
+        if: startsWith(github.ref, 'refs/tags')
         env:
           POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
           POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: |
-          poetry config repositories.test-pypi https://test.pypi.org/legacy/
-          poetry publish -r test-pypi --build --no-interaction
-
-      - name: Publish to production PyPi (if on master)
-        if: github.ref == 'refs/heads/master'
-        env:
-          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish --build --no-interaction
+        run: poetry publish --build
