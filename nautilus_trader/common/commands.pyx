@@ -31,7 +31,7 @@ cdef class Connect(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Connect class.
+        Initialize a new instance of the `Connect` class.
 
         Parameters
         ----------
@@ -51,8 +51,8 @@ cdef class Connect(Command):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self._venue}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
     @property
     def venue(self):
@@ -79,7 +79,7 @@ cdef class Disconnect(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Disconnect class.
+        Initialize a new instance of the `Disconnect` class.
 
         Parameters
         ----------
@@ -99,8 +99,8 @@ cdef class Disconnect(Command):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self._venue}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
     @property
     def venue(self):
@@ -128,7 +128,7 @@ cdef class DataCommand(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the DataCommand class.
+        Initialize a new instance of the `DataCommand` class.
 
         Parameters
         ----------
@@ -151,8 +151,8 @@ cdef class DataCommand(Command):
         return (f"{type(self).__name__}("
                 f"data_type={self._data_type}, "
                 f"options={self._options}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
     @property
     def data_type(self):
@@ -192,7 +192,7 @@ cdef class Subscribe(DataCommand):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Subscribe class.
+        Initialize a new instance of the `Subscribe` class.
 
         Parameters
         ----------
@@ -227,7 +227,7 @@ cdef class Unsubscribe(DataCommand):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the Unsubscribe class.
+        Initialize a new instance of the `Unsubscribe` class.
 
         Parameters
         ----------
@@ -262,7 +262,7 @@ cdef class RequestData(DataCommand):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the RequestData class.
+        Initialize a new instance of the `RequestData` class.
 
         Parameters
         ----------
@@ -284,6 +284,8 @@ cdef class RequestData(DataCommand):
         )
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class KillSwitch(Command):
     """
     Represents a command to aggressively shutdown the trading system.
@@ -296,7 +298,7 @@ cdef class KillSwitch(Command):
             datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the KillSwitch class.
+        Initialize a new instance of the `KillSwitch` class.
 
         Parameters
         ----------

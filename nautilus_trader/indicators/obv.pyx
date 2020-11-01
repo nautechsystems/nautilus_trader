@@ -27,7 +27,7 @@ cdef class OnBalanceVolume(Indicator):
 
     def __init__(self, int period=0):
         """
-        Initialize a new instance of the OnBalanceVolume class.
+        Initialize a new instance of the `OnBalanceVolume` class.
 
         Parameters
         ----------

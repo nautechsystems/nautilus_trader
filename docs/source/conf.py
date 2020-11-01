@@ -45,6 +45,8 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.doctest",
     "sphinx.ext.coverage",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
     "numpydoc",
 ]
 
@@ -66,6 +68,9 @@ todo_include_todos = False
 autosummary_generate = True
 autodoc_member_order = 'bysource'
 numpydoc_show_class_members = True
+
+napoleon_google_docstring = False
+napoleon_use_rtype = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -96,5 +101,12 @@ def skip(app, what, name, obj, would_skip, options):  # noqa
     return would_skip
 
 
+def process_docstring(app, what, name, obj, options, lines):  # noqa
+    # loop through each line in the docstring and remove file reference
+    for i in range(len(lines)):
+        pass  # Nothing to do yet
+
+
 def setup(app):  # noqa
     app.connect("autodoc-skip-member", skip)
+    app.connect("autodoc-process-docstring", process_docstring)

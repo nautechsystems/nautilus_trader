@@ -29,7 +29,7 @@ cdef class SpreadAnalyzer(Indicator):
 
     def __init__(self, Symbol symbol not None, int capacity):
         """
-        Initialize a new instance of the SpreadAnalyzer class.
+        Initialize a new instance of the `SpreadAnalyzer` class.
 
         Parameters
         ----------

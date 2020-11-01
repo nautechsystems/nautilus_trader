@@ -67,6 +67,8 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class DataEngine:
     """
     Provides a high-performance data engine for managing many `DataClient`
@@ -82,7 +84,7 @@ cdef class DataEngine:
             dict config=None,
     ):
         """
-        Initialize a new instance of the DataEngine class.
+        Initialize a new instance of the `DataEngine` class.
 
         Parameters
         ----------
@@ -1014,7 +1016,7 @@ cdef class BulkTickBarBuilder:
             callback not None: callable,
     ):
         """
-        Initialize a new instance of the BulkTickBarBuilder class.
+        Initialize a new instance of the `BulkTickBarBuilder` class.
 
         Parameters
         ----------
@@ -1037,6 +1039,8 @@ cdef class BulkTickBarBuilder:
         self.aggregator = TickBarAggregator(bar_type, self._add_bar, logger)
         self.callback = callback
 
+    # noinspection: Object has warned attribute
+    # noinspection PyUnresolvedReferences
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:
@@ -1074,7 +1078,7 @@ cdef class BulkTimeBarUpdater:
 
     def __init__(self, TimeBarAggregator aggregator not None):
         """
-        Initialize a new instance of the BulkTimeBarUpdater class.
+        Initialize a new instance of the `BulkTimeBarUpdater` class.
 
         Parameters
         ----------
@@ -1085,6 +1089,8 @@ cdef class BulkTimeBarUpdater:
         self.aggregator = aggregator
         self.start_time = self.aggregator.next_close - self.aggregator.interval
 
+    # noinspection: Object has warned attribute
+    # noinspection PyUnresolvedReferences
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void receive(self, list ticks) except *:

@@ -44,7 +44,6 @@ CPU_COUNT = os.cpu_count()
 # Cython build options
 Options.annotate = True                # Create annotated html files for each .pyx
 Options.docstrings = True              # Include docstrings in modules
-Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.fast_fail = True               # Abort compilation on first error
 Options.warning_errors = True          # Treat compiler warnings as errors
 PROFILE_HOOKS = False                  # Write profiling hooks into methods (x2 performance overhead)

@@ -22,7 +22,7 @@ class ObjectStorer:
     """
 
     def __init__(self):
-        """Initialize a new instance of the ObjectStorer class."""
+        """Initialize a new instance of the `ObjectStorer` class."""
         self.count = 0
         self._store = []
 
@@ -77,7 +77,7 @@ class MockExecutionClient(ExecutionClient):
             logger,
     ):
         """
-        Initialize a new instance of the MockExecutionClient class.
+        Initialize a new instance of the `MockExecutionClient` class.
 
         Parameters
         ----------

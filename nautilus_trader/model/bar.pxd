@@ -23,9 +23,12 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BarSpecification:
-    cdef int _step
-    cdef BarAggregation _aggregation
-    cdef PriceType _price_type
+    cdef readonly int step
+    """The specified step size for bar aggregation.\n\n:returns: `int`"""
+    cdef readonly BarAggregation aggregation
+    """The specified aggregation method for bars.\n\n:returns: `BarAggregation`"""
+    cdef readonly PriceType price_type
+    """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
     @staticmethod
     cdef BarSpecification from_string_c(str value)
@@ -34,8 +37,10 @@ cdef class BarSpecification:
 
 
 cdef class BarType:
-    cdef Symbol _symbol
-    cdef BarSpecification _spec
+    cdef readonly Symbol symbol
+    """The symbol of the bar type.\n\n:returns: `Symbol`"""
+    cdef readonly BarSpecification spec
+    """The specification of the bar type.\n\n:returns: `BarSpecification`"""
 
     @staticmethod
     cdef BarType from_string_c(str value)
@@ -45,13 +50,20 @@ cdef class BarType:
 
 
 cdef class Bar:
-    cdef Price _open
-    cdef Price _high
-    cdef Price _low
-    cdef Price _close
-    cdef Quantity _volume
-    cdef datetime _timestamp
-    cdef bint _checked
+    cdef readonly Price open
+    """The open price of the bar.\n\n:returns: `Price`"""
+    cdef readonly Price high
+    """The high price of the bar.\n\n:returns: `Price`"""
+    cdef readonly Price low
+    """The low price of the bar.\n\n:returns: `Price`"""
+    cdef readonly Price close
+    """The close price of the bar.\n\n:returns: `Price`"""
+    cdef readonly Quantity volume
+    """The volume of the bar.\n\n:returns: `Quantity`"""
+    cdef readonly datetime timestamp
+    """The timestamp the bar closed at.\n\n:returns: `datetime`"""
+    cdef readonly bint checked
+    """If the input values were integrity checked.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef Bar from_serializable_string_c(str value)

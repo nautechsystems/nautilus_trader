@@ -27,7 +27,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
 
     def __init__(self):
         """
-        Initialize a new instance of the VolumeWeightedAveragePrice class.
+        Initialize a new instance of the `VolumeWeightedAveragePrice` class.
         """
         super().__init__(params=[])
 

@@ -24,12 +24,18 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class QuoteTick:
-    cdef Symbol _symbol
-    cdef Price _bid
-    cdef Price _ask
-    cdef Quantity _bid_size
-    cdef Quantity _ask_size
-    cdef datetime _timestamp
+    cdef readonly Symbol symbol
+    """The ticks symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Price bid
+    """The ticks best quoted bid price.\n\n:returns: `Price`"""
+    cdef readonly Price ask
+    """The ticks best quoted ask price.\n\n:returns: `Price`"""
+    cdef readonly Quantity bid_size
+    """The ticks quoted bid size.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity ask_size
+    """The ticks quoted ask size.\n\n:returns: `Quantity`"""
+    cdef readonly datetime timestamp
+    """The ticks timestamp.\n\n:returns: `datetime`"""
 
     cpdef Price extract_price(self, PriceType price_type)
     cpdef Quantity extract_volume(self, PriceType price_type)
@@ -40,12 +46,18 @@ cdef class QuoteTick:
 
 
 cdef class TradeTick:
-    cdef Symbol _symbol
-    cdef Price _price
-    cdef Quantity _size
-    cdef Maker _maker
-    cdef TradeMatchId _match_id
-    cdef datetime _timestamp
+    cdef readonly Symbol symbol
+    """The ticks symbol.\n\n:returns: `Symbol`"""
+    cdef readonly Price price
+    """The ticks traded price.\n\n:returns: `Price`"""
+    cdef readonly Quantity size
+    """The ticks traded size.\n\n:returns: `Quantity`"""
+    cdef readonly Maker maker
+    """ The ticks trade maker side (BUYER or SELLER).\n\n:returns: `Maker`"""
+    cdef readonly TradeMatchId match_id
+    """The ticks trade match identifier.\n\n:returns: `TradeMatchId`"""
+    cdef readonly datetime timestamp
+    """The ticks timestamp.\n\n:returns: `datetime`"""
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values)

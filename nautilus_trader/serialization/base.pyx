@@ -47,7 +47,7 @@ cdef class DictionarySerializer(Serializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the DictionarySerializer class.
+        Initialize a new instance of the `DictionarySerializer` class.
         """
         super().__init__()
 
@@ -68,7 +68,7 @@ cdef class InstrumentSerializer(Serializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the InstrumentSerializer class.
+        Initialize a new instance of the `InstrumentSerializer` class.
 
         """
         super().__init__()
@@ -90,7 +90,7 @@ cdef class OrderSerializer(Serializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the OrderSerializer class.
+        Initialize a new instance of the `OrderSerializer` class.
 
         """
         super().__init__()
@@ -112,7 +112,7 @@ cdef class CommandSerializer(Serializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the CommandSerializer class.
+        Initialize a new instance of the `CommandSerializer` class.
         """
         super().__init__()
 
@@ -133,7 +133,7 @@ cdef class EventSerializer(Serializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the EventSerializer class.
+        Initialize a new instance of the `EventSerializer` class.
         """
         super().__init__()
 

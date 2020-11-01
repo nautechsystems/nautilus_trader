@@ -97,6 +97,8 @@ cdef class CSVBarDataLoader:
         )
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class InstrumentLoader:
     """
     Provides instrument template methods for backtesting.

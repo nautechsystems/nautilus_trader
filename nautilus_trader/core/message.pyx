@@ -27,16 +27,16 @@ cdef class Message:
 
     def __init__(
             self,
-            MessageType message_type,
+            MessageType msg_type,
             UUID identifier not None,
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the Message class.
+        Initialize a new instance of the `Message` class.
 
         Parameters
         ----------
-        message_type : MessageType
+        msg_type : MessageType
             The message type.
         identifier : UUID
             The message identifier.
@@ -49,59 +49,23 @@ cdef class Message:
             If message_type is UNDEFINED.
 
         """
-        Condition.not_equal(message_type, MessageType.UNDEFINED, "message_type", "UNDEFINED")
+        Condition.not_equal(msg_type, MessageType.UNDEFINED, "msg_type", "UNDEFINED")
 
-        self._message_type = message_type
-        self._id = identifier
-        self._timestamp = timestamp
+        self.type = msg_type
+        self.id = identifier
+        self.timestamp = timestamp
 
     def __eq__(self, Message other) -> bool:
-        return type(self) == type(other) and self._id == other.id
+        return type(self) == type(other) and self.id == other.id
 
     def __ne__(self, Message other) -> bool:
-        return type(self) != type(other) or self._id != other.id
+        return type(self) != type(other) or self.id != other.id
 
     def __hash__(self) -> int:
-        return hash(self._id)
+        return hash(self.id)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self._id}, timestamp={self._timestamp})"
-
-    @property
-    def type(self):
-        """
-        The generic message type.
-
-        Returns
-        -------
-        MessageType
-
-        """
-        return self._message_type
-
-    @property
-    def id(self):
-        """
-        The message identifier.
-
-        Returns
-        -------
-        UUID
-
-        """
-        return self._id
-
-    @property
-    def timestamp(self):
-        """
-        The message initialization timestamp.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._timestamp
+        return f"{type(self).__name__}(id={self.id}, timestamp={self.timestamp})"
 
 
 cdef class Command(Message):
@@ -111,7 +75,7 @@ cdef class Command(Message):
 
     def __init__(self, UUID identifier not None, datetime timestamp not None):
         """
-        Initialize a new instance of the Command class.
+        Initialize a new instance of the `Command` class.
 
         Parameters
         ----------
@@ -135,7 +99,7 @@ cdef class Document(Message):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the Document class.
+        Initialize a new instance of the `Document` class.
 
         Parameters
         ----------
@@ -159,7 +123,7 @@ cdef class Event(Message):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the Event class.
+        Initialize a new instance of the `Event` class.
 
         Parameters
         ----------
@@ -179,7 +143,7 @@ cdef class Request(Message):
 
     def __init__(self, UUID identifier not None, datetime timestamp not None):
         """
-        Initialize a new instance of the Request class.
+        Initialize a new instance of the `Request` class.
 
         Parameters
         ----------
@@ -204,7 +168,7 @@ cdef class Response(Message):
             datetime timestamp not None,
     ):
         """
-        Initialize a new instance of the Response class.
+        Initialize a new instance of the `Response` class.
 
         Parameters
         ----------
@@ -218,22 +182,10 @@ cdef class Response(Message):
         """
         super().__init__(MessageType.RESPONSE, identifier, timestamp)
 
-        self._correlation_id = correlation_id
+        self.correlation_id = correlation_id
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"correlation_id={self._correlation_id}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
-
-    @property
-    def correlation_id(self):
-        """
-        The message correlation identifier.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._correlation_id
+                f"correlation_id={self.correlation_id}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")

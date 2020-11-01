@@ -31,7 +31,7 @@ cdef class BidAskMinMax(Indicator):
 
     def __init__(self, Symbol symbol not None, timedelta lookback not None):
         """
-        Initialize a new instance of the BidAskMinMax class.
+        Initialize a new instance of the `BidAskMinMax` class.
 
         Parameters
         ----------
@@ -88,7 +88,7 @@ cdef class WindowedMinMaxPrices:
 
     def __init__(self, timedelta lookback not None):
         """
-        Initialize a new instance of the WindowedMinMaxPrices class.
+        Initialize a new instance of the `WindowedMinMaxPrices` class.
 
         Parameters
         ----------

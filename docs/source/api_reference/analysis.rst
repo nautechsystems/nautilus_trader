@@ -11,7 +11,6 @@ Performance
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Reports
@@ -21,5 +20,4 @@ Reports
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource

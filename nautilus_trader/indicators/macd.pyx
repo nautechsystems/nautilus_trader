@@ -34,7 +34,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
     ):
         """
-        Initialize a new instance of the MovingAverageConvergenceDivergence class.
+        Initialize a new instance of the `MovingAverageConvergenceDivergence` class.
 
         Parameters
         ----------

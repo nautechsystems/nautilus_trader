@@ -47,7 +47,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the LiveExecutionEngine class.
+        Initialize a new instance of the `LiveExecutionEngine` class.
 
         Parameters
         ----------

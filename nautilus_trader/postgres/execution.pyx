@@ -49,7 +49,7 @@ cdef class PostgresExecutionDatabase(ExecutionDatabase):
             dict config,
     ):
         """
-        Initialize a new instance of the PostgresExecutionDatabase class.
+        Initialize a new instance of the `PostgresExecutionDatabase` class.
 
         Parameters
         ----------

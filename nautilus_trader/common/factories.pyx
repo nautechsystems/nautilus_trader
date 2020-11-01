@@ -32,6 +32,8 @@ from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.order cimport StopMarketOrder
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
@@ -46,13 +48,13 @@ cdef class OrderFactory:
             int initial_count=0,
     ):
         """
-        Initialize a new instance of the OrderFactory class.
+        Initialize a new instance of the `OrderFactory` class.
 
         Parameters
         ----------
         trader_id : TraderId
             The trader identifier (only numerical tag sent to exchange/broker).
-exchange/broker        strategy_id : StrategyId
+        strategy_id : StrategyId
             The strategy identifier (only numerical tag sent to exchange/broker).
         clock : Clock
             The clock for the component.

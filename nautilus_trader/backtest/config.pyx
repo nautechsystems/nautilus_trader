@@ -50,7 +50,7 @@ cdef class BacktestConfig:
             str log_file_path not None="backtests/",
     ):
         """
-        Initialize a new instance of the BacktestConfig class.
+        Initialize a new instance of the `BacktestConfig` class.
 
         Parameters
         ----------

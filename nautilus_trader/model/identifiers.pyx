@@ -26,7 +26,7 @@ cdef class Identifier:
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the Identifier class.
+        Initialize a new instance of the `Identifier` class.
 
         Parameters
         ----------
@@ -41,46 +41,34 @@ cdef class Identifier:
         """
         Condition.valid_string(value, "value")
 
-        self._value = value
+        self.value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return type(self) == type(other) and self._value == other.value
+        return type(self) == type(other) and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return type(self) != type(other) or self._value != other.value
+        return type(self) != type(other) or self.value != other.value
 
     def __lt__(self, Identifier other) -> bool:
-        return self._value < other.value
+        return self.value < other.value
 
     def __le__(self, Identifier other) -> bool:
-        return self._value <= other.value
+        return self.value <= other.value
 
     def __gt__(self, Identifier other) -> bool:
-        return self._value > other.value
+        return self.value > other.value
 
     def __ge__(self, Identifier other) -> bool:
-        return self._value >= other.value
+        return self.value >= other.value
 
     def __hash__(self) -> int:
-        return hash(self._value)
+        return hash(self.value)
 
     def __str__(self) -> str:
-        return self._value
+        return self.value
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self._value}')"
-
-    @property
-    def value(self):
-        """
-        The identifier value.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._value
+        return f"{type(self).__name__}('{self.value}')"
 
 
 cdef class Symbol(Identifier):
@@ -92,7 +80,7 @@ cdef class Symbol(Identifier):
 
     def __init__(self, str code, Venue venue not None):
         """
-        Initialize a new instance of the Symbol class.
+        Initialize a new instance of the `Symbol` class.
 
         Parameters
         ----------
@@ -110,49 +98,11 @@ cdef class Symbol(Identifier):
         Condition.valid_string(code, "code")
         super().__init__(f"{code}.{venue.value}")
 
-        self._code = code
-        self._venue = venue
-
-    @property
-    def code(self):
-        """
-        Returns
-        -------
-        str
-            The identifier code for the symbol.
-
-        """
-        return self._code
-
-    @property
-    def venue(self):
-        """
-        Returns
-        -------
-        Venue
-            The venue for the symbol.
-
-        """
-        return self._venue
+        self.code = code
+        self.venue = venue
 
     @staticmethod
     cdef Symbol from_string_c(str value):
-        """
-        Return a symbol parsed from the given string value. Must be correctly
-        formatted with two valid strings either side of a period.
-
-        Example: "AUD/USD.FXCM".
-
-        Parameters
-        ----------
-        value : str
-            The symbol string value to parse.
-
-        Returns
-        -------
-        Symbol
-
-        """
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('.')
@@ -187,7 +137,7 @@ cdef class Venue(Identifier):
 
     def __init__(self, str name):
         """
-        Initialize a new instance of the Venue class.
+        Initialize a new instance of the `Venue` class.
 
         Parameters
         ----------
@@ -211,7 +161,7 @@ cdef class Exchange(Venue):
 
     def __init__(self, str name):
         """
-        Initialize a new instance of the Exchange class.
+        Initialize a new instance of the `Exchange` class.
 
         Parameters
         ----------
@@ -234,7 +184,7 @@ cdef class Brokerage(Identifier):
 
     def __init__(self, str name):
         """
-        Initialize a new instance of the Brokerage class.
+        Initialize a new instance of the `Brokerage` class.
 
         Parameters
         ----------
@@ -257,7 +207,7 @@ cdef class IdTag(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the IdTag class.
+        Initialize a new instance of the `IdTag` class.
 
         Parameters
         ----------
@@ -281,7 +231,7 @@ cdef class TraderId(Identifier):
 
     def __init__(self, str name, str tag):
         """
-        Initialize a new instance of the TraderId class.
+        Initialize a new instance of the `TraderId` class.
 
         Parameters
         ----------
@@ -305,54 +255,11 @@ cdef class TraderId(Identifier):
         Condition.valid_string(tag, "tag")
         super().__init__(f"{name}-{tag}")
 
-        self._name = name
-        self._tag = IdTag(tag)
-
-    @property
-    def name(self):
-        """
-        The name identifier of the trader.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._name
-
-    @property
-    def tag(self):
-        """
-        The order identifier tag of the trader.
-
-        Returns
-        -------
-        IdTag
-
-        """
-        return self._tag
+        self.name = name
+        self.tag = IdTag(tag)
 
     @staticmethod
     cdef TraderId from_string_c(str value):
-        """
-        Return a trader identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Its is expected a trader identifier  is the abbreviated name of the
-        trader with an order identifier tag number separated by a hyphen.
-
-        Example: "TESTER-001".
-
-        Parameters
-        ----------
-        value : str
-            The value for the strategy identifier.
-
-        Returns
-        -------
-        TraderId
-
-        """
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
@@ -382,7 +289,8 @@ cdef class TraderId(Identifier):
         return TraderId.from_string_c(value)
 
 
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId("S", "NULL")
+cdef str _NULL_STRATEGY_ID_STR = "S-NULL"
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId.from_string_c(_NULL_STRATEGY_ID_STR)
 
 cdef class StrategyId(Identifier):
     """
@@ -392,7 +300,7 @@ cdef class StrategyId(Identifier):
 
     def __init__(self, str name, str tag):
         """
-        Initialize a new instance of the StrategyId class.
+        Initialize a new instance of the `StrategyId` class.
 
         Parameters
         ----------
@@ -414,106 +322,21 @@ cdef class StrategyId(Identifier):
         Condition.valid_string(tag, "tag")
         super().__init__(f"{name}-{tag}")
 
-        self._name = name
-        self._tag = IdTag(tag)
-
-    @property
-    def name(self):
-        """
-        The name identifier of the strategy.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._name
-
-    @property
-    def tag(self):
-        """
-        The order identifier tag of the strategy.
-
-        Returns
-        -------
-        IdTag
-
-        """
-        return self._tag
+        self.name = name
+        self.tag = IdTag(tag)
 
     @staticmethod
-    cdef StrategyId null():
-        """
-        Returns a strategy identifier with a `NULL` value.
-
-        Returns
-        -------
-        StrategyId
-
-        """
+    cdef inline StrategyId null_c():
         return _NULL_STRATEGY_ID
 
-    @staticmethod
-    def null_py():
-        """
-        Returns a strategy identifier with a `NULL` value.
+    cdef inline bint is_null(self) except *:
+        return self.value == _NULL_STRATEGY_ID_STR
 
-        Returns
-        -------
-        StrategyId
-
-        """
-        return _NULL_STRATEGY_ID
-
-    @property
-    def is_null(self):
-        """
-        Return a value indicating whether this strategy identifier is equal to
-        the null identifier 'NULL'.
-
-        Returns
-        -------
-        bool
-            True if NULL, else False
-
-        """
-        return self.value == "S-NULL"
-
-    @property
-    def not_null(self):
-        """
-        Return a value indicating whether this strategy identifier is not equal
-        to the null identifier 'NULL'.
-
-        Returns
-        -------
-        bool
-            True if not NULL, else False.
-
-        """
-        return self.value != "S-NULL"
+    cdef inline bint not_null(self) except *:
+        return self.value != _NULL_STRATEGY_ID_STR
 
     @staticmethod
     cdef StrategyId from_string_c(str value):
-        """
-        Return a strategy identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen.
-
-        Example: "EMACross-001".
-
-        Parameters
-        ----------
-        value : str
-            The value for the strategy identifier.
-
-        Returns
-        -------
-        StrategyId
-
-        """
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
@@ -542,6 +365,18 @@ cdef class StrategyId(Identifier):
         """
         return StrategyId.from_string_c(value)
 
+    @staticmethod
+    def null():
+        """
+        Returns a strategy identifier with an `S-NULL` value.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return _NULL_STRATEGY_ID
+
 
 cdef class Issuer(Identifier):
     """
@@ -550,7 +385,7 @@ cdef class Issuer(Identifier):
 
     def __init__(self, str name):
         """
-        Initialize a new instance of the Issuer class.
+        Initialize a new instance of the `Issuer` class.
 
         Parameters
         ----------
@@ -579,7 +414,7 @@ cdef class AccountId(Identifier):
             AccountType account_type,
     ):
         """
-        Initialize a new instance of the AccountId class.
+        Initialize a new instance of the `AccountId` class.
 
         Parameters
         ----------
@@ -600,74 +435,15 @@ cdef class AccountId(Identifier):
         """
         super().__init__(f"{issuer}-{identifier}-{account_type_to_string(account_type)}")
 
-        self._issuer = Issuer(issuer)
-        self._identifier = Identifier(identifier)
-        self._account_type = account_type
-
-    @property
-    def issuer(self):
-        """
-        The account issuer:
-
-        Returns
-        -------
-        Issuer
-
-        """
-        return self._issuer
-
-    @property
-    def identifier(self):
-        """
-        The account identifier value.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._identifier
-
-    @property
-    def account_type(self):
-        """
-        The account type.
-
-        Returns
-        -------
-        AccountType
-
-        """
-        return self._account_type
+        self.issuer = Issuer(issuer)
+        self.identifier = Identifier(identifier)
+        self.account_type = account_type
 
     cdef Venue issuer_as_venue(self):
-        """
-        Return the account issuer as a venue.
-
-        Returns
-        -------
-        Venue
-        """
-        return Venue(self._issuer.value)
+        return Venue(self.issuer.value)
 
     @staticmethod
     cdef AccountId from_string_c(str value):
-        """
-        Return an account identifier from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Example: "FXCM-02851908-DEMO".
-
-        Parameters
-        ----------
-        value : str
-            The value for the account identifier.
-
-        Returns
-        -------
-        AccountId
-
-        """
         Condition.valid_string(value, "value")
 
         cdef list pieces = value.split('-', maxsplit=2)
@@ -710,7 +486,7 @@ cdef class BracketOrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the OrderId class.
+        Initialize a new instance of the `OrderId` class.
 
         Parameters
         ----------
@@ -735,7 +511,7 @@ cdef class ClientOrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the ClientOrderId class.
+        Initialize a new instance of the `ClientOrderId` class.
 
         Parameters
         ----------
@@ -760,7 +536,7 @@ cdef class ClientOrderLinkId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the ClientOrderId class.
+        Initialize a new instance of the `ClientOrderId` class.
 
         Parameters
         ----------
@@ -783,7 +559,7 @@ cdef class OrderId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the OrderId class.
+        Initialize a new instance of the `OrderId` class.
 
         Parameters
         ----------
@@ -799,7 +575,8 @@ cdef class OrderId(Identifier):
         super().__init__(value)
 
 
-cdef PositionId _NULL_POSITION_ID = PositionId("P-NULL")
+cdef str _NULL_POSITION_ID_STR = "P-NULL"
+cdef PositionId _NULL_POSITION_ID = PositionId(_NULL_POSITION_ID_STR)
 
 cdef class PositionId(Identifier):
     """
@@ -808,7 +585,7 @@ cdef class PositionId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the PositionId class.
+        Initialize a new instance of the `PositionId` class.
 
         Parameters
         ----------
@@ -829,19 +606,17 @@ cdef class PositionId(Identifier):
         super().__init__(value)
 
     @staticmethod
-    cdef PositionId null():
-        """
-        Returns a position identifier with a `P-NULL` value.
-
-        Returns
-        -------
-        PositionId
-
-        """
+    cdef PositionId null_c():
         return _NULL_POSITION_ID
+
+    cdef bint is_null(self) except *:
+        return self.value == _NULL_POSITION_ID_STR
+
+    cdef bint not_null(self) except *:
+        return self.value != _NULL_POSITION_ID_STR
 
     @staticmethod
-    def null_py():
+    def null():
         """
         Returns a position identifier with a `P-NULL` value.
 
@@ -851,34 +626,6 @@ cdef class PositionId(Identifier):
 
         """
         return _NULL_POSITION_ID
-
-    @property
-    def is_null(self):
-        """
-        Return a value indicating whether this position identifier is equal to
-        the null identifier 'P-NULL'.
-
-        Returns
-        -------
-        bool
-            True if NULL, else False.
-
-        """
-        return self.value == "P-NULL"
-
-    @property
-    def not_null(self):
-        """
-        Return a value indicating whether this position identifier is not equal
-        to the null identifier 'P-NULL'.
-
-        Returns
-        -------
-        bool
-            True if not NULL, else False.
-
-        """
-        return self.value != "P-NULL"
 
 
 cdef class ExecutionId(Identifier):
@@ -888,7 +635,7 @@ cdef class ExecutionId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the ExecutionId class.
+        Initialize a new instance of the `ExecutionId` class.
 
         Parameters
         ----------
@@ -911,7 +658,7 @@ cdef class TradeMatchId(Identifier):
 
     def __init__(self, str value):
         """
-        Initialize a new instance of the TradeMatchId class.
+        Initialize a new instance of the `TradeMatchId` class.
 
         Parameters
         ----------
