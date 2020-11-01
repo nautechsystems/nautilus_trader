@@ -466,7 +466,7 @@ cdef class ExecutionEngine:
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Invalid command
 
-        if command.position_id.not_null and not self._cache.position_exists(command.position_id):
+        if command.position_id.not_null() and not self._cache.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")
             return  # Invalid command
 
@@ -503,10 +503,10 @@ cdef class ExecutionEngine:
             return  # Invalid command
 
         # Cache all orders
-        self._cache.add_order(command.bracket_order.entry, PositionId.null())
-        self._cache.add_order(command.bracket_order.stop_loss, PositionId.null())
+        self._cache.add_order(command.bracket_order.entry, PositionId.null_c())
+        self._cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
         if command.bracket_order.take_profit is not None:
-            self._cache.add_order(command.bracket_order.take_profit, PositionId.null())
+            self._cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
 
         # Submit bracket order
         client.submit_bracket_order(command)
@@ -639,7 +639,7 @@ cdef class ExecutionEngine:
 
         # Get StrategyId corresponding to fill
         cdef StrategyId strategy_id = self._cache.strategy_id_for_order(fill.cl_ord_id)
-        if strategy_id is None and fill.position_id.not_null:
+        if strategy_id is None and fill.position_id.not_null():
             strategy_id = self._cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
@@ -647,7 +647,7 @@ cdef class ExecutionEngine:
                             f"{repr(fill.position_id)} not found.")
             return  # Cannot process event further
 
-        if fill.position_id.is_null:  # Exchange not assigning position_ids
+        if fill.position_id.is_null():  # Exchange not assigning position_ids
             self._fill_system_assigned_ids(position_id, fill, strategy_id)
         else:
             self._fill_exchange_assigned_ids(position_id, fill, strategy_id)
@@ -658,7 +658,7 @@ cdef class ExecutionEngine:
             OrderFilled fill,
             StrategyId strategy_id,
     ) except *:
-        if position_id.is_null:  # No position yet
+        if position_id.is_null():  # No position yet
             # Generate identifier and assign
             fill.position_id = self._pos_id_generator.generate(fill.symbol)
 

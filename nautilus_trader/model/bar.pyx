@@ -89,25 +89,6 @@ cdef class BarSpecification:
 
     @staticmethod
     cdef BarSpecification from_string_c(str value):
-        """
-        Return a bar specification parsed from the given string.
-        String format example is '200-TICK-MID'.
-
-        Parameters
-        ----------
-        value : str
-            The bar specification string to parse.
-
-        Returns
-        -------
-        BarSpecification
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=2)
@@ -219,24 +200,6 @@ cdef class BarType:
 
     @staticmethod
     cdef BarType from_string_c(str value):
-        """
-        Return a bar type parsed from the given string.
-
-        Parameters
-        ----------
-        value : str
-            The bar type string to parse.
-
-        Returns
-        -------
-        BarType
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -390,19 +353,6 @@ cdef class Bar:
 
     @staticmethod
     cdef Bar from_serializable_string_c(str value):
-        """
-        Parse a bar parsed from the given string.
-
-        Parameters
-        ----------
-        value : str
-            The bar string to parse.
-
-        Returns
-        -------
-        Bar
-
-        """
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split(',', maxsplit=5)

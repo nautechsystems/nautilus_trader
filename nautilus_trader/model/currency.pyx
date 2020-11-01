@@ -144,20 +144,6 @@ cdef class Currency:
 
     @staticmethod
     cdef Currency from_string_c(str code):
-        """
-        Parse the given code.
-
-        Parameters
-        ----------
-        code : str
-            The code of the currency to get.
-
-        Returns
-        -------
-        Currency or None
-            A currency from the given string (if found).
-
-        """
         return _CURRENCY_TABLE.get(code)
 
     @staticmethod

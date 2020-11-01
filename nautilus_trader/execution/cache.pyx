@@ -147,7 +147,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_order_position[cl_ord_id] = order.position_id
 
             # 2- Build _index_order_strategy -> {ClientOrderId, StrategyId}
-            if order.strategy_id.not_null:
+            if order.strategy_id.not_null():
                 self._index_order_strategy[cl_ord_id] = order.strategy_id
 
             # 3- Build _index_symbol_orders -> {Symbol, {ClientOrderId}}
@@ -357,10 +357,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         else:
             self._index_strategy_orders[order.strategy_id].add(order.cl_ord_id)
 
-        cdef str position_id_str = f", {position_id.value}" if position_id.not_null else ""
+        cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
         self._log.debug(f"Added Order(id={order.cl_ord_id.value}{position_id_str}).")
 
-        if position_id.is_null:
+        if position_id.is_null():
             return  # Do not index the NULL id
 
         self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)

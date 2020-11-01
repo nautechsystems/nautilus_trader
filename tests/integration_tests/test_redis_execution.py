@@ -105,7 +105,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId.null_py()
+        position_id = PositionId.null()
 
         # Act
         self.database.add_order(order, position_id)

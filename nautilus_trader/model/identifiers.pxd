@@ -64,7 +64,9 @@ cdef class StrategyId(Identifier):
     """The order identifier tag of the strategy.\n\n:returns: `str`"""
 
     @staticmethod
-    cdef StrategyId null()
+    cdef StrategyId null_c()
+    cdef inline bint is_null(self) except *
+    cdef inline bint not_null(self)  except *
 
     @staticmethod
     cdef StrategyId from_string_c(str value)
@@ -107,7 +109,9 @@ cdef class OrderId(Identifier):
 cdef class PositionId(Identifier):
 
     @staticmethod
-    cdef PositionId null()
+    cdef PositionId null_c()
+    cdef inline bint is_null(self) except *
+    cdef inline bint not_null(self)  except *
 
 
 cdef class ExecutionId(Identifier):
