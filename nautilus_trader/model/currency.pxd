@@ -50,9 +50,12 @@ cdef Currency ZAR
 
 
 cdef class Currency:
-    cdef str _code
-    cdef int _precision
-    cdef CurrencyType _currency_type
+    cdef readonly str code
+    """The identifier code of the currency.\n\n:returns: `str`"""
+    cdef readonly int precision
+    """The specified precision of the currency.\n\n:returns: `int`"""
+    cdef readonly CurrencyType currency_type
+    """The general type of the currency.\n\n:returns: `CurrencyType`"""
 
     @staticmethod
     cdef Currency from_string_c(str code)

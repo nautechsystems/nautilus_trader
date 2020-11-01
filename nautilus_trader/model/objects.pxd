@@ -26,6 +26,7 @@ cdef class Price(Decimal):
 
 
 cdef class Money(Decimal):
-    cdef Currency _currency
+    cdef readonly Currency currency
+    """The currency of the money.\n\n:returns: `Currency`"""
 
     cpdef str to_string(self)

@@ -140,43 +140,31 @@ cdef class Money(Decimal):
             value = 0
         super().__init__(value, currency.precision)
 
-        self._currency = currency
+        self.currency = currency
 
     def __eq__(self, Money other) -> bool:
-        return self._currency == other.currency and self._value == other._value
+        return self.currency == other.currency and self._value == other._value
 
     def __ne__(self, Money other) -> bool:
         return not self == other
 
     def __lt__(self, Money other) -> bool:
-        return self._currency == other.currency and self._value < other._value
+        return self.currency == other.currency and self._value < other._value
 
     def __le__(self, Money other) -> bool:
-        return self._currency == other.currency and self._value <= other._value
+        return self.currency == other.currency and self._value <= other._value
 
     def __gt__(self, Money other) -> bool:
-        return self._currency == other.currency and self._value > other._value
+        return self.currency == other.currency and self._value > other._value
 
     def __ge__(self, Money other) -> bool:
-        return self._currency == other.currency and self._value >= other._value
+        return self.currency == other.currency and self._value >= other._value
 
     def __hash__(self) -> int:
-        return hash((self._value, self._currency))
+        return hash((self._value, self.currency))
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self._value}', {self._currency})"
-
-    @property
-    def currency(self):
-        """
-        The currency of the money.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return self._currency
+        return f"{type(self).__name__}('{self._value}', {self.currency})"
 
     @property
     def amount(self) -> Decimal:
@@ -199,4 +187,4 @@ cdef class Money(Decimal):
         str
 
         """
-        return f"{self._value:,} {self._currency}"
+        return f"{self._value:,} {self.currency}"

@@ -29,34 +29,64 @@ from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Instrument:
-    cdef Symbol _symbol
-    cdef AssetClass _asset_class
-    cdef AssetType _asset_type
-    cdef Currency _base_currency
-    cdef Currency _quote_currency
-    cdef Currency _settlement_currency
-    cdef bint _is_inverse
-    cdef bint _is_quanto
-    cdef int _price_precision
-    cdef int _size_precision
-    cdef Decimal _tick_size
-    cdef Decimal _multiplier
-    cdef Decimal _leverage
-    cdef Quantity _lot_size
-    cdef Quantity _max_quantity
-    cdef Quantity _min_quantity
-    cdef Money _max_notional
-    cdef Money _min_notional
-    cdef Price _max_price
-    cdef Price _min_price
-    cdef Decimal _margin_initial
-    cdef Decimal _margin_maintenance
-    cdef Decimal _maker_fee
-    cdef Decimal _taker_fee
-    cdef Decimal _settlement_fee
-    cdef Decimal _funding_rate_long
-    cdef Decimal _funding_rate_short
-    cdef datetime _timestamp
+    cdef readonly Symbol symbol
+    """The symbol of the instrument.\n\n:returns: `Symbol`"""
+    cdef readonly AssetClass asset_class
+    """The asset class of the instrument.\n\n:returns: `AssetClass`"""
+    cdef readonly AssetType asset_type
+    """The asset type of the instrument.\n\n:returns: `AssetType`"""
+    cdef readonly Currency base_currency
+    """The base currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly Currency quote_currency
+    """The quote currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly Currency settlement_currency
+    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly bint is_inverse
+    """If the instrument is inverse (quantity expressed as quote currency).\n\n:returns: `bool`"""
+    cdef readonly bint is_quanto
+    """If the instrument is quanto.\n\n:returns: `bool`"""
+    cdef readonly int price_precision
+    """The price precision of the instrument.\n\n:returns: `int`"""
+    cdef readonly int size_precision
+    """The size precision of the instrument.\n\n:returns: `int`"""
+    cdef readonly int cost_precision
+    """The cost precision of the instrument.\n\n:returns: `int`"""
+    cdef readonly Decimal tick_size
+    """The tick size of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal multiplier
+    """The multiplier of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal leverage
+    """The leverage of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Quantity lot_size
+    """The lot size of the instrument.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity max_quantity
+    """The maximum order quantity for the instrument.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity min_quantity
+    """The minimum order quantity for the instrument.\n\n:returns: `Quantity`"""
+    cdef readonly Money max_notional
+    """The maximum notional order value for the instrument.\n\n:returns: `Money`"""
+    cdef readonly Money min_notional
+    """The minimum notional order value for the instrument.\n\n:returns: `Money`"""
+    cdef readonly Price max_price
+    """The maximum printable price for the instrument.\n\n:returns: `Price`"""
+    cdef readonly Price min_price
+    """The minimum printable price for the instrument.\n\n:returns: `Price`"""
+    cdef readonly Decimal margin_initial
+    """The initial margin rate of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal margin_maintenance
+    """The maintenance margin rate of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal maker_fee
+    """The maker fee rate of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal taker_fee
+    """The taker fee rate of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal settlement_fee
+    """The settlement fee rate of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal funding_rate_long
+    """The funding rate for long positions.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal funding_rate_short
+    """The funding rate for short positions.\n\n:returns: `Decimal`"""
+    cdef readonly datetime timestamp
+    """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price)
     cpdef Money calculate_position_margin(

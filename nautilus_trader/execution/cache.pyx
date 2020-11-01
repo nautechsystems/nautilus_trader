@@ -164,10 +164,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_orders.add(cl_ord_id)
 
             # 6- Build _index_orders_working -> {ClientOrderId}
-            if order.is_working:
+            if order.is_working_c():
                 self._index_orders_working.add(cl_ord_id)
             # 7- Build _index_orders_completed -> {ClientOrderId}
-            elif order.is_completed:
+            elif order.is_completed_c():
                 self._index_orders_completed.add(cl_ord_id)
 
             # 8- Build _index_strategies -> {StrategyId}
@@ -483,10 +483,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(order, "order")
 
-        if order.is_working:
+        if order.is_working_c():
             self._index_orders_working.add(order.cl_ord_id)
             self._index_orders_completed.discard(order.cl_ord_id)
-        elif order.is_completed:
+        elif order.is_completed_c():
             self._index_orders_completed.add(order.cl_ord_id)
             self._index_orders_working.discard(order.cl_ord_id)
 

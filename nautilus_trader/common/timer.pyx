@@ -30,8 +30,6 @@ from nautilus_trader.core.uuid cimport UUID
 _UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class TimeEvent(Event):
     """
     Represents a time event occurring at the event timestamp.
@@ -62,31 +60,31 @@ cdef class TimeEvent(Event):
         self._name = name
 
     def __eq__(self, TimeEvent other) -> bool:
-        return self._timestamp == other.timestamp
+        return self.timestamp == other.timestamp
 
     def __ne__(self, TimeEvent other) -> bool:
-        return self._timestamp != other.timestamp
+        return self.timestamp != other.timestamp
 
     def __lt__(self, TimeEvent other) -> bool:
-        return self._timestamp < other.timestamp
+        return self.timestamp < other.timestamp
 
     def __le__(self, TimeEvent other) -> bool:
-        return self._timestamp <= other.timestamp
+        return self.timestamp <= other.timestamp
 
     def __gt__(self, TimeEvent other) -> bool:
-        return self._timestamp > other.timestamp
+        return self.timestamp > other.timestamp
 
     def __ge__(self, TimeEvent other) -> bool:
-        return self._timestamp >= other.timestamp
+        return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
-        return hash(self._id)
+        return hash(self.id)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"name={self._name}, "
-                f"id={self._id}, "
-                f"timestamp={format_iso8601(self._timestamp)})")
+                f"id={self.id}, "
+                f"timestamp={format_iso8601(self.timestamp)})")
 
     @property
     def name(self):
@@ -101,8 +99,6 @@ cdef class TimeEvent(Event):
         return self._name
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class TimeEventHandler:
     """
     Represents a bundled event and handler.
@@ -134,8 +130,6 @@ cdef class TimeEventHandler:
         return self.event.timestamp >= other.event.timestamp
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class Timer:
     """
     The base class for all timers.
@@ -168,6 +162,8 @@ cdef class Timer:
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
+        # noinspection: total_seconds
+        # noinspection PyUnresolvedReferences
         Condition.positive(interval.total_seconds(), "interval")
         if stop_time:
             Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")

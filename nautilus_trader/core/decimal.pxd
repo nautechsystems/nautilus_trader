@@ -26,5 +26,7 @@ cdef class Decimal:
     @staticmethod
     cdef inline double _eval_double(double a, double b, int op) except *
 
+    cdef inline int precision_c(self) except *
+
     cpdef object as_decimal(self)
     cpdef double as_double(self) except *

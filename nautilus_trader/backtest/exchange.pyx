@@ -71,8 +71,6 @@ from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 _TZ_US_EAST = pytz.timezone("US/Eastern")
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class SimulatedExchange:
     """
     Provides a simulated financial market exchange.
@@ -306,7 +304,7 @@ cdef class SimulatedExchange:
         for order in self._working_orders.copy().values():  # Copies list to avoid resize during loop
             if not order.symbol == tick.symbol:
                 continue  # Order is for a different symbol
-            if not order.is_working:
+            if not order.is_working_c():
                 continue  # Orders state has changed since the loop commenced
 
             instrument = self.instruments[order.symbol]
@@ -389,7 +387,7 @@ cdef class SimulatedExchange:
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
         self._position_oco_orders[position_id] = []
-        if command.bracket_order.has_take_profit:
+        if command.bracket_order.take_profit is not None:
             bracket_orders.append(command.bracket_order.take_profit)
             self._oco_orders[command.bracket_order.take_profit.cl_ord_id] = command.bracket_order.stop_loss.cl_ord_id
             self._oco_orders[command.bracket_order.stop_loss.cl_ord_id] = command.bracket_order.take_profit.cl_ord_id
@@ -400,7 +398,7 @@ cdef class SimulatedExchange:
 
         self._submit_order(command.bracket_order.entry)
         self._submit_order(command.bracket_order.stop_loss)
-        if command.bracket_order.has_take_profit:
+        if command.bracket_order.take_profit is not None:
             self._submit_order(command.bracket_order.take_profit)
 
         self._process_order(command.bracket_order.entry)
@@ -922,11 +920,11 @@ cdef class SimulatedExchange:
                     self._process_order(child_order)
             del self._child_orders[order.cl_ord_id]
 
-        if position and position.is_closed:
+        if position and position.is_closed_c():
             oco_orders = self._position_oco_orders.get(position.id)
             if oco_orders:
                 for order in self._position_oco_orders[position.id]:
-                    if order.is_working:
+                    if order.is_working_c():
                         self._cancel_order(order)
                 del self._position_oco_orders[position.id]
 

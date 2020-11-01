@@ -66,62 +66,26 @@ cdef class BarSpecification:
         Condition.not_equal(aggregation, BarAggregation.UNDEFINED, 'aggregation', 'UNDEFINED')
         Condition.not_equal(price_type, PriceType.UNDEFINED, 'price_type', 'UNDEFINED')
 
-        self._step = step
-        self._aggregation = aggregation
-        self._price_type = price_type
+        self.step = step
+        self.aggregation = aggregation
+        self.price_type = price_type
 
     def __eq__(self, BarSpecification other) -> bool:
-        return self._step == other.step \
-            and self._aggregation == other.aggregation \
-            and self._price_type == other.price_type
+        return self.step == other.step \
+            and self.aggregation == other.aggregation \
+            and self.price_type == other.price_type
 
     def __ne__(self, BarSpecification other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self._step, self._aggregation, self._price_type))
+        return hash((self.step, self.aggregation, self.price_type))
 
     def __str__(self) -> str:
-        return f"{self._step}-{bar_aggregation_to_string(self._aggregation)}-{price_type_to_string(self._price_type)}"
+        return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
-
-    @property
-    def step(self):
-        """
-        The specified step size for bar aggregation.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._step
-
-    @property
-    def aggregation(self):
-        """
-        The specified aggregation method for bars.
-
-        Returns
-        -------
-        BarAggregation
-
-        """
-        return self._aggregation
-
-    @property
-    def price_type(self):
-        """
-        The specified price type for bar aggregation.
-
-        Returns
-        -------
-        PriceType
-
-        """
-        return self._price_type
 
     @staticmethod
     cdef BarSpecification from_string_c(str value):
@@ -192,7 +156,7 @@ cdef class BarSpecification:
         str
 
         """
-        return bar_aggregation_to_string(self._aggregation)
+        return bar_aggregation_to_string(self.aggregation)
 
     cdef str price_type_string(self):
         """
@@ -203,7 +167,7 @@ cdef class BarSpecification:
         str
 
         """
-        return price_type_to_string(self._price_type)
+        return price_type_to_string(self.price_type)
 
 
 cdef list _TIME_BARS = [
@@ -235,45 +199,23 @@ cdef class BarType:
             The bar specification.
 
         """
-        self._symbol = symbol
-        self._spec = bar_spec
+        self.symbol = symbol
+        self.spec = bar_spec
 
     def __eq__(self, BarType other) -> bool:
-        return self._symbol == other.symbol and self._spec == other.spec
+        return self.symbol == other.symbol and self.spec == other.spec
 
     def __ne__(self, BarType other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash((self._symbol, self._spec))
+        return hash((self.symbol, self.spec))
 
     def __str__(self) -> str:
-        return f"{self._symbol}-{self._spec}"
+        return f"{self.symbol}-{self.spec}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
-
-    @property
-    def symbol(self):
-        """
-        Returns
-        -------
-        Symbol
-            The symbol of the bar type.
-
-        """
-        return self._symbol
-
-    @property
-    def spec(self):
-        """
-        Returns
-        -------
-        BarSpecification
-            The specification of the bar type.
-
-        """
-        return self._spec
 
     @staticmethod
     cdef BarType from_string_c(str value):
@@ -341,7 +283,7 @@ cdef class BarType:
         bool
 
         """
-        return self._spec.aggregation in _TIME_BARS
+        return self.spec.aggregation in _TIME_BARS
 
     cdef str aggregation_string(self):
         """
@@ -352,7 +294,7 @@ cdef class BarType:
         str
 
         """
-        return self._spec.aggregation_string()
+        return self.spec.aggregation_string()
 
     cdef str price_type_string(self):
         """
@@ -363,9 +305,11 @@ cdef class BarType:
         str
 
         """
-        return self._spec.price_type_string()
+        return self.spec.price_type_string()
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class Bar:
     """
     Represents an aggregated bar.
@@ -416,117 +360,33 @@ cdef class Bar:
             Condition.true(high_price >= close_price, 'high_price >= close_price')
             Condition.true(low_price <= close_price, 'low_price <= close_price')
 
-        self._open = open_price
-        self._high = high_price
-        self._low = low_price
-        self._close = close_price
-        self._volume = volume
-        self._timestamp = timestamp
-        self._checked = check
+        self.open = open_price
+        self.high = high_price
+        self.low = low_price
+        self.close = close_price
+        self.volume = volume
+        self.timestamp = timestamp
+        self.checked = check
 
     def __eq__(self, Bar other) -> bool:
-        return self._open == other.open \
-            and self._high == other.high \
-            and self._low == other.low \
-            and self._close == other.close \
-            and self._volume == other.volume \
-            and self._timestamp == other.timestamp
+        return self.open == other.open \
+            and self.high == other.high \
+            and self.low == other.low \
+            and self.close == other.close \
+            and self.volume == other.volume \
+            and self.timestamp == other.timestamp
 
     def __ne__(self, Bar other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash(str(self._timestamp))
+        return hash(str(self.timestamp))
 
     def __str__(self) -> str:
-        return f"{self._open},{self._high},{self._low},{self._close},{self._volume},{format_iso8601(self._timestamp)}"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
-
-    @property
-    def open(self):
-        """
-        The open price of the bar.
-
-        Returns
-        -------
-        Price
-
-        """
-        return self._open
-
-    @property
-    def high(self):
-        """
-        The high price of the bar.
-
-        Returns
-        -------
-        Price
-
-        """
-        return self._high
-
-    @property
-    def low(self):
-        """
-        The low price of the bar.
-
-        Returns
-        -------
-        Price
-
-        """
-        return self._low
-
-    @property
-    def close(self):
-        """
-        The close price of the bar.
-
-        Returns
-        -------
-        Price
-
-        """
-        return self._close
-
-    @property
-    def volume(self):
-        """
-        The volume of the bar.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        return self._volume
-
-    @property
-    def timestamp(self):
-        """
-        The timestamp the bar closed at.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._timestamp
-
-    @property
-    def checked(self):
-        """
-        If the input values were integrity checked.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._checked
 
     @staticmethod
     cdef Bar from_serializable_string_c(str value):
@@ -585,4 +445,4 @@ cdef class Bar:
         str
 
         """
-        return f"{self._open},{self._high},{self._low},{self._close},{self._volume},{long(self._timestamp.timestamp())}"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
