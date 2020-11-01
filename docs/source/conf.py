@@ -104,8 +104,7 @@ def skip(app, what, name, obj, would_skip, options):  # noqa
 def process_docstring(app, what, name, obj, options, lines):  # noqa
     # loop through each line in the docstring and remove file reference
     for i in range(len(lines)):
-        if "starting at line" in lines[i]:
-            lines[i] = lines[i].replace(lines[i], "")
+        pass  # Nothing to do yet
 
 
 def setup(app):  # noqa
