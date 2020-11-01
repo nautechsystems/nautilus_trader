@@ -53,6 +53,26 @@ def tests(session: Session) -> None:
 
 
 @nox.session
+def tests_with_integration(session: Session) -> None:
+    """Run the test suite."""
+    _setup_poetry(session)
+    _run_pytest(
+        session, "--ignore=tests/performance_tests/",
+    )
+
+
+@nox.session
+def tests_without_integration(session: Session) -> None:
+    """Run the test suite."""
+    _setup_poetry(session)
+    _run_pytest(
+        session,
+        "--ignore=tests/integration_tests/",
+        "--ignore=tests/performance_tests/",
+    )
+
+
+@nox.session
 def integration_tests(session: Session) -> None:
     """Run the integration test suite."""
     _setup_poetry(session)
