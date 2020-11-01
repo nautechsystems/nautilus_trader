@@ -103,22 +103,6 @@ cdef class Symbol(Identifier):
 
     @staticmethod
     cdef Symbol from_string_c(str value):
-        """
-        Return a symbol parsed from the given string value. Must be correctly
-        formatted with two valid strings either side of a period.
-
-        Example: "AUD/USD.FXCM".
-
-        Parameters
-        ----------
-        value : str
-            The symbol string value to parse.
-
-        Returns
-        -------
-        Symbol
-
-        """
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('.')
@@ -276,25 +260,6 @@ cdef class TraderId(Identifier):
 
     @staticmethod
     cdef TraderId from_string_c(str value):
-        """
-        Return a trader identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Its is expected a trader identifier  is the abbreviated name of the
-        trader with an order identifier tag number separated by a hyphen.
-
-        Example: "TESTER-001".
-
-        Parameters
-        ----------
-        value : str
-            The value for the strategy identifier.
-
-        Returns
-        -------
-        TraderId
-
-        """
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
@@ -324,7 +289,8 @@ cdef class TraderId(Identifier):
         return TraderId.from_string_c(value)
 
 
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId("S", "NULL")
+cdef str _NULL_STRATEGY_ID_STR = "S-NULL"
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId.from_string_c(_NULL_STRATEGY_ID_STR)
 
 cdef class StrategyId(Identifier):
     """
@@ -360,78 +326,17 @@ cdef class StrategyId(Identifier):
         self.tag = IdTag(tag)
 
     @staticmethod
-    cdef StrategyId null():
-        """
-        Returns a strategy identifier with a `NULL` value.
-
-        Returns
-        -------
-        StrategyId
-
-        """
+    cdef inline StrategyId null_c():
         return _NULL_STRATEGY_ID
 
-    @staticmethod
-    def null_py():
-        """
-        Returns a strategy identifier with a `NULL` value.
+    cdef inline bint is_null(self) except *:
+        return self.value == _NULL_STRATEGY_ID_STR
 
-        Returns
-        -------
-        StrategyId
-
-        """
-        return _NULL_STRATEGY_ID
-
-    @property
-    def is_null(self):
-        """
-        Return a value indicating whether this strategy identifier is equal to
-        the null identifier 'NULL'.
-
-        Returns
-        -------
-        bool
-            True if NULL, else False
-
-        """
-        return self.value == "S-NULL"
-
-    @property
-    def not_null(self):
-        """
-        Return a value indicating whether this strategy identifier is not equal
-        to the null identifier 'NULL'.
-
-        Returns
-        -------
-        bool
-            True if not NULL, else False.
-
-        """
-        return self.value != "S-NULL"
+    cdef inline bint not_null(self) except *:
+        return self.value != _NULL_STRATEGY_ID_STR
 
     @staticmethod
     cdef StrategyId from_string_c(str value):
-        """
-        Return a strategy identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Is is expected a strategy identifier is the class name of the strategy with
-        an order_id tag number separated by a hyphen.
-
-        Example: "EMACross-001".
-
-        Parameters
-        ----------
-        value : str
-            The value for the strategy identifier.
-
-        Returns
-        -------
-        StrategyId
-
-        """
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
@@ -459,6 +364,18 @@ cdef class StrategyId(Identifier):
 
         """
         return StrategyId.from_string_c(value)
+
+    @staticmethod
+    def null():
+        """
+        Returns a strategy identifier with an `S-NULL` value.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return _NULL_STRATEGY_ID
 
 
 cdef class Issuer(Identifier):
@@ -523,33 +440,10 @@ cdef class AccountId(Identifier):
         self.account_type = account_type
 
     cdef Venue issuer_as_venue(self):
-        """
-        Return the account issuer as a venue.
-
-        Returns
-        -------
-        Venue
-        """
         return Venue(self.issuer.value)
 
     @staticmethod
     cdef AccountId from_string_c(str value):
-        """
-        Return an account identifier from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
-
-        Example: "FXCM-02851908-DEMO".
-
-        Parameters
-        ----------
-        value : str
-            The value for the account identifier.
-
-        Returns
-        -------
-        AccountId
-
-        """
         Condition.valid_string(value, "value")
 
         cdef list pieces = value.split('-', maxsplit=2)
@@ -681,7 +575,8 @@ cdef class OrderId(Identifier):
         super().__init__(value)
 
 
-cdef PositionId _NULL_POSITION_ID = PositionId("P-NULL")
+cdef str _NULL_POSITION_ID_STR = "P-NULL"
+cdef PositionId _NULL_POSITION_ID = PositionId(_NULL_POSITION_ID_STR)
 
 cdef class PositionId(Identifier):
     """
@@ -711,19 +606,17 @@ cdef class PositionId(Identifier):
         super().__init__(value)
 
     @staticmethod
-    cdef PositionId null():
-        """
-        Returns a position identifier with a `P-NULL` value.
-
-        Returns
-        -------
-        PositionId
-
-        """
+    cdef PositionId null_c():
         return _NULL_POSITION_ID
+
+    cdef bint is_null(self) except *:
+        return self.value == _NULL_POSITION_ID_STR
+
+    cdef bint not_null(self) except *:
+        return self.value != _NULL_POSITION_ID_STR
 
     @staticmethod
-    def null_py():
+    def null():
         """
         Returns a position identifier with a `P-NULL` value.
 
@@ -733,34 +626,6 @@ cdef class PositionId(Identifier):
 
         """
         return _NULL_POSITION_ID
-
-    @property
-    def is_null(self):
-        """
-        Return a value indicating whether this position identifier is equal to
-        the null identifier 'P-NULL'.
-
-        Returns
-        -------
-        bool
-            True if NULL, else False.
-
-        """
-        return self.value == "P-NULL"
-
-    @property
-    def not_null(self):
-        """
-        Return a value indicating whether this position identifier is not equal
-        to the null identifier 'P-NULL'.
-
-        Returns
-        -------
-        bool
-            True if not NULL, else False.
-
-        """
-        return self.value != "P-NULL"
 
 
 cdef class ExecutionId(Identifier):

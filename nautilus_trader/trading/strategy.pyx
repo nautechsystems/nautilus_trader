@@ -1354,7 +1354,7 @@ cdef class TradingStrategy:
         cdef Position position
         if position_id is None:
             # Null object pattern
-            position_id = PositionId.null()
+            position_id = PositionId.null_c()
 
         cdef AccountId account_id = self._execution.account_id(order.symbol.venue)
         if account_id is None:

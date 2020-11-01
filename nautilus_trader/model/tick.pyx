@@ -150,26 +150,6 @@ cdef class QuoteTick:
 
     @staticmethod
     cdef QuoteTick from_serializable_string_c(Symbol symbol, str values):
-        """
-        Parse a tick from the given symbol and values string.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The tick symbol.
-        values : str
-            The tick values string.
-
-        Returns
-        -------
-        QuoteTick
-
-        Raises
-        ------
-        ValueError
-            If values is not a valid string.
-
-        """
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
 
@@ -305,26 +285,6 @@ cdef class TradeTick:
 
     @staticmethod
     cdef TradeTick from_serializable_string_c(Symbol symbol, str values):
-        """
-        Parse a tick from the given symbol and values string.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The tick symbol.
-        values : str
-            The tick values string.
-
-        Returns
-        -------
-        TradeTick
-
-        Raises
-        ------
-        ValueError
-            If values is not a valid string.
-
-        """
         Condition.not_none(symbol, 'symbol')
         Condition.valid_string(values, 'values')
 

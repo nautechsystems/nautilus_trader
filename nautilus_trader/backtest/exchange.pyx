@@ -374,7 +374,7 @@ cdef class SimulatedExchange:
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
-        if command.position_id.not_null:
+        if command.position_id.not_null():
             self._position_index[command.order.cl_ord_id] = command.position_id
 
         self._submit_order(command.order)
@@ -891,7 +891,7 @@ cdef class SimulatedExchange:
             order.id,
             self._generate_execution_id(),
             position_id,
-            StrategyId.null(),
+            StrategyId.null_c(),
             order.symbol,
             order.side,
             order.quantity,

@@ -263,24 +263,6 @@ cdef class Position:
 
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *:
-        """
-        Return the position side resulting from the given order side (from FLAT).
-
-        Parameters
-        ----------
-        side : OrderSide
-            The order side
-
-        Returns
-        -------
-        PositionSide
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED.
-
-        """
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
 
         return PositionSide.LONG if side == OrderSide.BUY else PositionSide.SHORT
