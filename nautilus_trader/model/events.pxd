@@ -39,13 +39,13 @@ cdef class AccountState(Event):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly Currency currency
-    """The currency of the event.\n\n:returns: `AccountId`"""
+    """The currency of the event.\n\n:returns: `Currency`"""
     cdef readonly Money balance
-    """The account balance of the event.\n\n:returns: `AccountId`"""
+    """The account balance of the event.\n\n:returns: `Money`"""
     cdef readonly Money margin_balance
-    """The margin balance of the event.\n\n:returns: `AccountId`"""
+    """The margin balance of the event.\n\n:returns: `Money`"""
     cdef readonly Money margin_available
-    """The margin available of the event.\n\n:returns: `AccountId`"""
+    """The margin available of the event.\n\n:returns: `Money`"""
 
 
 cdef class OrderEvent(Event):
