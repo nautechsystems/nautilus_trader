@@ -52,7 +52,7 @@ cdef class Decimal:
 
     def __init__(self, value=0, precision=None):
         """
-        Initialize a new instance of the Decimal class.
+        Initialize a new instance of the `Decimal` class.
 
         Parameters
         ----------
@@ -221,6 +221,9 @@ cdef class Decimal:
         int
 
         """
+        return self.precision_c()
+
+    cdef inline int precision_c(self) except *:
         return abs(self._value.as_tuple().exponent)
 
     cpdef object as_decimal(self):

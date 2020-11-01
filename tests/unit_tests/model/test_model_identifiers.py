@@ -183,20 +183,15 @@ class IdentifierTests(unittest.TestCase):
     def test_strategy_identifier(self):
         # Arrange
         # Act
-        strategy_id0 = StrategyId.null_py()
-        strategy_id1 = StrategyId("SCALPER", "00")
+        strategy_id1 = StrategyId.null()
         strategy_id2 = StrategyId("SCALPER", "01")
 
         # Assert
-        self.assertTrue(strategy_id0.is_null)
-        self.assertTrue(strategy_id1.not_null)
-        self.assertFalse(strategy_id1.is_null)
-        self.assertFalse(strategy_id0.not_null)
+        self.assertEqual("S-NULL", strategy_id1.value)
         self.assertEqual(strategy_id1, strategy_id1)
         self.assertNotEqual(strategy_id1, strategy_id2)
-        self.assertEqual("SCALPER-00", strategy_id1.value)
-        self.assertEqual("SCALPER", strategy_id1.name)
-        self.assertEqual(strategy_id1, StrategyId.from_string('SCALPER-00'))
+        self.assertEqual("S", strategy_id1.name)
+        self.assertEqual(strategy_id2, StrategyId.from_string('SCALPER-01'))
 
     def test_account_identifier(self):
         # Arrange
@@ -214,11 +209,7 @@ class IdentifierTests(unittest.TestCase):
     def test_position_identifier(self):
         # Arrange
         # Act
-        position_id0 = PositionId.null_py()
-        position_id1 = PositionId("P-1")
+        position_id0 = PositionId.null()
 
         # Assert
-        self.assertTrue(position_id0.is_null)
-        self.assertTrue(position_id1.not_null)
-        self.assertFalse(position_id1.is_null)
-        self.assertFalse(position_id0.not_null)
+        self.assertEqual("P-NULL", position_id0.value)

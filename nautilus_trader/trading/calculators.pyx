@@ -198,7 +198,7 @@ cdef class RolloverInterestCalculator:
 
     def __init__(self, str short_term_interest_csv_path not None="default"):
         """
-        Initialize a new instance of the RolloverInterestCalculator class.
+        Initialize a new instance of the `RolloverInterestCalculator` class.
 
         Parameters
         ----------

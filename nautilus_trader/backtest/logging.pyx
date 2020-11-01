@@ -40,7 +40,7 @@ cdef class TestLogger(Logger):
             str log_file_path not None="log/",
     ):
         """
-        Initialize a new instance of the TestLogger class.
+        Initialize a new instance of the `TestLogger` class.
 
         Parameters
         ----------

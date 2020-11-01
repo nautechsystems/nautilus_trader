@@ -136,7 +136,7 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the MsgPackDictionarySerializer class.
+        Initialize a new instance of the `MsgPackDictionarySerializer` class.
 
         """
         super().__init__()
@@ -178,6 +178,8 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a command serializer for the MessagePack specification.
@@ -186,7 +188,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the MsgPackOrderSerializer class.
+        Initialize a new instance of the `MsgPackOrderSerializer` class.
 
         """
         super().__init__()
@@ -313,6 +315,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         raise ValueError(f"Invalid order_type, was {order_type_to_string(order_type)}")
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
     Provides a command serializer for the MessagePack specification.
@@ -321,7 +325,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the MsgPackCommandSerializer class.
+        Initialize a new instance of the `MsgPackCommandSerializer` class.
 
         """
         super().__init__()
@@ -464,6 +468,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             raise RuntimeError("Cannot deserialize command (unrecognized bytes pattern).")
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class MsgPackEventSerializer(EventSerializer):
     """
     Provides an event serializer for the MessagePack specification.
@@ -472,7 +478,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
     def __init__(self):
         """
-        Initialize a new instance of the MsgPackEventSerializer class.
+        Initialize a new instance of the `MsgPackEventSerializer` class.
 
         """
         super().__init__()
@@ -632,7 +638,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = Currency.from_string(unpacked[CURRENCY].decode(UTF8))
+            currency = Currency.from_string_c(unpacked[CURRENCY].decode(UTF8))
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 currency,

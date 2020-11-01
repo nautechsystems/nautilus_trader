@@ -29,7 +29,7 @@ cdef class EfficiencyRatio(Indicator):
 
     def __init__(self, int period):
         """
-        Initialize a new instance of the EfficiencyRatio class.
+        Initialize a new instance of the `EfficiencyRatio` class.
 
         Parameters
         ----------

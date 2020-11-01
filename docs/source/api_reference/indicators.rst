@@ -11,7 +11,6 @@ Adaptive Moving Average (AMA)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Exponential Moving Average (EMA)
@@ -21,7 +20,6 @@ Exponential Moving Average (EMA)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Donchian Channel
@@ -31,7 +29,6 @@ Donchian Channel
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Hull Moving Average (HMA)
@@ -41,7 +38,6 @@ Hull Moving Average (HMA)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Moving Average Factory
@@ -51,7 +47,6 @@ Moving Average Factory
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Simple Moving Average (SMA)
@@ -61,7 +56,6 @@ Simple Moving Average (SMA)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Weighted Moving Average (WMA)
@@ -71,7 +65,6 @@ Weighted Moving Average (WMA)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Average True Range (ATR)
@@ -81,7 +74,6 @@ Average True Range (ATR)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Bid-Ask Min-Max
@@ -91,7 +83,15 @@ Bid-Ask Min-Max
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
+   :member-order: bysource
+
+Bollinger Bands
+---------------
+
+.. automodule:: nautilus_trader.indicators.bollinger_bands
+   :show-inheritance:
+   :inherited-members:
+   :members:
    :member-order: bysource
 
 Efficiency Ratio
@@ -101,7 +101,6 @@ Efficiency Ratio
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Keltner Channel
@@ -111,7 +110,6 @@ Keltner Channel
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Keltner Position
@@ -121,7 +119,6 @@ Keltner Position
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Moving Average Convergence Divergence (MACD)
@@ -131,7 +128,6 @@ Moving Average Convergence Divergence (MACD)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 On Balance Volume (OBV)
@@ -141,7 +137,6 @@ On Balance Volume (OBV)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Pressure
@@ -151,7 +146,6 @@ Pressure
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Rate Of Change (ROC)
@@ -161,7 +155,6 @@ Rate Of Change (ROC)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Relative Strength Index (RSI)
@@ -171,7 +164,6 @@ Relative Strength Index (RSI)
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Spread Analyzer
@@ -181,7 +173,6 @@ Spread Analyzer
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Stochastics
@@ -191,7 +182,6 @@ Stochastics
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Volatility Ratio
@@ -201,7 +191,6 @@ Volatility Ratio
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 VWAP
@@ -211,5 +200,4 @@ VWAP
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource

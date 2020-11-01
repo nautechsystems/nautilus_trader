@@ -42,7 +42,7 @@ cdef class BollingerBands(Indicator):
             ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
     ):
         """
-        Initialize a new instance of the DonchianChannel class.
+        Initialize a new instance of the `BollingerBands` class.
 
         Parameters
         ----------

@@ -11,7 +11,6 @@ Bar
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Commands
@@ -21,7 +20,6 @@ Commands
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Currencies
@@ -31,7 +29,6 @@ Currencies
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Currency
@@ -41,7 +38,6 @@ Currency
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Data
@@ -51,7 +47,6 @@ Data
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Events
@@ -61,7 +56,6 @@ Events
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Identifiers
@@ -71,7 +65,6 @@ Identifiers
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Instrument
@@ -81,7 +74,6 @@ Instrument
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Objects
@@ -91,7 +83,6 @@ Objects
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Order
@@ -101,7 +92,6 @@ Order
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Parsing
@@ -111,7 +101,6 @@ Parsing
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 
@@ -122,7 +111,6 @@ Position
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource
 
 Tick
@@ -132,5 +120,4 @@ Tick
    :show-inheritance:
    :inherited-members:
    :members:
-   :undoc-members:
    :member-order: bysource

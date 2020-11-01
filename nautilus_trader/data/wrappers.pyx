@@ -24,7 +24,7 @@ cdef class BarData:
 
     def __init__(self, BarType bar_type not None, Bar bar not None):
         """
-        Initialize a new instance of the BarData class.
+        Initialize a new instance of the `BarData` class.
 
         Parameters
         ----------
@@ -72,7 +72,7 @@ cdef class BarDataBlock:
 
     def __init__(self, BarType bar_type not None, list bars not None):
         """
-        Initialize a new instance of the BarData class.
+        Initialize a new instance of the `BarData` class.
 
         Parameters
         ----------
@@ -120,7 +120,7 @@ cdef class QuoteTickDataBlock:
 
     def __init__(self, list ticks not None):
         """
-        Initialize a new instance of the QuoteTickDataBlock class.
+        Initialize a new instance of the `QuoteTickDataBlock` class.
 
         Parameters
         ----------
@@ -153,7 +153,7 @@ cdef class TradeTickDataBlock:
 
     def __init__(self, list ticks not None):
         """
-        Initialize a new instance of the TradeTickDataBlock class.
+        Initialize a new instance of the `TradeTickDataBlock` class.
 
         Parameters
         ----------
@@ -186,7 +186,7 @@ cdef class InstrumentDataBlock:
 
     def __init__(self, list instruments not None):
         """
-        Initialize a new instance of the InstrumentDataBlock class.
+        Initialize a new instance of the `InstrumentDataBlock` class.
 
         Parameters
         ----------

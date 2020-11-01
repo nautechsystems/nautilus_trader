@@ -35,6 +35,8 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class DataCache(DataCacheFacade):
     """
     Provides a cache for the `DataEngine`.
@@ -42,7 +44,7 @@ cdef class DataCache(DataCacheFacade):
 
     def __init__(self, Logger logger not None, dict config=None):
         """
-        Initialize a new instance of the DataEngine class.
+        Initialize a new instance of the `DataEngine` class.
 
         Parameters
         ----------
@@ -154,13 +156,6 @@ cdef class DataCache(DataCacheFacade):
             ticks = deque(maxlen=self._tick_capacity)
             self._quote_ticks[symbol] = ticks
 
-        cdef int ticks_length = len(ticks)
-        if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
-            # TODO: Test this logic
-            if ticks_length < self._tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
-                ticks.append(tick)
-            return  # Ticks previously handled
-
         ticks.appendleft(tick)
 
     cpdef void add_trade_tick(self, TradeTick tick) except *:
@@ -184,12 +179,6 @@ cdef class DataCache(DataCacheFacade):
             # The symbol was not registered
             ticks = deque(maxlen=self._tick_capacity)
             self._trade_ticks[symbol] = ticks
-
-        cdef int ticks_length = len(ticks)
-        if ticks_length > 0 and tick.timestamp <= ticks[0].timestamp:
-            if ticks_length < self._tick_capacity and tick.timestamp > ticks[ticks_length - 1].timestamp:
-                ticks.append(tick)
-            return  # Tick previously handled
 
         ticks.appendleft(tick)
 
@@ -215,12 +204,6 @@ cdef class DataCache(DataCacheFacade):
             # The bar type was not registered
             bars = deque(maxlen=self._bar_capacity)
             self._bars[bar_type] = bars
-
-        cdef int bars_length = len(bars)
-        if bars_length > 0 and bar.timestamp <= bars[0].timestamp:
-            if bars_length < self._bar_capacity and bar.timestamp > bars[bars_length - 1].timestamp:
-                bars.append(bar)
-            return  # Bar previously handled
 
         bars.appendleft(bar)
 

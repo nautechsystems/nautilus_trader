@@ -42,7 +42,7 @@ cdef class TimeEvent(Event):
             datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the TimeEvent class.
+        Initialize a new instance of the `TimeEvent` class.
 
         Parameters
         ----------
@@ -60,31 +60,31 @@ cdef class TimeEvent(Event):
         self._name = name
 
     def __eq__(self, TimeEvent other) -> bool:
-        return self._timestamp == other.timestamp
+        return self.timestamp == other.timestamp
 
     def __ne__(self, TimeEvent other) -> bool:
-        return self._timestamp != other.timestamp
+        return self.timestamp != other.timestamp
 
     def __lt__(self, TimeEvent other) -> bool:
-        return self._timestamp < other.timestamp
+        return self.timestamp < other.timestamp
 
     def __le__(self, TimeEvent other) -> bool:
-        return self._timestamp <= other.timestamp
+        return self.timestamp <= other.timestamp
 
     def __gt__(self, TimeEvent other) -> bool:
-        return self._timestamp > other.timestamp
+        return self.timestamp > other.timestamp
 
     def __ge__(self, TimeEvent other) -> bool:
-        return self._timestamp >= other.timestamp
+        return self.timestamp >= other.timestamp
 
     def __hash__(self) -> int:
-        return hash(self._id)
+        return hash(self.id)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"name={self._name}, "
-                f"id={self._id}, "
-                f"timestamp={format_iso8601(self._timestamp)})")
+                f"id={self.id}, "
+                f"timestamp={format_iso8601(self.timestamp)})")
 
     @property
     def name(self):
@@ -144,7 +144,7 @@ cdef class Timer:
             datetime stop_time=None,  # Can be None
     ):
         """
-        Initialize a new instance of the Timer class.
+        Initialize a new instance of the `Timer` class.
 
         Parameters
         ----------
@@ -162,6 +162,8 @@ cdef class Timer:
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
+        # noinspection: total_seconds
+        # noinspection PyUnresolvedReferences
         Condition.positive(interval.total_seconds(), "interval")
         if stop_time:
             Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
@@ -322,7 +324,7 @@ cdef class TestTimer(Timer):
             datetime stop_time=None
     ):
         """
-        Initialize a new instance of the TestTimer class.
+        Initialize a new instance of the `TestTimer` class.
 
         Parameters
         ----------
@@ -409,7 +411,7 @@ cdef class LiveTimer(Timer):
             datetime stop_time=None,
     ):
         """
-        Initialize a new instance of the LiveTimer class.
+        Initialize a new instance of the `LiveTimer` class.
 
         Parameters
         ----------

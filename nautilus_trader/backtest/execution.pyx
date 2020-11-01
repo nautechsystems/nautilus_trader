@@ -37,7 +37,7 @@ cdef class BacktestExecClient(ExecutionClient):
             ExecutionEngine engine not None,
             TestLogger logger not None):
         """
-        Initialize a new instance of the BacktestExecClient class.
+        Initialize a new instance of the `BacktestExecClient` class.
 
         Parameters
         ----------

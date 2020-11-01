@@ -27,33 +27,54 @@ from nautilus_trader.model.order cimport Order
 
 
 cdef class SubmitOrder(Command):
-    cdef Venue _venue
-    cdef TraderId _trader_id
-    cdef AccountId _account_id
-    cdef StrategyId _strategy_id
-    cdef PositionId _position_id
-    cdef Order _order
+    cdef readonly Venue venue
+    """The venue the command relates to.\n\n:returns: `Venue`"""
+    cdef readonly TraderId trader_id
+    """The trader identifier the command relates to.\n\n:returns: `TraderId`"""
+    cdef readonly AccountId account_id
+    """The account identifier the command relates to.\n\n:returns: `AccountId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy identifier the command relates to.\n\n:returns: `StrategyId`"""
+    cdef readonly PositionId position_id
+    """The position identifier the command relates to.\n\n:returns: `PositionId`"""
+    cdef readonly Order order
+    """The order for the command.\n\n:returns: `Order`"""
 
 
 cdef class SubmitBracketOrder(Command):
-    cdef Venue _venue
-    cdef TraderId _trader_id
-    cdef AccountId _account_id
-    cdef StrategyId _strategy_id
-    cdef BracketOrder _bracket_order
+    cdef readonly Venue venue
+    """The venue associated with the command.\n\n:returns: `Venue`"""
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
+    cdef readonly AccountId account_id
+    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
+    cdef readonly BracketOrder bracket_order
+    """The bracket order to submit.\n\n:returns: `BracketOrder`"""
 
 
 cdef class ModifyOrder(Command):
-    cdef Venue _venue
-    cdef TraderId _trader_id
-    cdef AccountId _account_id
-    cdef ClientOrderId _cl_ord_id
-    cdef Quantity _quantity
-    cdef Price _price
+    cdef readonly Venue venue
+    """The venue the associated with the command.\n\n:returns: `Venue`"""
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
+    cdef readonly AccountId account_id
+    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
+    cdef readonly ClientOrderId cl_ord_id
+    """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly Quantity quantity
+    """The quantity for the command.\n\n:returns: `Quantity`"""
+    cdef readonly Price price
+    """The price for the command.\n\n:returns: `Price`"""
 
 
 cdef class CancelOrder(Command):
-    cdef Venue _venue
-    cdef TraderId _trader_id
-    cdef AccountId _account_id
-    cdef ClientOrderId _cl_ord_id
+    cdef readonly Venue venue
+    """The venue associated with the command.\n\n:returns: `Venue`"""
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
+    cdef readonly AccountId account_id
+    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
+    cdef readonly ClientOrderId cl_ord_id
+    """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""

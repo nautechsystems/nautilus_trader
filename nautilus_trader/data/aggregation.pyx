@@ -33,6 +33,8 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BarBuilder:
     """
     Provides a generic bar builder for aggregation.
@@ -40,7 +42,7 @@ cdef class BarBuilder:
 
     def __init__(self, BarSpecification bar_spec not None, bint use_previous_close=False):
         """
-        Initialize a new instance of the BarBuilder class.
+        Initialize a new instance of the `BarBuilder` class.
 
         Parameters
         ----------
@@ -78,7 +80,7 @@ cdef class BarBuilder:
 
         Parameters
         ----------
-        tick : TradeTick
+        tick : QuoteTick
             The tick to update with.
 
         """
@@ -182,6 +184,8 @@ cdef class BarBuilder:
         self.count = 0
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BarAggregator:
     """
     Provides a means of aggregating specified bars and sending to a registered handler.
@@ -195,7 +199,7 @@ cdef class BarAggregator:
             bint use_previous_close,
     ):
         """
-        Initialize a new instance of the BarAggregator class.
+        Initialize a new instance of the `BarAggregator` class.
 
         Parameters
         ----------
@@ -229,6 +233,8 @@ cdef class BarAggregator:
         self._handler(self.bar_type, bar)
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TickBarAggregator(BarAggregator):
     """
     Provides a means of building tick bars from ticks.
@@ -241,7 +247,7 @@ cdef class TickBarAggregator(BarAggregator):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the TickBarBuilder class.
+        Initialize a new instance of the `TickBarBuilder` class.
 
         Parameters
         ----------
@@ -305,6 +311,8 @@ cdef class TickBarAggregator(BarAggregator):
             self._handle_bar(bar)
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class TimeBarAggregator(BarAggregator):
     """
     Provides a means of building time bars from ticks with an internal timer.
@@ -318,7 +326,7 @@ cdef class TimeBarAggregator(BarAggregator):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the TimeBarAggregator class.
+        Initialize a new instance of the `TimeBarAggregator` class.
 
         Parameters
         ----------
@@ -378,7 +386,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         Parameters
         ----------
-        tick : QuoteTick
+        tick : TradeTick
             The tick for the update.
 
         """
@@ -445,18 +453,21 @@ cdef class TimeBarAggregator(BarAggregator):
                              f"was {bar_aggregation_to_string(self.bar_type.spec.aggregation)}")
 
     cdef timedelta _get_interval(self):
-        if self.bar_type.spec.aggregation == BarAggregation.SECOND:
-            return timedelta(seconds=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
-            return timedelta(minutes=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
-            return timedelta(hours=(1 * self.bar_type.spec.step))
-        elif self.bar_type.spec.aggregation == BarAggregation.DAY:
-            return timedelta(days=(1 * self.bar_type.spec.step))
+        cdef BarAggregation aggregation = self.bar_type.spec.aggregation
+        cdef int step = self.bar_type.spec.step
+
+        if aggregation == BarAggregation.SECOND:
+            return timedelta(seconds=(1 * step))
+        elif aggregation == BarAggregation.MINUTE:
+            return timedelta(minutes=(1 * step))
+        elif aggregation == BarAggregation.HOUR:
+            return timedelta(hours=(1 * step))
+        elif aggregation == BarAggregation.DAY:
+            return timedelta(days=(1 * step))
         else:
             # Design time error
-            raise ValueError(f"Aggregation not a time, "
-                             f"was {bar_aggregation_to_string(self.bar_type.spec.aggregation)}")
+            raise ValueError(f"Aggregation not time range, "
+                             f"was {bar_aggregation_to_string(aggregation)}")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = str(self.bar_type)

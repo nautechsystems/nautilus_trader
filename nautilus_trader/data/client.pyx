@@ -41,6 +41,8 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class DataClient:
     """
     The base class for all data clients.
@@ -55,7 +57,7 @@ cdef class DataClient:
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the DataClient class.
+        Initialize a new instance of the `DataClient` class.
 
         venue : Venue
             The venue the client can provide data for.

@@ -42,7 +42,7 @@ class EMACross(TradingStrategy):
             extra_id_tag: str="",
     ):
         """
-        Initialize a new instance of the EMACross class.
+        Initialize a new instance of the `EMACross` class.
 
         Parameters
         ----------

@@ -67,7 +67,7 @@ cdef class LogMessage:
             long thread_id=0,
     ):
         """
-        Initialize a new instance of the LogMessage class.
+        Initialize a new instance of the `LogMessage` class.
 
         Parameters
         ----------
@@ -128,7 +128,7 @@ cdef class Logger:
             str log_file_path not None="log/",
     ):
         """
-        Initialize a new instance of the Logger class.
+        Initialize a new instance of the `Logger` class.
 
         Parameters
         ----------
@@ -280,7 +280,7 @@ cdef class LoggerAdapter:
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the LoggerAdapter class.
+        Initialize a new instance of the `LoggerAdapter` class.
 
         Parameters
         ----------
@@ -423,7 +423,7 @@ cdef class LoggerAdapter:
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(ex_string + stack_trace_lines)
+        self.error(f"{ex_string}{ stack_trace_lines}")
 
     cdef void _send_to_logger(self, LogLevel level, str message) except *:
         if not self.bypassed:
@@ -507,7 +507,7 @@ cdef class LiveLogger(Logger):
             str log_file_path not None="logs/",
     ):
         """
-        Initialize a new instance of the LiveLogger class.
+        Initialize a new instance of the `LiveLogger` class.
 
         Parameters
         ----------

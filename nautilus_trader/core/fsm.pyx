@@ -49,7 +49,7 @@ cdef class FiniteStateMachine:
             state_parser=str,
     ):
         """
-        Initialize a new instance of the FiniteStateMachine class.
+        Initialize a new instance of the `FiniteStateMachine` class.
 
         Parameters
         ----------
@@ -68,11 +68,11 @@ cdef class FiniteStateMachine:
         ValueError
             If state_transition_table is empty.
         ValueError
-            If state_transition_table contains a key of type other than tuple.
+            If state_transition_table key not tuple.
         ValueError
-            If trigger_parser is not of type callable or None.
+            If trigger_parser not callable or None.
         ValueError
-            If state_parser is not of type callable or None.
+            If state_parser not callable or None.
 
         """
         if trigger_parser is None:
@@ -85,22 +85,10 @@ cdef class FiniteStateMachine:
         Condition.callable_or_none(state_parser, "state_parser")
 
         self._state_transition_table = state_transition_table
-        self._state = initial_state
         self._trigger_parser = trigger_parser
         self._state_parser = state_parser
 
-    @property
-    def state(self):
-        """
-        The current state of the FSM.
-
-        Returns
-        -------
-        int
-            C enum.
-
-        """
-        return self._state
+        self.state = initial_state
 
     cdef str state_string(self):
         """
@@ -111,7 +99,7 @@ cdef class FiniteStateMachine:
         str
 
         """
-        return self._state_parser(self._state)
+        return self._state_parser(self.state)
 
     cpdef void trigger(self, int trigger) except *:
         """
@@ -130,8 +118,8 @@ cdef class FiniteStateMachine:
             If the state and trigger combination is not found in the transition table.
 
         """
-        cdef int next_state = self._state_transition_table.get((self._state, trigger), -1)
+        cdef int next_state = self._state_transition_table.get((self.state, trigger), -1)
         if next_state == -1:  # Invalid
             raise InvalidStateTrigger(f"{self.state_string()} -> {self._trigger_parser(trigger)}")
 
-        self._state = next_state
+        self.state = next_state

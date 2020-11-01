@@ -17,12 +17,15 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 
 
 cdef class Identifier:
-    cdef str _value
+    cdef readonly str value
+    """The identifier value.\n\n:returns: `str`"""
 
 
 cdef class Symbol(Identifier):
-    cdef str _code
-    cdef Venue _venue
+    cdef readonly str code
+    """The symbol code.\n\n:returns: `str`"""
+    cdef readonly Venue venue
+    """The symbol venue.\n\n:returns: `Venue`"""
 
     @staticmethod
     cdef Symbol from_string_c(str value)
@@ -45,19 +48,25 @@ cdef class IdTag(Identifier):
 
 
 cdef class TraderId(Identifier):
-    cdef str _name
-    cdef IdTag _tag
+    cdef readonly str name
+    """The name identifier of the trader.\n\n:returns: `str`"""
+    cdef readonly IdTag tag
+    """The order identifier tag of the trader.\n\n:returns: `IdTag`"""
 
     @staticmethod
     cdef TraderId from_string_c(str value)
 
 
 cdef class StrategyId(Identifier):
-    cdef str _name
-    cdef IdTag _tag
+    cdef readonly str name
+    """The name identifier of the strategy.\n\n:returns: `str`"""
+    cdef readonly IdTag tag
+    """The order identifier tag of the strategy.\n\n:returns: `str`"""
 
     @staticmethod
-    cdef StrategyId null()
+    cdef StrategyId null_c()
+    cdef inline bint is_null(self) except *
+    cdef inline bint not_null(self)  except *
 
     @staticmethod
     cdef StrategyId from_string_c(str value)
@@ -68,9 +77,12 @@ cdef class Issuer(Identifier):
 
 
 cdef class AccountId(Identifier):
-    cdef Issuer _issuer
-    cdef Identifier _identifier
-    cdef AccountType _account_type
+    cdef readonly Issuer issuer
+    """The account issuer.\n\n:returns: `Issuer`"""
+    cdef readonly Identifier identifier
+    """The account identifier value.\n\n:returns: `Identifier`"""
+    cdef readonly AccountType account_type
+    """The account type.\n\n:returns: `AccountType`"""
 
     cdef Venue issuer_as_venue(self)
 
@@ -97,7 +109,9 @@ cdef class OrderId(Identifier):
 cdef class PositionId(Identifier):
 
     @staticmethod
-    cdef PositionId null()
+    cdef PositionId null_c()
+    cdef inline bint is_null(self) except *
+    cdef inline bint not_null(self)  except *
 
 
 cdef class ExecutionId(Identifier):

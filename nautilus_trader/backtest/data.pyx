@@ -52,6 +52,8 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BacktestDataContainer:
     """
     Provides a container for backtest data.
@@ -59,7 +61,7 @@ cdef class BacktestDataContainer:
 
     def __init__(self):
         """
-        Initialize a new instance of the BacktestDataContainer class.
+        Initialize a new instance of the `BacktestDataContainer` class.
         """
         self.symbols = set()   # type: {Instrument}
         self.instruments = {}  # type: {Symbol, Instrument}
@@ -182,6 +184,8 @@ cdef class BacktestDataContainer:
         return size
 
 
+# noinspection: Object has warned attribute
+# noinspection PyUnresolvedReferences
 cdef class BacktestDataClient(DataClient):
     """
     Provides a data client for backtesting.
@@ -197,7 +201,7 @@ cdef class BacktestDataClient(DataClient):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the BacktestDataClient class.
+        Initialize a new instance of the `BacktestDataClient` class.
 
         venue : Venue
             The venue the client can provide data for.
