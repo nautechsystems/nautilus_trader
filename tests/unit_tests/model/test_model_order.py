@@ -234,7 +234,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.SELL,
-            Quantity(100000),)
+            Quantity(100000),
+        )
 
         # Assert
         self.assertEqual(OrderType.MARKET, order.type)
@@ -318,14 +319,15 @@ class OrderTests(unittest.TestCase):
         entry_order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         # Act
         bracket_order = self.order_factory.bracket(entry_order, Price("0.99990"))
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
-        self.assertFalse(bracket_order.has_take_profit)
+        self.assertFalse(bracket_order.take_profit is not None)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
         self.assertEqual(OrderSide.SELL, bracket_order.stop_loss.side)
@@ -355,7 +357,7 @@ class OrderTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AUDUSD_FXCM, bracket_order.stop_loss.symbol)
-        self.assertTrue(bracket_order.has_take_profit)
+        self.assertTrue(bracket_order.take_profit is not None)
         self.assertEqual(AUDUSD_FXCM, bracket_order.take_profit.symbol)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
@@ -417,7 +419,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -436,7 +439,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         rejected = TestStubs.event_order_rejected(order)
@@ -485,7 +489,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
             Price("0.99990"),
             TimeInForce.GTD,
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -508,7 +513,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -530,7 +536,8 @@ class OrderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -544,7 +551,8 @@ class OrderTests(unittest.TestCase):
             Price("1.00001"),
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         order.apply(submitted)
         order.apply(accepted)
@@ -567,7 +575,8 @@ class OrderTests(unittest.TestCase):
         order = self.order_factory.market(
             AUDUSD_FXCM,
             OrderSide.BUY,
-            Quantity(100000))
+            Quantity(100000),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -576,7 +585,8 @@ class OrderTests(unittest.TestCase):
             order,
             PositionId("P-123456"),
             StrategyId("S", "001"),
-            Price("1.00001"))
+            Price("1.00001"),
+        )
 
         order.apply(submitted)
         order.apply(accepted)
@@ -597,7 +607,8 @@ class OrderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -648,7 +659,8 @@ class OrderTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.BUY,
             Quantity(100000),
-            Price("1.00000"))
+            Price("1.00000"),
+        )
 
         submitted = TestStubs.event_order_submitted(order)
         accepted = TestStubs.event_order_accepted(order)
@@ -674,7 +686,8 @@ class OrderTests(unittest.TestCase):
             False,
             UNIX_EPOCH,
             uuid4(),
-            UNIX_EPOCH)
+            UNIX_EPOCH,
+        )
 
         order.apply(submitted)
         order.apply(accepted)

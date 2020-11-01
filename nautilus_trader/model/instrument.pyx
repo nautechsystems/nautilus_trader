@@ -27,8 +27,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class Instrument:
     """
     Represents a tradeable financial market instrument.
@@ -182,393 +180,46 @@ cdef class Instrument:
         Condition.not_negative(margin_maintenance, "margin_maintenance")
         Condition.not_negative(margin_maintenance, "margin_maintenance")
 
-        self._symbol = symbol
-        self._asset_class = asset_class
-        self._asset_type = asset_type
-        self._base_currency = base_currency
-        self._quote_currency = quote_currency
-        self._settlement_currency = settlement_currency
-        self._is_inverse = info.get("is_inverse", False)
-        self._is_quanto = info.get("is_quanto", False)
-        self._price_precision = price_precision
-        self._size_precision = size_precision
-        self._tick_size = tick_size
-        self._multiplier = multiplier
-        self._leverage = leverage
-        self._lot_size = lot_size
-        self._max_quantity = max_quantity
-        self._min_quantity = min_quantity
-        self._max_notional = max_notional
-        self._min_notional = min_notional
-        self._max_price = max_price
-        self._min_price = min_price
-        self._margin_initial = margin_initial
-        self._margin_maintenance = margin_maintenance
-        self._maker_fee = maker_fee
-        self._taker_fee = taker_fee
-        self._settlement_fee = settlement_fee
-        self._funding_rate_long = funding_rate_long
-        self._funding_rate_short = funding_rate_short
-        self._timestamp = timestamp
+        self.symbol = symbol
+        self.asset_class = asset_class
+        self.asset_type = asset_type
+        self.base_currency = base_currency
+        self.quote_currency = quote_currency
+        self.settlement_currency = settlement_currency
+        self.is_inverse = info.get("is_inverse", False)
+        self.is_quanto = info.get("is_quanto", False)
+        self.price_precision = price_precision
+        self.size_precision = size_precision
+        self.tick_size = tick_size
+        self.multiplier = multiplier
+        self.leverage = leverage
+        self.lot_size = lot_size
+        self.max_quantity = max_quantity
+        self.min_quantity = min_quantity
+        self.max_notional = max_notional
+        self.min_notional = min_notional
+        self.max_price = max_price
+        self.min_price = min_price
+        self.margin_initial = margin_initial
+        self.margin_maintenance = margin_maintenance
+        self.maker_fee = maker_fee
+        self.taker_fee = taker_fee
+        self.settlement_fee = settlement_fee
+        self.funding_rate_long = funding_rate_long
+        self.funding_rate_short = funding_rate_short
+        self.timestamp = timestamp
 
     def __eq__(self, Instrument other) -> bool:
-        return self._symbol == other.symbol
+        return self.symbol == other.symbol
 
     def __ne__(self, Instrument other) -> bool:
         return not self == other
 
     def __hash__(self) -> int:
-        return hash(self._symbol.value)
+        return hash(self.symbol.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self._symbol.value}')"
-
-    @property
-    def symbol(self):
-        """
-        The symbol of the instrument.
-
-        Returns
-        -------
-        Symbol
-
-        """
-        return self._symbol
-
-    @property
-    def asset_class(self):
-        """
-        The asset class of the instrument.
-
-        Returns
-        -------
-        AssetClass
-
-        """
-        return self._asset_class
-
-    @property
-    def asset_type(self):
-        """
-        The asset type of the instrument
-
-        Returns
-        -------
-        AssetType
-
-        """
-        return self._asset_type
-
-    @property
-    def base_currency(self):
-        """
-        The base currency of the instrument.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return self._base_currency
-
-    @property
-    def quote_currency(self):
-        """
-        The quote currency of the instrument.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return self._quote_currency
-
-    @property
-    def settlement_currency(self):
-        """
-        The settlement currency of the instrument.
-
-        Returns
-        -------
-        Currency
-
-        """
-        return self._settlement_currency
-
-    @property
-    def is_inverse(self):
-        """
-        If the instrument is inverse (quantity expressed as quote currency).
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_inverse
-
-    @property
-    def is_quanto(self):
-        """
-        If the instrument is quanto.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._is_quanto
-
-    @property
-    def price_precision(self):
-        """
-        The price precision of the instrument.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._price_precision
-
-    @property
-    def size_precision(self):
-        """
-        The size precision of the instrument.
-
-        Returns
-        -------
-
-        """
-        return self._size_precision
-
-    @property
-    def cost_precision(self):
-        """
-        The cost precision of the instrument.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._settlement_currency.precision
-
-    @property
-    def tick_size(self):
-        """
-        The tick size of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._tick_size
-
-    @property
-    def multiplier(self):
-        """
-        The multiplier of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._multiplier
-
-    @property
-    def leverage(self):
-        """
-        The leverage of the instrument
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._leverage
-
-    @property
-    def lot_size(self):
-        """
-        The lot size of the instrument.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        return self._lot_size
-
-    @property
-    def max_quantity(self):
-        """
-        The maximum order quantity for the instrument.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        return self._max_quantity
-
-    @property
-    def min_quantity(self):
-        """
-        The minimum order quantity for the instrument.
-
-        Returns
-        -------
-        Quantity
-
-        """
-        return self._min_quantity
-
-    @property
-    def max_notional(self):
-        """
-        The maximum notional order value for the instrument.
-
-        Returns
-        -------
-        Money
-
-        """
-        return self._max_notional
-
-    @property
-    def min_notional(self):
-        """
-        The minimum notional order value for the instrument.
-
-        Returns
-        -------
-        Money
-
-        """
-        return self._min_notional
-
-    @property
-    def max_price(self):
-        """
-        The maximum printable price for the instrument.
-
-        Returns
-        -------
-        Money
-
-        """
-        return self._max_price
-
-    @property
-    def min_price(self):
-        """
-        The minimum printable price for the instrument.
-
-        Returns
-        -------
-        Money
-
-        """
-        return self._min_price
-
-    @property
-    def margin_initial(self):
-        """
-        The initial margin rate of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._margin_initial
-
-    @property
-    def margin_maintenance(self):
-        """
-        The maintenance margin rate of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._margin_maintenance
-
-    @property
-    def maker_fee(self):
-        """
-        The maker fee rate of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._maker_fee
-
-    @property
-    def taker_fee(self):
-        """
-        The taker fee rate of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._taker_fee
-
-    @property
-    def settlement_fee(self):
-        """
-        The settlement fee rate of the instrument.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._settlement_fee
-
-    @property
-    def funding_rate_long(self):
-        """
-        The funding rate for long positions.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._funding_rate_long
-
-    @property
-    def funding_rate_short(self):
-        """
-        The funding rate for short positions.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return self._funding_rate_short
-
-    @property
-    def timestamp(self):
-        """
-        The initialization timestamp of the instrument.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._timestamp
+        return f"{type(self).__name__}('{self.symbol.value}')"
 
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price):
         """
@@ -590,14 +241,14 @@ cdef class Instrument:
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
 
-        if self._leverage == 1:
-            return Money(0, self._base_currency)  # No margin necessary
+        if self.leverage == 1:
+            return Money(0, self.base_currency)  # No margin necessary
 
         cdef Decimal notional = self._calculate_notional(quantity, price)
-        cdef Decimal margin = notional / self._leverage * self._margin_initial
-        margin += notional * self._taker_fee * 2
+        cdef Decimal margin = notional / self.leverage * self.margin_initial
+        margin += notional * self.taker_fee * 2
 
-        return Money(margin, self._base_currency)
+        return Money(margin, self.base_currency)
 
     cpdef Money calculate_position_margin(
             self,
@@ -631,17 +282,17 @@ cdef class Instrument:
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self._symbol, "last.symbol", "self.symbol")
+        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
-        if self._leverage == 1:
-            return Money(0, self._base_currency)  # No margin necessary
+        if self.leverage == 1:
+            return Money(0, self.base_currency)  # No margin necessary
 
         cdef Price close_price = self._get_close_price(side, last)
         cdef Decimal notional = self._calculate_notional(quantity, close_price)
-        cdef Decimal margin = notional / self._leverage * self._margin_maintenance
-        margin += notional * self._taker_fee
+        cdef Decimal margin = notional / self.leverage * self.margin_maintenance
+        margin += notional * self.taker_fee
 
-        return Money(margin, self._base_currency)
+        return Money(margin, self.base_currency)
 
     cpdef Money calculate_open_value(
         self,
@@ -676,12 +327,12 @@ cdef class Instrument:
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self._symbol, "last.symbol", "self.symbol")
+        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
         cdef Price close_price = self._get_close_price(side, last)
         cdef Decimal notional = self._calculate_notional(quantity, close_price)
 
-        return Money(notional, self._base_currency)
+        return Money(notional, self.base_currency)
 
     cpdef Money calculate_unrealized_pnl(
         self,
@@ -779,7 +430,7 @@ cdef class Instrument:
 
         cdef Decimal pnl = notional * return_percentage
 
-        return Money(pnl, self._base_currency)
+        return Money(pnl, self.base_currency)
 
     cpdef Money calculate_commission(
         self,
@@ -819,21 +470,21 @@ cdef class Instrument:
 
         cdef Decimal commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission = notional * self._maker_fee
+            commission = notional * self.maker_fee
         elif liquidity_side == LiquiditySide.TAKER:
-            commission = notional * self._taker_fee
+            commission = notional * self.taker_fee
         else:
             raise ValueError(f"Cannot calculate commission "
                              f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")
 
-        commission += commission * self._settlement_fee
+        commission += commission * self.settlement_fee
 
-        return Money(commission, self._base_currency)
+        return Money(commission, self.base_currency)
 
     cdef inline Decimal _calculate_notional(self, Quantity quantity, Decimal close_price):
-        cdef Decimal notional = quantity * self._multiplier
+        cdef Decimal notional = quantity * self.multiplier
 
-        if self._is_inverse:
+        if self.is_inverse:
             notional *= (1 / close_price)
 
         return notional

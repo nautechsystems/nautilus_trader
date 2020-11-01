@@ -76,8 +76,6 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class ExecutionEngine:
     """
     Provides a high-performance execution engine for the management of many
@@ -489,16 +487,16 @@ cdef class ExecutionEngine:
         if self._cache.order_exists(command.bracket_order.entry.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
-            if command.bracket_order.has_take_profit:
+            if command.bracket_order.take_profit is not None:
                 self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
             return  # Invalid command
         if self._cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
-            if command.bracket_order.has_take_profit:
+            if command.bracket_order.take_profit is not None:
                 self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
             return  # Invalid command
-        if command.bracket_order.has_take_profit and self._cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
+        if command.bracket_order.take_profit is not None and self._cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
@@ -507,7 +505,7 @@ cdef class ExecutionEngine:
         # Cache all orders
         self._cache.add_order(command.bracket_order.entry, PositionId.null())
         self._cache.add_order(command.bracket_order.stop_loss, PositionId.null())
-        if command.bracket_order.has_take_profit:
+        if command.bracket_order.take_profit is not None:
             self._cache.add_order(command.bracket_order.take_profit, PositionId.null())
 
         # Submit bracket order
@@ -615,7 +613,7 @@ cdef class ExecutionEngine:
         self._cache.update_order(order)
 
         # Update portfolio
-        if order.is_working or order.is_completed:
+        if order.is_working_c() or order.is_completed_c():
             self._portfolio.update_order(order)
 
         if isinstance(event, OrderFilled):
@@ -662,13 +660,13 @@ cdef class ExecutionEngine:
     ) except *:
         if position_id.is_null:  # No position yet
             # Generate identifier and assign
-            fill._position_id = self._pos_id_generator.generate(fill.symbol)
+            fill.position_id = self._pos_id_generator.generate(fill.symbol)
 
             # Create new position
             self._open_position(fill)
         else:  # Position exists
-            fill._position_id = position_id
-            fill._strategy_id = strategy_id
+            fill.position_id = position_id
+            fill.strategy_id = strategy_id
             self._update_position(fill)
 
     cdef inline void _fill_exchange_assigned_ids(
@@ -677,7 +675,7 @@ cdef class ExecutionEngine:
             OrderFilled fill,
             StrategyId strategy_id,
     ) except *:
-        fill._strategy_id = strategy_id
+        fill.strategy_id = strategy_id
         if position_id is None:  # No position
             self._open_position(fill)
         else:
@@ -707,7 +705,7 @@ cdef class ExecutionEngine:
         self._cache.update_position(position)
 
         cdef PositionEvent position_event
-        if position.is_closed:
+        if position.is_closed_c():
             position_event = self._pos_closed_event(position, fill)
         else:
             position_event = self._pos_modified_event(position, fill)

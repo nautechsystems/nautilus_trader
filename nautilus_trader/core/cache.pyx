@@ -40,35 +40,10 @@ cdef class ObjectCache:
             The parser function to created an object for the cache.
 
         """
-        self._type_key = str
-        self._type_value = type_value
+        self.type_key = str
+        self.type_value = type_value
         self._cache = {}
         self._parser = parser
-
-    @property
-    def type_key(self):
-        """
-        The caches key type.
-
-        Returns
-        -------
-        type
-
-
-        """
-        return self._type_key
-
-    @property
-    def type_value(self):
-        """
-        The caches value type.
-
-        Returns
-        -------
-        type
-
-        """
-        return self._type_value
 
     cpdef list keys(self):
         """

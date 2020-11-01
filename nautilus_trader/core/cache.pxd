@@ -15,10 +15,13 @@
 
 
 cdef class ObjectCache:
-    cdef type _type_key
-    cdef type _type_value
     cdef dict _cache
     cdef object _parser
+
+    cdef readonly type type_key
+    """The caches key type.\n\n:returns: `type`"""
+    cdef readonly type type_value
+    """The caches value type.\n\n:returns: `type`"""
 
     cpdef object get(self, str key)
     cpdef list keys(self)

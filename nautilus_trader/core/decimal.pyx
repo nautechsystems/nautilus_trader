@@ -221,6 +221,9 @@ cdef class Decimal:
         int
 
         """
+        return self.precision_c()
+
+    cdef inline int precision_c(self) except *:
         return abs(self._value.as_tuple().exponent)
 
     cpdef object as_decimal(self):

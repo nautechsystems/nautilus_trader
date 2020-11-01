@@ -48,16 +48,20 @@ cdef class IdTag(Identifier):
 
 
 cdef class TraderId(Identifier):
-    cdef str _name
-    cdef IdTag _tag
+    cdef readonly str name
+    """The name identifier of the trader.\n\n:returns: `str`"""
+    cdef readonly IdTag tag
+    """The order identifier tag of the trader.\n\n:returns: `IdTag`"""
 
     @staticmethod
     cdef TraderId from_string_c(str value)
 
 
 cdef class StrategyId(Identifier):
-    cdef str _name
-    cdef IdTag _tag
+    cdef readonly str name
+    """The name identifier of the strategy.\n\n:returns: `str`"""
+    cdef readonly IdTag tag
+    """The order identifier tag of the strategy.\n\n:returns: `str`"""
 
     @staticmethod
     cdef StrategyId null()
@@ -71,9 +75,12 @@ cdef class Issuer(Identifier):
 
 
 cdef class AccountId(Identifier):
-    cdef Issuer _issuer
-    cdef Identifier _identifier
-    cdef AccountType _account_type
+    cdef readonly Issuer issuer
+    """The account issuer.\n\n:returns: `Issuer`"""
+    cdef readonly Identifier identifier
+    """The account identifier value.\n\n:returns: `Identifier`"""
+    cdef readonly AccountType account_type
+    """The account type.\n\n:returns: `AccountType`"""
 
     cdef Venue issuer_as_venue(self)
 

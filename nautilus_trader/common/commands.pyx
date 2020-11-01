@@ -51,8 +51,8 @@ cdef class Connect(Command):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self._venue}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
     @property
     def venue(self):
@@ -99,8 +99,8 @@ cdef class Disconnect(Command):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self._venue}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
     @property
     def venue(self):
@@ -151,8 +151,8 @@ cdef class DataCommand(Command):
         return (f"{type(self).__name__}("
                 f"data_type={self._data_type}, "
                 f"options={self._options}, "
-                f"id={self._id}, "
-                f"timestamp={self._timestamp})")
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
     @property
     def data_type(self):

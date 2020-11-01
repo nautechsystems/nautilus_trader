@@ -20,6 +20,7 @@ from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -52,23 +53,46 @@ cdef class Order:
     cdef list _events
     cdef FiniteStateMachine _fsm
 
-    cdef ClientOrderId _cl_ord_id
-    cdef StrategyId _strategy_id
-    cdef OrderId _id
-    cdef AccountId _account_id
-    cdef ExecutionId _execution_id
-    cdef PositionId _position_id
-    cdef Symbol _symbol
-    cdef OrderSide _side
-    cdef OrderType _type
-    cdef Quantity _quantity
-    cdef datetime _timestamp
-    cdef TimeInForce _time_in_force
-    cdef Quantity _filled_qty
-    cdef datetime _filled_timestamp
-    cdef Decimal _avg_price
-    cdef Decimal _slippage
-    cdef UUID _init_id
+    cdef readonly ClientOrderId cl_ord_id
+    """The orders client order identifier.\n\n:returns: `ClientOrderId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy identifier associated with the order.\n\n:returns: `StrategyId`"""
+    cdef readonly OrderId id
+    """The order identifier (exchange/broker).\n\n:returns: `OrderId`"""
+    cdef readonly AccountId account_id
+    """The account identifier associated with the order.\n\n:returns: `AccountId`"""
+    cdef readonly ExecutionId execution_id
+    """The orders last execution identifier.\n\n:returns: `ExecutionId`"""
+    cdef readonly PositionId position_id
+    """The position identifier associated with the order.\n\n:returns: `PositionId`"""
+    cdef readonly Symbol symbol
+    """The order symbol.\n\n:returns: `Symbol`"""
+    cdef readonly OrderSide side
+    """The order side.\n\n:returns: `OrderSide`"""
+    cdef readonly OrderType type
+    """The order type.\n\n:returns: `OrderType`"""
+    cdef readonly Quantity quantity
+    """The order quantity.\n\n:returns: `Quantity`"""
+    cdef readonly datetime timestamp
+    """The order initialization timestamp.\n\n:returns: `datetime`"""
+    cdef readonly TimeInForce time_in_force
+    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly Quantity filled_qty
+    """The order total filled quantity.\n\n:returns: `Quantity`"""
+    cdef readonly datetime filled_timestamp
+    """The order last filled timestamp.\n\n:returns: `datetime`"""
+    cdef readonly Decimal avg_price
+    """The order average fill price.\n\n:returns: `Decimal`"""
+    cdef readonly Decimal slippage
+    """The order total price slippage.\n\n:returns: `Decimal`"""
+    cdef readonly UUID init_id
+    """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+
+    cdef inline int state_c(self) except *
+    cdef inline bint is_buy_c(self) except *
+    cdef inline bint is_sell_c(self) except *
+    cdef inline bint is_working_c(self) except *
+    cdef inline bint is_completed_c(self) except *
 
     @staticmethod
     cdef inline OrderSide opposite_side_c(OrderSide side) except *
@@ -92,9 +116,12 @@ cdef class Order:
 
 
 cdef class PassiveOrder(Order):
-    cdef Price _price
-    cdef LiquiditySide _liquidity_side
-    cdef datetime _expire_time
+    cdef readonly Price price
+    """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
+    cdef readonly LiquiditySide liquidity_side
+    """The order liquidity size.\n\n:returns: `LiquiditySide`"""
+    cdef readonly datetime expire_time
+    """The order expire time (optional).\n\n:returns: `datetime` or `None`"""
 
     cdef void _set_slippage(self) except *
 
@@ -110,16 +137,23 @@ cdef class StopMarketOrder(PassiveOrder):
 
 
 cdef class LimitOrder(PassiveOrder):
-    cdef bint _is_post_only
-    cdef bint _is_hidden
+    cdef readonly bint is_post_only
+    """If the order is `post_only`, meaning it will only make liquidity.\n\n:returns: `bool`"""
+    cdef readonly bint is_hidden
+    """If the order is marked to display on the public order book.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized event)
 
 
 cdef class BracketOrder:
-    cdef BracketOrderId _id
-    cdef Order _entry
-    cdef StopMarketOrder _stop_loss
-    cdef PassiveOrder _take_profit
-    cdef datetime _timestamp
+    cdef readonly BracketOrderId id
+    """The bracket order identifier.\n\n:returns: `BracketOrderId`"""
+    cdef readonly Order entry
+    """The entry order.\n\n:returns: `Order`"""
+    cdef readonly StopMarketOrder stop_loss
+    """The stop-loss order.\n\n:returns: `StopMarketOrder`"""
+    cdef readonly PassiveOrder take_profit
+    """The take-profit order (optional).\n\n:returns: `PassiveOrder` or `None`"""
+    cdef readonly datetime timestamp
+    """If the bracket order has a take-profit.\n\n:returns: `datetime`"""
