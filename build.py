@@ -56,7 +56,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 
 
 def _build_extensions() -> List[Extension]:
-    """Build Extensions to feed into cythonize()."""
+    # Build Extensions to feed into cythonize()
     # Profiling requires special macro directives
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros = [("CYTHON_TRACE", "1")]
@@ -77,7 +77,7 @@ def _build_extensions() -> List[Extension]:
 
 
 def _build_distribution(extensions: List[Extension]) -> Distribution:
-    """Build a Distribution using cythonize()."""
+    # Build a Distribution using cythonize()
     # Determine the build output directory
     if PROFILING_MODE:
         # For subsequent annotation, the c source needs to be in
@@ -105,7 +105,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
 
 
 def _copy_build_dir_to_project(cmd: build_ext) -> None:
-    """Copy built extensions back to the project tree."""
+    # Copy built extensions back to the project tree
     for output in cmd.get_outputs():
         relative_extension = os.path.relpath(output, cmd.build_lib)
         if not os.path.exists(output):
@@ -120,7 +120,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 
 def build(setup_kwargs):
-    # Construct the extensions and distribution
+    """Construct the extensions and distribution."""  # noqa
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 
