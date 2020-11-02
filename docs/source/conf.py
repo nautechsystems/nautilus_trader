@@ -23,7 +23,7 @@ author = "Nautech Systems"
 version = ""
 
 if "READTHEDOCS" not in os.environ:
-    # if developing locally, use pyro.__version__ as version
+    # if developing locally
     from nautilus_trader import __version__  # noqaE402
     version = __version__
 
