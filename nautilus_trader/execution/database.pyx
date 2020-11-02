@@ -43,83 +43,71 @@ cdef class ExecutionDatabase:
             The logger for the database.
 
         """
-        self._trader_id = trader_id
+        self.trader_id = trader_id
         self._log = LoggerAdapter(type(self).__name__, logger)
 
-    @property
-    def trader_id(self):
-        """
-        The trader identifier associated with the database.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._trader_id
-
     cpdef void flush(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict load_accounts(self):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict load_orders(self):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict load_positions(self):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Account load_account(self, AccountId account_id):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Order load_order(self, ClientOrderId cl_ord_id):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Position load_position(self, PositionId position_id):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict load_strategy(self, StrategyId strategy_id):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void add_account(self, Account account) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void add_order(self, Order order, PositionId position_id) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void add_position(self, Position position) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_account(self, Account event) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_order(self, Order order) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_position(self, Position position) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 

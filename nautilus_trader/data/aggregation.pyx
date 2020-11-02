@@ -20,7 +20,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.common.timer cimport Timer
+from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
@@ -33,8 +33,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class BarBuilder:
     """
     Provides a generic bar builder for aggregation.
@@ -184,8 +182,6 @@ cdef class BarBuilder:
         self.count = 0
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class BarAggregator:
     """
     Provides a means of aggregating specified bars and sending to a registered handler.
@@ -222,19 +218,17 @@ cdef class BarAggregator:
         )
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:
         self._handler(self.bar_type, bar)
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class TickBarAggregator(BarAggregator):
     """
     Provides a means of building tick bars from ticks.
@@ -311,8 +305,6 @@ cdef class TickBarAggregator(BarAggregator):
             self._handle_bar(bar)
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class TimeBarAggregator(BarAggregator):
     """
     Provides a means of building time bars from ticks with an internal timer.
@@ -412,6 +404,8 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         self._clock.cancel_timer(str(self.bar_type))
 
+    # noinspection: CPython datetime attributes
+    # noinspection PyUnresolvedReferences
     cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.utc_now()
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
@@ -483,7 +477,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._log.info(f"Started timer {timer_name}.")
 
     cpdef void _build_bar(self, datetime at_time) except *:
-        cdef Timer timer = self._clock.timer(str(self.bar_type))
+        cdef TestTimer timer = self._clock.timer(str(self.bar_type))
         cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
         self.next_close = timer.next_time

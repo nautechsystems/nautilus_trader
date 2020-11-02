@@ -19,11 +19,11 @@ from nautilus_trader.serialization.base cimport EventSerializer
 
 
 cdef class PostgresExecutionDatabase(ExecutionDatabase):
-    cdef readonly str key_trader
-    cdef readonly str key_accounts
-    cdef readonly str key_orders
-    cdef readonly str key_positions
-    cdef readonly str key_strategies
+    cdef readonly str _key_trader
+    cdef readonly str _key_accounts
+    cdef readonly str _key_orders
+    cdef readonly str _key_positions
+    cdef readonly str _key_strategies
 
     cdef CommandSerializer _command_serializer
     cdef EventSerializer _event_serializer

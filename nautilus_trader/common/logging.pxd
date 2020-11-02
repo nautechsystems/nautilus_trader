@@ -77,9 +77,14 @@ cdef inline LogLevel log_level_from_string(str value):
 
 cdef class LogMessage:
     cdef readonly datetime timestamp
+    """The log message timestamp.\n\n:returns: `datetime`"""
     cdef readonly LogLevel level
+    """The log level.\n\n:returns: `LogLevel`"""
     cdef readonly str text
+    """The log text.\n\n:returns: `str`"""
     cdef readonly long thread_id
+    """The thread identifier.\n\n:returns: `long`"""
+
     cdef str level_string(self)
     cdef str as_string(self)
 
@@ -98,8 +103,11 @@ cdef class Logger:
     cdef object _logger
 
     cdef readonly str name
+    """The loggers name.\n\n:returns: `str`"""
     cdef readonly bint bypass_logging
+    """If the logger is in bypass mode.\n\n:returns: `bool`"""
     cdef readonly Clock clock
+    """The loggers clock.\n\n:returns: `Clock`"""
 
     cpdef void change_log_file_name(self, str name) except *
     cpdef void log(self, LogMessage message) except *
@@ -116,6 +124,7 @@ cdef class LoggerAdapter:
     cdef str _component_name
 
     cdef readonly bint bypassed
+    """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
     cpdef void verbose(self, str message) except *

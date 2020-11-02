@@ -26,8 +26,6 @@ from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 cdef class DataCache(DataCacheFacade):
     cdef LoggerAdapter _log
-    cdef int _tick_capacity
-    cdef int _bar_capacity
     cdef dict _instruments
     cdef dict _bid_quotes
     cdef dict _ask_quotes
@@ -35,6 +33,11 @@ cdef class DataCache(DataCacheFacade):
     cdef dict _trade_ticks
     cdef dict _bars
     cdef ExchangeRateCalculator _xrate_calculator
+
+    cdef readonly int tick_capacity
+    """The caches tick capacity.\n\n:returns: `int`"""
+    cdef readonly int bar_capacity
+    """The caches bar capacity.\n\n:returns: `int`"""
 
     cpdef void reset(self) except *
 

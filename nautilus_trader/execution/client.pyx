@@ -55,83 +55,51 @@ cdef class ExecutionClient:
 
         self._engine = engine
         self._log = LoggerAdapter(type(self).__name__, logger)
-        self._venue = venue
-        self._account_id = account_id
+
+        self.venue = venue
+        self.account_id = account_id
 
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self._venue})"
-
-    @property
-    def venue(self):
-        """
-        The execution clients venue.
-
-        Returns
-        -------
-        Venue
-
-        """
-        return self._venue
-
-    @property
-    def account_id(self):
-        """
-        The execution clients account identifier.
-
-        Returns
-        -------
-        Venue
-
-        """
-        return self._account_id
-
-    @property
-    def is_connected(self):
-        """
-        If the execution client is currently connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
+        return f"{type(self).__name__}({self.venue})"
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
+    cpdef bint is_connected(self) except *:
+        """Abstract method."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void connect(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- HANDLERS --------------------------------------------------------------------------------------

@@ -67,8 +67,6 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class DataEngine:
     """
     Provides a high-performance data engine for managing many `DataClient`
@@ -109,8 +107,6 @@ cdef class DataEngine:
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._portfolio = portfolio
-        self._cache = DataCache(logger)
         self._use_previous_close = config.get('use_previous_close', True)
         self._clients = {}              # type: {Venue, DataClient}
 
@@ -123,48 +119,16 @@ cdef class DataEngine:
         # Aggregators
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
 
+        # Public components
+        self.portfolio = portfolio
+        self.cache = DataCache(logger)
+
         # Counters
-        self._command_count = 0
-        self._data_count = 0
+        self.command_count = 0
+        self.data_count = 0
 
         self._log.info("Initialized.")
         self._log.info(f"use_previous_close={self._use_previous_close}")
-
-    @property
-    def cache(self):
-        """
-        The engines data cache.
-
-        Returns
-        -------
-        DataCache
-
-        """
-        return self._cache
-
-    @property
-    def command_count(self):
-        """
-        The total count of commands received by the engine.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._command_count
-
-    @property
-    def data_count(self):
-        """
-        The total count of data objects received by the engine.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._data_count
 
     @property
     def registered_venues(self):
@@ -314,15 +278,15 @@ cdef class DataEngine:
         for client in self._clients.values():
             client.reset()
 
-        self._cache.reset()
+        self.cache.reset()
         self._instrument_handlers.clear()
         self._quote_tick_handlers.clear()
         self._trade_tick_handlers.clear()
         self._bar_aggregators.clear()
         self._bar_handlers.clear()
         self._clock.cancel_all_timers()
-        self._command_count = 0
-        self._data_count = 0
+        self.command_count = 0
+        self.data_count = 0
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self._log.info(f"state={self._fsm.state_string()}.")
@@ -372,14 +336,14 @@ cdef class DataEngine:
         Update all instruments for every venue.
         """
         cdef Venue venue
-        for venue in self.registered_venues:
+        for venue in self.registered_venues():
             self.update_instruments(venue)
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
-        self._command_count += 1
+        self.command_count += 1
 
         if isinstance(command, Connect):
             self._handle_connect(command)
@@ -660,7 +624,7 @@ cdef class DataEngine:
 # -- DATA HANDLERS -------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, object data) except *:
-        self._data_count += 1
+        self.data_count += 1
 
         if isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
@@ -682,9 +646,9 @@ cdef class DataEngine:
             self._log.error(f"Cannot handle data ({data} is unrecognized).")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
-        self._cache.add_instrument(instrument)
+        self.cache.add_instrument(instrument)
 
-        self._portfolio.update_instrument(instrument)
+        self.portfolio.update_instrument(instrument)
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
         if instrument_handlers:
@@ -697,13 +661,13 @@ cdef class DataEngine:
             self._handle_instrument(instrument)
 
     cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
-        self._cache.add_quote_tick(tick)
+        self.cache.add_quote_tick(tick)
 
         if not send_to_handlers:
             return
 
         # Send to portfolio as a priority
-        self._portfolio.update_tick(tick)
+        self.portfolio.update_tick(tick)
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
@@ -756,7 +720,7 @@ cdef class DataEngine:
             self._handle_trade_tick(ticks[i], send_to_handlers=False)
 
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=True) except *:
-        self._cache.add_bar(bar_type, bar)
+        self.cache.add_bar(bar_type, bar)
 
         if not send_to_handlers:
             return
