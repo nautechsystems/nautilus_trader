@@ -36,7 +36,6 @@ print(
 
 # Cython build options
 Options.docstrings = True  # Include docstrings in modules
-Options.embed_pos_in_docstring = True  # Embed docstrings in extensions
 Options.emit_code_comments = True
 Options.annotate = ANNOTATION_MODE  # Create annotated html files for each .pyx
 if ANNOTATION_MODE:
