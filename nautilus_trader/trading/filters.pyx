@@ -18,6 +18,8 @@ import os
 import pandas as pd
 import pytz
 
+
+from datetime import datetime
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 

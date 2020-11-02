@@ -111,7 +111,3 @@ def process_docstring(app, what, name, obj, options, lines):  # noqa
 def setup(app):  # noqa
     app.connect("autodoc-skip-member", skip)
     app.connect("autodoc-process-docstring", process_docstring)
-
-
-if 'READTHEDOCS' in os.environ:
-    os.system('pip install .[docs]')
