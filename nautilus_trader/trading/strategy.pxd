@@ -43,25 +43,35 @@ from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
-
-    cdef StrategyId _id
-    cdef TraderId _trader_id
     cdef DataEngine _data_engine
-    cdef DataCacheFacade _data
     cdef ExecutionEngine _exec_engine
-    cdef ExecutionCacheFacade _execution
-    cdef PortfolioFacade _portfolio
-    cdef OrderFactory _order_factory
-
     cdef list _indicators
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
+    cdef readonly StrategyId id
+    """The trading strategies identifier.\n\n:returns: `StrategyId`"""
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the trading strategy.\n\n:returns: `TraderId`"""
+    cdef readonly Clock clock
+    """The trading strategies clock.\n\n:returns: `Clock`"""
+    cdef readonly UUIDFactory uuid_factory
+    """The trading strategies UUID factory.\n\n:returns: `UUIDFactory`"""
+    cdef readonly LoggerAdapter log
+    """The trading strategies logger adapter.\n\n:returns: `LoggerAdapter`"""
+    cdef readonly DataCacheFacade data
+    """The read-only cache of the `DataEngine` the strategy is registered with.\n\n:returns: `DataCacheFacade`"""
+    cdef readonly ExecutionCacheFacade execution
+    """The read-only cache of the `ExecutionEngine` the strategy is registered with.\n\n:returns: `ExecutionCacheFacade`"""
+    cdef readonly PortfolioFacade portfolio
+    """The read-only portfolio the trading strategy is registered with.\n\n:returns: `PortfolioFacade`"""
+    cdef readonly OrderFactory order_factory
+    """The trading strategies order factory.\n\n:returns: `OrderFactory`"""
+
+    cpdef list registered_indicators(self)
+    cpdef bint indicators_initialized(self) except *
     cdef str state_string(self)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------

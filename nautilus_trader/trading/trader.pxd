@@ -32,14 +32,20 @@ cdef class Trader:
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
 
-    cdef TraderId _id
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
-    cdef Portfolio _portfolio
-    cdef PerformanceAnalyzer _analyzer
     cdef ReportProvider _report_provider
     cdef list _strategies
 
+    cdef readonly TraderId id
+    """The trader identifier.\n\n:returns: `TraderId`"""
+    cdef readonly Portfolio portfolio
+    """The portfolio for the trader.\n\n:returns: `Portfolio`"""
+    cdef readonly PerformanceAnalyzer analyzer
+    """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
+
+    cdef list strategies(self)
+    cpdef set strategy_ids(self)
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *
     cpdef void stop(self) except *

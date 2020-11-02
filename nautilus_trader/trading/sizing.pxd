@@ -21,7 +21,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class PositionSizer:
-    cdef Instrument _instrument
+    cdef readonly Instrument instrument
+    """The instrument for position sizing.\n\n:returns: `Instrument`"""
 
     cpdef void update_instrument(self, Instrument instrument) except *
     cpdef Quantity calculate(

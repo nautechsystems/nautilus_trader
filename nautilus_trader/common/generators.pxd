@@ -25,7 +25,9 @@ cdef class IdentifierGenerator:
     cdef str _prefix
     cdef IdTag _id_tag_trader
     cdef IdTag _id_tag_strategy
-    cdef int _count
+
+    cdef readonly int count
+    """The count of identifiers generated.\n\n:returns: `int`"""
 
     cpdef void set_count(self, int count) except *
     cpdef void reset(self) except *
