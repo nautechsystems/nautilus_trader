@@ -3,7 +3,7 @@ version: 2
 python:
   version: 3.8
   install:
-    - method: setuptools
+    - method: pip
       path: .
       extra_requirements:
         - docs
