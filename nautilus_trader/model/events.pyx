@@ -20,14 +20,13 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -545,9 +544,9 @@ cdef class OrderWorking(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"{order_side_to_string(self.order_side)} {self.quantity.to_string()} "
-                f"{self.symbol} {order_type_to_string(self.order_type)} @ "
-                f"{self.price} {time_in_force_to_string(self.time_in_force)}{expire_time}, "
+                f"{OrderSideParser.to_string(self.order_side)} {self.quantity.to_string()} "
+                f"{self.symbol} {OrderTypeParser.to_string(self.order_type)} @ "
+                f"{self.price} {TimeInForceParser.to_string(self.time_in_force)}{expire_time}, "
                 f"id={self.id})")
 
 
@@ -895,8 +894,8 @@ cdef class OrderFilled(OrderEvent):
                 f"position_id={self.position_id}, "
                 f"strategy_id={self.strategy_id}, "
                 f"symbol={self.symbol}, "
-                f"side={order_side_to_string(self.order_side)}"
-                f"-{liquidity_side_to_string(self.liquidity_side)}, "
+                f"side={OrderSideParser.to_string(self.order_side)}"
+                f"-{LiquiditySideParser.to_string(self.liquidity_side)}, "
                 f"filled_qty={self.filled_qty.to_string()}, "
                 f"leaves_qty={self.leaves_qty.to_string()}, "
                 f"avg_price={self.avg_price}, "
@@ -976,7 +975,7 @@ cdef class PositionOpened(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
-                f"entry={order_side_to_string(self.position.entry)}, "
+                f"entry={OrderSideParser.to_string(self.position.entry)}, "
                 f"avg_open={round(self.position.avg_open, 5)}, "
                 f"{self.position.status_string()}, "
                 f"id={self.id})")
@@ -1027,7 +1026,7 @@ cdef class PositionModified(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
-                f"entry={order_side_to_string(self.position.entry)}, "
+                f"entry={OrderSideParser.to_string(self.position.entry)}, "
                 f"avg_open={self.position.avg_open}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
@@ -1082,7 +1081,7 @@ cdef class PositionClosed(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
-                f"entry={order_side_to_string(self.position.entry)}, "
+                f"entry={OrderSideParser.to_string(self.position.entry)}, "
                 f"duration={duration}, "
                 f"avg_open={self.position.avg_open}, "
                 f"avg_close={self.position.avg_close}, "

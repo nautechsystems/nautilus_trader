@@ -26,7 +26,7 @@ attempts to operate without a managing `Trader` instance.
 import cython
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport RequestData
@@ -181,7 +181,7 @@ cdef class TradingStrategy:
             The trading strategies current state as a string.
 
         """
-        return component_state_to_string(self._fsm.state)
+        return ComponentStateParser.to_string(self._fsm.state)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

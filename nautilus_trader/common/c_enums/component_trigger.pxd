@@ -26,43 +26,10 @@ cpdef enum ComponentTrigger:
     DISPOSED = 8,
 
 
-cdef inline str component_trigger_to_string(int value):
-    if value == 1:
-        return 'START'
-    elif value == 2:
-        return 'RUNNING'
-    elif value == 3:
-        return 'STOP'
-    elif value == 4:
-        return 'STOPPED'
-    elif value == 5:
-        return 'RESUME'
-    elif value == 6:
-        return 'RESET'
-    elif value == 7:
-        return 'DISPOSE'
-    elif value == 8:
-        return 'DISPOSED'
-    else:
-        return 'UNDEFINED'
+cdef class ComponentTriggerParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline ComponentTrigger component_trigger_from_string(str value):
-    if value == 'START':
-        return ComponentTrigger.START
-    elif value == 'RUNNING':
-        return ComponentTrigger.RUNNING
-    elif value == 'STOP':
-        return ComponentTrigger.STOP
-    elif value == 'STOPPED':
-        return ComponentTrigger.STOPPED
-    elif value == 'RESUME':
-        return ComponentTrigger.RESUME
-    elif value == 'RESET':
-        return ComponentTrigger.RESET
-    elif value == 'DISPOSE':
-        return ComponentTrigger.DISPOSE
-    elif value == 'DISPOSED':
-        return ComponentTrigger.DISPOSED
-    else:
-        return ComponentTrigger.UNDEFINED
+    @staticmethod
+    cdef ComponentTrigger from_string(str value)

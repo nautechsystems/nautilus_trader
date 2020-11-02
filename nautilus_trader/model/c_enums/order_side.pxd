@@ -20,19 +20,10 @@ cpdef enum OrderSide:
     SELL = 2
 
 
-cdef inline str order_side_to_string(int value):
-    if value == 1:
-        return 'BUY'
-    elif value == 2:
-        return 'SELL'
-    else:
-        return 'UNDEFINED'
+cdef class OrderSideParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline OrderSide order_side_from_string(str value):
-    if value == 'BUY':
-        return OrderSide.BUY
-    elif value == 'SELL':
-        return OrderSide.SELL
-    else:
-        return OrderSide.UNDEFINED
+    @staticmethod
+    cdef OrderSide from_string(str value)

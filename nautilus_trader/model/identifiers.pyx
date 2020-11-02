@@ -15,8 +15,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
-from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 
 
 cdef class Identifier:
@@ -433,7 +432,7 @@ cdef class AccountId(Identifier):
             If identifier is not a valid string.
 
         """
-        super().__init__(f"{issuer}-{identifier}-{account_type_to_string(account_type)}")
+        super().__init__(f"{issuer}-{identifier}-{AccountTypeParser.to_string(account_type)}")
 
         self.issuer = Issuer(issuer)
         self.identifier = Identifier(identifier)
@@ -454,7 +453,7 @@ cdef class AccountId(Identifier):
         return AccountId(
             issuer=pieces[0],
             identifier=pieces[1],
-            account_type=account_type_from_string(pieces[2]),
+            account_type=AccountTypeParser.from_string(pieces[2]),
         )
 
     @staticmethod

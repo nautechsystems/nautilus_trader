@@ -22,9 +22,9 @@ isort:skip_file
 """
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.common.c_enums.component_trigger cimport component_trigger_to_string
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTriggerParser
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 
 
@@ -75,6 +75,6 @@ cdef class ComponentFSMFactory:
         return FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.INITIALIZED,
-            trigger_parser=component_trigger_to_string,
-            state_parser=component_state_to_string,
+            trigger_parser=ComponentTriggerParser.to_string,
+            state_parser=ComponentStateParser.to_string,
         )

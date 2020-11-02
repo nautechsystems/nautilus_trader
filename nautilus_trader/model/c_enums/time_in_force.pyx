@@ -13,4 +13,42 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+cdef class TimeInForceParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'DAY'
+        elif value == 2:
+            return 'GTC'
+        elif value == 3:
+            return 'IOC'
+        elif value == 4:
+            return 'FOC'
+        elif value == 5:
+            return 'GTD'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef TimeInForce from_string(str value):
+        if value == 'DAY':
+            return TimeInForce.DAY
+        elif value == 'GTC':
+            return TimeInForce.GTC
+        elif value == 'IOC':
+            return TimeInForce.IOC
+        elif value == 'FOC':
+            return TimeInForce.FOC
+        elif value == 'GTD':
+            return TimeInForce.GTD
+        else:
+            return TimeInForce.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return TimeInForceParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return TimeInForceParser.from_string(value)

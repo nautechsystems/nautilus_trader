@@ -21,23 +21,10 @@ cpdef enum OrderType:
     STOP_MARKET = 3,
 
 
-cdef inline str order_type_to_string(int value):
-    if value == 1:
-        return 'MARKET'
-    elif value == 2:
-        return 'LIMIT'
-    elif value == 3:
-        return 'STOP_MARKET'
-    else:
-        return 'UNDEFINED'
+cdef class OrderTypeParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline OrderType order_type_from_string(str value):
-    if value == 'MARKET':
-        return OrderType.MARKET
-    elif value == 'LIMIT':
-        return OrderType.LIMIT
-    elif value == 'STOP_MARKET':
-        return OrderType.STOP_MARKET
-    else:
-        return OrderType.UNDEFINED
+    @staticmethod
+    cdef OrderType from_string(str value)

@@ -16,16 +16,16 @@
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
-# noinspection: Object has warned attribute
+# noinspection: Event attributes
 # noinspection PyUnresolvedReferences
 cdef class ReportProvider:
     """
@@ -154,8 +154,8 @@ cdef class ReportProvider:
             "cl_ord_id": order.cl_ord_id.value,
             "order_id": order.id.value,
             "symbol": order.symbol.code,
-            "side": order_side_to_string(order.side),
-            "type": order_type_to_string(order.type),
+            "side": OrderSideParser.to_string(order.side),
+            "type": OrderTypeParser.to_string(order.type),
             "quantity": order.quantity,
             "avg_price": "None" if order.avg_price is None else order.avg_price.as_double(),
             "slippage": order.slippage.as_double(),
@@ -166,7 +166,7 @@ cdef class ReportProvider:
         return {
             "position_id": position.id.value,
             "symbol": position.symbol.code,
-            "entry": order_side_to_string(position.entry),
+            "entry": OrderSideParser.to_string(position.entry),
             "peak_quantity": position.peak_quantity,
             "opened_time": position.opened_time,
             "closed_time": position.closed_time,

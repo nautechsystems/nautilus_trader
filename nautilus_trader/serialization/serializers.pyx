@@ -24,17 +24,13 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_from_string
-from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport order_side_from_string
-from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport order_type_from_string
-from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_from_string
-from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -216,10 +212,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             ID: order.cl_ord_id.value,
             STRATEGY_ID: order.strategy_id.value,
             SYMBOL: order.symbol.value,
-            ORDER_SIDE: self.convert_snake_to_camel(order_side_to_string(order.side)),
-            ORDER_TYPE: self.convert_snake_to_camel(order_type_to_string(order.type)),
+            ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_string(order.side)),
+            ORDER_TYPE: self.convert_snake_to_camel(OrderTypeParser.to_string(order.type)),
             QUANTITY: str(order.quantity),
-            TIME_IN_FORCE: time_in_force_to_string(order.time_in_force),
+            TIME_IN_FORCE: TimeInForceParser.to_string(order.time_in_force),
             INIT_ID: order.init_id.value,
             TIMESTAMP: convert_datetime_to_string(order.timestamp),
         }
@@ -263,10 +259,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID].decode(UTF8))
         cdef StrategyId strategy_id = StrategyId.from_string_c(unpacked[STRATEGY_ID].decode(UTF8))
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
-        cdef OrderSide order_side = order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
-        cdef OrderType order_type = order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
+        cdef OrderSide order_side = OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
+        cdef OrderType order_type = OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
         cdef Quantity quantity = Quantity(unpacked[QUANTITY].decode(UTF8))
-        cdef TimeInForce time_in_force = time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8))
+        cdef TimeInForce time_in_force = TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8))
         cdef UUID init_id = UUID.from_string(unpacked[INIT_ID].decode(UTF8))
         cdef datetime timestamp = convert_string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
@@ -312,7 +308,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 timestamp=timestamp,
             )
 
-        raise ValueError(f"Invalid order_type, was {order_type_to_string(order_type)}")
+        raise ValueError(f"Invalid order_type, was {OrderTypeParser.to_string(order_type)}")
 
 
 # noinspection: Command attributes
@@ -522,10 +518,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
-            package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
+            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
+            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_string(event.order_type))
             package[QUANTITY] = str(event.quantity)
-            package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
+            package[TIME_IN_FORCE] = TimeInForceParser.to_string(event.time_in_force)
             package[OPTIONS] = MsgPackSerializer.serialize(event.options)
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -552,11 +548,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
-            package[ORDER_TYPE] = self.convert_snake_to_camel(order_type_to_string(event.order_type))
+            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
+            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_string(event.order_type))
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
-            package[TIME_IN_FORCE] = time_in_force_to_string(event.time_in_force)
+            package[TIME_IN_FORCE] = TimeInForceParser.to_string(event.time_in_force)
             package[EXPIRE_TIME] = convert_datetime_to_string(event.expire_time)
             package[WORKING_TIME] = convert_datetime_to_string(event.working_time)
         elif isinstance(event, OrderCancelReject):
@@ -590,14 +586,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[POSITION_ID] = event.position_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(order_side_to_string(event.order_side))
+            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
             package[FILLED_QUANTITY] = str(event.filled_qty)
             package[CUMULATIVE_QUANTITY] = str(event.cumulative_qty)
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
             package[AVERAGE_PRICE] = str(event.avg_price)
             package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
-            package[LIQUIDITY_SIDE] = liquidity_side_to_string(event.liquidity_side)
+            package[LIQUIDITY_SIDE] = LiquiditySideParser.to_string(event.liquidity_side)
             package[BASE_CURRENCY] = event.base_currency.code
             package[QUOTE_CURRENCY] = event.quote_currency.code
             package[IS_INVERSE] = str(event.is_inverse)
@@ -653,10 +649,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
+                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
                 Quantity(unpacked[QUANTITY].decode(UTF8)),
-                time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
+                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
                 event_id,
                 event_timestamp,
                 MsgPackSerializer.deserialize(unpacked[OPTIONS], raw_values=False),
@@ -707,11 +703,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
                 Symbol.from_string_c(unpacked[SYMBOL].decode(UTF8)),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                order_type_from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
+                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
                 Quantity(unpacked[QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[PRICE].decode(UTF8)),
-                time_in_force_from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
+                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
                 convert_string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
                 convert_string_to_datetime(unpacked[WORKING_TIME].decode(UTF8)),
                 event_id,
@@ -766,13 +762,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 PositionId(unpacked[POSITION_ID].decode(UTF8)),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
-                order_side_from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
+                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[CUMULATIVE_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 convert_string_to_price(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
-                liquidity_side_from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
+                LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
                 Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
                 Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
                 unpacked[IS_INVERSE].decode(UTF8) == "True",

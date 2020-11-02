@@ -19,9 +19,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport liquidity_side_to_string
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity
@@ -426,7 +426,7 @@ cdef class Instrument:
             return_percentage = (avg_open - avg_close) / avg_open
         else:
             raise ValueError(f"Cannot calculate PNL "
-                             f"(position side was {position_side_to_string(side)}).")
+                             f"(position side was {PositionSideParser.to_string(side)}).")
 
         cdef Decimal pnl = notional * return_percentage
 
@@ -475,7 +475,7 @@ cdef class Instrument:
             commission = notional * self.taker_fee
         else:
             raise ValueError(f"Cannot calculate commission "
-                             f"(liquidity side was {liquidity_side_to_string(liquidity_side)}).")
+                             f"(liquidity side was {LiquiditySideParser.to_string(liquidity_side)}).")
 
         commission += commission * self.settlement_fee
 
@@ -496,4 +496,4 @@ cdef class Instrument:
             return last.ask
         else:
             raise ValueError(f"Cannot calculate open value "
-                             f"(position side was {position_side_to_string(side)}).")
+                             f"(position side was {PositionSideParser.to_string(side)}).")

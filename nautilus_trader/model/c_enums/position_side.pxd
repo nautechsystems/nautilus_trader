@@ -21,23 +21,10 @@ cpdef enum PositionSide:
     SHORT = 3
 
 
-cdef inline str position_side_to_string(int value):
-    if value == 1:
-        return 'FLAT'
-    elif value == 2:
-        return 'LONG'
-    elif value == 3:
-        return 'SHORT'
-    else:
-        return 'UNDEFINED'
+cdef class PositionSideParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline PositionSide position_side_from_string(str value):
-    if value == 'FLAT':
-        return PositionSide.FLAT
-    elif value == 'LONG':
-        return PositionSide.LONG
-    elif value == 'SHORT':
-        return PositionSide.SHORT
-    else:
-        return PositionSide.UNDEFINED
+    @staticmethod
+    cdef PositionSide from_string(str value)
