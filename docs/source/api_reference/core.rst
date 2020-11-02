@@ -12,15 +12,6 @@ Cache
    :members:
    :member-order: bysource
 
-Correctness
------------
-
-.. automodule:: nautilus_trader.core.correctness
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Datetime
 --------
 
@@ -39,7 +30,7 @@ Decimal
    :members:
    :member-order: bysource
 
-Finite State Machine (FSM)
+Finite-State Machine (FSM)
 --------------------------------
 
 .. automodule:: nautilus_trader.core.fsm
