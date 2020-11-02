@@ -120,78 +120,20 @@ cdef class ExecutionEngine:
         self._log = LoggerAdapter("ExecEngine", logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._trader_id = database.trader_id
-        self._cache = ExecutionCache(database, logger)
-        self._portfolio = portfolio
         self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
         self._clients = {}     # type: {Venue, ExecutionClient}
 
         # Handlers
         self._strategies = {}  # type: {StrategyId, TradingStrategy}
 
+        # Public components
+        self.trader_id = database.trader_id
+        self.cache = ExecutionCache(database, logger)
+        self.portfolio = portfolio
+
         # Counters
-        self._command_count = 0
-        self._event_count = 0
-
-    @property
-    def trader_id(self):
-        """
-        The trader identifier associated with the engine.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._trader_id
-
-    @property
-    def cache(self):
-        """
-        The engines execution cache.
-
-        Returns
-        -------
-        ExecutionCache
-
-        """
-        return self._cache
-
-    @property
-    def portfolio(self):
-        """
-        The portfolio wired to the execution engine.
-
-        Returns
-        -------
-        Portfolio
-
-        """
-        return self._portfolio
-
-    @property
-    def command_count(self):
-        """
-        The total count of commands received by the engine.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._command_count
-
-    @property
-    def event_count(self):
-        """
-        The total count of events received by the engine.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._event_count
+        self.command_count = 0
+        self.event_count = 0
 
     @property
     def registered_venues(self):
@@ -203,7 +145,7 @@ cdef class ExecutionEngine:
         set[StrategyId]
 
         """
-        return set(self._clients.keys())
+        return list(self._clients.keys())
 
     @property
     def registered_strategies(self):
@@ -212,10 +154,10 @@ cdef class ExecutionEngine:
 
         Returns
         -------
-        set[StrategyId]
+        list[StrategyId]
 
         """
-        return set(self._strategies.keys())
+        return list(self._strategies.keys())
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -300,21 +242,21 @@ cdef class ExecutionEngine:
         """
         Load the cache up from the execution database.
         """
-        self._cache.cache_accounts()
-        self._cache.cache_orders()
-        self._cache.cache_positions()
-        self._cache.build_index()
+        self.cache.cache_accounts()
+        self.cache.cache_orders()
+        self.cache.cache_positions()
+        self.cache.build_index()
         self._set_position_symbol_counts()
 
         # Update portfolio
-        self._portfolio.update_orders_working(set(self._cache.orders_working()))
-        self._portfolio.update_positions(set(self._cache.positions_open()))
+        self.portfolio.update_orders_working(set(self.cache.orders_working()))
+        self.portfolio.update_positions(set(self.cache.positions_open()))
 
     cpdef void integrity_check(self) except *:
         """
         Check integrity of data within the execution cache and database.
         """
-        self._cache.integrity_check()
+        self.cache.integrity_check()
 
     cpdef void execute(self, Command command) except *:
         """
@@ -348,7 +290,7 @@ cdef class ExecutionEngine:
         """
         Check for residual working orders or open positions.
         """
-        self._cache.check_residuals()
+        self.cache.check_residuals()
 
     cpdef void reset(self) except *:
         """
@@ -366,11 +308,11 @@ cdef class ExecutionEngine:
 
         for client in self._clients.values():
             client.reset()
-        self._cache.reset()
+        self.cache.reset()
         self._pos_id_generator.reset()
 
-        self._command_count = 0
-        self._event_count = 0
+        self.command_count = 0
+        self.event_count = 0
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self._log.info(f"state={self._fsm.state_string()}.")
@@ -401,13 +343,13 @@ cdef class ExecutionEngine:
         WARNING: Permanent data loss.
 
         """
-        self._cache.flush_db()
+        self.cache.flush_db()
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, Command command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
-        self._command_count += 1
+        self.command_count += 1
 
         if isinstance(command, Connect):
             self._handle_connect(command)
@@ -462,16 +404,16 @@ cdef class ExecutionEngine:
             return
 
         # Validate command
-        if self._cache.order_exists(command.order.cl_ord_id):
+        if self.cache.order_exists(command.order.cl_ord_id):
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Invalid command
 
-        if command.position_id.not_null() and not self._cache.position_exists(command.position_id):
+        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")
             return  # Invalid command
 
         # Cache order
-        self._cache.add_order(command.order, command.position_id)
+        self.cache.add_order(command.order, command.position_id)
 
         # Submit order
         client.submit_order(command)
@@ -484,29 +426,29 @@ cdef class ExecutionEngine:
             return
 
         # Validate command
-        if self._cache.order_exists(command.bracket_order.entry.cl_ord_id):
+        if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
             if command.bracket_order.take_profit is not None:
                 self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
             return  # Invalid command
-        if self._cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
+        if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
             if command.bracket_order.take_profit is not None:
                 self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
             return  # Invalid command
-        if command.bracket_order.take_profit is not None and self._cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
+        if command.bracket_order.take_profit is not None and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
             self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
             return  # Invalid command
 
         # Cache all orders
-        self._cache.add_order(command.bracket_order.entry, PositionId.null_c())
-        self._cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
         if command.bracket_order.take_profit is not None:
-            self._cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+            self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
 
         # Submit bracket order
         client.submit_bracket_order(command)
@@ -519,7 +461,7 @@ cdef class ExecutionEngine:
             return
 
         # Validate command
-        if not self._cache.is_order_working(command.cl_ord_id):
+        if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot modify {repr(command.cl_ord_id)} "
                               f"(already completed).")
             return  # Invalid command
@@ -534,7 +476,7 @@ cdef class ExecutionEngine:
             return
 
         # Validate command
-        if self._cache.is_order_completed(command.cl_ord_id):
+        if self.cache.is_order_completed(command.cl_ord_id):
             self._log.warning(f"Cannot cancel {repr(command.cl_ord_id)} "
                               f"(already completed).")
             return  # Invalid command
@@ -567,7 +509,7 @@ cdef class ExecutionEngine:
 
     cdef inline void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
-        self._event_count += 1
+        self.event_count += 1
 
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
@@ -579,18 +521,18 @@ cdef class ExecutionEngine:
             self._log.error(f"Cannot handle event ({event} is unrecognized).")
 
     cdef inline void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self._cache.account(event.account_id)
+        cdef Account account = self.cache.account(event.account_id)
         if account is None:
             # Generate account
             account = Account(event)
-            self._cache.add_account(account)
-            self._portfolio.register_account(account)
+            self.cache.add_account(account)
+            self.portfolio.register_account(account)
         else:
             account.apply(event)
-            self._cache.update_account(account)
+            self.cache.update_account(account)
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
-        self._portfolio.update_position(event)
+        self.portfolio.update_position(event)
         self._send_to_strategy(event, event.position.strategy_id)
 
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
@@ -598,7 +540,7 @@ cdef class ExecutionEngine:
             self._handle_order_cancel_reject(event)
             return  # Sent to strategy
 
-        cdef Order order = self._cache.order(event.cl_ord_id)
+        cdef Order order = self.cache.order(event.cl_ord_id)
         if order is None:
             self._log.warning(f"Cannot apply event {event} to any order, "
                               f"{repr(event.cl_ord_id)} "
@@ -610,20 +552,20 @@ cdef class ExecutionEngine:
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
 
-        self._cache.update_order(order)
+        self.cache.update_order(order)
 
         # Update portfolio
         if order.is_working_c() or order.is_completed_c():
-            self._portfolio.update_order(order)
+            self.portfolio.update_order(order)
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
             return  # Sent to strategy
 
-        self._send_to_strategy(event, self._cache.strategy_id_for_order(event.cl_ord_id))
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self._cache.strategy_id_for_order(event.cl_ord_id)
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {event}, "
                             f"{repr(strategy_id)} "
@@ -634,13 +576,13 @@ cdef class ExecutionEngine:
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
         # Get PositionId corresponding to fill
-        cdef PositionId position_id = self._cache.position_id(fill.cl_ord_id)
+        cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
         # --- position_id could be None here (position not opened yet) ---
 
         # Get StrategyId corresponding to fill
-        cdef StrategyId strategy_id = self._cache.strategy_id_for_order(fill.cl_ord_id)
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
         if strategy_id is None and fill.position_id.not_null():
-            strategy_id = self._cache.strategy_id_for_position(fill.position_id)
+            strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot process event {fill}, StrategyId for "
                             f"{repr(fill.cl_ord_id)} or"
@@ -683,13 +625,13 @@ cdef class ExecutionEngine:
 
     cdef inline void _open_position(self, OrderFilled fill) except *:
         cdef Position position = Position(fill)
-        self._cache.add_position(position)
+        self.cache.add_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(self._pos_opened_event(position, fill))
 
     cdef inline void _update_position(self, OrderFilled fill) except *:
-        cdef Position position = self._cache.position(fill.position_id)
+        cdef Position position = self.cache.position(fill.position_id)
         if position is None:
             self._log.error(f"Cannot update position for "
                             f"{repr(fill.position_id)} "
@@ -702,7 +644,7 @@ cdef class ExecutionEngine:
             return  # Handled in flip
 
         position.apply(fill)
-        self._cache.update_position(position)
+        self.cache.update_position(position)
 
         cdef PositionEvent position_event
         if position.is_closed_c():
@@ -750,7 +692,7 @@ cdef class ExecutionEngine:
 
         # Close original position
         position.apply(fill_split1)
-        self._cache.update_position(position)
+        self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(self._pos_closed_event(position, fill))
@@ -764,7 +706,7 @@ cdef class ExecutionEngine:
         # Split fill to open flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
             fill.account_id,
-            ClientOrderId(fill.cl_ord_id.value + 'F'),
+            ClientOrderId(f"{fill.cl_ord_id.value}F'"),
             fill.order_id,
             fill.execution_id,
             position_id_flip,
@@ -786,7 +728,7 @@ cdef class ExecutionEngine:
         )
 
         cdef Position position_flip = Position(fill_split2)
-        self._cache.add_position(position_flip)
+        self.cache.add_position(position_flip)
         self.process(self._pos_opened_event(position_flip, fill_split2))
 
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled event):
@@ -831,7 +773,7 @@ cdef class ExecutionEngine:
 
     cdef inline void _set_position_symbol_counts(self) except *:
         # For the internal position identifier generator
-        cdef list positions = self._cache.positions()
+        cdef list positions = self.cache.positions()
 
         # Count positions per symbol
         cdef dict counts = {}  # type: {Symbol: int}

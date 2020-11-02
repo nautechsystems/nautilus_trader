@@ -27,7 +27,9 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionDatabase:
     cdef LoggerAdapter _log
-    cdef TraderId _trader_id
+
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the database.\n\n:returns: `TraderId`"""
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

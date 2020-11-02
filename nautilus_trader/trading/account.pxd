@@ -28,9 +28,12 @@ cdef class Account:
     cdef Money _position_margin
     cdef PortfolioFacade _portfolio
 
-    cdef AccountId _id
-    cdef AccountType _account_type
-    cdef Currency _currency
+    cdef readonly AccountId id
+    """The accounts identifier.\n\n:returns: `AccountId`"""
+    cdef readonly AccountType account_type
+    """The accounts type.\n\n:returns: `AccountType`"""
+    cdef readonly Currency currency
+    """The accounts currency.\n\n:returns: `Currency`"""
 
     cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *

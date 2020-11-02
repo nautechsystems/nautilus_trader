@@ -27,9 +27,13 @@ from nautilus_trader.model.identifiers cimport Venue
 cdef class ExecutionClient:
     cdef LoggerAdapter _log
     cdef ExecutionEngine _engine
-    cdef Venue _venue
-    cdef AccountId _account_id
-    cdef bint _is_connected
+
+    cdef readonly Venue venue
+    """The clients venue.\n\n:returns: `Venue`"""
+    cdef readonly AccountId account_id
+    """The clients account identifier.\n\n:returns: `AccountId`"""
+
+    cpdef bint is_connected(self) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

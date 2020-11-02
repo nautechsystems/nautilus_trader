@@ -30,10 +30,15 @@ from nautilus_trader.model.tick cimport TradeTick
 
 cdef class BarBuilder:
     cdef readonly BarSpecification bar_spec
+    """The builders bar specification.\n\n:returns: `BarSpecification`"""
     cdef readonly datetime last_update
+    """The builders last update timestamp.\n\n:returns: `datetime`"""
     cdef readonly bint initialized
+    """If the builder is initialized.\n\n:returns: `bool`"""
     cdef readonly bint use_previous_close
+    """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
     cdef readonly int count
+    """The builders current update count.\n\n:returns: `int`"""
 
     cdef Price _last_close
     cdef Price _open
@@ -55,6 +60,7 @@ cdef class BarAggregator:
     cdef object _handler
 
     cdef readonly BarType bar_type
+    """The aggregators bar type.\n\n:returns: `BarType`"""
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
@@ -71,7 +77,9 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef Clock _clock
 
     cdef readonly timedelta interval
+    """The aggregators time interval.\n\n:returns: `timedelta`"""
     cdef readonly datetime next_close
+    """The aggregators next closing time.\n\n:returns: `datetime`"""
 
     cpdef datetime get_start_time(self)
     cpdef void stop(self) except *

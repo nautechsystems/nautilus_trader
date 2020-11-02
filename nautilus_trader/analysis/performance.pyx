@@ -43,8 +43,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class PerformanceAnalyzer:
     """
     Provides a performance analyzer for tracking and generating performance
@@ -101,7 +99,7 @@ cdef class PerformanceAnalyzer:
 
         cdef Position position
         for position in positions:
-            if position.is_closed:
+            if position.is_closed_c():
                 self.add_trade(position.id, position.realized_pnl)
                 self.add_return(position.closed_time, position.realized_return)
 
@@ -122,7 +120,7 @@ cdef class PerformanceAnalyzer:
 
         self._realized_pnls.loc[position_id.value] = realized_pnl.as_double()
 
-    # noinspection: Object has warned attribute
+    # noinspection: timestamp.date()
     # noinspection PyUnresolvedReferences
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """

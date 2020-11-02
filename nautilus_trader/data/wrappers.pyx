@@ -34,35 +34,11 @@ cdef class BarData:
             The bar data.
 
         """
-        self._bar_type = bar_type
-        self._bar = bar
+        self.bar_type = bar_type
+        self.bar = bar
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(bar_type={self._bar_type}, bar={self._bar})"
-
-    @property
-    def bar_type(self):
-        """
-        The type of the bar data.
-
-        Returns
-        -------
-        BarType
-
-        """
-        return self._bar_type
-
-    @property
-    def bar(self):
-        """
-        The bar data.
-
-        Returns
-        -------
-        Bar
-
-        """
-        return self._bar
+        return f"{type(self).__name__}(bar_type={self.bar_type}, bar={self.bar})"
 
 
 cdef class BarDataBlock:
@@ -82,35 +58,11 @@ cdef class BarDataBlock:
             The bar data.
 
         """
-        self._bar_type = bar_type
-        self._bars = bars
+        self.bar_type = bar_type
+        self.bars = bars
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(bar_type={self._bar_type}, {len(self._bars)} bars)"
-
-    @property
-    def bar_type(self):
-        """
-        The type of the bar data.
-
-        Returns
-        -------
-        BarType
-
-        """
-        return self._bar_type
-
-    @property
-    def bars(self):
-        """
-        The bars data.
-
-        Returns
-        -------
-        list[Bar]
-
-        """
-        return self._bars
+        return f"{type(self).__name__}(bar_type={self.bar_type}, {len(self.bars)} bars)"
 
 
 cdef class QuoteTickDataBlock:
@@ -128,22 +80,10 @@ cdef class QuoteTickDataBlock:
             The tick data.
 
         """
-        self._ticks = ticks
+        self.ticks = ticks
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({len(self._ticks)} ticks)"
-
-    @property
-    def ticks(self):
-        """
-        The ticks data.
-
-        Returns
-        -------
-        list[QuoteTick]
-
-        """
-        return self._ticks
+        return f"{type(self).__name__}({len(self.ticks)} ticks)"
 
 
 cdef class TradeTickDataBlock:
@@ -161,22 +101,10 @@ cdef class TradeTickDataBlock:
             The tick data.
 
         """
-        self._ticks = ticks
+        self.ticks = ticks
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({len(self._ticks)} ticks)"
-
-    @property
-    def ticks(self):
-        """
-        The ticks data.
-
-        Returns
-        -------
-        list[QuoteTick]
-
-        """
-        return self._ticks
+        return f"{type(self).__name__}({len(self.ticks)} ticks)"
 
 
 cdef class InstrumentDataBlock:
@@ -194,19 +122,7 @@ cdef class InstrumentDataBlock:
             The instrument data.
 
         """
-        self._instruments = instruments
+        self.instruments = instruments
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({len(self._instruments)} instruments)"
-
-    @property
-    def instruments(self):
-        """
-        The instruments data.
-
-        Returns
-        -------
-        list[Instrument]
-
-        """
-        return self._instruments
+        return f"{type(self).__name__}({len(self.instruments)} instruments)"

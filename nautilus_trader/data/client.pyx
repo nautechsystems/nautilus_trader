@@ -41,8 +41,6 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class DataClient:
     """
     The base class for all data clients.
@@ -75,55 +73,34 @@ cdef class DataClient:
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(f"{type(self).__name__}-{venue.value}", logger)
         self._engine = engine
-        self._venue = venue
-        self._is_connected = False
+
+        self.venue = venue
 
         self._log.info("Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self._venue})"
-
-    @property
-    def venue(self):
-        """
-        The data clients venue.
-
-        Returns
-        -------
-        Venue
-
-        """
-        return self._venue
-
-    @property
-    def is_connected(self):
-        """
-        If the data client is currently connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
+        return f"{type(self).__name__}({self.venue})"
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
+    cpdef bint is_connected(self) except *:
+        """Abstract method."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void connect(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_quote_ticks(
@@ -134,7 +111,7 @@ cdef class DataClient:
             int limit,
             callback: callable,
     ) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_trade_ticks(
@@ -145,7 +122,7 @@ cdef class DataClient:
             int limit,
             callback: callable,
     ) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_bars(
@@ -156,47 +133,47 @@ cdef class DataClient:
             int limit,
             callback: callable,
     ) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_instruments(self, callback: callable) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- HANDLERS --------------------------------------------------------------------------------------

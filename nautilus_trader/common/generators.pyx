@@ -116,7 +116,7 @@ cdef class IdentifierGenerator:
 
         """
         cdef datetime utc_now = self._clock.utc_now()
-        # noinspection: CPython datetime fields
+        # noinspection: CPython datetime attributes
         # noinspection PyUnresolvedReferences
         return (f"{utc_now.year}"
                 f"{utc_now.month:02d}"

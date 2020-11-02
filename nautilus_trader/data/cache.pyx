@@ -35,8 +35,6 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class DataCache(DataCacheFacade):
     """
     Provides a cache for the `DataEngine`.
@@ -61,10 +59,10 @@ cdef class DataCache(DataCacheFacade):
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Capacities
-        self._tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
-        self._bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
-        Condition.positive_int(self._tick_capacity, "tick_capacity")
-        Condition.positive_int(self._bar_capacity, "bar_capacity")
+        self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
+        self.bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
+        Condition.positive_int(self.tick_capacity, "tick_capacity")
+        Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Cached data
         self._instruments = {}  # type: {Symbol, Instrument}
@@ -75,30 +73,6 @@ cdef class DataCache(DataCacheFacade):
         self._bars = {}         # type: {BarType, [Bar]}
 
         self._log.info("Initialized.")
-
-    @property
-    def tick_capacity(self):
-        """
-        The caches tick capacity per symbol.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._tick_capacity
-
-    @property
-    def bar_capacity(self):
-        """
-        The caches bar capacity per symbol.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._bar_capacity
 
 # -- COMMANDS ---------------------------------------------------------------------------------------
 
@@ -153,7 +127,7 @@ cdef class DataCache(DataCacheFacade):
 
         if ticks is None:
             # The symbol was not registered
-            ticks = deque(maxlen=self._tick_capacity)
+            ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[symbol] = ticks
 
         ticks.appendleft(tick)
@@ -177,7 +151,7 @@ cdef class DataCache(DataCacheFacade):
 
         if ticks is None:
             # The symbol was not registered
-            ticks = deque(maxlen=self._tick_capacity)
+            ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[symbol] = ticks
 
         ticks.appendleft(tick)
@@ -202,7 +176,7 @@ cdef class DataCache(DataCacheFacade):
 
         if bars is None:
             # The bar type was not registered
-            bars = deque(maxlen=self._bar_capacity)
+            bars = deque(maxlen=self.bar_capacity)
             self._bars[bar_type] = bars
 
         bars.appendleft(bar)

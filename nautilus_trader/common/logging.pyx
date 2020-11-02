@@ -209,7 +209,7 @@ cdef class Logger:
         self._logger.addHandler(self._log_file_handler)
 
     cpdef void log(self, LogMessage message) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list get_log_store(self):

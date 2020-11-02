@@ -23,7 +23,7 @@ cdef class UUIDFactory:
     """
 
     cpdef UUID generate(self):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 

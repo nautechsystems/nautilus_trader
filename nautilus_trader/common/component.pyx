@@ -63,7 +63,7 @@ cdef class ComponentFSMFactory:
         return _COMPONENT_STATE_TABLE.copy()
 
     @staticmethod
-    def create():
+    cdef create():
         """
         Create a new generic component FSM.
 

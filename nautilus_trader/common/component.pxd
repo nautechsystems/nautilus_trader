@@ -14,4 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 cdef class ComponentFSMFactory:
-    pass
+
+    @staticmethod
+    cdef create()
