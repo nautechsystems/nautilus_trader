@@ -33,7 +33,7 @@ the engines `execute` and `process` methods.
 
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -118,7 +118,7 @@ cdef class ExecutionEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter("ExecEngine", logger)
-        self._fsm = create_component_fsm()
+        self._fsm = ComponentFSMFactory.create()
 
         self._trader_id = database.trader_id
         self._cache = ExecutionCache(database, logger)

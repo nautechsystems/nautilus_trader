@@ -22,7 +22,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 cdef class IdentifierGenerator:
     cdef Clock _clock
-
     cdef str _prefix
     cdef IdTag _id_tag_trader
     cdef IdTag _id_tag_strategy
@@ -41,7 +40,6 @@ cdef class OrderIdGenerator(IdentifierGenerator):
 
 cdef class PositionIdGenerator:
     cdef dict _counts
-
     cdef IdTag _id_tag_trader
 
     cpdef void set_count(self, Symbol symbol, int count)

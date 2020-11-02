@@ -20,6 +20,7 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.model.identifiers import PositionId
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 

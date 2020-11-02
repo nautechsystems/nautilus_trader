@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data import TestDataProvider
 
+
 if __name__ == "__main__":
     symbol = Symbol('USD/JPY', Venue('FXCM'))
     USDJPY = InstrumentLoader.default_fx_ccy(symbol)

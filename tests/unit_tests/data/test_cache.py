@@ -32,6 +32,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 

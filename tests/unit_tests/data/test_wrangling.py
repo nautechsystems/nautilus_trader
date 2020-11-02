@@ -25,6 +25,7 @@ from nautilus_trader.model.enums import BarAggregation
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 

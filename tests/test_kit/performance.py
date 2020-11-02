@@ -19,6 +19,7 @@ import math
 import sys
 import timeit
 
+
 _MILLISECONDS_IN_SECOND = 1000
 _MICROSECONDS_IN_SECOND = 1000000
 

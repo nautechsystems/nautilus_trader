@@ -19,6 +19,7 @@ from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 

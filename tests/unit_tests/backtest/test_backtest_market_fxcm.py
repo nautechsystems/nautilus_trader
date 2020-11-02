@@ -49,6 +49,7 @@ from tests.test_kit.strategies import TestStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 

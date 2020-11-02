@@ -37,8 +37,10 @@ cdef class OrderFactory:
     cdef UUIDFactory _uuid_factory
     cdef OrderIdGenerator _id_generator
 
-    cdef TraderId _trader_id
-    cdef StrategyId _strategy_id
+    cdef readonly TraderId trader_id
+    """The order factories trader identifier.\n\n:returns: `TraderId`"""
+    cdef readonly StrategyId strategy_id
+    """The order factories trading strategy identifier.\n\n:returns: `StrategyId`"""
 
     cpdef void set_count(self, int count) except *
     cpdef void reset(self) except *

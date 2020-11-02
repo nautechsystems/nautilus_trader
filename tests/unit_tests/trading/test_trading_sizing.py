@@ -24,6 +24,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 

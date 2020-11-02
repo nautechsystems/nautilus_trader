@@ -166,18 +166,6 @@ cdef class Money(Decimal):
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self._value}', {self.currency})"
 
-    @property
-    def amount(self) -> Decimal:
-        """
-        The amount of money as a decimal.
-
-        Returns
-        -------
-        Decimal
-
-        """
-        return Decimal(self._value)
-
     cpdef str to_string(self):
         """
         The formatted string representation of the money.

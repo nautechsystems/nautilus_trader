@@ -22,6 +22,7 @@ from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 

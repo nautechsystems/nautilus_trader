@@ -57,7 +57,7 @@ cdef class TimeEvent(Event):
         # Precondition: name checked in Timer
         super().__init__(event_id, event_timestamp)
 
-        self._name = name
+        self.name = name
 
     def __eq__(self, TimeEvent other) -> bool:
         return self.timestamp == other.timestamp
@@ -82,21 +82,9 @@ cdef class TimeEvent(Event):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"name={self._name}, "
+                f"name={self.name}, "
                 f"id={self.id}, "
                 f"timestamp={format_iso8601(self.timestamp)})")
-
-    @property
-    def name(self):
-        """
-        The name of the time event.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._name
 
 
 cdef class TimeEventHandler:
@@ -168,111 +156,24 @@ cdef class Timer:
         if stop_time:
             Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
 
-        self._name = name
-        self._callback = callback
-        self._interval = interval
-        self._start_time = start_time
-        self._next_time = start_time + interval
-        self._stop_time = stop_time
-        self._expired = False
+        self.name = name
+        self.callback = callback
+        self.interval = interval
+        self.start_time = start_time
+        self.next_time = start_time + interval
+        self.stop_time = stop_time
+        self.expired = False
 
     def __hash__(self) -> int:
         return hash(self.name)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"name={self._name}, "
-                f"interval={self._interval}, "
-                f"start_time={self._start_time}, "
-                f"next_time={self._next_time}, "
-                f"stop_time={self._stop_time})")
-
-    @property
-    def name(self):
-        """
-        The timers name.
-
-        Used for hashing the timer.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._name
-
-    @property
-    def callback(self):
-        """
-        The timers callback function.
-
-        Returns
-        -------
-        callable
-
-        """
-        return self._callback
-
-    @property
-    def interval(self):
-        """
-        The timers set interval.
-
-        Returns
-        -------
-        timedelta
-
-        """
-        return self._interval
-
-    @property
-    def start_time(self):
-        """
-        The timers set start time.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._start_time
-
-    @property
-    def next_time(self):
-        """
-        The timers next alert timestamp.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._next_time
-
-    @property
-    def stop_time(self):
-        """
-        The timers set stop time (if set).
-
-        Returns
-        -------
-        datetime or None
-
-        """
-        return self._stop_time
-
-    @property
-    def expired(self):
-        """
-        If the timer is expired.
-
-        Returns
-        -------
-        bool
-            True if expired, else False.
-
-        """
-        return self._expired
+                f"name={self.name}, "
+                f"interval={self.interval}, "
+                f"start_time={self.start_time}, "
+                f"next_time={self.next_time}, "
+                f"stop_time={self.stop_time})")
 
     cpdef TimeEvent pop_event(self, UUID event_id):
         """
@@ -286,7 +187,7 @@ cdef class Timer:
         """
         Condition.not_none(event_id, "event_id")
 
-        return TimeEvent(self._name, event_id, self._next_time)
+        return TimeEvent(self.name, event_id, self.next_time)
 
     cpdef void iterate_next_time(self, datetime now) except *:
         """
@@ -300,9 +201,9 @@ cdef class Timer:
         """
         Condition.not_none(now, "now")
 
-        self._next_time += self._interval
-        if self._stop_time and now >= self._stop_time:
-            self._expired = True
+        self.next_time += self.interval
+        if self.stop_time and now >= self.stop_time:
+            self.expired = True
 
     cpdef void cancel(self) except *:
         # Abstract method
@@ -364,9 +265,9 @@ cdef class TestTimer(Timer):
         Condition.not_none(to_time, "to_time")
 
         cdef list events = []  # type: [TimeEvent]
-        while not self._expired and to_time >= self._next_time:
+        while not self.expired and to_time >= self.next_time:
             events.append(self.pop_event(self._uuid_factory.generate()))
-            self.iterate_next_time(self._next_time)
+            self.iterate_next_time(self.next_time)
 
         return events
 
@@ -385,7 +286,7 @@ cdef class TestTimer(Timer):
 
         """
         cdef TimeEvent event = self.pop_event(self._uuid_factory.generate())
-        self.iterate_next_time(self._next_time)
+        self.iterate_next_time(self.next_time)
 
         return event
 
@@ -393,7 +294,7 @@ cdef class TestTimer(Timer):
         """
         Cancels the timer (the timer will not generate an event).
         """
-        self._expired = True
+        self.expired = True
 
 
 cdef class LiveTimer(Timer):
@@ -461,8 +362,8 @@ cdef class LiveTimer(Timer):
 
     cdef object _start_timer(self, datetime now):
         timer = TimerThread(
-            interval=(self._next_time - now).total_seconds(),
-            function=self._callback,
+            interval=(self.next_time - now).total_seconds(),
+            function=self.callback,
             args=[self],
         )
         timer.daemon = True
