@@ -13,8 +13,8 @@ to be universal, with any REST/FIX/WebSockets API able to be integrated via modu
 Thus the platform can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, CFDs or Crypto - across multiple venues simultaneously.
 
-Value Proposition
------------------
+Why NautilusTrader?
+-------------------
 One of the key value propositions of `NautilusTrader` is that it addresses the
 challenge of keeping the backtest environment consistent with the production
 live trading environment. Normally research and backtesting may be conducted in
