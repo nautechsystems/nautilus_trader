@@ -33,8 +33,11 @@ cdef class DataClient:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef DataEngine _engine
-    cdef Venue _venue
-    cdef bint _is_connected
+
+    cdef readonly Venue venue
+    """The clients venue.\n\n:returns: `Venue`"""
+
+    cpdef bint is_connected(self) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

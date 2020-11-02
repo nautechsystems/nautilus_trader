@@ -32,7 +32,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
-from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
@@ -101,7 +101,7 @@ cdef class TradingStrategy:
         self._clock = None          # Initialized when registered with a trader
         self._uuid_factory = None   # Initialized when registered with a trader
         self._log = None            # Initialized when registered with a trader
-        self._fsm = create_component_fsm()
+        self._fsm = ComponentFSMFactory.create()
 
         self._id = StrategyId(type(self).__name__, order_id_tag)
         self._trader_id = None      # Initialized when registered with a trader
@@ -895,7 +895,7 @@ cdef class TradingStrategy:
         self._log.info(f"state={self._fsm.state_string()}...")
 
         # Clean up clock
-        cdef list timer_names = self._clock.timer_names
+        cdef list timer_names = self._clock.timer_names()
         self._clock.cancel_all_timers()
 
         cdef str name

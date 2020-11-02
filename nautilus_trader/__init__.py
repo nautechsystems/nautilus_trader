@@ -23,18 +23,24 @@ framework. Custom trading strategies can be implemented by inheriting from the
 
 import os
 
+
+# `importlib.metadata` is available from 3.8 onward.
+# Prior to that we need the `importlib_metadata` package.
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version
+except ImportError:
+    from importlib_metadata import PackageNotFoundError
+    from importlib_metadata import version
+
+
 PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
-__author__ = "Nautech Systems"
-
-# Semantic Versioning (https://semver.org/)
-_MAJOR_VERSION = 1
-_MINOR_VERSION = 83
-_PATCH_VERSION = 12
-_PRE_RELEASE = ''
-
-__version__ = '.'.join([
-    str(_MAJOR_VERSION),
-    str(_MINOR_VERSION),
-    str(_PATCH_VERSION)]) + _PRE_RELEASE
+try:
+    __version__ = version(__name__)
+except (PackageNotFoundError, KeyError):
+    # The version is pulled from the distribution metadata, not from local
+    # source. That means that local non-packaged installs, (ie, running
+    # out of the raw repo) may not have the version on them.
+    __version__ = "<dev>"

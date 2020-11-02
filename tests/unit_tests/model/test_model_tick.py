@@ -25,6 +25,7 @@ from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 

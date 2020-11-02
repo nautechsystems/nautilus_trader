@@ -23,8 +23,6 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class IdentifierGenerator:
     """
     Provides a generator for unique identifier strings.
@@ -70,18 +68,6 @@ cdef class IdentifierGenerator:
         self._id_tag_trader = id_tag_trader
         self._id_tag_strategy = id_tag_strategy
         self._count = initial_count
-
-    @property
-    def count(self):
-        """
-        The count of identifiers generated.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._count
 
     cpdef void set_count(self, int count) except *:
         """
@@ -130,6 +116,8 @@ cdef class IdentifierGenerator:
 
         """
         cdef datetime utc_now = self._clock.utc_now()
+        # noinspection: CPython datetime attributes
+        # noinspection PyUnresolvedReferences
         return (f"{utc_now.year}"
                 f"{utc_now.month:02d}"
                 f"{utc_now.day:02d}"

@@ -70,11 +70,11 @@ cdef class PostgresExecutionDatabase(ExecutionDatabase):
         super().__init__(trader_id, logger)
 
         # Database keys
-        self.key_trader     = f"{_TRADER}-{trader_id.value}"       # noqa
-        self.key_accounts   = f"{self.key_trader}:{_ACCOUNTS}:"    # noqa
-        self.key_orders     = f"{self.key_trader}:{_ORDERS}:"      # noqa
-        self.key_positions  = f"{self.key_trader}:{_POSITIONS}:"   # noqa
-        self.key_strategies = f"{self.key_trader}:{_STRATEGIES}:"  # noqa
+        self._key_trader     = f"{_TRADER}-{trader_id.value}"       # noqa
+        self._key_accounts   = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
+        self._key_orders     = f"{self._key_trader}:{_ORDERS}:"      # noqa
+        self._key_positions  = f"{self._key_trader}:{_POSITIONS}:"   # noqa
+        self._key_strategies = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
 
         # Serializers
         self._command_serializer = command_serializer

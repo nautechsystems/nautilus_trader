@@ -15,10 +15,19 @@
 
 [flake8]
 filename = *.py, *.pyx, *.pxd
-exclude = .eggs, *.egg, build
+exclude =
+   .github
+   .nox
+   .pytest_cache
+   __pycache__
+   build
+   dist
+   docs
+   noxfile.py
 ignore = E225, E252, E999, D100, D101, D102, D104, D200
 max-complexity = 10
 max-line-length = 150
+statistics = True
 
 # Ignores justification
 # ---------------------

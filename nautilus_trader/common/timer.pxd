@@ -22,24 +22,34 @@ from nautilus_trader.core.uuid cimport UUID
 
 
 cdef class TimeEvent(Event):
-    cdef str _name
+    cdef readonly str name
+    """The time events unique name.\n\n:returns: `str`"""
 
 
 cdef class TimeEventHandler:
     cdef readonly TimeEvent event
+    """The handlers event.\n\n:returns: `TimeEvent`"""
     cdef readonly object handler
+    """The handlers event handler.\n\n:returns: `object`"""
 
     cdef void handle(self) except *
 
 
 cdef class Timer:
-    cdef str _name
-    cdef object _callback
-    cdef timedelta _interval
-    cdef datetime _start_time
-    cdef datetime _next_time
-    cdef datetime _stop_time
-    cdef bint _expired
+    cdef readonly str name
+    """The timers name using for hashing.\n\n:returns: `str`"""
+    cdef readonly object callback
+    """The timers callback function.\n\n:returns: `object`"""
+    cdef readonly timedelta interval
+    """The timers set interval.\n\n:returns: `timedelta`"""
+    cdef readonly datetime start_time
+    """The timers set start time.\n\n:returns: `datetime`"""
+    cdef readonly datetime next_time
+    """The timers next alert timestamp.\n\n:returns: `datetime`"""
+    cdef readonly datetime stop_time
+    """The timers set stop time (if set).\n\n:returns: `datetime`"""
+    cdef readonly bint expired
+    """If the timer is expired.\n\n:returns: `bool`"""
 
     cpdef TimeEvent pop_event(self, UUID event_id)
     cpdef void iterate_next_time(self, datetime now) except *

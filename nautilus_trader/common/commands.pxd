@@ -19,16 +19,20 @@ from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class Connect(Command):
-    cdef Venue _venue
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""
 
 
 cdef class Disconnect(Command):
-    cdef Venue _venue
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""
 
 
 cdef class DataCommand(Command):
-    cdef type _data_type
-    cdef dict _options
+    cdef readonly type data_type
+    """The data type of the command.\n\n:returns: `type`"""
+    cdef readonly dict options
+    """The command options.\n\n:returns: `dict`"""
 
 
 cdef class Subscribe(DataCommand):
@@ -44,4 +48,5 @@ cdef class RequestData(DataCommand):
 
 
 cdef class KillSwitch(Command):
-    cdef TraderId _trader_id
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""

@@ -82,7 +82,7 @@ cdef class PositionSizer:
             int units=1,
             int unit_batch_size=0,
     ):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef Decimal _calculate_risk_ticks(self, Price entry, Price stop_loss):
@@ -94,7 +94,7 @@ cdef class PositionSizer:
             Decimal risk,
             Decimal commission_rate,
     ):
-        if equity.amount <= 0:
+        if equity.as_decimal() <= 0:
             return Decimal()
         cdef Decimal risk_money = equity * risk
         cdef Decimal commission = risk_money * commission_rate * 2  # (round turn)

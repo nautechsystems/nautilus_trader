@@ -50,15 +50,20 @@ cdef class ExecutionEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
-
-    cdef TraderId _trader_id
-    cdef ExecutionCache _cache
-    cdef Portfolio _portfolio
     cdef PositionIdGenerator _pos_id_generator
     cdef dict _clients
     cdef dict _strategies
-    cdef int _command_count
-    cdef int _event_count
+
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
+    cdef readonly ExecutionCache cache
+    """The engines execution cache.\n\n:returns: `ExecutionCache`"""
+    cdef readonly Portfolio portfolio
+    """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
+    cdef readonly int command_count
+    """The total count of commands received by the engine.\n\n:returns: `int`"""
+    cdef readonly int event_count
+    """The total count of events received by the engine.\n\n:returns: `int`"""
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 

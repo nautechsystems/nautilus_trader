@@ -209,7 +209,7 @@ cdef class Logger:
         self._logger.addHandler(self._log_file_handler)
 
     cpdef void log(self, LogMessage message) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list get_log_store(self):
@@ -294,18 +294,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self._component_name = component_name
-
-    @property
-    def bypassed(self):
-        """
-        If the underlying logger is in bypass mode.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self._logger.bypass_logging
+        self.bypassed = logger.bypass_logging
 
     cpdef Logger get_logger(self):
         """
