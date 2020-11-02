@@ -17,10 +17,9 @@
 The `DataEngine` is the central component of the entire data stack for the platform.
 
 Its primary responsibility is to orchestrate interactions between the individual
-`DataClient` instances, and the rest of the platform. This is could include
-ongoing subscriptions to specific data types, for particular endpoints. As well as
-hydrating a `DataCache` layer which presents a read-only facade for its clients
-to consume cached data through.
+`DataClient` instances, and the rest of the platform. This includes consumers
+subscribing to specific data types, as well as hydrating a `DataCache` layer
+which presents a read-only facade for consumers.
 
 Alternative implementations can be written on top which just need to override
 the engines `execute` and `process` methods.
@@ -140,7 +139,7 @@ cdef class DataEngine:
         list[Venue]
 
         """
-        return list(self._clients.keys())
+        return sorted(list(self._clients.keys()))
 
     @property
     def subscribed_quote_ticks(self):
@@ -152,7 +151,7 @@ cdef class DataEngine:
         list[Symbol]
 
         """
-        return list(self._quote_tick_handlers.keys())
+        return sorted(list(self._quote_tick_handlers.keys()))
 
     @property
     def subscribed_trade_ticks(self):
@@ -164,7 +163,7 @@ cdef class DataEngine:
         list[Symbol]
 
         """
-        return list(self._trade_tick_handlers.keys())
+        return sorted(list(self._trade_tick_handlers.keys()))
 
     @property
     def subscribed_bars(self):
@@ -176,7 +175,7 @@ cdef class DataEngine:
         list[BarType]
 
         """
-        return list(self._bar_handlers.keys())
+        return sorted(list(self._bar_handlers.keys()))
 
     @property
     def subscribed_instruments(self):
@@ -188,7 +187,7 @@ cdef class DataEngine:
         list[Symbol]
 
         """
-        return list(self._instrument_handlers.keys())
+        return sorted(list(self._instrument_handlers.keys()))
 
 # --REGISTRATION -----------------------------------------------------------------------------------
 

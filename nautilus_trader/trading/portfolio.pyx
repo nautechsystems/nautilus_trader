@@ -277,13 +277,13 @@ cdef class Portfolio(PortfolioFacade):
         cdef int open_count = 0
         cdef int closed_count = 0
         for position in positions:
-            if position.is_open:
+            if position.is_open_c():
                 positions_open = self._positions_open.get(position.symbol.venue, set())
                 positions_open.add(position)
                 self._positions_open[position.symbol.venue] = positions_open
                 self._log.debug(f"Added open {position}")
                 open_count += 1
-            elif position.is_closed:
+            elif position.is_closed_c():
                 positions_closed = self._positions_closed.get(position.symbol.venue, set())
                 positions_closed.add(position)
                 self._positions_closed[position.symbol.venue] = positions_closed
@@ -657,6 +657,8 @@ cdef class Portfolio(PortfolioFacade):
         cdef Decimal net_position = self._net_positions.get(symbol)
         return net_position if net_position is not None else Decimal()
 
+    # noinspection: [base_quote]
+    # noinspection PyUnresolvedReferences
     cdef inline tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}
@@ -772,6 +774,8 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
+            # noinspection: order.price
+            # noinspection PyUnresolvedReferences
             # Calculate margin
             margin += instrument.calculate_order_margin(
                 order.quantity,

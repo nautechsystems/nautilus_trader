@@ -490,9 +490,8 @@ cdef class TimeBarAggregator(BarAggregator):
                 return
 
             bar = self._builder.build(event.timestamp)
+            self._handle_bar(bar)
         except ValueError as ex:
             # Bar was somehow malformed
             self._log.exception(ex)
             return
-
-        self._handle_bar(bar)

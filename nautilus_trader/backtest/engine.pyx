@@ -54,8 +54,6 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class BacktestEngine:
     """
     Provides a backtest engine to run a portfolio of strategies inside a Trader
@@ -329,7 +327,7 @@ cdef class BacktestEngine:
         # Run the backtest
         self.log.info(f"Running backtest...")
 
-        for strategy in self.trader.strategies:
+        for strategy in self.trader.strategies():
             strategy.clock.set_time(start)
 
         self.trader.start()
@@ -355,7 +353,7 @@ cdef class BacktestEngine:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: [TimeEventHandler]
-        for strategy in self.trader.strategies:
+        for strategy in self.trader.strategies():
             # noinspection: Object has warned attribute
             # noinspection PyUnresolvedReferences
             time_events += sorted(strategy.clock.advance_time(timestamp))
