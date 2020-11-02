@@ -94,30 +94,19 @@ cdef class Trader:
         self._log = LoggerAdapter(f"Trader-{trader_id.value}", logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._id = trader_id
+        # Private components
         self._data_engine = data_engine
         self._exec_engine = exec_engine
-        self._portfolio = exec_engine.portfolio
-        self._analyzer = PerformanceAnalyzer()
         self._report_provider = ReportProvider()
         self._strategies = []
 
+        self.id = trader_id
+        self.portfolio = exec_engine.portfolio
+        self.analyzer = PerformanceAnalyzer()
+
         self.initialize_strategies(strategies)
 
-    @property
-    def id(self):
-        """
-        The trader identifier.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._id
-
-    @property
-    def strategies(self):
+    cdef list strategies(self):
         """
         The traders strategies.
 
@@ -128,32 +117,7 @@ cdef class Trader:
         """
         return self._strategies
 
-    @property
-    def portfolio(self):
-        """
-        The portfolio for the trader.
-
-        Returns
-        -------
-        Portfolio
-
-        """
-        return self._portfolio
-
-    @property
-    def analyzer(self):
-        """
-        The traders performance analyzer
-
-        Returns
-        -------
-        PerformanceAnalyzer
-
-        """
-        return self._analyzer
-
-    @property
-    def strategy_ids(self):
+    cpdef set strategy_ids(self):
         """
         The traders strategy identifiers.
 
@@ -193,6 +157,8 @@ cdef class Trader:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
             # Design assumption that no strategies are running
+            # noinspection: strategy.state
+            # noinspection PyUnresolvedReferences
             assert not strategy.state == ComponentState.RUNNING
 
         # Dispose of current strategies
@@ -214,7 +180,7 @@ cdef class Trader:
 
             # Wire trader into strategy
             strategy.register_trader(
-                self._id,
+                self.id,
                 self._clock.__class__(),  # Clock per strategy
                 self._uuid_factory,
                 self._log.get_logger(),
@@ -269,6 +235,8 @@ cdef class Trader:
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
+            # noinspection: strategy.state
+            # noinspection PyUnresolvedReferences
             if strategy.state == ComponentState.RUNNING:
                 strategy.stop()
             else:
@@ -320,8 +288,8 @@ cdef class Trader:
         for strategy in self._strategies:
             strategy.reset()
 
-        self._portfolio.reset()
-        self._analyzer.reset()
+        self.portfolio.reset()
+        self.analyzer.reset()
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
         self._log.info(f"state={self._fsm.state_string()}.")
@@ -383,6 +351,8 @@ cdef class Trader:
         cdef dict states = {}
         cdef TradingStrategy strategy
         for strategy in self._strategies:
+            # noinspection: states[strategy.id]
+            # noinspection PyUnresolvedReferences
             states[strategy.id] = strategy.state_string()
 
         return states

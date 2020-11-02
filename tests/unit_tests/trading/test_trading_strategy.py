@@ -171,8 +171,8 @@ class TradingStrategyTests(unittest.TestCase):
         # Act
         # Assert
         self.assertTrue(ComponentState.INITIALIZED, strategy.state)
-        self.assertEqual([], strategy.registered_indicators)
-        self.assertFalse(strategy.indicators_initialized)
+        self.assertEqual([], strategy.registered_indicators())
+        self.assertFalse(strategy.indicators_initialized())
 
     def test_register_strategy_with_exec_client(self):
         # Arrange
@@ -202,7 +202,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         # Act
-        result = strategy.registered_indicators
+        result = strategy.registered_indicators()
 
         # Assert
         self.assertEqual([strategy.ema1, strategy.ema2], result)

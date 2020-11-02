@@ -88,6 +88,18 @@ cdef class OrderFactory:
             initial_count=initial_count,
         )
 
+    @property
+    def count(self):
+        """
+        The count of identifiers generated.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._id_generator.count
+
     cpdef void set_count(self, int count) except *:
         """
         System Method: Set the internal order identifier generator count to the

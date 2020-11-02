@@ -18,6 +18,8 @@ import os
 import pandas as pd
 import pytz
 
+
+from datetime import datetime
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -355,58 +357,10 @@ cdef class NewsEvent:
         currency : str
             The currency the economic news event is expected to affect.
         """
-        self._timestamp = timestamp
-        self._impact = impact
-        self._name = name
-        self._currency = currency
-
-    @property
-    def timestamp(self):
-        """
-        The news events timestamp.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._timestamp
-
-    @property
-    def impact(self):
-        """
-        The expected news impact.
-
-        Returns
-        -------
-        NewsImpact
-
-        """
-        return self._impact
-
-    @property
-    def name(self):
-        """
-        The descriptive name of the news event.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._name
-
-    @property
-    def currency(self):
-        """
-        The currency affected by the news event.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._currency
+        self.timestamp = timestamp
+        self.impact = impact
+        self.name = name
+        self.currency = currency
 
 
 cdef class EconomicNewsEventFilter:
