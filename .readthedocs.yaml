@@ -1,10 +1,9 @@
-name: nautilus_trader
-type: sphinx
-base: docs/source
+version: 2
+
 python:
   version: 3.8
   install:
-    - method: pip
+    - method: setuptools
       path: .
       extra_requirements:
         - docs
