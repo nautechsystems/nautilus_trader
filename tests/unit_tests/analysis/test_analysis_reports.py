@@ -30,6 +30,7 @@ from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))
 GBPUSD_FXCM = Symbol("GBP/USD", Venue('FXCM'))
 

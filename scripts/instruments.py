@@ -2,6 +2,7 @@ import json
 
 import ccxt
 
+
 exchange = 'bitmex'
 ccxt = getattr(ccxt, exchange.lower())()
 ccxt.load_markets()

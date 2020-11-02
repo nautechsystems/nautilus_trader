@@ -40,6 +40,7 @@ from tests.test_kit.data import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 

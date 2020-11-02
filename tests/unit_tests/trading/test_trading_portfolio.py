@@ -43,6 +43,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 FXCM = Venue("FXCM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")

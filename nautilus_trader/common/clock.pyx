@@ -31,8 +31,6 @@ from nautilus_trader.core.correctness cimport Condition
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class Clock:
     """
     The base class for all clocks. All times are timezone aware UTC.
@@ -54,84 +52,12 @@ cdef class Clock:
         self._handlers = {}  # type: {str, callable}
         self._stack = None
         self._default_handler = None
+        self.is_test_clock = False
+        self.is_default_handler_registered = False
 
-        self._timer_count = 0
-        self._next_event_time = None
-        self._next_event_name = None
-
-    @property
-    def timer_names(self):
-        """
-        The timer names held by the clock.
-
-        Returns
-        -------
-        list[str]
-
-        """
-        return list(self._timers.keys())
-
-    @property
-    def timer_count(self):
-        """
-        The number of timers active in the clock.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._timer_count
-
-    @property
-    def next_event_time(self):
-        """
-        The timestamp of the next time event.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._next_event_time
-
-    @property
-    def next_event_name(self):
-        """
-        The name of the next time event.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._next_event_name
-
-    @property
-    def is_test_clock(self):
-        """
-        If the clock is a `TestClock`.
-
-        Returns
-        -------
-        bool
-            True if clock is of type `TestClock`, else False.
-
-        """
-        return self._is_test_clock
-
-    @property
-    def is_default_handler_registered(self):
-        """
-        If the clock has a default handler registered.
-
-        Returns
-        -------
-        bool
-            True if default handler registered, else False.
-
-        """
-        return self._default_handler is not None
+        self.timer_count = 0
+        self.next_event_time = None
+        self.next_event_name = None
 
     cpdef datetime utc_now(self):
         """
@@ -141,7 +67,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef datetime local_now(self, tzinfo tz):
@@ -179,6 +105,17 @@ cdef class Clock:
         Condition.not_none(time, "time")
 
         return self.utc_now() - time
+
+    cpdef list timer_names(self):
+        """
+        The timer names held by the clock.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return list(self._timers.keys())
 
     cpdef Timer timer(self, str name):
         """
@@ -220,6 +157,7 @@ cdef class Clock:
         Condition.not_none(handler, "handler")
 
         self._default_handler = handler
+        self.is_default_handler_registered = True
 
     cpdef void set_time_alert(
             self,
@@ -327,6 +265,8 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
+        # noinspection: total_seconds()
+        # noinspection PyUnresolvedReferences
         Condition.true(interval.total_seconds() > 0, "interval positive")
         Condition.callable(handler, "handler")
 
@@ -378,7 +318,7 @@ cdef class Clock:
         Cancel all timers.
         """
         cdef str name
-        for name in self.timer_names:
+        for name in self.timer_names():
             # Using a list of timer names from the property and passing this
             # to cancel_timer() handles the clean removal of both the handler
             # and timer.
@@ -393,7 +333,7 @@ cdef class Clock:
             datetime start_time,
             datetime stop_time,
     ):
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef inline void _add_timer(self, Timer timer, handler) except *:
@@ -409,9 +349,9 @@ cdef class Clock:
         self._update_timing()
 
     cdef void _update_stack(self) except *:
-        self._timer_count = len(self._timers)
+        self.timer_count = len(self._timers)
 
-        if self._timer_count > 0:
+        if self.timer_count > 0:
             # The call to np.asarray here looks inefficient, however the intention
             # is that its only called when a timer is added or removed only.
             # This then allows the construction of an efficient Timer[:] memory view.
@@ -422,26 +362,24 @@ cdef class Clock:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef inline void _update_timing(self) except *:
-        if self._timer_count == 0:
-            self._next_event_time = None
+        if self.timer_count == 0:
+            self.next_event_time = None
             return
-        elif self._timer_count == 1:
-            self._next_event_time = self._stack[0].next_time
+        elif self.timer_count == 1:
+            self.next_event_time = self._stack[0].next_time
             return
 
         cdef datetime next_time = self._stack[0].next_time
         cdef datetime observed
         cdef int i
-        for i in range(self._timer_count - 1):
+        for i in range(self.timer_count - 1):
             observed = self._stack[i + 1].next_time
             if observed < next_time:
                 next_time = observed
 
-        self._next_event_time = next_time
+        self.next_event_time = next_time
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class TestClock(Clock):
     """
     Provides a clock for backtesting and unit testing.
@@ -461,7 +399,7 @@ cdef class TestClock(Clock):
         super().__init__(TestUUIDFactory())
 
         self._time = initial_time
-        self._is_test_clock = True
+        self.is_test_clock = True
 
     cpdef datetime utc_now(self):
         """
@@ -501,7 +439,7 @@ cdef class TestClock(Clock):
 
         cdef list events = []
 
-        if self._timer_count == 0 or to_time < self._next_event_time:
+        if self.timer_count == 0 or to_time < self.next_event_time:
             self._time = to_time
             return events  # No timer events to iterate
 
@@ -539,8 +477,6 @@ cdef class TestClock(Clock):
         )
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class LiveClock(Clock):
     """
     Provides a clock for live trading. All times are timezone aware UTC.
@@ -568,6 +504,8 @@ cdef class LiveClock(Clock):
         # such as UTC. The preferred way of dealing with times is to always work
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
+        # noinspection: datetime.now
+        # noinspection PyUnresolvedReferences
         return datetime.now(tz=pytz.utc)
 
     cdef Timer _create_timer(

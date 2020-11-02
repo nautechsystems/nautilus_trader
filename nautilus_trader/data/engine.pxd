@@ -46,19 +46,22 @@ cdef class DataEngine:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
-
-    cdef Portfolio _portfolio
-    cdef DataCache _cache
     cdef bint _use_previous_close
-    cdef int _command_count
-    cdef int _data_count
-
     cdef dict _clients
     cdef dict _instrument_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
     cdef dict _bar_aggregators
     cdef dict _bar_handlers
+
+    cdef readonly Portfolio portfolio
+    """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
+    cdef readonly DataCache cache
+    """The engines data cache.\n\n:returns: `DataCache`"""
+    cdef readonly int command_count
+    """The total count of commands received by the engine.\n\n:returns: `int`"""
+    cdef readonly int data_count
+    """The total count of data objects received by the engine.\n\n:returns: `int`"""
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 

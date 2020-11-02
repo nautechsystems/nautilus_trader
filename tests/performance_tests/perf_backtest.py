@@ -34,6 +34,7 @@ from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 

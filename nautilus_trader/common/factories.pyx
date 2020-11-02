@@ -32,11 +32,12 @@ from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.order cimport StopMarketOrder
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class OrderFactory:
     """
     A factory class which provides different order types.
+
+    The `TraderId` tag and `StrategyId` tag will be inserted into all
+    identifiers generated.
     """
 
     def __init__(
@@ -77,8 +78,8 @@ cdef class OrderFactory:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._trader_id = trader_id
-        self._strategy_id = strategy_id
+        self.trader_id = trader_id
+        self.strategy_id = strategy_id
 
         self._id_generator = OrderIdGenerator(
             id_tag_trader=trader_id.tag,
@@ -86,45 +87,6 @@ cdef class OrderFactory:
             clock=clock,
             initial_count=initial_count,
         )
-
-    @property
-    def trader_id(self):
-        """
-        The order factories trader identifier.
-
-        The `TraderId` tag will be inserted into all identifiers generated.
-
-        Returns
-        -------
-        TraderId
-
-        """
-        return self._trader_id
-
-    def strategy_id(self):
-        """
-        The order factories trading strategy identifier.
-
-        The `StrategyId` tag will be inserted into all identifiers generated.
-
-        Returns
-        -------
-        StrategyId
-
-        """
-        return self._strategy_id
-
-    @property
-    def count(self):
-        """
-        The internal order identifier generator count.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._id_generator.count
 
     cpdef void set_count(self, int count) except *:
         """
@@ -184,7 +146,7 @@ cdef class OrderFactory:
         """
         return MarketOrder(
             self._id_generator.generate(),
-            self._strategy_id,
+            self.strategy_id,
             symbol,
             order_side,
             quantity,
@@ -243,7 +205,7 @@ cdef class OrderFactory:
         """
         return LimitOrder(
             self._id_generator.generate(),
-            self._strategy_id,
+            self.strategy_id,
             symbol,
             order_side,
             quantity,
@@ -300,7 +262,7 @@ cdef class OrderFactory:
         """
         return StopMarketOrder(
             self._id_generator.generate(),
-            self._strategy_id,
+            self.strategy_id,
             symbol,
             order_side,
             quantity,
@@ -311,6 +273,8 @@ cdef class OrderFactory:
             timestamp=self._clock.utc_now(),
         )
 
+    # noinspection: entry_order.price
+    # noinspection PyUnresolvedReferences
     cpdef BracketOrder bracket(
             self,
             Order entry_order,

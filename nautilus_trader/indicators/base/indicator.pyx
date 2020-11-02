@@ -88,15 +88,15 @@ cdef class Indicator:
         return self._initialized
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError(f"Cannot handle {repr(tick)}, method not implemented in subclass")
 
     cpdef void handle_bar(self, Bar bar) except *:
-        # Abstract method
+        """Abstract method."""
         raise NotImplementedError(f"Cannot handle {repr(bar)}, method not implemented in subclass")
 
     cpdef void reset(self) except *:

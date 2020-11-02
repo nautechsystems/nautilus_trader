@@ -44,6 +44,7 @@ from tests.test_kit.strategies import TestStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 XBTUSD_BITMEX = InstrumentLoader.xbtusd_bitmex()
 
 

@@ -178,7 +178,7 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
 
 
-# noinspection: Object has warned attribute
+# noinspection: PassiveOrder attributes
 # noinspection PyUnresolvedReferences
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
@@ -315,7 +315,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         raise ValueError(f"Invalid order_type, was {order_type_to_string(order_type)}")
 
 
-# noinspection: Object has warned attribute
+# noinspection: Command attributes
 # noinspection PyUnresolvedReferences
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
@@ -468,7 +468,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             raise RuntimeError("Cannot deserialize command (unrecognized bytes pattern).")
 
 
-# noinspection: Object has warned attribute
+# noinspection: Event attributes
 # noinspection PyUnresolvedReferences
 cdef class MsgPackEventSerializer(EventSerializer):
     """

@@ -48,6 +48,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.strategies import TestStrategy
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 

@@ -23,6 +23,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
 AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
 
