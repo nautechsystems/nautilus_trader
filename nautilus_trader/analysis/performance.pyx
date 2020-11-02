@@ -194,7 +194,7 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if self._account_starting_balance.amount == 0:
+        if self._account_starting_balance is None or self._account_starting_balance.as_decimal() == 0:
             # Protect divide by zero
             return 0.
         cdef Decimal current = self._account_balance

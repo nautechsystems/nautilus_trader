@@ -55,7 +55,7 @@ cdef class TestUUIDFactory(UUIDFactory):
 
 cdef class LiveUUIDFactory(UUIDFactory):
     """
-    Provides a UUID factory for live trading. Generates version 4 UUID's.
+    Provides a UUID factory for live trading. Generates version UUID version 4's.
     """
 
     def __init__(self):

@@ -37,7 +37,7 @@ from nautilus_trader.common.commands cimport Disconnect
 from nautilus_trader.common.commands cimport RequestData
 from nautilus_trader.common.commands cimport Subscribe
 from nautilus_trader.common.commands cimport Unsubscribe
-from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -107,7 +107,7 @@ cdef class DataEngine:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(type(self).__name__, logger)
-        self._fsm = create_component_fsm()
+        self._fsm = ComponentFSMFactory.create()
 
         self._portfolio = portfolio
         self._cache = DataCache(logger)

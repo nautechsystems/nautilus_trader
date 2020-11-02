@@ -46,6 +46,7 @@ from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
 BTCUSD_BINANCE = TestStubs.symbol_btcusdt_binance()

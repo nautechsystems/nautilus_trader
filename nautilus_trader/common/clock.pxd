@@ -32,14 +32,21 @@ cdef class Clock:
     cdef Timer[:] _stack
     cdef object _default_handler
 
-    cdef bint _is_test_clock
-    cdef int _timer_count
-    cdef datetime _next_event_time
-    cdef str _next_event_name
+    cdef readonly bint is_test_clock
+    """If the clock is a `TestClock`.\n\n:returns: `bool`"""
+    cdef readonly bint is_default_handler_registered
+    """If the clock has a default handler registered.\n\n:returns: `bool`"""
+    cdef readonly int timer_count
+    """The number of timers active in the clock.\n\n:returns: `int`"""
+    cdef readonly datetime next_event_time
+    """The timestamp of the next time event.\n\n:returns: `datetime`"""
+    cdef readonly str next_event_name
+    """The name of the next time event.\n\n:returns: `str`"""
 
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz)
     cpdef timedelta delta(self, datetime time)
+    cpdef list timer_names(self)
     cpdef Timer timer(self, str name)
     cpdef void register_default_handler(self, handler) except *
     cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *

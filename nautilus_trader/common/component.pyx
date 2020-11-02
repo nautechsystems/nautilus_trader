@@ -45,14 +45,36 @@ cdef dict _COMPONENT_STATE_TABLE = {
     (ComponentState.DISPOSING, ComponentTrigger.DISPOSED): ComponentState.DISPOSED,
 }
 
-cpdef dict get_state_transition_table():
-    return _COMPONENT_STATE_TABLE
+cdef class ComponentFSMFactory:
+    """
+    Provides generic component Finite-State Machines.
+    """
 
+    @staticmethod
+    def get_state_transition_table() -> dict:
+        """
+        The default state transition table.
 
-cpdef FiniteStateMachine create_component_fsm():
-    return FiniteStateMachine(
-        state_transition_table=get_state_transition_table(),
-        initial_state=ComponentState.INITIALIZED,
-        trigger_parser=component_trigger_to_string,
-        state_parser=component_state_to_string,
-    )
+        Returns
+        -------
+        dict[int, int]
+            C enums.
+        """
+        return _COMPONENT_STATE_TABLE.copy()
+
+    @staticmethod
+    def create():
+        """
+        Create a new generic component FSM.
+
+        Returns
+        -------
+        FiniteStateMachine
+
+        """
+        return FiniteStateMachine(
+            state_transition_table=ComponentFSMFactory.get_state_transition_table(),
+            initial_state=ComponentState.INITIALIZED,
+            trigger_parser=component_trigger_to_string,
+            state_parser=component_state_to_string,
+        )

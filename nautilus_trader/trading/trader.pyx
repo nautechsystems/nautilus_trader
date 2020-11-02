@@ -26,7 +26,7 @@ from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
-from nautilus_trader.common.component cimport create_component_fsm
+from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -92,7 +92,7 @@ cdef class Trader:
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(f"Trader-{trader_id.value}", logger)
-        self._fsm = create_component_fsm()
+        self._fsm = ComponentFSMFactory.create()
 
         self._id = trader_id
         self._data_engine = data_engine

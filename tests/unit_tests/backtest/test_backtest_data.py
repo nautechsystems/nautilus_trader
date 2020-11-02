@@ -23,6 +23,7 @@ from nautilus_trader.model.enums import PriceType
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
+
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
 

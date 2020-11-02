@@ -15,6 +15,8 @@
 
 import unittest
 
+import redis
+
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import TestUUIDFactory
@@ -28,9 +30,9 @@ from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.trading.account import Account
-import redis
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
+
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 

@@ -13,8 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.fsm cimport FiniteStateMachine
-
-
-cpdef dict get_state_transition_table()
-cpdef FiniteStateMachine create_component_fsm()
+cdef class ComponentFSMFactory:
+    pass

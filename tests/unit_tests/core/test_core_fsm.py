@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.common.component import get_state_transition_table
+from nautilus_trader.common.component import ComponentFSMFactory
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import ComponentTrigger
 from nautilus_trader.core.fsm import FiniteStateMachine
@@ -46,7 +46,7 @@ class FiniteStateMachineTests(unittest.TestCase):
     def setUp(self):
         # Fixture setup
         self.fsm = FiniteStateMachine(
-            state_transition_table=get_state_transition_table(),
+            state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.INITIALIZED,
             state_parser=FiniteStateMachineTests.component_state_to_string,
         )

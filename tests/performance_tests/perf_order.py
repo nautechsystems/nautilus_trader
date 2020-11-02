@@ -21,6 +21,7 @@ from nautilus_trader.model.identifiers import IdTag
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 
+
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
