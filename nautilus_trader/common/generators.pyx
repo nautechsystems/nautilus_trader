@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
@@ -67,7 +68,7 @@ cdef class IdentifierGenerator:
         self._prefix = prefix
         self._id_tag_trader = id_tag_trader
         self._id_tag_strategy = id_tag_strategy
-        self._count = initial_count
+        self.count = initial_count
 
     cpdef void set_count(self, int count) except *:
         """
@@ -79,7 +80,7 @@ cdef class IdentifierGenerator:
             The count to set.
 
         """
-        self._count = count
+        self.count = count
 
     cpdef void reset(self) except *:
         """
@@ -87,7 +88,7 @@ cdef class IdentifierGenerator:
 
         All stateful values are reset to their initial value.
         """
-        self._count = 0
+        self.count = 0
 
     cdef str _generate(self):
         """
@@ -98,13 +99,13 @@ cdef class IdentifierGenerator:
         str
 
         """
-        self._count += 1
+        self.count += 1
 
         return (f"{self._prefix}-"
                 f"{self._get_datetime_tag()}-"
                 f"{self._id_tag_trader.value}-"
                 f"{self._id_tag_strategy.value}-"
-                f"{self._count}")
+                f"{self.count}")
 
     cdef str _get_datetime_tag(self):
         """
@@ -116,8 +117,6 @@ cdef class IdentifierGenerator:
 
         """
         cdef datetime utc_now = self._clock.utc_now()
-        # noinspection: CPython datetime attributes
-        # noinspection PyUnresolvedReferences
         return (f"{utc_now.year}"
                 f"{utc_now.month:02d}"
                 f"{utc_now.day:02d}"
@@ -177,8 +176,6 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         return ClientOrderId(self._generate())
 
 
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class PositionIdGenerator:
     """
     Provides a generator for unique PositionId(s).

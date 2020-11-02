@@ -30,10 +30,14 @@ cdef class ForexSessionFilter:
 
 
 cdef class NewsEvent:
-    cdef datetime _timestamp
-    cdef object _impact
-    cdef str _name
-    cdef str _currency
+    cdef readonly datetime timestamp
+    """The news events timestamp.\n\n:returns: `datetime`"""
+    cdef readonly object impact
+    """The expected news impact.\n\n:returns: `object`"""
+    cdef readonly str name
+    """The descriptive name of the news event.\n\n:returns: `str`"""
+    cdef readonly str currency
+    """The currency affected by the news event.\n\n:returns: `str`"""
 
 
 cdef class EconomicNewsEventFilter:
