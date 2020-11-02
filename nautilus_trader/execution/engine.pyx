@@ -145,7 +145,7 @@ cdef class ExecutionEngine:
         set[StrategyId]
 
         """
-        return list(self._clients.keys())
+        return sorted(list(self._clients.keys()))
 
     @property
     def registered_strategies(self):
@@ -157,7 +157,7 @@ cdef class ExecutionEngine:
         list[StrategyId]
 
         """
-        return list(self._strategies.keys())
+        return sorted(list(self._strategies.keys()))
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -776,7 +776,7 @@ cdef class ExecutionEngine:
         cdef list positions = self.cache.positions()
 
         # Count positions per symbol
-        cdef dict counts = {}  # type: {Symbol: int}
+        cdef dict counts = {}  # type: dict[Symbol, int]
         cdef Position position
         for position in positions:
             if position.symbol not in counts:

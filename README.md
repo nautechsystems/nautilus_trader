@@ -40,7 +40,7 @@ is written mostly in Python with optional additional C-inspired syntax.
 
 ## Documentation
 
-The documentation for the latest version of the package is available on _readthedocs_.
+The documentation for the latest version of the package is available at _readthedocs_.
 
 > https://nautilus-trader.readthedocs.io
 
