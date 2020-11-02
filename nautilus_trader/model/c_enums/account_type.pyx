@@ -13,4 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.account_type cimport AccountType
+cdef class AccountTypeParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'SIMULATED'
+        elif value == 2:
+            return 'DEMO'
+        elif value == 3:
+            return 'REAL'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef AccountType from_string(str value):
+        if value == 'SIMULATED':
+            return AccountType.SIMULATED
+        elif value == 'DEMO':
+            return AccountType.DEMO
+        elif value == 'REAL':
+            return AccountType.REAL
+        else:
+            return AccountType.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return AccountTypeParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return AccountTypeParser.from_string(value)

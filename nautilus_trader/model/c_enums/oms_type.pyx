@@ -13,4 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
+cdef class OMSTypeParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'NETTING'
+        elif value == 2:
+            return 'HEDGING'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef OMSType from_string(str value):
+        if value == 'NETTING':
+            return OMSType.NETTING
+        elif value == 'HEDGING':
+            return OMSType.HEDGING
+        else:
+            return OMSType.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return OMSTypeParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return OMSTypeParser.from_string(value)

@@ -13,4 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.maker cimport Maker
+cdef class MakerParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'BUYER'
+        elif value == 2:
+            return 'SELLER'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef Maker from_string(str value):
+        if value == 'BUYER':
+            return Maker.BUYER
+        elif value == 'SELLER':
+            return Maker.SELLER
+        else:
+            return Maker.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return MakerParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return MakerParser.from_string(value)

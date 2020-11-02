@@ -28,38 +28,8 @@ cpdef enum MessageType:
     RESPONSE = 6
 
 
-cdef inline str message_type_to_string(int value):
-    if value == 1:
-        return 'STRING'
-    elif value == 2:
-        return 'COMMAND'
-    elif value == 3:
-        return 'DOCUMENT'
-    elif value == 4:
-        return 'EVENT'
-    elif value == 5:
-        return 'REQUEST'
-    elif value == 6:
-        return 'RESPONSE'
-    else:
-        return 'UNDEFINED'
-
-
-cdef inline MessageType message_type_from_string(str value):
-    if value == 'STRING':
-        return MessageType.STRING
-    elif value == 'COMMAND':
-        return MessageType.COMMAND
-    elif value == 'DOCUMENT':
-        return MessageType.DOCUMENT
-    elif value == 'EVENT':
-        return MessageType.EVENT
-    elif value == 'REQUEST':
-        return MessageType.REQUEST
-    elif value == 'RESPONSE':
-        return MessageType.RESPONSE
-    else:
-        return MessageType.UNDEFINED
+cpdef str message_type_to_string(int value)
+cpdef MessageType message_type_from_string(str value)
 
 
 cdef class Message:

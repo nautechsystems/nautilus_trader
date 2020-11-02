@@ -13,4 +13,62 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
+cdef class ComponentStateParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'INITIALIZED'
+        elif value == 2:
+            return 'STARTING'
+        elif value == 3:
+            return 'RUNNING'
+        elif value == 4:
+            return 'STOPPING'
+        elif value == 5:
+            return 'STOPPED'
+        elif value == 6:
+            return 'RESUMING'
+        elif value == 7:
+            return 'RESETTING'
+        elif value == 8:
+            return 'DISPOSING'
+        elif value == 9:
+            return 'DISPOSED'
+        elif value == 10:
+            return 'FAULTED'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef ComponentState from_string(str value):
+        if value == 'INITIALIZED':
+            return ComponentState.INITIALIZED
+        elif value == 'STARTING':
+            return ComponentState.STARTING
+        elif value == 'RUNNING':
+            return ComponentState.RUNNING
+        elif value == 'STOPPING':
+            return ComponentState.STOPPING
+        elif value == 'STOPPED':
+            return ComponentState.STOPPED
+        elif value == 'RESUMING':
+            return ComponentState.RESUMING
+        elif value == 'RESETTING':
+            return ComponentState.RESETTING
+        elif value == 'DISPOSING':
+            return ComponentState.DISPOSING
+        elif value == 'DISPOSED':
+            return ComponentState.DISPOSED
+        elif value == 'FAULTED':
+            return ComponentState.FAULTED
+        else:
+            return ComponentState.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return ComponentStateParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return ComponentStateParser.from_string(value)

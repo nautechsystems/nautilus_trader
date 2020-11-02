@@ -13,4 +13,34 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
+cdef class PositionSideParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'FLAT'
+        elif value == 2:
+            return 'LONG'
+        elif value == 3:
+            return 'SHORT'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef PositionSide from_string(str value):
+        if value == 'FLAT':
+            return PositionSide.FLAT
+        elif value == 'LONG':
+            return PositionSide.LONG
+        elif value == 'SHORT':
+            return PositionSide.SHORT
+        else:
+            return PositionSide.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return PositionSideParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return PositionSideParser.from_string(value)

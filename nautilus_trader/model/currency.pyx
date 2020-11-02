@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-from nautilus_trader.model.c_enums.currency_type cimport currency_type_to_string
+from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 
 # Crypto currencies
 BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
@@ -140,7 +140,7 @@ cdef class Currency:
         return (f"{type(self).__name__}("
                 f"code={self.code}, "
                 f"precision={self.precision}, "
-                f"type={currency_type_to_string(self.currency_type)})")
+                f"type={CurrencyTypeParser.to_string(self.currency_type)})")
 
     @staticmethod
     cdef Currency from_string_c(str code):

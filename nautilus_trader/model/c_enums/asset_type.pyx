@@ -13,4 +13,46 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
+cdef class AssetTypeParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'SPOT'
+        elif value == 2:
+            return 'SWAP'
+        elif value == 3:
+            return 'FUTURE'
+        elif value == 4:
+            return 'FORWARD'
+        elif value == 5:
+            return 'CFD'
+        elif value == 6:
+            return 'OPTION'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef AssetType from_string(str value):
+        if value == 'SPOT':
+            return AssetType.SPOT
+        elif value == 'SWAP':
+            return AssetType.SWAP
+        elif value == 'FUTURE':
+            return AssetType.FUTURE
+        elif value == 'FORWARD':
+            return AssetType.FORWARD
+        elif value == 'CFD':
+            return AssetType.CFD
+        elif value == 'OPTION':
+            return AssetType.OPTION
+        else:
+            return AssetType.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return AssetTypeParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return AssetTypeParser.from_string(value)

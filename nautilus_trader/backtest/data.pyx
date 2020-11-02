@@ -42,7 +42,7 @@ from nautilus_trader.data.wrangling cimport TickDataWrangler
 from nautilus_trader.data.wrappers cimport InstrumentDataBlock
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -259,7 +259,7 @@ cdef class BacktestDataClient(DataClient):
             tick_frames.append(wrangler.tick_data)
             counter += 1
 
-            self.execution_resolutions.append(f"{symbol}={bar_aggregation_to_string(wrangler.resolution)}")
+            self.execution_resolutions.append(f"{symbol}={BarAggregationParser.to_string(wrangler.resolution)}")
             self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
                            f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
 

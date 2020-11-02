@@ -24,7 +24,7 @@ A running instance could be either a test/backtest or live implementation - the
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.logging cimport Logger
@@ -335,7 +335,7 @@ cdef class Trader:
             The traders current state as a string.
 
         """
-        return component_state_to_string(self._fsm.state)
+        return ComponentStateParser.to_string(self._fsm.state)
 
     cpdef dict strategy_states(self):
         """

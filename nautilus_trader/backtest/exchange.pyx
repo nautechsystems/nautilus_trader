@@ -29,7 +29,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -676,7 +676,7 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(accepted)
 
     cdef void _reject_order(self, Order order, str reason) except *:
-        if order.state != OrderState.SUBMITTED:
+        if order.state_c() != OrderState.SUBMITTED:
             self._log.error(f"Cannot reject order, state was {order.state_string()}.")
             return
 
@@ -789,7 +789,7 @@ cdef class SimulatedExchange:
             else:
                 self._fill_order(order, current_market.bid, LiquiditySide.TAKER)
         else:
-            raise RuntimeError(f"Invalid order side, was {order_side_to_string(order.side)}")
+            raise RuntimeError(f"Invalid order side, was {OrderSideParser.to_string(order.side)}")
 
     cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
@@ -959,7 +959,7 @@ cdef class SimulatedExchange:
     cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
-        if order.is_completed:
+        if order.is_completed_c():
             self._log.debug(f"Cannot reject order, state was already {order.state_string()}.")
             return
 
@@ -978,7 +978,7 @@ cdef class SimulatedExchange:
     cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
-        if order.is_completed:
+        if order.is_completed_c():
             self._log.debug(f"Cannot cancel order, state was already {order.state_string()}.")
             return
 
@@ -996,7 +996,7 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(event)
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
-        if order.is_completed:
+        if order.is_completed_c():
             self._log.debug(f"Cannot cancel order, state was already {order.state_string()}.")
             return
 

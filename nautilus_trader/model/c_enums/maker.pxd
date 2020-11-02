@@ -20,19 +20,10 @@ cpdef enum Maker:
     SELLER = 2
 
 
-cdef inline str maker_to_string(int value):
-    if value == 1:
-        return 'BUYER'
-    elif value == 2:
-        return 'SELLER'
-    else:
-        return 'UNDEFINED'
+cdef class MakerParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline Maker maker_from_string(str value):
-    if value == 'BUYER':
-        return Maker.BUYER
-    elif value == 'SELLER':
-        return Maker.SELLER
-    else:
-        return Maker.UNDEFINED
+    @staticmethod
+    cdef Maker from_string(str value)
