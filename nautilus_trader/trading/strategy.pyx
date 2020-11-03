@@ -455,7 +455,7 @@ cdef class TradingStrategy:
 # -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
-        """"
+        """
         Handle the given tick.
 
         Parameters
@@ -512,7 +512,7 @@ cdef class TradingStrategy:
             self.handle_quote_tick(ticks[i], is_historical=True)
 
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
-        """"
+        """
         Handle the given tick.
 
         Parameters
@@ -569,7 +569,7 @@ cdef class TradingStrategy:
             self.handle_trade_tick(ticks[i], is_historical=True)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
-        """"
+        """
         Handle the given bar type and bar.
 
         Parameters
