@@ -59,9 +59,9 @@ cdef class WeightedMovingAverage(MovingAverage):
             Condition.equal(len(weights), period, "len(weights)", "period")
         super().__init__(period, params=[period, weights], price_type=price_type)
 
-        self._inputs = deque(maxlen=self._period)
+        self._inputs = deque(maxlen=period)
         self._weights = weights
-        self._value = 0
+        self.value = 0
 
     @property
     def weights(self):
@@ -87,7 +87,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.extract_price(self._price_type).as_double())
+        self.update_raw(tick.extract_price(self.price_type).as_double())
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -130,10 +130,10 @@ cdef class WeightedMovingAverage(MovingAverage):
         self._increment_count()
         self._inputs.append(value)
 
-        if self._initialized or self.weights is None:
-            self._value = np.average(self._inputs, weights=self._weights, axis=0)
+        if self.initialized or self.weights is None:
+            self.value = np.average(self._inputs, weights=self._weights, axis=0)
         else:
-            self._value = np.average(self._inputs, weights=self._weights[-len(self._inputs):], axis=0)
+            self.value = np.average(self._inputs, weights=self._weights[-len(self._inputs):], axis=0)
 
     cpdef void reset(self) except *:
         """

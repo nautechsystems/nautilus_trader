@@ -17,7 +17,6 @@ from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 
 
 cdef class HullMovingAverage(MovingAverage):
-    cdef int _period_halved
     cdef int _period_sqrt
     cdef list _w1
     cdef list _w2

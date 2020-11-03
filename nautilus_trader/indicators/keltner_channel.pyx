@@ -187,7 +187,7 @@ cdef class KeltnerChannel(Indicator):
         self._value_lower = self._ma.value - (self._atr.value * self._k_multiplier)
 
         # Initialization logic
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized:
                 self._set_initialized(True)

@@ -70,7 +70,7 @@ cdef class AverageTrueRange(Indicator):
         self._use_previous = use_previous
         self._value_floor = value_floor
         self._previous_close = 0
-        self._value = 0
+        self.value = 0
 
     @property
     def period(self):
@@ -83,18 +83,6 @@ cdef class AverageTrueRange(Indicator):
 
         """
         return self._period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -131,7 +119,7 @@ cdef class AverageTrueRange(Indicator):
         """
         # Calculate average
         if self._use_previous:
-            if not self._has_inputs:
+            if not self.has_inputs:
                 self._previous_close = close
             self._ma.update_raw(max(self._previous_close, high) - min(low, self._previous_close))
             self._previous_close = close
@@ -143,18 +131,18 @@ cdef class AverageTrueRange(Indicator):
 
     cdef void _floor_value(self) except *:
         if self._value_floor == 0:
-            self._value = self._ma.value
+            self.value = self._ma.value
         elif self._value_floor < self._ma.value:
-            self._value = self._ma.value
+            self.value = self._ma.value
         else:
             # Floor the value
-            self._value = self._value_floor
+            self.value = self._value_floor
 
     cdef void _check_initialized(self) except *:
         """
         Initialization logic.
         """
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
             if self._ma.initialized:
                 self._set_initialized(True)
@@ -168,4 +156,4 @@ cdef class AverageTrueRange(Indicator):
         self._reset_base()
         self._ma.reset()
         self._previous_close = 0
-        self._value = 0
+        self.value = 0

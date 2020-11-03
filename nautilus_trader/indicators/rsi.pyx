@@ -106,7 +106,7 @@ cdef class RelativeStrengthIndex(Indicator):
 
         """
         # Check if first input
-        if not self._has_inputs:
+        if not self.has_inputs:
             self._last_value = value
             self._set_has_inputs(True)
 
@@ -123,7 +123,7 @@ cdef class RelativeStrengthIndex(Indicator):
             self._average_loss.update_raw(0)
 
         # Initialization logic
-        if not self._initialized:
+        if not self.initialized:
             if self._average_gain.initialized and self._average_loss.initialized:
                 self._set_initialized(True)
 
