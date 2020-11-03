@@ -151,6 +151,9 @@ cdef class QuoteTick:
 
         cdef list pieces = values.split(',', maxsplit=4)
 
+        if len(pieces) != 5:
+            raise ValueError(f"The QuoteTick string value was malformed, was {values}")
+
         # noinspection: long, fromtimestamp
         # noinspection PyUnresolvedReferences
         return QuoteTick(
@@ -282,6 +285,9 @@ cdef class TradeTick:
         Condition.valid_string(values, 'values')
 
         cdef list pieces = values.split(',', maxsplit=4)
+
+        if len(pieces) != 5:
+            raise ValueError(f"The TradeTick string value was malformed, was {values}")
 
         # noinspection: long, fromtimestamp
         # noinspection PyUnresolvedReferences

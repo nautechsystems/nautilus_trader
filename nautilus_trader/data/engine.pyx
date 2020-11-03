@@ -14,12 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `DataEngine` is the central component of the entire data stack for the platform.
+The `DataEngine` is the central component of the entire data stack.
 
 Its primary responsibility is to orchestrate interactions between the individual
 `DataClient` instances, and the rest of the platform. This includes consumers
 subscribing to specific data types, as well as hydrating a `DataCache` layer
 which presents a read-only facade for consumers.
+
+The engine employs a simple fan-in fan-out messaging pattern to receive data
+from the `DataClient` instances, and sending those to the registered
+handlers, namely the `Portfolio` and `TradingStrategy` instances.
 
 Alternative implementations can be written on top which just need to override
 the engines `execute` and `process` methods.
@@ -476,6 +480,7 @@ cdef class DataEngine:
             self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")
 
     cdef inline void _handle_request_instrument(self, Symbol symbol, callback: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(callback, "callback")
         Condition.is_in(symbol.venue, self._clients, "venue", "_clients")
@@ -483,6 +488,7 @@ cdef class DataEngine:
         self._clients[symbol.venue].request_instrument(symbol, callback)
 
     cdef inline void _handle_request_instruments(self, Venue venue, callback: callable) except *:
+        # Validate message data
         Condition.not_none(venue, "venue")
         Condition.callable(callback, "callback")
         Condition.is_in(venue, self._clients, "venue", "_clients")
@@ -497,6 +503,7 @@ cdef class DataEngine:
             int limit,
             callback: callable,
     ) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
         Condition.callable(callback, "callback")
@@ -518,6 +525,7 @@ cdef class DataEngine:
             int limit,
             callback: callable,
     ) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
         Condition.callable(callback, "callback")
@@ -539,6 +547,7 @@ cdef class DataEngine:
             int limit,
             callback: callable,
     ) except *:
+        # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")
         Condition.callable(callback, "callback")
@@ -553,6 +562,7 @@ cdef class DataEngine:
         )
 
     cdef inline void _handle_subscribe_instrument(self, Symbol symbol, handler: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
@@ -561,6 +571,7 @@ cdef class DataEngine:
         self._clients[symbol.venue].subscribe_instrument(symbol)
 
     cdef inline void _handle_subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
@@ -569,6 +580,7 @@ cdef class DataEngine:
         self._clients[symbol.venue].subscribe_quote_ticks(symbol)
 
     cdef inline void _handle_subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
@@ -577,6 +589,7 @@ cdef class DataEngine:
         self._clients[symbol.venue].subscribe_trade_ticks(symbol)
 
     cdef inline void _handle_subscribe_bars(self, BarType bar_type, handler: callable) except *:
+        # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
         Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
@@ -587,6 +600,7 @@ cdef class DataEngine:
         # self._add_bar_handler(bar_type, handler)
 
     cdef inline void _handle_unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
@@ -595,6 +609,7 @@ cdef class DataEngine:
         self._remove_instrument_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
@@ -603,6 +618,7 @@ cdef class DataEngine:
         self._remove_quote_tick_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
+        # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
         Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
@@ -611,6 +627,7 @@ cdef class DataEngine:
         self._remove_trade_tick_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
+        # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
         Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
@@ -646,7 +663,6 @@ cdef class DataEngine:
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
-
         self.portfolio.update_instrument(instrument)
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
@@ -760,7 +776,7 @@ cdef class DataEngine:
         if bar_type not in self._bar_aggregators:
             if bar_type.spec.aggregation == BarAggregation.TICK:
                 aggregator = TickBarAggregator(bar_type, self._py_handle_bar, self._log.get_logger())
-            elif bar_type.is_time_aggregated():
+            elif bar_type.spec.is_time_aggregated():
                 aggregator = TimeBarAggregator(
                     bar_type=bar_type,
                     handler=self._py_handle_bar,

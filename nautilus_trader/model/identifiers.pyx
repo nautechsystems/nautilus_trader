@@ -447,7 +447,7 @@ cdef class AccountId(Identifier):
 
         cdef list pieces = value.split('-', maxsplit=2)
 
-        if len(pieces) < 3:
+        if len(pieces) != 3:
             raise ValueError(f"The AccountId string value was malformed, was {value}")
 
         return AccountId(
