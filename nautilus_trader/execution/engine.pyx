@@ -14,14 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `ExecutionEngine` is the central component of the entire execution stack for the platform.
+The `ExecutionEngine` is the central component of the entire execution stack.
 
 Its primary responsibility is to orchestrate interactions between the individual
-`DataClient` instances, and the rest of the platform. This includes
-ongoing subscriptions to specific data types, for particular endpoints.
-
-Beneath it sits the `DataCache` layer which presents a read-only facade
-to its clients to consume cached data through.
+`ExecutionClient` instances, and the rest of the platform. This includes
+sending commands to and receiving events from particular venue endpoints.
+Beneath it sits the `ExecutionCache` layer which presents a read-only facade
+for consumers.
 
 The engine employs a simple fan-in fan-out messaging pattern to receive events
 from the `ExecutionClient` instances, and sending those to the registered
