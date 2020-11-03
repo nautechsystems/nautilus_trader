@@ -19,10 +19,14 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class Indicator:
-    cdef str _name
     cdef list _params
-    cdef bint _has_inputs
-    cdef bint _initialized
+
+    cdef readonly str name
+    """The name of the indicator.\n\n:returns: `str`"""
+    cdef readonly bint has_inputs
+    """If the indicator has received inputs.\n\n:returns: `bool`"""
+    cdef readonly bint initialized
+    """If the indicator is warmed up and initialized.\n\n:returns: `bool`"""
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *

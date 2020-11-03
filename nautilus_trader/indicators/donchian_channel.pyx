@@ -166,7 +166,7 @@ cdef class DonchianChannel(Indicator):
         self._lower.append(low)
 
         # Initialization logic
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
             if len(self._upper) >= self._period and len(self._lower) >= self._period:
                 self._set_initialized(True)

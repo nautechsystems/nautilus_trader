@@ -66,6 +66,8 @@ cdef class VolumeWeightedAveragePrice(Indicator):
             bar.timestamp,
         )
 
+    # noinspection timestamp.day
+    # noinspection PyUnresolvedReferences
     cpdef void update_raw(
             self,
             double price,
@@ -92,7 +94,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
             self._value = price
 
         # Initialization logic
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
             self._set_initialized(True)
 

@@ -137,7 +137,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._value = self._fast_ma.value - self._slow_ma.value
 
         # Initialization logic
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
             if self._fast_ma.initialized and self._slow_ma.initialized:
                 self._set_initialized(True)

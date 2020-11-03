@@ -29,63 +29,14 @@ cdef class Indicator:
             The initialization parameters for the indicator.
 
         """
-        self._name = type(self).__name__
-        self._params = params
-        self._has_inputs = False
-        self._initialized = False
+        self._params = params.copy()
+
+        self.name = type(self).__name__
+        self.has_inputs = False
+        self.initialized = False
 
     def __repr__(self) -> str:
         return f"{self.name}({self._params_str()})"
-
-    @property
-    def name(self):
-        """
-        The name of the indicator.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._name
-
-    @property
-    def params(self):
-        """
-        The indicators parameter values.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._params.copy()
-
-    @property
-    def has_inputs(self):
-        """
-        If the indicator has received inputs.
-
-        Returns
-        -------
-        bool
-            True if inputs received, else False.
-
-        """
-        return self._has_inputs
-
-    @property
-    def initialized(self):
-        """
-        If the indicator is warmed up and initialized.
-
-        Returns
-        -------
-        bool
-            True if initialized, else False.
-
-        """
-        return self._initialized
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """Abstract method."""
@@ -100,18 +51,18 @@ cdef class Indicator:
         raise NotImplementedError(f"Cannot handle {repr(bar)}, method not implemented in subclass")
 
     cpdef void reset(self) except *:
-        # Override should call _reset_base()
+        """Abstract method. Override should call _reset_base()."""
         raise NotImplemented("method must be implemented in the subclass")
 
     cdef str _params_str(self):
         return str(self._params)[1:-1].replace("'", '').strip('()') if self._params else ''
 
     cdef void _set_has_inputs(self, bint setting) except *:
-        self._has_inputs = setting
+        self.has_inputs = setting
 
     cdef void _set_initialized(self, bint setting) except *:
-        self._initialized = setting
+        self.initialized = setting
 
     cdef void _reset_base(self) except *:
-        self._has_inputs = False
-        self._initialized = False
+        self.has_inputs = False
+        self.initialized = False

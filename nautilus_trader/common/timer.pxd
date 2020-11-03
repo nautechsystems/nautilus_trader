@@ -27,10 +27,9 @@ cdef class TimeEvent(Event):
 
 
 cdef class TimeEventHandler:
+    cdef object _handler
     cdef readonly TimeEvent event
     """The handlers event.\n\n:returns: `TimeEvent`"""
-    cdef readonly object handler
-    """The handlers event handler.\n\n:returns: `object`"""
 
     cdef void handle(self) except *
 
