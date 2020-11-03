@@ -112,7 +112,7 @@ jobs:
       - name: Create git tag
         uses: salsify/action-detect-and-tag-new-version@v2
         with:
-          version-command: poetry version
+          version-command: poetry version --short
 
 
   # Publish if we're on master and the commit is tagged
