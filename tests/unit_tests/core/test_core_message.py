@@ -17,10 +17,12 @@ import unittest
 
 from parameterized import parameterized
 
+from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.message import message_type_from_string
 from nautilus_trader.core.message import message_type_to_string
+from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -61,6 +63,45 @@ class MessageTests(unittest.TestCase):
         self.assertTrue(message1 == message2)
         self.assertTrue(message1 != message3)
         self.assertTrue(message3 != message4)
+
+    def test_message_hash(self):
+        # Arrange
+        message = Document(
+            identifier=uuid4(),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        # Assert
+        self.assertEqual(int, type(hash(message)))
+
+    def test_message_str_and_repr(self):
+        # Arrange
+        uuid = uuid4()
+        message = Document(
+            identifier=uuid,
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        # Assert
+        self.assertEqual(f"Document(id={uuid}, timestamp=1970-01-01 00:00:00+00:00)", str(message))
+        self.assertEqual(f"Document(id={uuid}, timestamp=1970-01-01 00:00:00+00:00)", str(message))
+
+    def test_response_message_str_and_repr(self):
+        # Arrange
+        uuid_id = uuid4()
+        uuid_corr = uuid4()
+        message = Response(
+            correlation_id=uuid_corr,
+            identifier=uuid_id,
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        # Assert
+        self.assertEqual(f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=1970-01-01 00:00:00+00:00)", str(message))
+        self.assertEqual(f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=1970-01-01 00:00:00+00:00)", str(message))
 
     @parameterized.expand([
         [MessageType.UNDEFINED, "UNDEFINED"],

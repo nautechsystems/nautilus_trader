@@ -15,13 +15,31 @@
 
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.core.uuid import uuid4
 
 
 class UUIDTests(unittest.TestCase):
 
-    def test_instantiate(self):
+    def test_instantiate_with_invalid_bytes_length_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, UUID, b'\x12\x34\x56\x78' * 8)
+
+    @parameterized.expand([
+        [""],
+        ["12345678-1234-5678-1234-567812345678-99"]
+    ])
+    def test_from_string_with_invalid_strings_raises_exception(self, value):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, UUID.from_string, value)
+
+    def test_instantiate_with_valid_bytes(self):
         # Arrange
         # Act
         uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
@@ -30,6 +48,48 @@ class UUIDTests(unittest.TestCase):
         self.assertTrue(isinstance(uuid, UUID))
         self.assertEqual("UUID(\'12345678-1234-5678-1234-567812345678\')", repr(uuid))
         self.assertEqual("12345678-1234-5678-1234-567812345678", str(uuid))
+        self.assertEqual(24197857161011715162171839636988778104, uuid.int_val)
+
+    def test_equality(self):
+        # Arrange
+        # Act
+        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid2 = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid3 = UUID(value=b'\x34\x56\x78\x99' * 4)
+
+        # Assert
+        self.assertEqual(uuid1, uuid1)
+        self.assertEqual(uuid1, uuid2)
+        self.assertNotEqual(uuid2, uuid3)
+
+    def test_comparison(self):
+        # Arrange
+        # Act
+        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid2 = UUID(value=b'\x34\x56\x78\x99' * 4)
+
+        # Assert
+        self.assertTrue(uuid1 <= uuid1)
+        self.assertTrue(uuid1 < uuid2)
+        self.assertTrue(uuid2 >= uuid2)
+        self.assertTrue(uuid2 > uuid1)
+
+    def test_hash(self):
+        # Arrange
+        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
+        uuid2 = UUID(value=b'\x12\x34\x56\x78' * 4)
+
+        # Act
+        # Assert
+        self.assertEqual(int, type(hash(uuid1)))
+        self.assertEqual(hash(uuid1), hash(uuid2))
+
+    def test_int(self):
+        # Arrange
+        uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
+
+        # Act
+        # Assert
         self.assertEqual(24197857161011715162171839636988778104, uuid.int_val)
 
     def test_bytes(self):
@@ -128,25 +188,13 @@ class UUIDTests(unittest.TestCase):
         # Assert
         self.assertEqual("12345678123456781234567812345678", uuid.hex)
 
-    def test_int(self):
+    def test_urn(self):
         # Arrange
         uuid = UUID(value=b'\x12\x34\x56\x78' * 4)
 
         # Act
         # Assert
-        self.assertEqual(24197857161011715162171839636988778104, uuid.int_val)
-
-    def test_equality(self):
-        # Arrange
-        # Act
-        uuid1 = UUID(value=b'\x12\x34\x56\x78' * 4)
-        uuid2 = UUID(value=b'\x12\x34\x56\x78' * 4)
-        uuid3 = UUID(value=b'\x34\x56\x78\x99' * 4)
-
-        # Assert
-        self.assertEqual(uuid1, uuid1)
-        self.assertEqual(uuid1, uuid2)
-        self.assertNotEqual(uuid2, uuid3)
+        self.assertEqual("urn:uuid:12345678-1234-5678-1234-567812345678", uuid.urn)
 
     def test_uuid4(self):
         # Arrange

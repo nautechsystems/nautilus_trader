@@ -47,6 +47,12 @@ class TestFunctionsTests(unittest.TestCase):
         # Assert
         self.assertTrue(is_datetime_utc(dt))
 
+    def test_is_tz_awareness_given_unrecognized_type_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, is_tz_aware, "hello")
+
     def test_is_tz_awareness_with_various_aware_objects_returns_true(self):
         # Arrange
         time_object1 = UNIX_EPOCH
@@ -181,6 +187,16 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual(timestamp1_converted, timestamp2_converted)
         self.assertEqual(timestamp2_converted, timestamp3_converted)
         self.assertEqual(timestamp3_converted, timestamp4_converted)
+
+    def test_as_utc_index_given_empty_dataframe_returns_empty_dataframe(self):
+        # Arrange
+        data = pd.DataFrame()
+
+        # Act
+        result = as_utc_index(data)
+
+        # Assert
+        self.assertTrue(result.empty)
 
     def test_with_utc_index_given_tz_unaware_dataframe(self):
         # Arrange

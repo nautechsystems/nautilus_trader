@@ -56,7 +56,7 @@ cdef class FiniteStateMachine:
         state_transition_table : dict of tuples and states
             The state-transition table for the FSM consisting of a tuple of
             starting state and trigger as keys, and resulting states as values.
-        initial_state : int (C enum)
+        initial_state : int / C enum
             The initial state for the FSM.
         trigger_parser : callable, optional
             The optional trigger parser is required to convert C enum ints into strings.
@@ -108,7 +108,7 @@ cdef class FiniteStateMachine:
 
         Parameters
         ----------
-        trigger : int (C enum)
+        trigger : int / C enum
             The trigger to combine with the current state providing the key for
             the transition table lookup.
 
