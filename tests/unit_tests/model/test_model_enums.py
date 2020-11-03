@@ -27,15 +27,24 @@ from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser
 from nautilus_trader.model.c_enums.currency_type import CurrencyType
 from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
-# from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
-# from nautilus_trader.model.c_enums.maker import Maker
-# from nautilus_trader.model.c_enums.oms_type import OMSType
-# from nautilus_trader.model.c_enums.order_side import OrderSide
-# from nautilus_trader.model.c_enums.order_state import OrderState
-# from nautilus_trader.model.c_enums.order_type import OrderType
-# from nautilus_trader.model.c_enums.position_side import PositionSide
-# from nautilus_trader.model.c_enums.price_type import PriceType
-# from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side import LiquiditySideParser
+from nautilus_trader.model.c_enums.maker import Maker
+from nautilus_trader.model.c_enums.maker import MakerParser
+from nautilus_trader.model.c_enums.oms_type import OMSType
+from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
+from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.c_enums.order_side import OrderSideParser
+from nautilus_trader.model.c_enums.order_state import OrderState
+from nautilus_trader.model.c_enums.order_state import OrderStateParser
+from nautilus_trader.model.c_enums.order_type import OrderType
+from nautilus_trader.model.c_enums.order_type import OrderTypeParser
+from nautilus_trader.model.c_enums.position_side import PositionSide
+from nautilus_trader.model.c_enums.position_side import PositionSideParser
+from nautilus_trader.model.c_enums.price_type import PriceType
+from nautilus_trader.model.c_enums.price_type import PriceTypeParser
+from nautilus_trader.model.c_enums.time_in_force import TimeInForce
+from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
 
 
 class AccountTypeTests(unittest.TestCase):
@@ -215,6 +224,307 @@ class CurrencyTypeTests(unittest.TestCase):
         # Arrange
         # Act
         result = CurrencyTypeParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class LiquiditySideTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [LiquiditySide.NONE, "NONE"],
+        [LiquiditySide.MAKER, "MAKER"],
+        [LiquiditySide.TAKER, "TAKER"],
+    ])
+    def test_liquidity_side_to_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = LiquiditySideParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", LiquiditySide.NONE],
+        ["NONE", LiquiditySide.NONE],
+        ["MAKER", LiquiditySide.MAKER],
+        ["TAKER", LiquiditySide.TAKER],
+    ])
+    def test_liquidity_side_from_string(self, string, expected):
+        # Arrange
+        # Act
+        result = LiquiditySideParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class MakerTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [Maker.UNDEFINED, "UNDEFINED"],
+        [Maker.BUYER, "BUYER"],
+        [Maker.SELLER, "SELLER"],
+    ])
+    def test_maker_to_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = MakerParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", Maker.UNDEFINED],
+        ["UNDEFINED", Maker.UNDEFINED],
+        ["BUYER", Maker.BUYER],
+        ["SELLER", Maker.SELLER],
+    ])
+    def test_maker_from_string(self, string, expected):
+        # Arrange
+        # Act
+        result = MakerParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class OMSTypeTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [OMSType.UNDEFINED, "UNDEFINED"],
+        [OMSType.NETTING, "NETTING"],
+        [OMSType.HEDGING, "HEDGING"],
+    ])
+    def test_oms_type_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = OMSTypeParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", OMSType.UNDEFINED],
+        ["UNDEFINED", OMSType.UNDEFINED],
+        ["NETTING", OMSType.NETTING],
+        ["HEDGING", OMSType.HEDGING],
+    ])
+    def test_oms_type_string(self, string, expected):
+        # Arrange
+        # Act
+        result = OMSTypeParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class OrderSideTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [OrderSide.UNDEFINED, "UNDEFINED"],
+        [OrderSide.BUY, "BUY"],
+        [OrderSide.SELL, "SELL"],
+    ])
+    def test_order_side_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = OrderSideParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", OrderSide.UNDEFINED],
+        ["UNDEFINED", OrderSide.UNDEFINED],
+        ["BUY", OrderSide.BUY],
+        ["SELL", OrderSide.SELL],
+    ])
+    def test_order_side_string(self, string, expected):
+        # Arrange
+        # Act
+        result = OrderSideParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class OrderStateTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [OrderState.UNDEFINED, "UNDEFINED"],
+        [OrderState.INITIALIZED, "INITIALIZED"],
+        [OrderState.INVALID, "INVALID"],
+        [OrderState.DENIED, "DENIED"],
+        [OrderState.SUBMITTED, "SUBMITTED"],
+        [OrderState.ACCEPTED, "ACCEPTED"],
+        [OrderState.REJECTED, "REJECTED"],
+        [OrderState.WORKING, "WORKING"],
+        [OrderState.CANCELLED, "CANCELLED"],
+        [OrderState.EXPIRED, "EXPIRED"],
+        [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
+        [OrderState.FILLED, "FILLED"],
+    ])
+    def test_order_state_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = OrderStateParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", OrderState.UNDEFINED],
+        ["UNDEFINED", OrderState.UNDEFINED],
+        ["INITIALIZED", OrderState.INITIALIZED],
+        ["INVALID", OrderState.INVALID],
+        ["DENIED", OrderState.DENIED],
+        ["SUBMITTED", OrderState.SUBMITTED],
+        ["ACCEPTED", OrderState.ACCEPTED],
+        ["REJECTED", OrderState.REJECTED],
+        ["WORKING", OrderState.WORKING],
+        ["CANCELLED", OrderState.CANCELLED],
+        ["EXPIRED", OrderState.EXPIRED],
+        ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
+        ["FILLED", OrderState.FILLED],
+    ])
+    def test_order_state_string(self, string, expected):
+        # Arrange
+        # Act
+        result = OrderStateParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class OrderTypeTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [OrderType.UNDEFINED, "UNDEFINED"],
+        [OrderType.MARKET, "MARKET"],
+        [OrderType.LIMIT, "LIMIT"],
+        [OrderType.STOP_MARKET, "STOP_MARKET"],
+    ])
+    def test_order_type_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = OrderTypeParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", OrderType.UNDEFINED],
+        ["UNDEFINED", OrderType.UNDEFINED],
+        ["MARKET", OrderType.MARKET],
+        ["LIMIT", OrderType.LIMIT],
+        ["STOP_MARKET", OrderType.STOP_MARKET],
+    ])
+    def test_order_type_string(self, string, expected):
+        # Arrange
+        # Act
+        result = OrderTypeParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class PositionSideTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [PositionSide.UNDEFINED, "UNDEFINED"],
+        [PositionSide.FLAT, "FLAT"],
+        [PositionSide.LONG, "LONG"],
+        [PositionSide.SHORT, "SHORT"],
+    ])
+    def test_position_side_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = PositionSideParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", PositionSide.UNDEFINED],
+        ["UNDEFINED", PositionSide.UNDEFINED],
+        ["FLAT", PositionSide.FLAT],
+        ["LONG", PositionSide.LONG],
+        ["SHORT", PositionSide.SHORT],
+    ])
+    def test_position_side_string(self, string, expected):
+        # Arrange
+        # Act
+        result = PositionSideParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class PriceTypeTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [PriceType.UNDEFINED, "UNDEFINED"],
+        [PriceType.BID, "BID"],
+        [PriceType.ASK, "ASK"],
+        [PriceType.MID, "MID"],
+        [PriceType.LAST, "LAST"],
+    ])
+    def test_price_type_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = PriceTypeParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", PriceType.UNDEFINED],
+        ["UNDEFINED", PriceType.UNDEFINED],
+        ["ASK", PriceType.ASK],
+        ["MID", PriceType.MID],
+        ["LAST", PriceType.LAST],
+    ])
+    def test_price_type_string(self, string, expected):
+        # Arrange
+        # Act
+        result = PriceTypeParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+
+class TimeInForceTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [TimeInForce.UNDEFINED, "UNDEFINED"],
+        [TimeInForce.DAY, "DAY"],
+        [TimeInForce.GTC, "GTC"],
+        [TimeInForce.IOC, "IOC"],
+        [TimeInForce.FOC, "FOC"],
+        [TimeInForce.GTD, "GTD"],
+    ])
+    def test_time_in_force_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = TimeInForceParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", TimeInForce.UNDEFINED],
+        ["UNDEFINED", TimeInForce.UNDEFINED],
+        ["DAY", TimeInForce.DAY],
+        ["GTC", TimeInForce.GTC],
+        ["IOC", TimeInForce.IOC],
+        ["FOC", TimeInForce.FOC],
+        ["GTD", TimeInForce.GTD],
+    ])
+    def test_time_in_force_string(self, string, expected):
+        # Arrange
+        # Act
+        result = TimeInForceParser.from_string_py(string)
 
         # Assert
         self.assertEqual(expected, result)
