@@ -185,7 +185,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list symbols(self):
         """
-        Return all instrument symbols held by the data cache.
+        All instrument symbols held by the data cache.
 
         Returns
         -------
@@ -195,7 +195,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list instruments(self):
         """
-        Return all instruments held by the data cache.
+        All instruments held by the data cache.
 
         Returns
         -------
@@ -206,7 +206,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
-        Return the quote ticks for the given symbol.
+        The quote ticks for the given symbol.
 
         Parameters
         ----------
@@ -219,13 +219,12 @@ cdef class DataCache(DataCacheFacade):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
 
-        return list(self._quote_ticks[symbol])
+        return list(self._quote_ticks.get(symbol, []))
 
     cpdef list trade_ticks(self, Symbol symbol):
         """
-        Return the trade ticks for the given symbol.
+        The trade ticks for the given symbol.
 
         Parameters
         ----------
@@ -238,13 +237,12 @@ cdef class DataCache(DataCacheFacade):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
 
-        return list(self._trade_ticks[symbol])
+        return list(self._trade_ticks.get(symbol, []))
 
     cpdef list bars(self, BarType bar_type):
         """
-        Return the bars for the given bar type.
+        The bars for the given bar type.
 
         Parameters
         ----------
@@ -257,13 +255,12 @@ cdef class DataCache(DataCacheFacade):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.is_in(bar_type, self._bars, "bar_type", "bars")
 
-        return list(self._bars[bar_type])
+        return list(self._bars.get(bar_type, []))
 
     cpdef Instrument instrument(self, Symbol symbol):
         """
-        Return the instrument corresponding to the given symbol (if found).
+        Find the instrument corresponding to the given symbol.
 
         Parameters
         ----------
@@ -274,19 +271,14 @@ cdef class DataCache(DataCacheFacade):
         -------
         Instrument or None
 
-        Raises
-        ------
-        ValueError
-            If instrument is not in the cache.
-
         """
-        Condition.is_in(symbol, self._instruments, "symbol", "instruments")
+        Condition.not_none(symbol, "symbol")
 
-        return self._instruments[symbol]
+        return self._instruments.get(symbol)
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
-        Return the quote tick for the given symbol at the given index, or last
+        Find the quote tick for the given symbol at the given index, or last
         if no index specified.
 
         Parameters
@@ -302,28 +294,29 @@ cdef class DataCache(DataCacheFacade):
 
         Raises
         ------
-        ValueError
-            If the data engines quote ticks does not contain the symbol.
         IndexError
             If tick index is out of range.
 
+        Notes
+        -----
+        Reverse indexed (most recent tick at index 0).
+
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._quote_ticks, "symbol", "ticks")
 
-        return self._quote_ticks[symbol][index]
+        return self._quote_ticks.get(symbol, [])[index]
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
         """
-        Return the trade tick for the given symbol at the given index or last,
+        Find the trade tick for the given symbol at the given index or last,
         if no index specified.
 
         Parameters
         ----------
         symbol : Symbol
             The symbol for the tick to get.
-        index : int
-            The optional index for the tick to get.
+        index : int, optional
+            The index for the tick to get.
 
         Returns
         -------
@@ -331,28 +324,29 @@ cdef class DataCache(DataCacheFacade):
 
         Raises
         ------
-        ValueError
-            If the data engines trade ticks does not contain the symbol.
         IndexError
             If tick index is out of range.
 
+        Notes
+        -----
+        Reverse indexed (most recent tick at index 0).
+
         """
         Condition.not_none(symbol, "symbol")
-        Condition.is_in(symbol, self._trade_ticks, "symbol", "ticks")
 
-        return self._trade_ticks[symbol][index]
+        return self._trade_ticks.get(symbol)[index]
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
-        Return the bar for the given bar type at the given index, or last if no
+        Find the bar for the given bar type at the given index, or last if no
         index specified.
 
         Parameters
         ----------
         bar_type : BarType
             The bar type to get.
-        index : int
-            The optional index for the bar to get.
+        index : int, optional
+            The index for the bar to get.
 
         Returns
         -------
@@ -360,20 +354,21 @@ cdef class DataCache(DataCacheFacade):
 
         Raises
         ------
-        ValueError
-            If the data engines bars does not contain the bar type.
         IndexError
             If bar index is out of range.
 
+        Notes
+        -----
+        Reverse indexed (most recent bar at index 0).
+
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.is_in(bar_type, self._bars, "bar_type", "bars")
 
-        return self._bars[bar_type][index]
+        return self._bars.get(bar_type)[index]
 
     cpdef int quote_tick_count(self, Symbol symbol) except *:
         """
-        Return the count of quote ticks for the given symbol.
+        The count of quote ticks for the given symbol.
 
         Parameters
         ----------
@@ -387,11 +382,11 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return len(self._quote_ticks[symbol]) if symbol in self._quote_ticks else 0
+        return len(self._quote_ticks.get(symbol, []))
 
     cpdef int trade_tick_count(self, Symbol symbol) except *:
         """
-        Return the count of trade ticks for the given symbol.
+        The count of trade ticks for the given symbol.
 
         Parameters
         ----------
@@ -405,11 +400,11 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return len(self._trade_ticks[symbol]) if symbol in self._trade_ticks else 0
+        return len(self._trade_ticks.get(symbol, []))
 
     cpdef int bar_count(self, BarType bar_type) except *:
         """
-        Return the count of bars for the given bar type.
+        The count of bars for the given bar type.
 
         Parameters
         ----------
@@ -423,7 +418,7 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        return len(self._bars[bar_type]) if bar_type in self._bars else 0
+        return len(self._bars.get(bar_type, []))
 
     cpdef bint has_quote_ticks(self, Symbol symbol) except *:
         """
