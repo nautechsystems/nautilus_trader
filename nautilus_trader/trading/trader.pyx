@@ -24,7 +24,7 @@ A running instance could be either a test/backtest or live implementation - the
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.logging cimport Logger
@@ -117,16 +117,16 @@ cdef class Trader:
         """
         return self._strategies
 
-    cpdef set strategy_ids(self):
+    cpdef list strategy_ids(self):
         """
         The traders strategy identifiers.
 
         Returns
         -------
-        set[StrategyId]
+        list[StrategyId]
 
         """
-        return {strategy.id for strategy in self._strategies}
+        return sorted([strategy.id for strategy in self._strategies])
 
     cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
         """
@@ -176,7 +176,7 @@ cdef class Trader:
                 strategy_ids.add(strategy.id)
             else:
                 raise ValueError(f"The strategy_id {strategy.id} was not unique "
-                                 f"(duplicate strategy_ids)")
+                                 f"(duplicate strategy identifiers)")
 
             # Wire trader into strategy
             strategy.register_trader(
@@ -335,7 +335,7 @@ cdef class Trader:
             The traders current state as a string.
 
         """
-        return component_state_to_string(self._fsm.state)
+        return ComponentStateParser.to_string(self._fsm.state)
 
     cpdef dict strategy_states(self):
         """

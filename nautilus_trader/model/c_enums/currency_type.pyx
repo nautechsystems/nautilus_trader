@@ -13,4 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
+cdef class CurrencyTypeParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'CRYPTO'
+        elif value == 2:
+            return 'FIAT'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef CurrencyType from_string(str value):
+        if value == 'CRYPTO':
+            return CurrencyType.CRYPTO
+        elif value == 'FIAT':
+            return CurrencyType.FIAT
+        else:
+            return CurrencyType.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return CurrencyTypeParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return CurrencyTypeParser.from_string(value)

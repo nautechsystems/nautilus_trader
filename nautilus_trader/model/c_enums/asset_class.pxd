@@ -23,31 +23,10 @@ cpdef enum AssetClass:
     BOND = 5
 
 
-cdef inline str asset_class_to_string(int value):
-    if value == 1:
-        return 'CRYPTO'
-    elif value == 2:
-        return 'FX'
-    elif value == 3:
-        return 'EQUITY'
-    elif value == 4:
-        return 'COMMODITY'
-    elif value == 5:
-        return 'BOND'
-    else:
-        return 'UNDEFINED'
+cdef class AssetClassParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline AssetClass asset_class_from_string(str value):
-    if value == 'CRYPTO':
-        return AssetClass.CRYPTO
-    elif value == 'FX':
-        return AssetClass.FX
-    elif value == 'EQUITY':
-        return AssetClass.EQUITY
-    elif value == 'COMMODITY':
-        return AssetClass.COMMODITY
-    elif value == 'BOND':
-        return AssetClass.BOND
-    else:
-        return AssetClass.UNDEFINED
+    @staticmethod
+    cdef AssetClass from_string(str value)

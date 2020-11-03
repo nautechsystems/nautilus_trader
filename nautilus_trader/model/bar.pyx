@@ -20,15 +20,20 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_from_string
-from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport price_type_from_string
-from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+
+cdef list _TIME_AGGREGATED = [
+    BarAggregation.SECOND,
+    BarAggregation.MINUTE,
+    BarAggregation.HOUR,
+    BarAggregation.DAY,
+]
 
 cdef class BarSpecification:
     """
@@ -82,7 +87,7 @@ cdef class BarSpecification:
         return hash((self.step, self.aggregation, self.price_type))
 
     def __str__(self) -> str:
-        return f"{self.step}-{bar_aggregation_to_string(self.aggregation)}-{price_type_to_string(self.price_type)}"
+        return f"{self.step}-{BarAggregationParser.to_string(self.aggregation)}-{PriceTypeParser.to_string(self.price_type)}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -93,13 +98,13 @@ cdef class BarSpecification:
 
         cdef list pieces = value.split('-', maxsplit=2)
 
-        if len(pieces) < 3:
+        if len(pieces) != 3:
             raise ValueError(f"The BarSpecification string value was malformed, was {value}")
 
         return BarSpecification(
             int(pieces[0]),
-            bar_aggregation_from_string(pieces[1]),
-            price_type_from_string(pieces[2]),
+            BarAggregationParser.from_string(pieces[1]),
+            PriceTypeParser.from_string(pieces[2]),
         )
 
     @staticmethod
@@ -128,35 +133,38 @@ cdef class BarSpecification:
         """
         return BarSpecification.from_string_c(value)
 
+    cdef bint is_time_aggregated(self) except *:
+        """
+        If the aggregation is by certain time interval.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.aggregation in _TIME_AGGREGATED
+
     cdef str aggregation_string(self):
         """
-        Return the bar aggregation as a string
+        The bar aggregation as a string.
 
         Returns
         -------
         str
 
         """
-        return bar_aggregation_to_string(self.aggregation)
+        return self.aggregation_string()
 
     cdef str price_type_string(self):
         """
-        Return the price type as a string.
+        The price type as a string.
 
         Returns
         -------
         str
 
         """
-        return price_type_to_string(self.price_type)
-
-
-cdef list _TIME_BARS = [
-    BarAggregation.SECOND,
-    BarAggregation.MINUTE,
-    BarAggregation.HOUR,
-    BarAggregation.DAY,
-]
+        return PriceTypeParser.to_string(self.price_type)
 
 
 cdef class BarType:
@@ -204,16 +212,17 @@ cdef class BarType:
 
         cdef list pieces = value.split('-', maxsplit=3)
 
-        if len(pieces) < 4:
+        if len(pieces) != 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
+        cdef Symbol symbol = Symbol.from_string_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
-            bar_aggregation_from_string(pieces[2]),
-            price_type_from_string(pieces[3]),
+            BarAggregationParser.from_string(pieces[2]),
+            PriceTypeParser.from_string(pieces[3]),
         )
 
-        return BarType(Symbol.from_string_c(pieces[0]), bar_spec)
+        return BarType(symbol, bar_spec)
 
     @staticmethod
     def from_string(str value) -> BarType:
@@ -237,42 +246,7 @@ cdef class BarType:
         """
         return BarType.from_string_c(value)
 
-    cdef bint is_time_aggregated(self) except *:
-        """
-        Return a value indicating whether the aggregation is a measure of time.
 
-        Returns
-        -------
-        bool
-
-        """
-        return self.spec.aggregation in _TIME_BARS
-
-    cdef str aggregation_string(self):
-        """
-        Return the bar aggregation as a string
-
-        Returns
-        -------
-        str
-
-        """
-        return self.spec.aggregation_string()
-
-    cdef str price_type_string(self):
-        """
-        Return the price type as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.spec.price_type_string()
-
-
-# noinspection: Object has warned attribute
-# noinspection PyUnresolvedReferences
 cdef class Bar:
     """
     Represents an aggregated bar.
@@ -342,22 +316,21 @@ cdef class Bar:
     def __ne__(self, Bar other) -> bool:
         return not self == other
 
-    def __hash__(self) -> int:
-        return hash(str(self.timestamp))
-
     def __str__(self) -> str:
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
+    # noinspection: fromtimestamp, long
+    # noinspection PyUnresolvedReferences
     @staticmethod
     cdef Bar from_serializable_string_c(str value):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split(',', maxsplit=5)
 
-        if len(pieces) < 5:
+        if len(pieces) != 6:
             raise ValueError(f"The Bar string value was malformed, was {value}")
 
         return Bar(
@@ -386,6 +359,8 @@ cdef class Bar:
         """
         return Bar.from_serializable_string_c(value)
 
+    # noinspection: timestamp()
+    # noinspection PyUnresolvedReferences
     cpdef str to_serializable_string(self):
         """
         The serializable string representation of this object.

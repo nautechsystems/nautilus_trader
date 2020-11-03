@@ -27,15 +27,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TimeEventTests(unittest.TestCase):
-    def test_hash_time_event(self):
-        # Arrange
-        event = TimeEvent("123", uuid4(), UNIX_EPOCH)
-
-        # Act
-        result = hash(event)
-
-        # Assert
-        self.assertEqual(int, type(result))
 
     def test_sort_time_events(self):
         # Arrange

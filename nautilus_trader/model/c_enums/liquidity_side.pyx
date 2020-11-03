@@ -13,4 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+cdef class LiquiditySideParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'MAKER'
+        elif value == 2:
+            return 'TAKER'
+        else:
+            return 'NONE'
+
+    @staticmethod
+    cdef LiquiditySide from_string(str value):
+        if value == 'MAKER':
+            return LiquiditySide.MAKER
+        elif value == 'TAKER':
+            return LiquiditySide.TAKER
+        else:
+            return LiquiditySide.NONE
+
+    @staticmethod
+    def to_string_py(int value):
+        return LiquiditySideParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return LiquiditySideParser.from_string(value)

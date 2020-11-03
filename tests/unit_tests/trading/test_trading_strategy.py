@@ -136,17 +136,6 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertTrue(strategy1 != strategy2)
         self.assertTrue(strategy2 != strategy3)
 
-    def test_strategy_is_hashable(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-
-        # Act
-        result = strategy.__hash__()
-
-        # Assert
-        # If this passes then result must be an int
-        self.assertTrue(isinstance(result, int))
-
     def test_str_and_repr(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="GBP/USD-MM")

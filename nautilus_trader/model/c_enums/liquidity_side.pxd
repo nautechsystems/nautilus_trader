@@ -20,19 +20,10 @@ cpdef enum LiquiditySide:
     TAKER = 2,
 
 
-cdef inline str liquidity_side_to_string(int value):
-    if value == 1:
-        return 'MAKER'
-    elif value == 2:
-        return 'TAKER'
-    else:
-        return 'NONE'
+cdef class LiquiditySideParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline LiquiditySide liquidity_side_from_string(str value):
-    if value == 'MAKER':
-        return LiquiditySide.MAKER
-    elif value == 'TAKER':
-        return LiquiditySide.TAKER
-    else:
-        return LiquiditySide.NONE
+    @staticmethod
+    cdef LiquiditySide from_string(str value)

@@ -20,6 +20,66 @@ from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.core.uuid cimport UUID
 
 
+cpdef str message_type_to_string(int value):
+    """
+    Covert a C enum int to a message type string.
+
+    Parameters
+    ----------
+    value : int
+        The value to convert.
+
+    Returns
+    -------
+    str
+
+    """
+    if value == 1:
+        return 'STRING'
+    elif value == 2:
+        return 'COMMAND'
+    elif value == 3:
+        return 'DOCUMENT'
+    elif value == 4:
+        return 'EVENT'
+    elif value == 5:
+        return 'REQUEST'
+    elif value == 6:
+        return 'RESPONSE'
+    else:
+        return 'UNDEFINED'
+
+
+cpdef MessageType message_type_from_string(str value):
+    """
+    Parse a string to a message type.
+
+    Parameters
+    ----------
+    value : str
+        The value to parse.
+
+    Returns
+    -------
+    str
+
+    """
+    if value == 'STRING':
+        return MessageType.STRING
+    elif value == 'COMMAND':
+        return MessageType.COMMAND
+    elif value == 'DOCUMENT':
+        return MessageType.DOCUMENT
+    elif value == 'EVENT':
+        return MessageType.EVENT
+    elif value == 'REQUEST':
+        return MessageType.REQUEST
+    elif value == 'RESPONSE':
+        return MessageType.RESPONSE
+    else:
+        return MessageType.UNDEFINED
+
+
 cdef class Message:
     """
     The base class for all messages.
@@ -56,13 +116,13 @@ cdef class Message:
         self.timestamp = timestamp
 
     def __eq__(self, Message other) -> bool:
-        return type(self) == type(other) and self.id == other.id
+        return self.type == other.type and self.id == other.id
 
     def __ne__(self, Message other) -> bool:
-        return type(self) != type(other) or self.id != other.id
+        return self.type != other.type or self.id != other.id
 
     def __hash__(self) -> int:
-        return hash(self.id)
+        return hash((self.type, self.id))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id}, timestamp={self.timestamp})"

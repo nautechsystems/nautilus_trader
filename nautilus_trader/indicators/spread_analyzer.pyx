@@ -36,7 +36,7 @@ cdef class SpreadAnalyzer(Indicator):
         symbol : Symbol
             The symbol for the tick updates.
         capacity : int
-            The max length for the internal <QuoteTick> deque (determines averages).
+            The max length for the internal `QuoteTick` deque (determines averages).
 
         Raises
         ------

@@ -77,9 +77,6 @@ cdef class TimeEvent(Event):
     def __ge__(self, TimeEvent other) -> bool:
         return self.timestamp >= other.timestamp
 
-    def __hash__(self) -> int:
-        return hash(self.id)
-
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"name={self.name}, "
@@ -163,6 +160,12 @@ cdef class Timer:
         self.next_time = start_time + interval
         self.stop_time = stop_time
         self.expired = False
+
+    def __eq__(self, Timer other) -> bool:
+        return self.name == other.name
+
+    def __ne__(self, Timer other) -> bool:
+        return self.name != other.name
 
     def __hash__(self) -> int:
         return hash(self.name)

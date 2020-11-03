@@ -19,7 +19,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport position_side_to_string
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -73,10 +73,10 @@ cdef class Position:
         self.apply(event)
 
     def __eq__(self, Position other) -> bool:
-        return self.id == other.id
+        return self.id.value == other.id.value
 
     def __ne__(self, Position other) -> bool:
-        return self.id != other.id
+        return self.id.value != other.id.value
 
     def __hash__(self) -> int:
         return hash(self.id.value)
@@ -337,7 +337,7 @@ cdef class Position:
 
         """
         cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string()} "
-        return f"{position_side_to_string(self.side)}{quantity}{self.symbol}"
+        return f"{PositionSideParser.to_string(self.side)}{quantity}{self.symbol}"
 
     cpdef Money unrealized_pnl(self, QuoteTick last):
         """

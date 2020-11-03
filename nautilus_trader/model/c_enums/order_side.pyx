@@ -13,4 +13,30 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+cdef class OrderSideParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'BUY'
+        elif value == 2:
+            return 'SELL'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef OrderSide from_string(str value):
+        if value == 'BUY':
+            return OrderSide.BUY
+        elif value == 'SELL':
+            return OrderSide.SELL
+        else:
+            return OrderSide.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return OrderSideParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return OrderSideParser.from_string(value)

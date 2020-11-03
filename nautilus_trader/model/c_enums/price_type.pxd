@@ -22,27 +22,10 @@ cpdef enum PriceType:
     LAST = 4
 
 
-cdef inline str price_type_to_string(int value):
-    if value == 1:
-        return 'BID'
-    elif value == 2:
-        return 'ASK'
-    elif value == 3:
-        return 'MID'
-    elif value == 4:
-        return 'LAST'
-    else:
-        return 'UNDEFINED'
+cdef class PriceTypeParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline PriceType price_type_from_string(str value):
-    if value == 'BID':
-        return PriceType.BID
-    elif value == 'ASK':
-        return PriceType.ASK
-    elif value == 'MID':
-        return PriceType.MID
-    elif value == 'LAST':
-        return PriceType.LAST
-    else:
-        return PriceType.UNDEFINED
+    @staticmethod
+    cdef PriceType from_string(str value)

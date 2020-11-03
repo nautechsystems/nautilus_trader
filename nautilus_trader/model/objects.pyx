@@ -161,7 +161,7 @@ cdef class Money(Decimal):
         return self.currency == other.currency and self._value >= other._value
 
     def __hash__(self) -> int:
-        return hash((self._value, self.currency))
+        return hash((self.currency, self._value))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self._value}', {self.currency})"

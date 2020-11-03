@@ -26,7 +26,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport bar_aggregation_to_string
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -444,7 +444,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(f"Aggregation not a time, "
-                             f"was {bar_aggregation_to_string(self.bar_type.spec.aggregation)}")
+                             f"was {BarAggregationParser.to_string(self.bar_type.spec.aggregation)}")
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -461,7 +461,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(f"Aggregation not time range, "
-                             f"was {bar_aggregation_to_string(aggregation)}")
+                             f"was {BarAggregationParser.to_string(aggregation)}")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = str(self.bar_type)
