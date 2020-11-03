@@ -296,7 +296,7 @@ class OMSTypeTests(unittest.TestCase):
         [OMSType.NETTING, "NETTING"],
         [OMSType.HEDGING, "HEDGING"],
     ])
-    def test_oms_type_string(self, enum, expected):
+    def test_oms_type_to_string(self, enum, expected):
         # Arrange
         # Act
         result = OMSTypeParser.to_string_py(enum)
@@ -310,7 +310,7 @@ class OMSTypeTests(unittest.TestCase):
         ["NETTING", OMSType.NETTING],
         ["HEDGING", OMSType.HEDGING],
     ])
-    def test_oms_type_string(self, string, expected):
+    def test_oms_type_from_string(self, string, expected):
         # Arrange
         # Act
         result = OMSTypeParser.from_string_py(string)
@@ -326,7 +326,7 @@ class OrderSideTests(unittest.TestCase):
         [OrderSide.BUY, "BUY"],
         [OrderSide.SELL, "SELL"],
     ])
-    def test_order_side_string(self, enum, expected):
+    def test_order_side_to_string(self, enum, expected):
         # Arrange
         # Act
         result = OrderSideParser.to_string_py(enum)
@@ -340,7 +340,7 @@ class OrderSideTests(unittest.TestCase):
         ["BUY", OrderSide.BUY],
         ["SELL", OrderSide.SELL],
     ])
-    def test_order_side_string(self, string, expected):
+    def test_order_side_from_string(self, string, expected):
         # Arrange
         # Act
         result = OrderSideParser.from_string_py(string)
@@ -365,7 +365,7 @@ class OrderStateTests(unittest.TestCase):
         [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
         [OrderState.FILLED, "FILLED"],
     ])
-    def test_order_state_string(self, enum, expected):
+    def test_order_state_to_string(self, enum, expected):
         # Arrange
         # Act
         result = OrderStateParser.to_string_py(enum)
@@ -388,7 +388,7 @@ class OrderStateTests(unittest.TestCase):
         ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
         ["FILLED", OrderState.FILLED],
     ])
-    def test_order_state_string(self, string, expected):
+    def test_order_state_from_string(self, string, expected):
         # Arrange
         # Act
         result = OrderStateParser.from_string_py(string)
@@ -405,7 +405,7 @@ class OrderTypeTests(unittest.TestCase):
         [OrderType.LIMIT, "LIMIT"],
         [OrderType.STOP_MARKET, "STOP_MARKET"],
     ])
-    def test_order_type_string(self, enum, expected):
+    def test_order_type_to_string(self, enum, expected):
         # Arrange
         # Act
         result = OrderTypeParser.to_string_py(enum)
@@ -420,7 +420,7 @@ class OrderTypeTests(unittest.TestCase):
         ["LIMIT", OrderType.LIMIT],
         ["STOP_MARKET", OrderType.STOP_MARKET],
     ])
-    def test_order_type_string(self, string, expected):
+    def test_order_type_from_string(self, string, expected):
         # Arrange
         # Act
         result = OrderTypeParser.from_string_py(string)
@@ -437,7 +437,7 @@ class PositionSideTests(unittest.TestCase):
         [PositionSide.LONG, "LONG"],
         [PositionSide.SHORT, "SHORT"],
     ])
-    def test_position_side_string(self, enum, expected):
+    def test_position_side_to_string(self, enum, expected):
         # Arrange
         # Act
         result = PositionSideParser.to_string_py(enum)
@@ -452,7 +452,7 @@ class PositionSideTests(unittest.TestCase):
         ["LONG", PositionSide.LONG],
         ["SHORT", PositionSide.SHORT],
     ])
-    def test_position_side_string(self, string, expected):
+    def test_position_side_from_string(self, string, expected):
         # Arrange
         # Act
         result = PositionSideParser.from_string_py(string)
@@ -470,7 +470,7 @@ class PriceTypeTests(unittest.TestCase):
         [PriceType.MID, "MID"],
         [PriceType.LAST, "LAST"],
     ])
-    def test_price_type_string(self, enum, expected):
+    def test_price_type_to_string(self, enum, expected):
         # Arrange
         # Act
         result = PriceTypeParser.to_string_py(enum)
@@ -485,7 +485,7 @@ class PriceTypeTests(unittest.TestCase):
         ["MID", PriceType.MID],
         ["LAST", PriceType.LAST],
     ])
-    def test_price_type_string(self, string, expected):
+    def test_price_type_from_string(self, string, expected):
         # Arrange
         # Act
         result = PriceTypeParser.from_string_py(string)
@@ -504,7 +504,7 @@ class TimeInForceTests(unittest.TestCase):
         [TimeInForce.FOC, "FOC"],
         [TimeInForce.GTD, "GTD"],
     ])
-    def test_time_in_force_string(self, enum, expected):
+    def test_time_in_force_to_string(self, enum, expected):
         # Arrange
         # Act
         result = TimeInForceParser.to_string_py(enum)
@@ -521,7 +521,7 @@ class TimeInForceTests(unittest.TestCase):
         ["FOC", TimeInForce.FOC],
         ["GTD", TimeInForce.GTD],
     ])
-    def test_time_in_force_string(self, string, expected):
+    def test_time_in_force_from_string(self, string, expected):
         # Arrange
         # Act
         result = TimeInForceParser.from_string_py(string)
