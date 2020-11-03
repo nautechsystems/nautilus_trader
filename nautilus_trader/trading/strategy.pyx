@@ -120,13 +120,10 @@ cdef class TradingStrategy:
         self.order_factory = None  # Initialized when registered with a trader
 
     def __eq__(self, TradingStrategy other) -> bool:
-        return self.id == other.id
+        return self.id.value == other.id.value
 
     def __ne__(self, TradingStrategy other) -> bool:
-        return self.id != other.id
-
-    def __hash__(self) -> int:
-        return hash(self.id.value)
+        return self.id.value != other.id.value
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value})"

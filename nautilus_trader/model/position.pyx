@@ -73,10 +73,10 @@ cdef class Position:
         self.apply(event)
 
     def __eq__(self, Position other) -> bool:
-        return self.id == other.id
+        return self.id.value == other.id.value
 
     def __ne__(self, Position other) -> bool:
-        return self.id != other.id
+        return self.id.value != other.id.value
 
     def __hash__(self) -> int:
         return hash(self.id.value)

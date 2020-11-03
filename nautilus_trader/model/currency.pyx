@@ -131,7 +131,7 @@ cdef class Currency:
         return self.code != other.code or self.precision != other.precision
 
     def __hash__(self) -> int:
-        return hash(self.code)
+        return hash((self.code, self.precision))
 
     def __str__(self) -> str:
         return self.code

@@ -340,9 +340,6 @@ cdef class Bar:
     def __ne__(self, Bar other) -> bool:
         return not self == other
 
-    def __hash__(self) -> int:
-        return hash(str(self.timestamp))
-
     def __str__(self) -> str:
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{format_iso8601(self.timestamp)}"
 

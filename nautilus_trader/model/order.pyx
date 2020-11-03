@@ -137,10 +137,10 @@ cdef class Order:
         self.init_id = event.id
 
     def __eq__(self, Order other) -> bool:
-        return self.cl_ord_id == other.cl_ord_id
+        return self.cl_ord_id.value == other.cl_ord_id.value
 
     def __ne__(self, Order other) -> bool:
-        return self.cl_ord_id != other.cl_ord_id
+        return self.cl_ord_id.value != other.cl_ord_id.value
 
     def __hash__(self) -> int:
         return hash(self.cl_ord_id.value)
@@ -972,13 +972,13 @@ cdef class BracketOrder:
         self.timestamp = entry.timestamp
 
     def __eq__(self, BracketOrder other) -> bool:
-        return self.id == other.id
+        return self.id.value == other.id.value
 
     def __ne__(self, BracketOrder other) -> bool:
-        return self.id != other.id
+        return self.id.value != other.id.value
 
     def __hash__(self) -> int:
-        return hash(self.id)
+        return hash(self.id.value)
 
     def __repr__(self) -> str:
         cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)

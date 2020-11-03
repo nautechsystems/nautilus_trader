@@ -210,7 +210,7 @@ cdef class Instrument:
         self.timestamp = timestamp
 
     def __eq__(self, Instrument other) -> bool:
-        return self.symbol == other.symbol
+        return self.symbol.value == other.symbol.value
 
     def __ne__(self, Instrument other) -> bool:
         return not self == other

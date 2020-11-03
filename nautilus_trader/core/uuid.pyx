@@ -75,33 +75,36 @@ cdef class UUID:
         # Parse final UUID value
         self.value = '%s-%s-%s-%s-%s' % (hex_str[:8], hex_str[8:12], hex_str[12:16], hex_str[16:20], hex_str[20:])
 
-    def __eq__(self, UUID other):
+    def __eq__(self, UUID other) -> bool:
         return self.value == other.value
+
+    def __ne__(self, UUID other) -> bool:
+        return self.value != other.value
 
     # Q. What's the value of being able to sort UUIDs?
     # A. Use them as keys in a B-Tree or similar mapping.
-    def __lt__(self, UUID other):
+    def __lt__(self, UUID other) -> bool:
         return self.int_val < other.int_val
 
-    def __gt__(self, UUID other):
+    def __gt__(self, UUID other) -> bool:
         return self.int_val > other.int_val
 
-    def __le__(self, UUID other):
+    def __le__(self, UUID other) -> bool:
         return self.int_val <= other.int_val
 
-    def __ge__(self, UUID other):
+    def __ge__(self, UUID other) -> bool:
         return self.int_val >= other.int_val
 
-    def __hash__(self):
-        return hash(self.int_val)
+    def __hash__(self) -> int:
+        return hash(self.value)
 
-    def __int__(self):
+    def __int__(self) -> int:
         return self.int_val
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.value
 
     @staticmethod
