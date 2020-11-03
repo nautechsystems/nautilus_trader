@@ -87,9 +87,6 @@ cdef class QuoteTick:
     def __ge__(self, QuoteTick other) -> bool:
         return self.timestamp >= other.timestamp
 
-    def __hash__(self) -> int:
-        return hash(self.timestamp)
-
     def __str__(self) -> str:
         return (f"{self.symbol},"
                 f"{self.bid},"
@@ -267,9 +264,6 @@ cdef class TradeTick:
 
     def __ge__(self, TradeTick other) -> bool:
         return self.timestamp >= other.timestamp
-
-    def __hash__(self) -> int:
-        return hash(self.timestamp)
 
     def __str__(self) -> str:
         return (f"{self.symbol},"

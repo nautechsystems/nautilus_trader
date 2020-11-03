@@ -61,7 +61,7 @@ cdef class Identifier:
         return self.value >= other.value
 
     def __hash__(self) -> int:
-        return hash(self.value)
+        return hash((type(self), self.value))
 
     def __str__(self) -> str:
         return self.value

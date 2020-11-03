@@ -21,6 +21,11 @@ base class to fundamental domain model value types. One difference from the buil
 decimal is that the specification of precision is more straight forward than providing
 a context. Also this type is able to be used as an operand for mathematical ops
 with `float` objects.
+
+References
+----------
+https://docs.python.org/3.9/library/decimal.html
+
 """
 
 import decimal
@@ -148,22 +153,22 @@ cdef class Decimal:
         else:
             return Decimal(Decimal._extract_value(self) % Decimal._extract_value(other))
 
-    def __neg__(self):
+    def __neg__(self) -> Decimal:
         return Decimal(self._value.__neg__())
 
-    def __pos__(self):
+    def __pos__(self) -> Decimal:
         return Decimal(self._value.__pos__())
 
-    def __abs__(self):
+    def __abs__(self) -> Decimal:
         return Decimal(abs(self._value))
 
-    def __round__(self, ndigits=None):
+    def __round__(self, ndigits=None) -> Decimal:
         return Decimal(round(self._value, ndigits))
 
-    def __float__(self):
+    def __float__(self) -> float:
         return float(self._value)
 
-    def __int__(self):
+    def __int__(self) -> int:
         return int(self._value)
 
     def __hash__(self) -> int:
