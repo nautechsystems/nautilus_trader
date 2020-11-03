@@ -213,7 +213,7 @@ cdef class Instrument:
         return self.symbol.value == other.symbol.value
 
     def __ne__(self, Instrument other) -> bool:
-        return not self == other
+        return self.symbol.value != other.symbol.value
 
     def __hash__(self) -> int:
         return hash(self.symbol.value)
