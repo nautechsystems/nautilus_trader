@@ -23,31 +23,10 @@ cpdef enum TimeInForce:
     GTD = 5
 
 
-cdef inline str time_in_force_to_string(int value):
-    if value == 1:
-        return 'DAY'
-    elif value == 2:
-        return 'GTC'
-    elif value == 3:
-        return 'IOC'
-    elif value == 4:
-        return 'FOC'
-    elif value == 5:
-        return 'GTD'
-    else:
-        return 'UNDEFINED'
+cdef class TimeInForceParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline TimeInForce time_in_force_from_string(str value):
-    if value == 'DAY':
-        return TimeInForce.DAY
-    elif value == 'GTC':
-        return TimeInForce.GTC
-    elif value == 'IOC':
-        return TimeInForce.IOC
-    elif value == 'FOC':
-        return TimeInForce.FOC
-    elif value == 'GTD':
-        return TimeInForce.GTD
-    else:
-        return TimeInForce.UNDEFINED
+    @staticmethod
+    cdef TimeInForce from_string(str value)

@@ -18,6 +18,7 @@ import unittest
 
 import pytz
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.cache import DataCache
@@ -44,39 +45,125 @@ class DataCacheTests(unittest.TestCase):
 
         self.cache = DataCache(logger=TestLogger(TestClock()))
 
-    def test_get_tick_count_for_unknown_symbol_returns_zero(self):
-        # Arrange
-        # Act
-        result = self.cache.quote_tick_count(AUDUSD_FXCM)
-
-        # Assert
-        self.assertEqual(0, result)
-
-    def test_get_ticks_for_unknown_symbol_raises_exception(self):
+    def test_symbols_when_no_instruments_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(KeyError, self.cache.quote_ticks, AUDUSD_FXCM)
+        self.assertEqual([], self.cache.symbols())
 
-    def test_get_bar_count_for_unknown_bar_type_returns_zero(self):
+    def test_instruments_when_no_instruments_returns_empty_list(self):
         # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        # Act
-        result = self.cache.bar_count(bar_type)
-
-        # Assert
-        self.assertEqual(0, result)
-
-    def test_get_bars_for_unknown_bar_type_raises_exception(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
         # Act
         # Assert
-        self.assertRaises(KeyError, self.cache.bars, bar_type)
+        self.assertEqual([], self.cache.instruments())
 
-    def test_bars(self):
+    def test_quote_ticks_for_unknown_symbol_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.cache.quote_ticks(AUDUSD_FXCM))
+
+    def test_trade_ticks_for_unknown_symbol_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.cache.trade_ticks(AUDUSD_FXCM))
+
+    def test_bars_for_unknown_symbol_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()))
+
+    def test_quote_tick_count_for_unknown_symbol_returns_zero(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(0, self.cache.quote_tick_count(AUDUSD_FXCM))
+
+    def test_trade_tick_count_for_unknown_symbol_returns_zero(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_FXCM))
+
+    def test_has_quote_ticks_for_unknown_symbol_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.cache.has_quote_ticks(AUDUSD_FXCM))
+
+    def test_has_trade_ticks_for_unknown_symbol_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.cache.has_trade_ticks(AUDUSD_FXCM))
+
+    def test_has_bars_for_unknown_bar_type_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid()))
+
+    def test_symbols_when_one_instrument_returns_expected_list(self):
+        instrument = InstrumentLoader.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.symbols()
+
+        # Assert
+        self.assertEqual([instrument.symbol], result)
+
+    def test_instruments_when_one_instrument_returns_expected_list(self):
+        instrument = InstrumentLoader.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instruments()
+
+        # Assert
+        self.assertEqual([instrument], result)
+
+    def test_quote_ticks_when_one_tick_returns_expected_list(self):
+        tick = QuoteTick(
+            AUDUSD_FXCM,
+            Price("1.00000"),
+            Price("1.00001"),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.quote_ticks(tick.symbol)
+
+        # Assert
+        self.assertEqual([tick], result)
+
+    def test_trade_ticks_when_one_tick_returns_expected_list(self):
+        tick = TradeTick(
+            AUDUSD_FXCM,
+            Price("1.00000"),
+            Quantity(10000),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.trade_ticks(tick.symbol)
+
+        # Assert
+        self.assertEqual([tick], result)
+
+    def test_bars_when_one_bar_returns_expected_list(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
@@ -94,60 +181,10 @@ class DataCacheTests(unittest.TestCase):
         result = self.cache.bars(bar_type)
 
         # Assert
-        self.assertTrue(bar, result[0])
+        self.assertTrue([bar], result)
 
-    def test_getting_bar_for_unknown_bar_type_raises_exception(self):
-        # Arrange
-        unknown_bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        # Act
-        # Assert
-        self.assertRaises(KeyError, self.cache.bar, unknown_bar_type, 0)
-
-    def test_getting_bar_at_out_of_range_index_raises_exception(self):
-        # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
-        )
-
-        self.cache.add_bar(bar_type, bar)
-
-        # Act
-        # Assert
-        self.assertRaises(IndexError, self.cache.bar, bar_type, -2)
-
-    def test_get_bar(self):
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
-        )
-
-        self.cache.add_bar(bar_type, bar)
-
-        # Act
-        result = self.cache.bar(bar_type, 0)
-
-        # Assert
-        self.assertEqual(bar, result)
-
-    def test_getting_tick_with_unknown_tick_type_raises_exception(self):
-        # Act
-        # Assert
-        self.assertRaises(KeyError, self.cache.quote_tick, AUDUSD_FXCM, 0)
-
-    def test_get_quote_tick(self):
-        tick = QuoteTick(
+    def test_get_quote_tick_with_two_ticks_returns_expected_tick(self):
+        tick1 = QuoteTick(
             AUDUSD_FXCM,
             Price("1.00000"),
             Price("1.00001"),
@@ -156,16 +193,27 @@ class DataCacheTests(unittest.TestCase):
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
         )
 
-        self.cache.add_quote_tick(tick)
+        tick2 = QuoteTick(
+            AUDUSD_FXCM,
+            Price("1.00001"),
+            Price("1.00003"),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 1, pytz.utc),
+        )
+
+        self.cache.add_quote_tick(tick1)
+        self.cache.add_quote_tick(tick2)
 
         # Act
-        result = self.cache.quote_tick(tick.symbol, 0)
+        result = self.cache.quote_tick(AUDUSD_FXCM, index=0)
 
         # Assert
-        self.assertEqual(tick, result)
+        self.assertEqual(2, self.cache.quote_tick_count(AUDUSD_FXCM))
+        self.assertEqual(tick2, result)
 
-    def test_get_trade_tick(self):
-        tick = TradeTick(
+    def test_get_trade_tick_with_one_tick_returns_expected_tick(self):
+        tick1 = TradeTick(
             AUDUSD_FXCM,
             Price("1.00000"),
             Quantity(10000),
@@ -174,10 +222,51 @@ class DataCacheTests(unittest.TestCase):
             datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
         )
 
-        self.cache.add_trade_tick(tick)
+        tick2 = TradeTick(
+            AUDUSD_FXCM,
+            Price("1.00001"),
+            Quantity(20000),
+            Maker.SELLER,
+            TradeMatchId("123456789"),
+            datetime(2018, 1, 1, 19, 59, 1, 1, pytz.utc),
+        )
+
+        self.cache.add_trade_tick(tick1)
+        self.cache.add_trade_tick(tick2)
 
         # Act
-        result = self.cache.trade_tick(tick.symbol, 0)
+        result = self.cache.trade_tick(AUDUSD_FXCM, index=0)
 
         # Assert
-        self.assertEqual(tick, result)
+        self.assertEqual(2, self.cache.trade_tick_count(AUDUSD_FXCM))
+        self.assertEqual(tick2, result)
+
+    def test_get_bar_with_one_bar_returns_expected_bar(self):
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar1 = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
+
+        bar2 = Bar(
+            Price("1.00002"),
+            Price("1.00003"),
+            Price("1.00004"),
+            Price("1.00005"),
+            Quantity(200000),
+            datetime(1970, 1, 1, 00, 1, 0, 0, pytz.utc),
+        )
+
+        self.cache.add_bar(bar_type, bar1)
+        self.cache.add_bar(bar_type, bar2)
+
+        # Act
+        result = self.cache.bar(bar_type, index=0)
+
+        # Assert
+        self.assertEqual(2, self.cache.bar_count(bar_type))
+        self.assertEqual(bar2, result)

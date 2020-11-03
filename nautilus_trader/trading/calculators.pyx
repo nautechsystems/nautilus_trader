@@ -22,7 +22,7 @@ from nautilus_trader import PACKAGE_ROOT
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 
@@ -94,7 +94,7 @@ cdef class ExchangeRateCalculator:
             }  # type: {str, float}
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type "
-                             f"{price_type_to_string(price_type)}")
+                             f"{PriceTypeParser.to_string(price_type)}")
 
         cdef str symbol
         cdef double quote

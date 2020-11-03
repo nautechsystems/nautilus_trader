@@ -24,35 +24,10 @@ cpdef enum AssetType:
     OPTION = 6,
 
 
-cdef inline str asset_type_to_string(int value):
-    if value == 1:
-        return 'SPOT'
-    elif value == 2:
-        return 'SWAP'
-    elif value == 3:
-        return 'FUTURE'
-    elif value == 4:
-        return 'FORWARD'
-    elif value == 5:
-        return 'CFD'
-    elif value == 6:
-        return 'OPTION'
-    else:
-        return 'UNDEFINED'
+cdef class AssetTypeParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline AssetType asset_type_from_string(str value):
-    if value == 'SPOT':
-        return AssetType.SPOT
-    elif value == 'SWAP':
-        return AssetType.SWAP
-    elif value == 'FUTURE':
-        return AssetType.FUTURE
-    elif value == 'FORWARD':
-        return AssetType.FORWARD
-    elif value == 'CFD':
-        return AssetType.CFD
-    elif value == 'OPTION':
-        return AssetType.OPTION
-    else:
-        return AssetType.UNDEFINED
+    @staticmethod
+    cdef AssetType from_string(str value)

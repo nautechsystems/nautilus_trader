@@ -20,10 +20,9 @@ from cpython.datetime cimport datetime
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.model.c_enums.maker cimport Maker
-from nautilus_trader.model.c_enums.maker cimport maker_from_string
-from nautilus_trader.model.c_enums.maker cimport maker_to_string
+from nautilus_trader.model.c_enums.maker cimport MakerParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.c_enums.price_type cimport price_type_to_string
+from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
@@ -88,9 +87,6 @@ cdef class QuoteTick:
     def __ge__(self, QuoteTick other) -> bool:
         return self.timestamp >= other.timestamp
 
-    def __hash__(self) -> int:
-        return hash(self.timestamp)
-
     def __str__(self) -> str:
         return (f"{self.symbol},"
                 f"{self.bid},"
@@ -123,7 +119,7 @@ cdef class QuoteTick:
         elif price_type == PriceType.ASK:
             return self.ask
         else:
-            raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_string(price_type)}")
 
     cpdef Quantity extract_volume(self, PriceType price_type):
         """
@@ -146,7 +142,7 @@ cdef class QuoteTick:
         elif price_type == PriceType.ASK:
             return self.ask_size
         else:
-            raise ValueError(f"Cannot extract with PriceType {price_type_to_string(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_string(price_type)}")
 
     @staticmethod
     cdef QuoteTick from_serializable_string_c(Symbol symbol, str values):
@@ -154,6 +150,9 @@ cdef class QuoteTick:
         Condition.valid_string(values, 'values')
 
         cdef list pieces = values.split(',', maxsplit=4)
+
+        if len(pieces) != 5:
+            raise ValueError(f"The QuoteTick string value was malformed, was {values}")
 
         # noinspection: long, fromtimestamp
         # noinspection PyUnresolvedReferences
@@ -269,14 +268,11 @@ cdef class TradeTick:
     def __ge__(self, TradeTick other) -> bool:
         return self.timestamp >= other.timestamp
 
-    def __hash__(self) -> int:
-        return hash(self.timestamp)
-
     def __str__(self) -> str:
         return (f"{self.symbol},"
                 f"{self.price},"
                 f"{self.size},"
-                f"{maker_to_string(self.maker)},"
+                f"{MakerParser.to_string(self.maker)},"
                 f"{self.match_id},"
                 f"{format_iso8601(self.timestamp)}")
 
@@ -290,13 +286,16 @@ cdef class TradeTick:
 
         cdef list pieces = values.split(',', maxsplit=4)
 
+        if len(pieces) != 5:
+            raise ValueError(f"The TradeTick string value was malformed, was {values}")
+
         # noinspection: long, fromtimestamp
         # noinspection PyUnresolvedReferences
         return TradeTick(
             symbol,
             Price(pieces[0]),
             Quantity(pieces[1]),
-            maker_from_string(pieces[2]),
+            MakerParser.from_string(pieces[2]),
             TradeMatchId(pieces[3]),
             datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
         )
@@ -338,6 +337,6 @@ cdef class TradeTick:
         # noinspection PyUnresolvedReferences
         return (f"{self.price},"
                 f"{self.size},"
-                f"{maker_to_string(self.maker)},"
+                f"{MakerParser.to_string(self.maker)},"
                 f"{self.match_id},"
                 f"{long(self.timestamp.timestamp())}")

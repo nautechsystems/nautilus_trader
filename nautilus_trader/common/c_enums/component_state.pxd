@@ -28,51 +28,10 @@ cpdef enum ComponentState:
     FAULTED = 10,
 
 
-cdef inline str component_state_to_string(int value):
-    if value == 1:
-        return 'INITIALIZED'
-    elif value == 2:
-        return 'STARTING'
-    elif value == 3:
-        return 'RUNNING'
-    elif value == 4:
-        return 'STOPPING'
-    elif value == 5:
-        return 'STOPPED'
-    elif value == 6:
-        return 'RESUMING'
-    elif value == 7:
-        return 'RESETTING'
-    elif value == 8:
-        return 'DISPOSING'
-    elif value == 9:
-        return 'DISPOSED'
-    elif value == 10:
-        return 'FAULTED'
-    else:
-        return 'UNDEFINED'
+cdef class ComponentStateParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline ComponentState component_state_from_string(str value):
-    if value == 'INITIALIZED':
-        return ComponentState.INITIALIZED
-    elif value == 'STARTING':
-        return ComponentState.STARTING
-    elif value == 'RUNNING':
-        return ComponentState.RUNNING
-    elif value == 'STOPPING':
-        return ComponentState.STOPPING
-    elif value == 'STOPPED':
-        return ComponentState.STOPPED
-    elif value == 'RESUMING':
-        return ComponentState.RESUMING
-    elif value == 'RESETTING':
-        return ComponentState.RESETTING
-    elif value == 'DISPOSING':
-        return ComponentState.DISPOSING
-    elif value == DISPOSED:
-        return ComponentState.DISPOSED
-    elif value == 'FAULTED':
-        return ComponentState.FAULTED
-    else:
-        return ComponentState.UNDEFINED
+    @staticmethod
+    cdef ComponentState from_string(str value)

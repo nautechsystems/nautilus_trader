@@ -26,7 +26,7 @@ attempts to operate without a managing `Trader` instance.
 import cython
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport component_state_to_string
+from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.commands cimport RequestData
@@ -120,13 +120,10 @@ cdef class TradingStrategy:
         self.order_factory = None  # Initialized when registered with a trader
 
     def __eq__(self, TradingStrategy other) -> bool:
-        return self.id == other.id
+        return self.id.value == other.id.value
 
     def __ne__(self, TradingStrategy other) -> bool:
-        return self.id != other.id
-
-    def __hash__(self) -> int:
-        return hash(self.id.value)
+        return self.id.value != other.id.value
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value})"
@@ -181,7 +178,7 @@ cdef class TradingStrategy:
             The trading strategies current state as a string.
 
         """
-        return component_state_to_string(self._fsm.state)
+        return ComponentStateParser.to_string(self._fsm.state)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -947,7 +944,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to <QuoteTick> data for the given symbol.
+        Subscribe to `QuoteTick` data for the given symbol.
 
         Parameters
         ----------
@@ -974,7 +971,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to <TradeTick> data for the given symbol.
+        Subscribe to `TradeTick` data for the given symbol.
 
         Parameters
         ----------
@@ -1001,7 +998,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
-        Subscribe to <Bar> data for the given bar type.
+        Subscribe to `Bar` data for the given bar type.
 
         Parameters
         ----------
@@ -1028,7 +1025,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
-        Subscribe to <Instrument> data for the given symbol.
+        Subscribe to `Instrument` data for the given symbol.
 
         Parameters
         ----------
@@ -1055,7 +1052,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from <QuoteTick> data for the given symbol.
+        Unsubscribe from `QuoteTick` data for the given symbol.
 
         Parameters
         ----------
@@ -1082,7 +1079,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from <TradeTick> data for the given symbol.
+        Unsubscribe from `TradeTick` data for the given symbol.
 
         Parameters
         ----------
@@ -1109,7 +1106,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
-        Unsubscribe from <Bar> data for the given bar type.
+        Unsubscribe from `Bar` data for the given bar type.
 
         Parameters
         ----------
@@ -1136,7 +1133,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
-        Unsubscribe from instrument data for the given symbol.
+        Unsubscribe from `Instrument` data for the given symbol.
 
         Parameters
         ----------

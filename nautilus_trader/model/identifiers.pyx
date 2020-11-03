@@ -15,8 +15,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport account_type_from_string
-from nautilus_trader.model.c_enums.account_type cimport account_type_to_string
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 
 
 cdef class Identifier:
@@ -62,7 +61,7 @@ cdef class Identifier:
         return self.value >= other.value
 
     def __hash__(self) -> int:
-        return hash(self.value)
+        return hash((type(self), self.value))
 
     def __str__(self) -> str:
         return self.value
@@ -433,7 +432,7 @@ cdef class AccountId(Identifier):
             If identifier is not a valid string.
 
         """
-        super().__init__(f"{issuer}-{identifier}-{account_type_to_string(account_type)}")
+        super().__init__(f"{issuer}-{identifier}-{AccountTypeParser.to_string(account_type)}")
 
         self.issuer = Issuer(issuer)
         self.identifier = Identifier(identifier)
@@ -448,13 +447,13 @@ cdef class AccountId(Identifier):
 
         cdef list pieces = value.split('-', maxsplit=2)
 
-        if len(pieces) < 3:
+        if len(pieces) != 3:
             raise ValueError(f"The AccountId string value was malformed, was {value}")
 
         return AccountId(
             issuer=pieces[0],
             identifier=pieces[1],
-            account_type=account_type_from_string(pieces[2]),
+            account_type=AccountTypeParser.from_string(pieces[2]),
         )
 
     @staticmethod

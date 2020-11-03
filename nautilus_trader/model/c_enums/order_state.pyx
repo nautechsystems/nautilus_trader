@@ -13,4 +13,66 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+cdef class OrderStateParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return 'INITIALIZED'
+        elif value == 2:
+            return 'INVALID'
+        elif value == 3:
+            return 'DENIED'
+        elif value == 4:
+            return 'SUBMITTED'
+        elif value == 5:
+            return 'ACCEPTED'
+        elif value == 6:
+            return 'REJECTED'
+        elif value == 7:
+            return 'WORKING'
+        elif value == 8:
+            return 'CANCELLED'
+        elif value == 9:
+            return 'EXPIRED'
+        elif value == 10:
+            return 'PARTIALLY_FILLED'
+        elif value == 11:
+            return 'FILLED'
+        else:
+            return 'UNDEFINED'
+
+    @staticmethod
+    cdef OrderState from_string(str value):
+        if value == 'INITIALIZED':
+            return OrderState.INITIALIZED
+        elif value == 'INVALID':
+            return OrderState.INVALID
+        elif value == 'DENIED':
+            return OrderState.DENIED
+        elif value == 'SUBMITTED':
+            return OrderState.SUBMITTED
+        elif value == 'ACCEPTED':
+            return OrderState.ACCEPTED
+        elif value == 'REJECTED':
+            return OrderState.REJECTED
+        elif value == 'WORKING':
+            return OrderState.WORKING
+        elif value == 'CANCELLED':
+            return OrderState.CANCELLED
+        elif value == 'EXPIRED':
+            return OrderState.EXPIRED
+        elif value == 'PARTIALLY_FILLED':
+            return OrderState.PARTIALLY_FILLED
+        elif value == 'FILLED':
+            return OrderState.FILLED
+        else:
+            return OrderState.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return OrderStateParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return OrderStateParser.from_string(value)

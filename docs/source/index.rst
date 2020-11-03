@@ -17,7 +17,9 @@ Why NautilusTrader?
 -------------------
 One of the key value propositions of `NautilusTrader` is that it addresses the
 challenge of keeping the backtest environment consistent with the production
-live trading environment. Normally research and backtesting may be conducted in
+live trading environment.
+
+Normally research and backtesting may be conducted in
 Python (or other suitable language), with trading strategies traditionally then
 needing to be reimplemented in C++/C#/Java or other statically typed language(s).
 The reasoning here is to enjoy the performance a compiled language can offer,

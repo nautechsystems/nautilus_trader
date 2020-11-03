@@ -28,13 +28,13 @@ from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport order_side_to_string
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.order_state cimport order_state_to_string
+from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport order_type_to_string
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport time_in_force_to_string
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
@@ -114,8 +114,8 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
-            trigger_parser=order_state_to_string,  # order_state_to_string correct here
-            state_parser=order_state_to_string,
+            trigger_parser=OrderStateParser.to_string,  # order_state_to_string correct here
+            state_parser=OrderStateParser.to_string,
         )
 
         self.cl_ord_id = event.cl_ord_id
@@ -137,10 +137,10 @@ cdef class Order:
         self.init_id = event.id
 
     def __eq__(self, Order other) -> bool:
-        return self.cl_ord_id == other.cl_ord_id
+        return self.cl_ord_id.value == other.cl_ord_id.value
 
     def __ne__(self, Order other) -> bool:
-        return self.cl_ord_id != other.cl_ord_id
+        return self.cl_ord_id.value != other.cl_ord_id.value
 
     def __hash__(self) -> int:
         return hash(self.cl_ord_id.value)
@@ -552,9 +552,9 @@ cdef class PassiveOrder(Order):
 
         """
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
-                f"{order_type_to_string(self.type)} @ {self.price} "
-                f"{time_in_force_to_string(self.time_in_force)}{expire_time}")
+        return (f"{OrderSideParser.to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
+                f"{OrderTypeParser.to_string(self.type)} @ {self.price} "
+                f"{TimeInForceParser.to_string(self.time_in_force)}{expire_time}")
 
     cdef void _modified(self, OrderModified event) except *:
         self.id = event.order_id
@@ -696,9 +696,9 @@ cdef class MarketOrder(Order):
         str
 
         """
-        return (f"{order_side_to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
-                f"{order_type_to_string(self.type)} "
-                f"{time_in_force_to_string(self.time_in_force)}")
+        return (f"{OrderSideParser.to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
+                f"{OrderTypeParser.to_string(self.type)} "
+                f"{TimeInForceParser.to_string(self.time_in_force)}")
 
     cdef void _modified(self, OrderModified event) except *:
         raise NotImplemented("Cannot modify a market order")
@@ -972,13 +972,13 @@ cdef class BracketOrder:
         self.timestamp = entry.timestamp
 
     def __eq__(self, BracketOrder other) -> bool:
-        return self.id == other.id
+        return self.id.value == other.id.value
 
     def __ne__(self, BracketOrder other) -> bool:
-        return self.id != other.id
+        return self.id.value != other.id.value
 
     def __hash__(self) -> int:
-        return hash(self.id)
+        return hash(self.id.value)
 
     def __repr__(self) -> str:
         cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)

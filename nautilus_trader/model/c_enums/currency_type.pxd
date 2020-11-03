@@ -20,19 +20,10 @@ cpdef enum CurrencyType:
     FIAT = 2,
 
 
-cdef inline str currency_type_to_string(int value):
-    if value == 1:
-        return 'CRYPTO'
-    elif value == 2:
-        return 'FIAT'
-    else:
-        return 'UNDEFINED'
+cdef class CurrencyTypeParser:
 
+    @staticmethod
+    cdef str to_string(int value)
 
-cdef inline CurrencyType currency_type_from_string(str value):
-    if value == 'CRYPTO':
-        return CurrencyType.CRYPTO
-    elif value == 'FIAT':
-        return CurrencyType.FIAT
-    else:
-        return CurrencyType.UNDEFINED
+    @staticmethod
+    cdef CurrencyType from_string(str value)
