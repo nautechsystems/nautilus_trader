@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `DataCache` provides an interface for querying for market data.
+The `DataCache` provides an interface for consuming cached market data.
 """
 
 from collections import deque
@@ -191,7 +191,7 @@ cdef class DataCache(DataCacheFacade):
         -------
         list[Symbol]
         """
-        return list(self._instruments.keys())
+        return sorted(list(self._instruments.keys()))
 
     cpdef list instruments(self):
         """
@@ -202,7 +202,7 @@ cdef class DataCache(DataCacheFacade):
         list[Instrument]
 
         """
-        return list(self._instruments.values())
+        return sorted(list(self._instruments.values()))
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
@@ -286,8 +286,8 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
-        Return the quote tick for the given symbol at the given index or last if
-        no index specified.
+        Return the quote tick for the given symbol at the given index, or last
+        if no index specified.
 
         Parameters
         ----------
@@ -315,8 +315,8 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
         """
-        Return the trade tick for the given symbol at the given index or last if
-        no index specified.
+        Return the trade tick for the given symbol at the given index or last,
+        if no index specified.
 
         Parameters
         ----------
@@ -344,7 +344,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
-        Return the bar for the given bar type at the given index or last if no
+        Return the bar for the given bar type at the given index, or last if no
         index specified.
 
         Parameters
@@ -442,7 +442,7 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return symbol in self._quote_ticks and len(self._quote_ticks[symbol]) > 0
+        return self.quote_tick_count(symbol) > 0
 
     cpdef bint has_trade_ticks(self, Symbol symbol) except *:
         """
@@ -461,7 +461,7 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return symbol in self._trade_ticks and len(self._trade_ticks[symbol]) > 0
+        return self.trade_tick_count(symbol) > 0
 
     cpdef bint has_bars(self, BarType bar_type) except *:
         """
@@ -480,7 +480,7 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        return bar_type in self._bars and len(self._bars[bar_type]) > 0
+        return self.bar_count(bar_type) > 0
 
     cpdef double get_xrate(
             self,
