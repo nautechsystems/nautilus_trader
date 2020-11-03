@@ -708,7 +708,7 @@ cdef class DataEngine:
     cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=True) except *:
         cdef Symbol symbol = tick.symbol
 
-        self._cache.add_trade_tick(tick)
+        self.cache.add_trade_tick(tick)
 
         if not send_to_handlers:
             return

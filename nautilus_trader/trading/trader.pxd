@@ -45,7 +45,7 @@ cdef class Trader:
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
     cdef list strategies(self)
-    cpdef set strategy_ids(self)
+    cpdef list strategy_ids(self)
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *
     cpdef void stop(self) except *

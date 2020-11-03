@@ -944,7 +944,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to <QuoteTick> data for the given symbol.
+        Subscribe to `QuoteTick` data for the given symbol.
 
         Parameters
         ----------
@@ -971,7 +971,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to <TradeTick> data for the given symbol.
+        Subscribe to `TradeTick` data for the given symbol.
 
         Parameters
         ----------
@@ -998,7 +998,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
-        Subscribe to <Bar> data for the given bar type.
+        Subscribe to `Bar` data for the given bar type.
 
         Parameters
         ----------
@@ -1025,7 +1025,7 @@ cdef class TradingStrategy:
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
-        Subscribe to <Instrument> data for the given symbol.
+        Subscribe to `Instrument` data for the given symbol.
 
         Parameters
         ----------
@@ -1052,7 +1052,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from <QuoteTick> data for the given symbol.
+        Unsubscribe from `QuoteTick` data for the given symbol.
 
         Parameters
         ----------
@@ -1079,7 +1079,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from <TradeTick> data for the given symbol.
+        Unsubscribe from `TradeTick` data for the given symbol.
 
         Parameters
         ----------
@@ -1106,7 +1106,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
-        Unsubscribe from <Bar> data for the given bar type.
+        Unsubscribe from `Bar` data for the given bar type.
 
         Parameters
         ----------
@@ -1133,7 +1133,7 @@ cdef class TradingStrategy:
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
-        Unsubscribe from instrument data for the given symbol.
+        Unsubscribe from `Instrument` data for the given symbol.
 
         Parameters
         ----------

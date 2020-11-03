@@ -117,16 +117,16 @@ cdef class Trader:
         """
         return self._strategies
 
-    cpdef set strategy_ids(self):
+    cpdef list strategy_ids(self):
         """
         The traders strategy identifiers.
 
         Returns
         -------
-        set[StrategyId]
+        list[StrategyId]
 
         """
-        return {strategy.id for strategy in self._strategies}
+        return sorted([strategy.id for strategy in self._strategies])
 
     cpdef void initialize_strategies(self, list strategies: [TradingStrategy]) except *:
         """
@@ -176,7 +176,7 @@ cdef class Trader:
                 strategy_ids.add(strategy.id)
             else:
                 raise ValueError(f"The strategy_id {strategy.id} was not unique "
-                                 f"(duplicate strategy_ids)")
+                                 f"(duplicate strategy identifiers)")
 
             # Wire trader into strategy
             strategy.register_trader(
