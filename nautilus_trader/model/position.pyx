@@ -39,8 +39,8 @@ cdef class Position:
 
         """
         self._events = []  # type: [OrderFilled]
-        self._buy_quantity = Quantity()
-        self._sell_quantity = Quantity()
+        self._buy_quantity = Decimal()
+        self._sell_quantity = Decimal()
 
         # Identifiers
         self.id = event.position_id
@@ -380,14 +380,14 @@ cdef class Position:
         self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.base_currency)
 
         # Update quantities
-        self._buy_quantity = Quantity(self._buy_quantity + event.filled_qty)
-        self.relative_quantity = Decimal(self.relative_quantity + event.filled_qty)
+        self._buy_quantity = self._buy_quantity + event.filled_qty
+        self.relative_quantity = self.relative_quantity + event.filled_qty
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *:
         cdef Money realized_pnl = event.commission
         # SHORT POSITION
         if self.relative_quantity < 0:
-            self.avg_open = Decimal(self._calculate_avg_open_price(event))
+            self.avg_open = self._calculate_avg_open_price(event)
         # LONG POSITION
         elif self.relative_quantity > 0:
             self.avg_close = self._calculate_avg_close_price(event)
@@ -398,10 +398,10 @@ cdef class Position:
         self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.base_currency)
 
         # Update quantities
-        self._sell_quantity = Quantity(self._sell_quantity + event.filled_qty)
-        self.relative_quantity = Decimal(self.relative_quantity - event.filled_qty)
+        self._sell_quantity = self._sell_quantity + event.filled_qty
+        self.relative_quantity = self.relative_quantity - event.filled_qty
 
-    cdef inline Decimal _calculate_cost(self, Decimal avg_price, Quantity total_quantity):
+    cdef inline Decimal _calculate_cost(self, Decimal avg_price, Decimal total_quantity):
         return avg_price * total_quantity
 
     cdef inline Decimal _calculate_avg_open_price(self, OrderFilled event):
@@ -414,13 +414,13 @@ cdef class Position:
         if not self.avg_close:
             return event.avg_price
 
-        cdef Quantity close_quantity = Quantity(self._sell_quantity) if self.side == PositionSide.LONG else self._buy_quantity
+        cdef Decimal close_quantity = self._sell_quantity if self.side == PositionSide.LONG else self._buy_quantity
         return self._calculate_avg_price(self.avg_close, close_quantity, event)
 
     cdef inline Decimal _calculate_avg_price(
         self,
         Decimal open_price,
-        Quantity open_quantity,
+        Decimal open_quantity,
         OrderFilled event,
     ):
         cdef Decimal start_cost = self._calculate_cost(open_price, open_quantity)
@@ -448,7 +448,7 @@ cdef class Position:
         self,
         Decimal open_price,
         Decimal close_price,
-        Quantity filled_qty,
+        Decimal filled_qty,
     ):
         return Money(
             self._calculate_return(open_price, close_price) * filled_qty,
