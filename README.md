@@ -69,6 +69,14 @@ Python 3.6.x - 3.8.x on _Linux_ and _MacOS_.
 
     $ pip install nautilus_trader
 
+From source using _Poetry_ https://python-poetry.org/
+
+    $ poetry install
+
+From source using _pip_
+
+    $ pip install .
+
 ## Development
 
 We recommend the PyCharm _Professional_ edition IDE as it interprets Cython syntax.
@@ -77,7 +85,7 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 To run code or tests from the source code, first compile the C extensions for the package.
 
-    $ python setup.py build_ext --inplace
+    $ poetry install
 
 Please refer to the _Developer Guide_ in the documentation for further details.
 

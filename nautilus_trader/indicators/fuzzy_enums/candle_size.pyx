@@ -13,12 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
-from nautilus_trader.model.objects cimport Price
-
-
-cpdef str convert_price_to_string(Price price)
-cpdef str convert_datetime_to_string(datetime time)
-cpdef Price convert_string_to_price(str price_string)
-cpdef datetime convert_string_to_datetime(str time_string)
+from nautilus_trader.indicators.fuzzy_enums.candle_size cimport CandleSize  # noqa F401 (being used)
