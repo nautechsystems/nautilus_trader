@@ -90,15 +90,7 @@ cdef class FiniteStateMachine:
 
         self.state = initial_state
 
-    cdef str state_string(self):
-        """
-        The current state as a string.
-
-        Returns
-        -------
-        str
-
-        """
+    cdef str state_string_c(self):
         return self._state_parser(self.state)
 
     cpdef void trigger(self, int trigger) except *:
@@ -120,6 +112,6 @@ cdef class FiniteStateMachine:
         """
         cdef int next_state = self._state_transition_table.get((self.state, trigger), -1)
         if next_state == -1:  # Invalid
-            raise InvalidStateTrigger(f"{self.state_string()} -> {self._trigger_parser(trigger)}")
+            raise InvalidStateTrigger(f"{self.state_string_c()} -> {self._trigger_parser(trigger)}")
 
         self.state = next_state

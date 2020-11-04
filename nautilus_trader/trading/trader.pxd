@@ -44,7 +44,9 @@ cdef class Trader:
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
-    cdef list strategies(self)
+    cdef str state_string_c(self)
+    cdef list strategies_c(self)
+
     cpdef list strategy_ids(self)
     cpdef void initialize_strategies(self, list strategies) except *
     cpdef void start(self) except *
@@ -54,8 +56,6 @@ cdef class Trader:
     cpdef void load(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
-
-    cdef str state_string(self)
     cpdef dict strategy_states(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)

@@ -106,16 +106,22 @@ cdef class Trader:
 
         self.initialize_strategies(strategies)
 
-    cdef list strategies(self):
-        """
-        The traders strategies.
+    cdef str state_string_c(self):
+        return self._fsm.state_string_c()
 
+    cdef list strategies_c(self):
+        return self._strategies
+
+    @property
+    def state(self):
+        """
         Returns
         -------
-        list[TradingStrategy]
+        ComponentState
+            The traders current state.
 
         """
-        return self._strategies
+        return self._fsm.state
 
     cpdef list strategy_ids(self):
         """
@@ -208,7 +214,7 @@ cdef class Trader:
             self.stop()  # Do not start trader in an invalid state
             return
 
-        self._log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
         if not self._strategies:
             self._log.error(f"Cannot start trader (no strategies loaded).")
@@ -219,7 +225,7 @@ cdef class Trader:
             strategy.start()
 
         self._fsm.trigger(ComponentTrigger.RUNNING)
-        self._log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void stop(self) except *:
         """
@@ -231,7 +237,7 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -243,7 +249,7 @@ cdef class Trader:
                 self._log.warning(f"{strategy} already stopped.")
 
         self._fsm.trigger(ComponentTrigger.STOPPED)
-        self._log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -283,7 +289,7 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
         for strategy in self._strategies:
             strategy.reset()
@@ -292,7 +298,7 @@ cdef class Trader:
         self.analyzer.reset()
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self._log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -306,36 +312,13 @@ cdef class Trader:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
         for strategy in self._strategies:
             strategy.dispose()
 
         self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self._log.info(f"state={self._fsm.state_string()}.")
-
-    @property
-    def state(self):
-        """
-        Returns
-        -------
-        ComponentState
-            The traders current state.
-
-        """
-        return self._fsm.state
-
-    cdef str state_string(self):
-        """
-        Return the traders state as a string.
-
-        Returns
-        -------
-        str
-            The traders current state as a string.
-
-        """
-        return ComponentStateParser.to_string(self._fsm.state)
+        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef dict strategy_states(self):
         """
@@ -353,7 +336,7 @@ cdef class Trader:
         for strategy in self._strategies:
             # noinspection: states[strategy.id]
             # noinspection PyUnresolvedReferences
-            states[strategy.id] = strategy.state_string()
+            states[strategy.id] = strategy.state_string_c()
 
         return states
 

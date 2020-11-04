@@ -70,9 +70,10 @@ cdef class TradingStrategy:
     cdef readonly OrderFactory order_factory
     """The trading strategies order factory.\n\n:returns: `OrderFactory`"""
 
+    cdef str state_string_c(self)
+
     cpdef list registered_indicators(self)
     cpdef bint indicators_initialized(self) except *
-    cdef str state_string(self)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
