@@ -16,10 +16,7 @@
 import unittest
 
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.parsing import convert_datetime_to_string
-from nautilus_trader.model.parsing import convert_price_to_string
-from nautilus_trader.model.parsing import convert_string_to_datetime
-from nautilus_trader.model.parsing import convert_string_to_price
+from nautilus_trader.model.parsing import ObjectParser
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -28,7 +25,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_price_to_string_from_none(self):
         # Arrange
         # Act
-        result = convert_price_to_string(None)
+        result = ObjectParser.price_to_string_py(None)
 
         # Assert
         self.assertEqual("None", result)
@@ -36,7 +33,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_price_to_string_from_decimal(self):
         # Arrange
         # Act
-        result = convert_price_to_string(Price("1.00000"))
+        result = ObjectParser.price_to_string_py(Price("1.00000"))
 
         # Assert
         self.assertEqual("1.00000", result)
@@ -44,7 +41,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_string_to_price_from_none(self):
         # Arrange
         # Act
-        result = convert_string_to_price("None")
+        result = ObjectParser.string_to_price_py("None")
 
         # Assert
         self.assertEqual(None, result)
@@ -52,7 +49,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_string_to_price_from_decimal(self):
         # Arrange
         # Act
-        result = convert_string_to_price("1.00000")
+        result = ObjectParser.string_to_price_py("1.00000")
 
         # Assert
         self.assertEqual(Price("1.00000"), result)
@@ -60,7 +57,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_datetime_to_string_from_none(self):
         # Arrange
         # Act
-        result = convert_datetime_to_string(None)
+        result = ObjectParser.datetime_to_string_py(None)
 
         # Assert
         self.assertEqual("None", result)
@@ -68,7 +65,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_datetime_to_string(self):
         # Arrange
         # Act
-        result = convert_datetime_to_string(UNIX_EPOCH)
+        result = ObjectParser.datetime_to_string_py(UNIX_EPOCH)
 
         # Assert
         self.assertEqual("1970-01-01T00:00:00.000Z", result)
@@ -76,7 +73,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_string_to_time_from_datetime(self):
         # Arrange
         # Act
-        result = convert_string_to_datetime("1970-01-01T00:00:00.000Z")
+        result = ObjectParser.string_to_datetime_py("1970-01-01T00:00:00.000Z")
 
         # Assert
         self.assertEqual(UNIX_EPOCH, result)
@@ -84,7 +81,7 @@ class SerializationFunctionTests(unittest.TestCase):
     def test_convert_string_to_time_from_none(self):
         # Arrange
         # Act
-        result = convert_string_to_datetime("None")
+        result = ObjectParser.string_to_datetime_py("None")
 
         # Assert
         self.assertEqual(None, result)
