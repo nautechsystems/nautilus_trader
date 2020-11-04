@@ -677,7 +677,7 @@ cdef class SimulatedExchange:
 
     cdef void _reject_order(self, Order order, str reason) except *:
         if order.state_c() != OrderState.SUBMITTED:
-            self._log.error(f"Cannot reject order, state was {order.state_string()}.")
+            self._log.error(f"Cannot reject order, state was {order.state_string_c()}.")
             return
 
         # Generate event
@@ -960,7 +960,7 @@ cdef class SimulatedExchange:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
         if order.is_completed_c():
-            self._log.debug(f"Cannot reject order, state was already {order.state_string()}.")
+            self._log.debug(f"Cannot reject order, state was already {order.state_string_c()}.")
             return
 
         # Generate event
@@ -979,7 +979,7 @@ cdef class SimulatedExchange:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
         if order.is_completed_c():
-            self._log.debug(f"Cannot cancel order, state was already {order.state_string()}.")
+            self._log.debug(f"Cannot cancel order, state was already {order.state_string_c()}.")
             return
 
         # Generate event
@@ -997,7 +997,7 @@ cdef class SimulatedExchange:
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         if order.is_completed_c():
-            self._log.debug(f"Cannot cancel order, state was already {order.state_string()}.")
+            self._log.debug(f"Cannot cancel order, state was already {order.state_string_c()}.")
             return
 
         # Generate event

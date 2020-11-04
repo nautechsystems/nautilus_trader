@@ -48,7 +48,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         super().__init__(period, params=[period], price_type=price_type)
 
         self._alpha = 2.0 / (period + 1.0)
-        self._value = 0
+        self.value = 0
 
     @property
     def alpha(self):
@@ -74,7 +74,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.extract_price(self._price_type).as_double())
+        self.update_raw(tick.extract_price(self.price_type).as_double())
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -115,11 +115,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
 
         """
         # Check if this is the initial input
-        if not self._has_inputs:
-            self._value = value
+        if not self.has_inputs:
+            self.value = value
 
         self._increment_count()
-        self._value = self._alpha * value + ((1.0 - self._alpha) * self._value)
+        self.value = self._alpha * value + ((1.0 - self._alpha) * self.value)
 
     cpdef void reset(self) except *:
         """

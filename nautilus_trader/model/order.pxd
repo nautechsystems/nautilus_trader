@@ -88,11 +88,13 @@ cdef class Order:
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 
-    cdef inline int state_c(self) except *
-    cdef inline bint is_buy_c(self) except *
-    cdef inline bint is_sell_c(self) except *
-    cdef inline bint is_working_c(self) except *
-    cdef inline bint is_completed_c(self) except *
+    cdef int state_c(self) except *
+    cdef str state_string_c(self)
+    cdef str status_string_c(self)
+    cdef bint is_buy_c(self) except *
+    cdef bint is_sell_c(self) except *
+    cdef bint is_working_c(self) except *
+    cdef bint is_completed_c(self) except *
 
     @staticmethod
     cdef inline OrderSide opposite_side_c(OrderSide side) except *
@@ -100,9 +102,8 @@ cdef class Order:
     @staticmethod
     cdef inline OrderSide flatten_side_c(PositionSide side) except *
 
-    cdef str state_string(self)
-    cdef str status_string(self)
     cpdef void apply(self, OrderEvent event) except *
+
     cdef void _invalid(self, OrderInvalid event) except *
     cdef void _denied(self, OrderDenied event) except *
     cdef void _submitted(self, OrderSubmitted event) except *

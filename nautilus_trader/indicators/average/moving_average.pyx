@@ -60,66 +60,18 @@ cdef class MovingAverage(Indicator):
         Condition.positive_int(period, "period")
         super().__init__(params)
 
-        self._period = period
-        self._price_type = price_type
-        self._count = 0
-        self._value = 0
-
-    @property
-    def period(self):
-        """
-        The indicators moving average period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def price_type(self):
-        """
-        The specified price type for extracting values from quote ticks.
-
-        Returns
-        -------
-        PriceType
-
-        """
-        return self._price_type
-
-    @property
-    def count(self):
-        """
-        The count of inputs received by the indicator.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._count
-
-    @property
-    def value(self):
-        """
-        The current moving average value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
+        self.period = period
+        self.price_type = price_type
+        self.count = 0
+        self.value = 0
 
     cdef void _increment_count(self) except *:
-        self._count += 1
+        self.count += 1
 
         # Initialization logic
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
-            if self._count >= self.period:
+            if self.count >= self.period:
                 self._set_initialized(True)
 
     cdef void _reset_ma(self) except *:
@@ -130,5 +82,5 @@ cdef class MovingAverage(Indicator):
 
         """
         self._reset_base()
-        self._count = 0
-        self._value = 0
+        self.count = 0
+        self.value = 0

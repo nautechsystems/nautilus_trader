@@ -83,22 +83,6 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(precision, decimal_object.precision)
 
     @parameterized.expand([
-        ["0", 0],
-        ["-0", 0],
-        ["-1", -1],
-        ["1", 1],
-        ["1.1", 1.1],
-        ["-1.1", -1.1],
-    ])
-    def test_as_double_with_various_values_returns_expected_value(self, value, expected):
-        # Arrange
-        # Act
-        result = Decimal(value).as_double()
-
-        # Assert
-        self.assertEqual(expected, result)
-
-    @parameterized.expand([
         ["0", -0, True],
         ["-0", 0, True],
         ["-1", -1, True],
@@ -267,7 +251,7 @@ class DecimalTests(unittest.TestCase):
         [1.1, Decimal("1.1"), float, 1],
         [Decimal(), 1, Decimal, 0],
         [Decimal(1), 2, Decimal, 0.5],
-        [Decimal(2), 1.0, float, 2],
+        [Decimal(2), 1.1, float, 1.8181818181818181],
         [2, Decimal(1), Decimal, 0.5],
         [1.0, Decimal(2), float, 0.5],
         [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
@@ -282,6 +266,50 @@ class DecimalTests(unittest.TestCase):
         # Arrange
         # Act
         result = value1 / value2
+
+        # Assert
+        self.assertEqual(expected_type, type(result))
+        self.assertAlmostEqual(expected_value, result)
+
+    @parameterized.expand([
+        [1, Decimal(1), Decimal, 1],
+        [Decimal(), 1, Decimal, 0],
+        [Decimal(1), 2, Decimal, 0.5],
+        [2, Decimal(1), Decimal, 0.5],
+        [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
+        [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, 0.9166666666666666],
+    ])
+    def test_floor_division_with_various_types_returns_expected_result(
+            self,
+            value1,
+            value2,
+            expected_type,
+            expected_value):
+        # Arrange
+        # Act
+        result = value1 // value2
+
+        # Assert
+        self.assertEqual(expected_type, type(result))
+        self.assertAlmostEqual(expected_value, result)
+
+    @parameterized.expand([
+        [1, Decimal(1), Decimal, 0],
+        [Decimal(100), 10, Decimal, 0],
+        [Decimal(23), 2, Decimal, 1],
+        [2, Decimal(1), Decimal, 0.5],
+        [Decimal("1.1"), Decimal("0.2"), Decimal, 0.9166666666666666],
+        [Decimal("1.1"), decimal.Decimal("0.2"), Decimal, 0.9166666666666666],
+    ])
+    def test_mod_with_various_types_returns_expected_result(
+            self,
+            value1,
+            value2,
+            expected_type,
+            expected_value):
+        # Arrange
+        # Act
+        result = value1 % value2
 
         # Assert
         self.assertEqual(expected_type, type(result))
@@ -324,6 +352,28 @@ class DecimalTests(unittest.TestCase):
         self.assertEqual(expected, result)
 
     @parameterized.expand([
+        ["1", 1],
+        ["1.1", 1],
+    ])
+    def test_int(self, value, expected):
+        # Arrange
+        decimal1 = Decimal(value)
+
+        # Act
+        # Assert
+        self.assertEqual(expected, int(decimal1))
+
+    def test_hash(self):
+        # Arrange
+        decimal1 = Decimal("1.1")
+        decimal2 = Decimal("1.1")
+
+        # Act
+        # Assert
+        self.assertEqual(int, type(hash(decimal2)))
+        self.assertEqual(hash(decimal1), hash(decimal2))
+
+    @parameterized.expand([
         ["0", "0"],
         ["-0", "-0"],
         ["-1", "-1"],
@@ -331,7 +381,7 @@ class DecimalTests(unittest.TestCase):
         ["1.1", "1.1"],
         ["-1.1", "-1.1"],
     ])
-    def test_str_and_as_string_with_various_values_returns_expected_string(self, value, expected):
+    def test_str_with_various_values_returns_expected_string(self, value, expected):
         # Arrange
         # Act
         decimal_object = Decimal(value)
@@ -346,3 +396,35 @@ class DecimalTests(unittest.TestCase):
 
         # Assert
         self.assertEqual("Decimal('1.1')", result)
+
+    @parameterized.expand([
+        ["0", Decimal()],
+        ["-0", Decimal()],
+        ["-1", Decimal("-1")],
+        ["1", Decimal("1")],
+        ["1.1", Decimal("1.1")],
+        ["-1.1", Decimal("-1.1")],
+    ])
+    def test_as_decimal_with_various_values_returns_expected_value(self, value, expected):
+        # Arrange
+        # Act
+        result = Decimal(value).as_decimal()
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["0", 0],
+        ["-0", 0],
+        ["-1", -1],
+        ["1", 1],
+        ["1.1", 1.1],
+        ["-1.1", -1.1],
+    ])
+    def test_as_double_with_various_values_returns_expected_value(self, value, expected):
+        # Arrange
+        # Act
+        result = Decimal(value).as_double()
+
+        # Assert
+        self.assertEqual(expected, result)

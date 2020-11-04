@@ -150,8 +150,29 @@ cdef class Order:
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"
-                f"state={self._fsm.state_string()}, "
-                f"{self.status_string()})")
+                f"state={self._fsm.state_string_c()}, "
+                f"{self.status_string_c()})")
+
+    cdef int state_c(self) except *:
+        return self._fsm.state
+
+    cdef str state_string_c(self):
+        return self._fsm.state_string_c()
+
+    cdef str status_string_c(self):
+        raise NotImplemented("method must be implemented in subclass")
+
+    cdef bint is_buy_c(self) except *:
+        return self.side == OrderSide.BUY
+
+    cdef bint is_sell_c(self) except *:
+        return self.side == OrderSide.SELL
+
+    cdef bint is_working_c(self) except *:
+        return self._fsm.state == OrderState.WORKING
+
+    cdef bint is_completed_c(self) except *:
+        return self._fsm.state in _COMPLETED_STATES
 
     @property
     def state(self):
@@ -265,21 +286,6 @@ cdef class Order:
         """
         return self.is_completed_c()
 
-    cdef inline int state_c(self) except *:
-        return self._fsm.state
-
-    cdef inline bint is_buy_c(self) except *:
-        return self.side == OrderSide.BUY
-
-    cdef inline bint is_sell_c(self) except *:
-        return self.side == OrderSide.SELL
-
-    cdef inline bint is_working_c(self) except *:
-        return self._fsm.state == OrderState.WORKING
-
-    cdef inline bint is_completed_c(self) except *:
-        return self._fsm.state in _COMPLETED_STATES
-
     @staticmethod
     cdef OrderSide opposite_side_c(OrderSide side) except *:
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "OrderSide.UNDEFINED")
@@ -331,28 +337,6 @@ cdef class Order:
 
         """
         return Order.flatten_side_c(side)
-
-    cdef str state_string(self):
-        """
-        The orders state as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return self._fsm.state_string()
-
-    cdef str status_string(self):
-        """
-        The orders status as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        raise NotImplemented("method must be implemented in subclass")
 
     cpdef void apply(self, OrderEvent event) except *:
         """
@@ -408,6 +392,8 @@ cdef class Order:
             self._fsm.trigger(OrderState.WORKING)
             self._modified(event)
         elif isinstance(event, OrderFilled):
+            # noinspection event.is_partial_fill (attribute on OrderFilled)
+            # noinspection PyUnresolvedReferences
             if event.is_partial_fill:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
                 self._filled(event)
@@ -520,7 +506,11 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
+        # noinspection options indexing (spurious)
+        # noinspection PyUnresolvedReferences
         options[PRICE] = str(price)  # price should never be None
+        # noinspection options indexing (spurious)
+        # noinspection PyUnresolvedReferences
         options[EXPIRE_TIME] = convert_datetime_to_string(expire_time)
 
         cdef OrderInitialized init_event = OrderInitialized(
@@ -542,15 +532,7 @@ cdef class PassiveOrder(Order):
         self.expire_time = expire_time
         self.slippage = Decimal()
 
-    cdef str status_string(self):
-        """
-        Return the orders status as a string.
-
-        Returns
-        -------
-        str
-
-        """
+    cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
         return (f"{OrderSideParser.to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
                 f"{OrderTypeParser.to_string(self.type)} @ {self.price} "
@@ -687,15 +669,7 @@ cdef class MarketOrder(Order):
             timestamp=event.timestamp,
         )
 
-    cdef str status_string(self):
-        """
-        Return the orders status as a string.
-
-        Returns
-        -------
-        str
-
-        """
+    cdef str status_string_c(self):
         return (f"{OrderSideParser.to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
                 f"{OrderTypeParser.to_string(self.type)} "
                 f"{TimeInForceParser.to_string(self.time_in_force)}")

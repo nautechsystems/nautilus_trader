@@ -327,7 +327,7 @@ cdef class BacktestEngine:
         # Run the backtest
         self.log.info(f"Running backtest...")
 
-        for strategy in self.trader.strategies():
+        for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start)
 
         self.trader.start()
@@ -353,7 +353,7 @@ cdef class BacktestEngine:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: [TimeEventHandler]
-        for strategy in self.trader.strategies():
+        for strategy in self.trader.strategies_c():
             # noinspection: Object has warned attribute
             # noinspection PyUnresolvedReferences
             time_events += sorted(strategy.clock.advance_time(timestamp))
