@@ -40,10 +40,10 @@ Currency
    :members:
    :member-order: bysource
 
-Data
-----
+Enums
+-----
 
-.. automodule:: nautilus_trader.model.data
+.. automodule:: nautilus_trader.model.enums
    :show-inheritance:
    :inherited-members:
    :members:
@@ -93,16 +93,6 @@ Order
    :inherited-members:
    :members:
    :member-order: bysource
-
-Parsing
--------
-
-.. automodule:: nautilus_trader.model.parsing
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 
 Position
 --------

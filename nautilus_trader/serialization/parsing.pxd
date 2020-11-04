@@ -13,26 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
+from cpython.datetime cimport datetime
 
 
-# `importlib.metadata` is available from 3.8 onward.
-# Prior to that we need the `importlib_metadata` package.
-try:
-    from importlib.metadata import PackageNotFoundError
-    from importlib.metadata import version
-except ImportError:
-    from importlib_metadata import PackageNotFoundError
-    from importlib_metadata import version
+cdef class ObjectParser:
 
+    @staticmethod
+    cdef str datetime_to_string(datetime dt)
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
-
-
-try:
-    __version__ = version(__name__)
-except (PackageNotFoundError, KeyError):
-    # The version is pulled from the distribution metadata, not from local
-    # source. That means that local non-packaged installs, (ie, running
-    # out of the raw repo) may not have the version on them.
-    __version__ = "<dev>"
+    @staticmethod
+    cdef datetime string_to_datetime(str dt_string)

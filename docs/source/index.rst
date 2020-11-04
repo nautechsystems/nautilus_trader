@@ -102,7 +102,6 @@ Index
     :hidden:
 
     adapter_reference/binance
-    adapter_reference/bitmex
     adapter_reference/ccxt
     adapter_reference/tda
 

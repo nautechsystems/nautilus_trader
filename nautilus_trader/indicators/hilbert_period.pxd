@@ -13,26 +13,27 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
+from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.bar cimport Bar
 
 
-# `importlib.metadata` is available from 3.8 onward.
-# Prior to that we need the `importlib_metadata` package.
-try:
-    from importlib.metadata import PackageNotFoundError
-    from importlib.metadata import version
-except ImportError:
-    from importlib_metadata import PackageNotFoundError
-    from importlib_metadata import version
+cdef class HilbertPeriod(Indicator):
+    cdef double _i_mult
+    cdef double _q_mult
+    cdef double _amplitude_floor
+    cdef object _inputs
+    cdef object _detrended_prices
+    cdef object _in_phase
+    cdef object _quadrature
+    cdef object _phase
+    cdef object _delta_phase
 
+    cdef readonly int period
+    """The indicators period.\n\n:returns: `int`"""
+    cdef readonly double value
+    """The indicators current value.\n\n:returns: `double`"""
 
-PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
-
-
-try:
-    __version__ = version(__name__)
-except (PackageNotFoundError, KeyError):
-    # The version is pulled from the distribution metadata, not from local
-    # source. That means that local non-packaged installs, (ie, running
-    # out of the raw repo) may not have the version on them.
-    __version__ = "<dev>"
+    cpdef void handle_bar(self, Bar bar) except *
+    cpdef void update_raw(self, double high, double low) except *
+    cpdef void _calc_hilbert_transform(self) except *
+    cpdef void reset(self) except *

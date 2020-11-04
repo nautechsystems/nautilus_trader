@@ -103,6 +103,42 @@ Efficiency Ratio
    :members:
    :member-order: bysource
 
+Fuzzy Candlesticks
+------------------
+
+.. automodule:: nautilus_trader.indicators.fuzzy_candlesticks
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Hilbert Period
+--------------
+
+.. automodule:: nautilus_trader.indicators.hilbert_period
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Hilbert Signal-Noise Ratio
+--------------------------
+
+.. automodule:: nautilus_trader.indicators.hilbert_snr
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Hilbert Transform
+-----------------
+
+.. automodule:: nautilus_trader.indicators.hilbert_transform
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Keltner Channel
 ---------------
 
@@ -179,6 +215,15 @@ Stochastics
 -----------
 
 .. automodule:: nautilus_trader.indicators.stochastics
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Swings
+------
+
+.. automodule:: nautilus_trader.indicators.swings
    :show-inheritance:
    :inherited-members:
    :members:

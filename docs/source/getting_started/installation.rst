@@ -14,8 +14,3 @@ The latest version is available for download via `PyPI`.
 The master branch will always reflect the code of the latest release version.
 Also, the documentation found here on `readthedocs` is always current to the
 latest version.
-
-Very shortly, an entirely overhauled CI system will be rolled out along with
-`poetry` dependency and package management.
-
-Check back here for more information over the next few weeks...
