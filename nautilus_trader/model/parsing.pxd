@@ -18,7 +18,16 @@ from cpython.datetime cimport datetime
 from nautilus_trader.model.objects cimport Price
 
 
-cpdef str convert_price_to_string(Price price)
-cpdef str convert_datetime_to_string(datetime time)
-cpdef Price convert_string_to_price(str price_string)
-cpdef datetime convert_string_to_datetime(str time_string)
+cdef class ObjectParser:
+
+    @staticmethod
+    cdef str price_to_string(Price price)
+
+    @staticmethod
+    cdef str datetime_to_string(datetime dt)
+
+    @staticmethod
+    cdef Price string_to_price(str price_string)
+
+    @staticmethod
+    cdef datetime string_to_datetime(str dt_string)

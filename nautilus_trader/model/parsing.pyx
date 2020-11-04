@@ -25,73 +25,90 @@ from nautilus_trader.model.objects cimport Price
 cdef str NONE = str(None)
 
 
-cpdef str convert_price_to_string(Price price):
-    """
-    Return the converted string from the given price, can return a 'None' string..
+cdef class ObjectParser:
 
-    Parameters
-    ----------
-    price : Price
-        The price to convert.
+    @staticmethod
+    cdef str price_to_string(Price price):
+        return NONE if price is None else str(price)
 
-    Returns
-    -------
-    str
+    @staticmethod
+    cdef str datetime_to_string(datetime dt):
+        return NONE if dt is None else format_iso8601(dt)
 
-    """
-    return NONE if price is None else str(price)
+    @staticmethod
+    cdef Price string_to_price(str price_string):
+        Condition.valid_string(price_string, "price_string")  # string often 'None'
+        return None if price_string == NONE else Price(price_string)
 
+    @staticmethod
+    cdef datetime string_to_datetime(str time_string):
+        Condition.valid_string(time_string, "time_string")  # string often 'None'
+        return None if time_string == NONE else pd.to_datetime(time_string)
 
-cpdef str convert_datetime_to_string(datetime time):
-    """
-    Return the converted ISO8601 string from the given datetime, can return a 'None' string.
+    @staticmethod
+    def price_to_string_py(Price price):
+        """
+        Return the converted string from the given price, can return a 'None' string.
 
-    Parameters
-    ----------
-    time : datetime
-        The datetime to convert
+        Parameters
+        ----------
+        price : Price
+            The price to convert.
 
-    Returns
-    -------
-    str
+        Returns
+        -------
+        str
 
-    """
-    return NONE if time is None else format_iso8601(time)
+        """
+        return ObjectParser.price_to_string(price)
 
+    @staticmethod
+    def datetime_to_string_py(datetime dt):
+        """
+        Return the converted ISO8601 string from the given datetime, can return a 'None' string.
 
-cpdef Price convert_string_to_price(str price_string):
-    """
-    Return the converted price (or None) from the given price string.
+        Parameters
+        ----------
+        dt : datetime
+            The datetime to convert
 
-    Parameters
-    ----------
-    price_string : str
-        The price string to convert.
+        Returns
+        -------
+        str
 
-    Returns
-    -------
-    Price or None
+        """
+        return ObjectParser.datetime_to_string(dt)
 
-    """
-    Condition.valid_string(price_string, "price_string")  # string often 'None'
+    @staticmethod
+    def string_to_price_py(str price_string):
+        """
+        Return the converted price (or None) from the given price string.
 
-    return None if price_string == NONE else Price(price_string)
+        Parameters
+        ----------
+        price_string : str
+            The price string to convert.
 
+        Returns
+        -------
+        Price or None
 
-cpdef datetime convert_string_to_datetime(str time_string):
-    """
-    Return the converted datetime (or None) from the given time string.
+        """
+        return ObjectParser.string_to_price(price_string)
 
-    Parameters
-    ----------
-    time_string : str
-        The time string to convert.
+    @staticmethod
+    def string_to_datetime_py(str dt_string):
+        """
+        Return the converted datetime (or None) from the given time string.
 
-    Returns
-    -------
-    datetime or None
+        Parameters
+        ----------
+        dt_string : str
+            The time string to convert.
 
-    """
-    Condition.valid_string(time_string, "time_string")  # string often 'None'
+        Returns
+        -------
+        datetime or None
 
-    return None if time_string == NONE else pd.to_datetime(time_string)
+        """
+        return ObjectParser.string_to_datetime(dt_string)
