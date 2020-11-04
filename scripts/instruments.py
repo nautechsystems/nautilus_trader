@@ -3,7 +3,7 @@ import json
 import ccxt
 
 
-exchange = 'bitmex'
+exchange = 'binance'
 ccxt = getattr(ccxt, exchange.lower())()
 ccxt.load_markets()
 
@@ -11,4 +11,4 @@ ccxt.load_markets()
 # print(json.dumps(precisions, sort_keys=True, indent=4))
 
 instruments = {k: m for k, m in ccxt.markets.items()}
-print(json.dumps(instruments['ETH/XBT'], sort_keys=True, indent=4))
+print(json.dumps(instruments['BTC/USDT'], sort_keys=True, indent=4))

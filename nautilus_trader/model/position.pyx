@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import numpy as np
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -40,10 +38,9 @@ cdef class Position:
             The order fill event which opened the position.
 
         """
-        self._events = []                    # type: [OrderFilled]
-        self._buy_quantity = Quantity()      # Initialized in apply()
-        self._sell_quantity = Quantity()     # Initialized in apply()
-        self._relative_quantity = Decimal()  # Initialized in apply()
+        self._events = []  # type: [OrderFilled]
+        self._buy_quantity = Decimal()
+        self._sell_quantity = Decimal()
 
         # Identifiers
         self.id = event.position_id
@@ -54,9 +51,10 @@ cdef class Position:
         # Properties
         self.symbol = event.symbol
         self.entry = event.order_side
-        self.side = PositionSide.UNDEFINED  # Initialized in apply()
-        self.quantity = Quantity()          # Initialized in apply()
-        self.peak_quantity = Quantity()     # Initialized in apply()
+        self.side = PositionSide.UNDEFINED
+        self.relative_quantity = Decimal()
+        self.quantity = Quantity()
+        self.peak_quantity = Quantity()
         self.base_currency = event.base_currency
         self.quote_currency = event.quote_currency
         self.timestamp = event.execution_time
@@ -82,7 +80,23 @@ cdef class Position:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value}, {self.status_string()})"
+        return f"{type(self).__name__}(id={self.id.value}, {self.status_string_c()})"
+
+    cdef str status_string_c(self):
+        cdef str quantity = "" if self.relative_quantity == 0 else self.quantity.to_string()
+        return f"{PositionSideParser.to_string(self.side)} {quantity} {self.symbol}"
+
+    cdef bint is_open_c(self) except *:
+        return self.side != PositionSide.FLAT
+
+    cdef bint is_closed_c(self) except *:
+        return self.side == PositionSide.FLAT
+
+    cdef bint is_long_c(self) except *:
+        return self.side == PositionSide.LONG
+
+    cdef bint is_short_c(self) except *:
+        return self.side == PositionSide.SHORT
 
     @property
     def cl_ord_ids(self):
@@ -99,7 +113,7 @@ cdef class Position:
 
         """
         cdef OrderFilled event
-        return np.unique([event.cl_ord_id for event in self._events]).tolist()
+        return sorted(list({event.cl_ord_id for event in self._events}))
 
     @property
     def order_ids(self):
@@ -116,7 +130,7 @@ cdef class Position:
 
         """
         cdef OrderFilled event
-        return np.unique([event.order_id for event in self._events]).tolist()
+        return sorted(list({event.order_id for event in self._events}))
 
     @property
     def execution_ids(self):
@@ -236,31 +250,6 @@ cdef class Position:
         """
         return self.is_short_c()
 
-    @property
-    def relative_quantity(self):
-        """
-        Return the relative quantity of the position.
-
-        Returns
-        -------
-        Decimal
-            Positive values for long, negative values for short.
-
-        """
-        return self._relative_quantity
-
-    cdef inline bint is_open_c(self) except *:
-        return self.side != PositionSide.FLAT
-
-    cdef inline bint is_closed_c(self) except *:
-        return self.side == PositionSide.FLAT
-
-    cdef inline bint is_long_c(self) except *:
-        return self.side == PositionSide.LONG
-
-    cdef inline bint is_short_c(self) except *:
-        return self.side == PositionSide.SHORT
-
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *:
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
@@ -313,31 +302,19 @@ cdef class Position:
             self._handle_sell_order_fill(event)
 
         # Set quantities
-        self.quantity = Quantity(abs(self._relative_quantity))
+        self.quantity = Quantity(abs(self.relative_quantity))
         if self.quantity > self.peak_quantity:
             self.peak_quantity = self.quantity
 
         # Set state
-        if self._relative_quantity > 0:
+        if self.relative_quantity > 0:
             self.side = PositionSide.LONG
-        elif self._relative_quantity < 0:
+        elif self.relative_quantity < 0:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
-
-    cdef str status_string(self):
-        """
-        Return the positions status as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        cdef str quantity = " " if self._relative_quantity == 0 else f" {self.quantity.to_string()} "
-        return f"{PositionSideParser.to_string(self.side)}{quantity}{self.symbol}"
 
     cpdef Money unrealized_pnl(self, QuoteTick last):
         """
@@ -352,8 +329,14 @@ cdef class Position:
         -------
         Money
 
+        Raises
+        ------
+        ValueError
+            If symbol does not equal last.symbol
+
         """
         Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         if self.side == PositionSide.LONG:
             return self._calculate_pnl(self.avg_open, last.bid, self.quantity)
@@ -375,18 +358,24 @@ cdef class Position:
         -------
         Money
 
+        Raises
+        ------
+        ValueError
+            If symbol does not equal last.symbol
+
         """
         Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return Money(self.realized_pnl + self.unrealized_pnl(last), self.base_currency)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
         cdef Money realized_pnl = event.commission
         # LONG POSITION
-        if self._relative_quantity > 0:
+        if self.relative_quantity > 0:
             self.avg_open = self._calculate_avg_open_price(event)
         # SHORT POSITION
-        elif self._relative_quantity < 0:
+        elif self.relative_quantity < 0:
             self.avg_close = self._calculate_avg_close_price(event)
             self.realized_points = self._calculate_points(self.avg_open, self.avg_close)
             self.realized_return = self._calculate_return(self.avg_open, self.avg_close)
@@ -395,16 +384,16 @@ cdef class Position:
         self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.base_currency)
 
         # Update quantities
-        self._buy_quantity = Quantity(self._buy_quantity + event.filled_qty)
-        self._relative_quantity = Decimal(self._relative_quantity + event.filled_qty)
+        self._buy_quantity = self._buy_quantity + event.filled_qty
+        self.relative_quantity = self.relative_quantity + event.filled_qty
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *:
         cdef Money realized_pnl = event.commission
         # SHORT POSITION
-        if self._relative_quantity < 0:
-            self.avg_open = Decimal(self._calculate_avg_open_price(event))
+        if self.relative_quantity < 0:
+            self.avg_open = self._calculate_avg_open_price(event)
         # LONG POSITION
-        elif self._relative_quantity > 0:
+        elif self.relative_quantity > 0:
             self.avg_close = self._calculate_avg_close_price(event)
             self.realized_points = self._calculate_points(self.avg_open, self.avg_close)
             self.realized_return = self._calculate_return(self.avg_open, self.avg_close)
@@ -413,10 +402,10 @@ cdef class Position:
         self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.base_currency)
 
         # Update quantities
-        self._sell_quantity = Quantity(self._sell_quantity + event.filled_qty)
-        self._relative_quantity = Decimal(self._relative_quantity - event.filled_qty)
+        self._sell_quantity = self._sell_quantity + event.filled_qty
+        self.relative_quantity = self.relative_quantity - event.filled_qty
 
-    cdef inline Decimal _calculate_cost(self, Decimal avg_price, Quantity total_quantity):
+    cdef inline Decimal _calculate_cost(self, Decimal avg_price, Decimal total_quantity):
         return avg_price * total_quantity
 
     cdef inline Decimal _calculate_avg_open_price(self, OrderFilled event):
@@ -429,13 +418,13 @@ cdef class Position:
         if not self.avg_close:
             return event.avg_price
 
-        cdef Quantity close_quantity = Quantity(self._sell_quantity) if self.side == PositionSide.LONG else self._buy_quantity
+        cdef Decimal close_quantity = self._sell_quantity if self.side == PositionSide.LONG else self._buy_quantity
         return self._calculate_avg_price(self.avg_close, close_quantity, event)
 
     cdef inline Decimal _calculate_avg_price(
         self,
         Decimal open_price,
-        Quantity open_quantity,
+        Decimal open_quantity,
         OrderFilled event,
     ):
         cdef Decimal start_cost = self._calculate_cost(open_price, open_quantity)
@@ -463,7 +452,7 @@ cdef class Position:
         self,
         Decimal open_price,
         Decimal close_price,
-        Quantity filled_qty,
+        Decimal filled_qty,
     ):
         return Money(
             self._calculate_return(open_price, close_price) * filled_qty,

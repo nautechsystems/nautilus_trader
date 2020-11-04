@@ -16,39 +16,21 @@
 import unittest
 
 from nautilus_trader.common.component import ComponentFSMFactory
-from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.enums import ComponentTrigger
+from nautilus_trader.common.c_enums.component_state import ComponentState
+from nautilus_trader.common.c_enums.component_state import ComponentStateParser
+from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger
 from nautilus_trader.core.fsm import FiniteStateMachine
 from nautilus_trader.core.fsm import InvalidStateTrigger
 
 
 class FiniteStateMachineTests(unittest.TestCase):
 
-    @staticmethod
-    def component_state_to_string(value: int):
-        if value == 1:
-            return 'INITIALIZED'
-        elif value == 2:
-            return 'STARTING'
-        elif value == 3:
-            return 'RUNNING'
-        elif value == 4:
-            return 'STOPPING'
-        elif value == 5:
-            return 'STOPPED'
-        elif value == 6:
-            return 'RESETTING'
-        elif value == 7:
-            return 'FAULTED'
-        else:
-            return 'UNDEFINED'
-
     def setUp(self):
         # Fixture setup
         self.fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.INITIALIZED,
-            state_parser=FiniteStateMachineTests.component_state_to_string,
+            state_parser=ComponentStateParser.to_string_py,  # Calls python function wrapper
         )
 
     def test_fsm_initialization(self):
@@ -59,9 +41,16 @@ class FiniteStateMachineTests(unittest.TestCase):
 
     def test_trigger_with_invalid_transition_raises_exception(self):
         # Arrange
+        fsm = FiniteStateMachine(
+            state_transition_table=ComponentFSMFactory.get_state_transition_table(),
+            initial_state=ComponentState.INITIALIZED,
+            state_parser=None,
+            trigger_parser=None,
+        )  # Invalid trigger will call parsers for ex msg
+
         # Act
         # Assert
-        self.assertRaises(InvalidStateTrigger, self.fsm.trigger, ComponentTrigger.RUNNING)
+        self.assertRaises(InvalidStateTrigger, fsm.trigger, ComponentTrigger.RUNNING)
 
     def test_trigger_with_valid_transition_results_in_expected_state(self):
         # Arrange

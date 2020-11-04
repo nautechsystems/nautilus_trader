@@ -121,7 +121,7 @@ cdef class SpreadAnalyzer(Indicator):
         Condition.equal(self._symbol, tick.symbol, "symbol", "tick.symbol")
 
         # Check initialization
-        if not self._initialized:
+        if not self.initialized:
             self._set_has_inputs(True)
             if len(self._spreads) == self._capacity:
                 self._set_initialized(True)

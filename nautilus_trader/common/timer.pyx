@@ -91,10 +91,10 @@ cdef class TimeEventHandler:
 
     def __init__(self, TimeEvent event not None, handler not None):
         self.event = event
-        self.handler = handler
+        self._handler = handler
 
     cdef void handle(self) except *:
-        self.handler(self.event)
+        self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:
         return self.event.timestamp == other.event.timestamp

@@ -32,26 +32,9 @@ cpdef str format_bytes(double size)
 cpdef str pad_string(str string, int final_length, str pad=*)
 
 
-# Method only exists due to cython limitation compiling closures
 cdef inline object slice_dataframe(dataframe, start, end):
-    """
-    Slice the dataframe with the given start and end.
-
-    Parameters
-    ----------
-    dataframe : pd.DataFrame
-        The dataframe to slice.
-    start : should correspond to the index
-        The start of the slice.
-    end: should correspond to the index
-        The end of the slice.
-
-    Returns
-    -------
-    pd.DataFrame.
-        The sliced data frame.
-
-    """
+    # Slice the dataframe with the given start and end.
+    # Method only exists due to cython limitation compiling closures.
     if dataframe is None:
         return pd.DataFrame()
 

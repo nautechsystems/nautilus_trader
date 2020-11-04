@@ -51,18 +51,18 @@ cdef class HullMovingAverage(MovingAverage):
         Condition.positive_int(period, "period")
         super().__init__(period, params=[period], price_type=price_type)
 
-        self._period_halved = int(self._period / 2)
-        self._period_sqrt = int(np.sqrt(self._period))
+        cdef int period_halved = int(self.period / 2)
+        cdef int period_sqrt = int(np.sqrt(self.period))
 
-        self._w1 = self._get_weights(self._period_halved)
-        self._w2 = self._get_weights(self._period)
-        self._w3 = self._get_weights(self._period_sqrt)
+        self._w1 = self._get_weights(period_halved)
+        self._w2 = self._get_weights(period)
+        self._w3 = self._get_weights(period_sqrt)
 
-        self._ma1 = WeightedMovingAverage(self._period_halved, weights=self._w1)
-        self._ma2 = WeightedMovingAverage(self._period, weights=self._w2)
-        self._ma3 = WeightedMovingAverage(self._period_sqrt, weights=self._w3)
+        self._ma1 = WeightedMovingAverage(period_halved, weights=self._w1)
+        self._ma2 = WeightedMovingAverage(period, weights=self._w2)
+        self._ma3 = WeightedMovingAverage(period_sqrt, weights=self._w3)
 
-        self._value = 0
+        self.value = 0
 
     cdef list _get_weights(self, int size):
         w = np.arange(1, size + 1)
@@ -80,7 +80,7 @@ cdef class HullMovingAverage(MovingAverage):
         """
         Condition.not_none(tick, "tick")
 
-        self.update_raw(tick.extract_price(self._price_type).as_double())
+        self.update_raw(tick.extract_price(self.price_type).as_double())
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -126,7 +126,7 @@ cdef class HullMovingAverage(MovingAverage):
         self._ma2.update_raw(value)
         self._ma3.update_raw(self._ma1.value * 2.0 - self._ma2.value)
 
-        self._value = self._ma3.value
+        self.value = self._ma3.value
 
     cpdef void reset(self) except *:
         """

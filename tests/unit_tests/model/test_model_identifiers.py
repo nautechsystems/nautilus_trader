@@ -74,13 +74,15 @@ class IdentifierTests(unittest.TestCase):
         self.assertTrue(string2 >= string2)
         self.assertTrue(string3 <= string4)
 
-    def test_hash_returns_int_type(self):
+    def test_hash(self):
         # Arrange
-        value = Identifier("abc")
+        identifier1 = Identifier("abc")
+        identifier2 = Identifier("abc")
 
         # Act
         # Assert
-        self.assertEqual(int, type(hash(value)))
+        self.assertEqual(int, type(hash(identifier1)))
+        self.assertEqual(hash(identifier1), hash(identifier2))
 
     def test_identifier_equality(self):
         # Arrange

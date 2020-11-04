@@ -977,7 +977,7 @@ cdef class PositionOpened(PositionEvent):
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_string(self.position.entry)}, "
                 f"avg_open={round(self.position.avg_open, 5)}, "
-                f"{self.position.status_string()}, "
+                f"{self.position.status_string_c()}, "
                 f"id={self.id})")
 
 
@@ -1031,7 +1031,7 @@ cdef class PositionModified(PositionEvent):
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_string()}, "
-                f"{self.position.status_string()}, "
+                f"{self.position.status_string_c()}, "
                 f"id={self.id})")
 
 

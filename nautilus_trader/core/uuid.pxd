@@ -22,7 +22,7 @@ cdef class UUID:
     cdef readonly str value
 
     @staticmethod
-    cdef UUID from_string(str value)
+    cdef UUID from_string_c(str value)
 
 
 cpdef UUID uuid4()
