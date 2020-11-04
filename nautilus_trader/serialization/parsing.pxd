@@ -15,19 +15,11 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.objects cimport Price
-
 
 cdef class ObjectParser:
 
     @staticmethod
-    cdef str price_to_string(Price price)
-
-    @staticmethod
     cdef str datetime_to_string(datetime dt)
-
-    @staticmethod
-    cdef Price string_to_price(str price_string)
 
     @staticmethod
     cdef datetime string_to_datetime(str dt_string)
