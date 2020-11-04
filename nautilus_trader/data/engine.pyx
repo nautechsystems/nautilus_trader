@@ -275,7 +275,7 @@ cdef class DataEngine:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
         cdef DataClient client
         for client in self._clients.values():
@@ -292,7 +292,7 @@ cdef class DataEngine:
         self.data_count = 0
 
         self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self._log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void dispose(self) except *:
         """
@@ -306,14 +306,14 @@ cdef class DataEngine:
             self._log.exception(ex)
             return
 
-        self._log.info(f"state={self._fsm.state_string()}...")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
         cdef DataClient client
         for client in self._clients.values():
             client.dispose()
 
         self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self._log.info(f"state={self._fsm.state_string()}.")
+        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void update_instruments(self, Venue venue) except *:
         """

@@ -82,19 +82,19 @@ cdef class Position:
     cdef readonly Money commission
     """The commission generated on the position.\n\n:returns: `Money`"""
 
-    cdef inline bint is_long_c(self) except *
-    cdef inline bint is_short_c(self) except *
-    cdef inline bint is_open_c(self) except *
-    cdef inline bint is_closed_c(self) except *
+    cdef str status_string_c(self)
+    cdef bint is_long_c(self) except *
+    cdef bint is_short_c(self) except *
+    cdef bint is_open_c(self) except *
+    cdef bint is_closed_c(self) except *
 
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
     cpdef void apply(self, OrderFilled event) except *
-
-    cdef str status_string(self)
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
+
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
     cdef inline Decimal _calculate_cost(self, Decimal avg_price, Decimal total_quantity)

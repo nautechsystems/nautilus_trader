@@ -80,7 +80,23 @@ cdef class Position:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value}, {self.status_string()})"
+        return f"{type(self).__name__}(id={self.id.value}, {self.status_string_c()})"
+
+    cdef str status_string_c(self):
+        cdef str quantity = "" if self.relative_quantity == 0 else self.quantity.to_string()
+        return f"{PositionSideParser.to_string(self.side)} {quantity} {self.symbol}"
+
+    cdef bint is_open_c(self) except *:
+        return self.side != PositionSide.FLAT
+
+    cdef bint is_closed_c(self) except *:
+        return self.side == PositionSide.FLAT
+
+    cdef bint is_long_c(self) except *:
+        return self.side == PositionSide.LONG
+
+    cdef bint is_short_c(self) except *:
+        return self.side == PositionSide.SHORT
 
     @property
     def cl_ord_ids(self):
@@ -234,18 +250,6 @@ cdef class Position:
         """
         return self.is_short_c()
 
-    cdef inline bint is_open_c(self) except *:
-        return self.side != PositionSide.FLAT
-
-    cdef inline bint is_closed_c(self) except *:
-        return self.side == PositionSide.FLAT
-
-    cdef inline bint is_long_c(self) except *:
-        return self.side == PositionSide.LONG
-
-    cdef inline bint is_short_c(self) except *:
-        return self.side == PositionSide.SHORT
-
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *:
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
@@ -312,18 +316,6 @@ cdef class Position:
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
 
-    cdef str status_string(self):
-        """
-        Return the positions status as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        cdef str quantity = "" if self.relative_quantity == 0 else self.quantity.to_string()
-        return f"{PositionSideParser.to_string(self.side)} {quantity} {self.symbol}"
-
     cpdef Money unrealized_pnl(self, QuoteTick last):
         """
         Return the unrealized PNL from the given last quote tick.
@@ -337,8 +329,14 @@ cdef class Position:
         -------
         Money
 
+        Raises
+        ------
+        ValueError
+            If symbol does not equal last.symbol
+
         """
         Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         if self.side == PositionSide.LONG:
             return self._calculate_pnl(self.avg_open, last.bid, self.quantity)
@@ -360,8 +358,14 @@ cdef class Position:
         -------
         Money
 
+        Raises
+        ------
+        ValueError
+            If symbol does not equal last.symbol
+
         """
         Condition.not_none(last, "last")
+        Condition.equal(self.symbol, last.symbol, "symbol", "last.symbol")
 
         return Money(self.realized_pnl + self.unrealized_pnl(last), self.base_currency)
 
