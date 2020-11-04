@@ -90,6 +90,7 @@ class UUIDTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertEqual(24197857161011715162171839636988778104, int(uuid))
         self.assertEqual(24197857161011715162171839636988778104, uuid.int_val)
 
     def test_bytes(self):
