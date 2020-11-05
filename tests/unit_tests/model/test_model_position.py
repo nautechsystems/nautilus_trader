@@ -525,7 +525,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(19.00, USD), position.total_pnl(last))
 
-    def test_position_realised_pnl_with_interleaved_orders_sides(self):
+    def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
         order1 = self.order_factory.market(
             BTCUSD_BINANCE,
@@ -619,3 +619,189 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(0.00347507, BTC), position.realized_pnl)
         self.assertEqual(9999.88155922039, position.avg_open.as_double())
+
+    def test_calculate_pnl_for_long_position_win(self):
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSD_BINANCE,
+            OrderSide.BUY,
+            Quantity(12),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("10001.00"),
+            base_currency=BTC,
+            quote_currency=USDT,
+        )
+        position = Position(fill)
+
+        # Act
+        pnl = position.calculate_pnl(
+            Price("10500.00"),
+            Price("10510.00"),
+            Quantity(10),
+        )
+
+        # Assert
+        self.assertEqual(Money(0.00952381, BTC), pnl)
+
+    def test_calculate_pnl_for_long_position_loss(self):
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSD_BINANCE,
+            OrderSide.BUY,
+            Quantity(12),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("10001.00"),
+            base_currency=BTC,
+            quote_currency=USDT,
+        )
+
+        position = Position(fill)
+
+        # Act
+        pnl = position.calculate_pnl(
+            Price("10500.00"),
+            Price("10480.50"),
+            Quantity(10),
+        )
+
+        # Assert
+        self.assertEqual(Money(-0.01857143, BTC), pnl)
+
+    # def test_calculate_pnl_for_short_position_win(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.btcusdt_binance()
+    #
+    #     # Act
+    #     pnl = instrument.calculate_pnl(
+    #         PositionSide.SHORT,
+    #         Quantity(10),
+    #         Price("10500.00"),
+    #         Price("10390.00"),
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(0.10476190, BTC), pnl)
+    #
+    # def test_calculate_pnl_for_short_position_loss(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.btcusdt_binance()
+    #
+    #     # Act
+    #     pnl = instrument.calculate_pnl(
+    #         PositionSide.SHORT,
+    #         Quantity(10),
+    #         Price("10500.00"),
+    #         Price("10670.50"),
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(-0.16238095, BTC), pnl)
+    #
+    # def test_calculate_pnl_for_inverse1(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.xbtusd_bitmex()
+    #
+    #     # Act
+    #     pnl = instrument.calculate_pnl(
+    #         PositionSide.SHORT,
+    #         Quantity(100000),
+    #         Price("10500.00"),
+    #         Price("10670.50"),
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(-0.15217745, BTC), pnl)
+    #
+    # def test_calculate_pnl_for_inverse2(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.ethusd_bitmex()
+    #
+    #     # Act
+    #     pnl = instrument.calculate_pnl(
+    #         PositionSide.SHORT,
+    #         Quantity(100000),
+    #         Price("375.95"),
+    #         Price("365.50"),
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(7.60499302, ETH), pnl)
+    #
+    # def test_calculate_unrealized_pnl_for_long(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.btcusdt_binance()
+    #
+    #     last = QuoteTick(
+    #         instrument.symbol,
+    #         Price("10505.60"),
+    #         Price("10506.65"),
+    #         Quantity(20),
+    #         Quantity(20),
+    #         UNIX_EPOCH,
+    #     )
+    #     # Act
+    #     pnl = instrument.calculate_unrealized_pnl(
+    #         PositionSide.LONG,
+    #         Quantity(10),
+    #         Price("10500.00"),
+    #         last,
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(0.00533333, BTC), pnl)
+    #
+    # def test_calculate_unrealized_pnl_for_short(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.btcusdt_binance()
+    #
+    #     last = QuoteTick(
+    #         instrument.symbol,
+    #         Price("10505.60"),
+    #         Price("10506.65"),
+    #         Quantity(20),
+    #         Quantity(20),
+    #         UNIX_EPOCH,
+    #     )
+    #     # Act
+    #     pnl = instrument.calculate_unrealized_pnl(
+    #         PositionSide.SHORT,
+    #         Quantity(5),
+    #         Price("10500.00"),
+    #         last,
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(-0.00316667, BTC), pnl)
+    #
+    # def test_calculate_unrealized_pnl_for_long_inverse(self):
+    #     # Arrange
+    #     instrument = InstrumentLoader.xbtusd_bitmex()
+    #
+    #     last = QuoteTick(
+    #         instrument.symbol,
+    #         Price("10505.60"),
+    #         Price("10506.65"),
+    #         Quantity(25000),
+    #         Quantity(25000),
+    #         UNIX_EPOCH,
+    #     )
+    #     # Act
+    #     pnl = instrument.calculate_unrealized_pnl(
+    #         PositionSide.LONG,
+    #         Quantity(200000),
+    #         Price("10500.00"),
+    #         last,
+    #     )
+    #
+    #     # Assert
+    #     self.assertEqual(Money(0.01015332, BTC), pnl)
