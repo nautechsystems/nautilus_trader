@@ -218,11 +218,11 @@ cdef class BarAggregator:
         )
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void _handle_bar(self, Bar bar) except *:

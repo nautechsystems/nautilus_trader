@@ -93,10 +93,6 @@ SETTLEMENT_FEE = 'SettlementFee'
 FUNDING_LONG = 'FundingLong'
 FUNDING_SHORT = 'FundingShort'
 
-QUERY = 'Query'
 FROM_DATETIME = 'FromDateTime'
 TO_DATETIME = 'ToDateTime'
 LIMIT = 'Limit'
-
-HANDLER = 'Handler'
-CALLBACK = 'Callback'

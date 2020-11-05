@@ -52,11 +52,11 @@ cdef class DictionarySerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, dict dictionary):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef dict deserialize(self, bytes dictionary_bytes):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 
@@ -74,11 +74,11 @@ cdef class InstrumentSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Instrument instrument):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Instrument deserialize(self, bytes instrument_bytes):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 
@@ -96,11 +96,11 @@ cdef class OrderSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Order order):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Order deserialize(self, bytes order_bytes):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass ")
 
 
@@ -117,11 +117,11 @@ cdef class CommandSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Command command):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Command deserialize(self, bytes command_bytes):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 
@@ -138,9 +138,9 @@ cdef class EventSerializer(Serializer):
         super().__init__()
 
     cpdef bytes serialize(self, Event event):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Event deserialize(self, bytes event_bytes):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

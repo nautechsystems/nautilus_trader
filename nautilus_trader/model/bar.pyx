@@ -360,3 +360,27 @@ cdef class Bar:
 
         """
         return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
+
+
+cdef class BarData:
+    """
+    Represents bar data of a `BarType` and `Bar`.
+    """
+
+    def __init__(self, BarType bar_type not None, Bar bar not None):
+        """
+        Initialize a new instance of the `BarData` class.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the data.
+        bar : Bar
+            The bar data.
+
+        """
+        self.bar_type = bar_type
+        self.bar = bar
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(bar_type={self.bar_type}, bar={self.bar})"

@@ -22,17 +22,16 @@ as all abstract methods are implemented.
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.data.wrappers cimport BarData
-from nautilus_trader.data.wrappers cimport BarDataBlock
-from nautilus_trader.data.wrappers cimport InstrumentDataBlock
-from nautilus_trader.data.wrappers cimport QuoteTickDataBlock
-from nautilus_trader.data.wrappers cimport TradeTickDataBlock
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -81,26 +80,70 @@ cdef class DataClient:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
-
     cpdef bint is_connected(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void connect(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void disconnect(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void reset(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void subscribe_bars(self, BarType bar_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+# -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void request_instruments(self, UUID correlation_id) except *:
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_quote_ticks(
@@ -109,9 +152,9 @@ cdef class DataClient:
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable,
+            UUID correlation_id,
     ) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_trade_ticks(
@@ -120,9 +163,9 @@ cdef class DataClient:
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable,
+            UUID correlation_id,
     ) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_bars(
@@ -131,52 +174,15 @@ cdef class DataClient:
             datetime from_datetime,
             datetime to_datetime,
             int limit,
-            callback: callable,
+            UUID correlation_id,
     ) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cpdef void request_instruments(self, callback: callable) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void subscribe_bars(self, BarType bar_type) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
-        """Abstract method."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-# -- HANDLERS --------------------------------------------------------------------------------------
+    cpdef void handle_instrument(self, Instrument instrument) except *:
+        self._engine.process(instrument)
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.process(tick)
@@ -185,24 +191,52 @@ cdef class DataClient:
         self._engine.process(tick)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
-        cdef BarData data = BarData(bar_type, bar)
-        self._engine.process(data)
+        self._engine.process(BarData(bar_type=bar_type, bar=bar))
 
-    cpdef void handle_instrument(self, Instrument instrument) except *:
-        self._engine.process(instrument)
+    cpdef void handle_instruments(self, list instruments, UUID correlation_id) except *:
+        cdef DataResponse response = DataResponse(
+            data_type=Instrument,
+            metadata={VENUE: self.venue},
+            data=instruments,
+            correlation_id=correlation_id,
+            response_id=self._uuid_factory.generate(),
+            response_timestamp=self._clock.utc_now(),
+        )
 
-    cpdef void handle_quote_ticks(self, list ticks) except *:
-        cdef QuoteTickDataBlock data = QuoteTickDataBlock(ticks)
-        self._engine.process(data)
+        self._engine.receive(response)
 
-    cpdef void handle_trade_ticks(self, list ticks) except *:
-        cdef TradeTickDataBlock data = TradeTickDataBlock(ticks)
-        self._engine.process(data)
+    cpdef void handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        cdef DataResponse response = DataResponse(
+            data_type=QuoteTick,
+            metadata={SYMBOL: symbol},
+            data=ticks,
+            correlation_id=correlation_id,
+            response_id=self._uuid_factory.generate(),
+            response_timestamp=self._clock.utc_now(),
+        )
 
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
-        cdef BarDataBlock data = BarDataBlock(bar_type, bars)
-        self._engine.process((bar_type, bars))
+        self._engine.receive(response)
 
-    cpdef void handle_instruments(self, list instruments) except *:
-        cdef InstrumentDataBlock data = InstrumentDataBlock(instruments)
-        self._engine.process(instruments)
+    cpdef void handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        cdef DataResponse response = DataResponse(
+            data_type=TradeTick,
+            metadata={SYMBOL: symbol},
+            data=ticks,
+            correlation_id=correlation_id,
+            response_id=self._uuid_factory.generate(),
+            response_timestamp=self._clock.utc_now(),
+        )
+
+        self._engine.receive(response)
+
+    cpdef void handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
+        cdef DataResponse response = DataResponse(
+            data_type=Bar,
+            metadata={BAR_TYPE: bar_type},
+            data=bars,
+            correlation_id=correlation_id,
+            response_id=self._uuid_factory.generate(),
+            response_timestamp=self._clock.utc_now(),
+        )
+
+        self._engine.receive(response)

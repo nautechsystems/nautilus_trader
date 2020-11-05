@@ -209,7 +209,7 @@ cdef class Timer:
             self.expired = True
 
     cpdef void cancel(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 

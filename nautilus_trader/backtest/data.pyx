@@ -37,9 +37,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport TickDataWrangler
-from nautilus_trader.data.wrappers cimport InstrumentDataBlock
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
@@ -351,6 +351,14 @@ cdef class BacktestDataClient(DataClient):
 
         return tick
 
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void connect(self) except *:
+        pass  # NO-OP for backtest engine
+
+    cpdef void disconnect(self) except *:
+        pass  # NO-OP for backtest engine
+
     cpdef void reset(self) except *:
         """
         Reset the data client.
@@ -374,53 +382,50 @@ cdef class BacktestDataClient(DataClient):
         """
         pass  # Nothing to dispose
 
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void connect(self) except *:
-        pass  # NO-OP for backtest engine
-
-    cpdef void disconnect(self) except *:
-        pass  # NO-OP for backtest engine
+# -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_quote_ticks(
             self,
             Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
+            datetime from_datetime,  # Can be None
+            datetime to_datetime,    # Can be None
             int limit,
-            callback: callable,
+            UUID correlation_id,
     ) except *:
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
-        Condition.callable(callback, "callback")
+        Condition.not_none(correlation_id, "correlation_id")
+        # Do nothing for backtest
 
     cpdef void request_trade_ticks(
             self,
             Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
+            datetime from_datetime,  # Can be None
+            datetime to_datetime,    # Can be None
             int limit,
-            callback: callable,
+            UUID correlation_id,
     ) except *:
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
-        Condition.callable(callback, "callback")
+        Condition.not_none(correlation_id, "correlation_id")
+        # Do nothing for backtest
 
     cpdef void request_bars(
             self,
             BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
+            datetime from_datetime,  # Can be None
+            datetime to_datetime,    # Can be None
             int limit,
-            callback: callable,
+            UUID correlation_id,
     ) except *:
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")
-        Condition.callable(callback, "callback")
+        Condition.not_none(correlation_id, "correlation_id")
+        # Do nothing for backtest
 
-    cpdef void request_instrument(self, Symbol symbol, callback: callable) except *:
+    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(callback, "callback")
+        Condition.not_none(correlation_id, "correlation_id")
 
         cdef Instrument instrument = self._data.instruments.get(symbol)
 
@@ -428,35 +433,41 @@ cdef class BacktestDataClient(DataClient):
             self._log.warning(f"No instrument found for {symbol}.")
             return
 
-        callback(instrument)
+        self.handle_instruments([instrument], correlation_id)
 
-    cpdef void request_instruments(self, callback: callable) except *:
-        cdef InstrumentDataBlock instruments = InstrumentDataBlock(
-            instruments=self._data.instruments.values(),
-        )
+    cpdef void request_instruments(self, UUID correlation_id) except *:
+        self.handle_instruments(list(self._data.instruments.values()), correlation_id)
 
-        callback(instruments)
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
-        Condition.not_none(symbol, "symbol")
+        pass
+        # Do nothing for backtest
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
-        Condition.not_none(symbol, "symbol")
+        pass
+        # Do nothing for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
-        Condition.not_none(bar_type, "bar_type")
+        pass
+        # Do nothing for backtest
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
-        Condition.not_none(symbol, "symbol")
+        pass
+        # Do nothing for backtest
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
-        Condition.not_none(symbol, "symbol")
+        pass
+        # Do nothing for backtest
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
-        Condition.not_none(symbol, "symbol")
+        pass
+        # Do nothing for backtest
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        Condition.not_none(bar_type, "bar_type")
+        pass
+        # Do nothing for backtest
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
-        Condition.not_none(symbol, "symbol")
+        pass
+        # Do nothing for backtest
