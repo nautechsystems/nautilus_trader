@@ -34,8 +34,6 @@ Typical usage:
     '00010203-0405-0607-0809-0a0b0c0d0e0f'
 """
 
-import os
-
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -308,8 +306,3 @@ cdef class UUID:
 
         """
         return 'urn:uuid:' + str(self)
-
-
-cpdef UUID uuid4():
-    """Generate a random UUID version 4."""
-    return UUID(value=os.urandom(16))
