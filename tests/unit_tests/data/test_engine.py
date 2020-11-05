@@ -65,6 +65,30 @@ class DataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
+    def test_registered_venues_when_nothing_registered_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.data_engine.registered_venues)
+
+    def test_subscribed_quote_ticks_when_nothing_subscribed_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_quote_ticks)
+
+    def test_subscribed_trade_ticks_when_nothing_subscribed_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_trade_ticks)
+
+    def test_subscribed_bars_when_nothing_subscribed_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_bars)
+
     def test_reset(self):
         # Arrange
         # Act
