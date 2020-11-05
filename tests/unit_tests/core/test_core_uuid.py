@@ -18,7 +18,6 @@ import unittest
 from parameterized import parameterized
 
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.core.uuid import uuid4
 
 
 class UUIDTests(unittest.TestCase):
@@ -196,11 +195,3 @@ class UUIDTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual("urn:uuid:12345678-1234-5678-1234-567812345678", uuid.urn)
-
-    def test_uuid4(self):
-        # Arrange
-        # Act
-        uuid = uuid4()
-
-        # Assert
-        self.assertTrue(isinstance(uuid, UUID))
