@@ -47,25 +47,6 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Run tests
-      - name: Install Redis (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get install redis-server
-      - name: Install Redis (macOS)
-        if: runner.os == 'macOS'
-        run: brew install redis
-
-      - name: Run tests (with integrations test suite) [Linux/macOS]
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
-        run: |
-          redis-server --daemonize yes
-          nox -s tests_with_integration --reuse-existing-virtualenvs
-          redis-cli shutdown
-
-      - name: Run tests (without integrations test suite) [Windows]
-        if: runner.os == 'Windows'
-        run: nox -s tests_without_integration --reuse-existing-virtualenvs
-
       # Install
       - name: Install
         run: poetry install
