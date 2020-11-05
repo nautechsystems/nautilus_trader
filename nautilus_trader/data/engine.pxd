@@ -48,6 +48,7 @@ cdef class DataEngine:
     cdef FiniteStateMachine _fsm
     cdef bint _use_previous_close
     cdef dict _clients
+    cdef dict _correlation_index
     cdef dict _instrument_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
@@ -126,11 +127,11 @@ cdef class DataEngine:
     cdef inline void _handle_data(self, object data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
     cdef inline void _handle_instruments(self, list instruments) except *
-    cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
+    cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
+    cdef inline void _handle_trade_tick(self, TradeTick tick) except *
+    cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
     cdef inline void _handle_quote_ticks(self, list ticks) except *
-    cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
     cdef inline void _handle_trade_ticks(self, list ticks) except *
-    cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
     cdef inline void _handle_bars(self, BarType bar_type, list bars) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------

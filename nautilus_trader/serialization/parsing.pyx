@@ -35,7 +35,7 @@ cdef class ObjectParser:
         Condition.valid_string(time_string, "time_string")
 
         # noinspection PyUnresolvedReferences
-        return None if time_string == NONE else datetime.fromtimestamp(long(time_string), pytz.utc)
+        return None if time_string == NONE else datetime.fromtimestamp(long(time_string) / 1000, pytz.utc)
 
     @staticmethod
     def datetime_to_string_py(datetime dt):

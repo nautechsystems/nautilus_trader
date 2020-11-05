@@ -19,7 +19,7 @@ import redis
 
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
@@ -45,7 +45,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         clock = TestClock()
-        uuid_factory = TestUUIDFactory()
+        uuid_factory = UUIDFactory()
         logger = TestLogger(clock)
 
         self.trader_id = TraderId("TESTER", "000")

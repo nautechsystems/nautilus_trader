@@ -21,7 +21,7 @@ from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.uuid cimport TestUUIDFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.execution.cache cimport ExecutionCache
@@ -86,7 +86,7 @@ cdef class SimulatedExchange:
             BacktestConfig config not None,
             FillModel fill_model not None,
             TestClock clock not None,
-            TestUUIDFactory uuid_factory not None,
+            UUIDFactory uuid_factory not None,
             TestLogger logger not None,
     ):
         """
@@ -108,7 +108,7 @@ cdef class SimulatedExchange:
             The fill model for the backtest.
         clock : TestClock
             The clock for the component.
-        uuid_factory : TestUUIDFactory
+        uuid_factory : UUIDFactory
             The UUID factory for the component.
         logger : TestLogger
             The logger for the component.

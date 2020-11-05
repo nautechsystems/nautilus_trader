@@ -26,7 +26,7 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -58,7 +58,7 @@ class TraderTests(unittest.TestCase):
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
 
         clock = TestClock()
-        uuid_factory = TestUUIDFactory()
+        uuid_factory = UUIDFactory()
         logger = TestLogger(clock)
         trader_id = TraderId("TESTER", "000")
         account_id = TestStubs.account_id()
@@ -101,7 +101,7 @@ class TraderTests(unittest.TestCase):
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=clock,
-            uuid_factory=TestUUIDFactory(),
+            uuid_factory=UUIDFactory(),
             logger=logger,
         )
 

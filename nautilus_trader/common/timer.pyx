@@ -247,7 +247,7 @@ cdef class TestTimer(Timer):
         Condition.valid_string(name, "name")
         super().__init__(name, callback, interval, start_time, stop_time)
 
-        self._uuid_factory = TestUUIDFactory()
+        self._uuid_factory = UUIDFactory()
 
     cpdef list advance(self, datetime to_time):
         """
