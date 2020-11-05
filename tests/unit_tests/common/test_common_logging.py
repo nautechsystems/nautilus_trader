@@ -15,10 +15,52 @@
 
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
+
+
+class LogLevelParserTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [LogLevel.UNDEFINED, "UNDEFINED"],
+        [LogLevel.VERBOSE, "VRB"],
+        [LogLevel.DEBUG, "DBG"],
+        [LogLevel.INFO, "INF"],
+        [LogLevel.WARNING, "WRN"],
+        [LogLevel.ERROR, "ERR"],
+        [LogLevel.CRITICAL, "CRT"],
+        [LogLevel.FATAL, "FTL"],
+    ])
+    def test_log_level_to_string(self, enum, expected):
+        # Arrange
+        # Act
+        result = LogLevelParser.to_string_py(enum)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["", LogLevel.UNDEFINED],
+        ["UNDEFINED", LogLevel.UNDEFINED],
+        ["VRB", LogLevel.VERBOSE],
+        ["DBG", LogLevel.DEBUG],
+        ["INF", LogLevel.INFO],
+        ["ERR", LogLevel.ERROR],
+        ["CRT", LogLevel.CRITICAL],
+        ["FTL", LogLevel.FATAL],
+    ])
+    def test_log_level_from_string(self, string, expected):
+        # Arrange
+        # Act
+        result = LogLevelParser.from_string_py(string)
+
+        # Assert
+        self.assertEqual(expected, result)
 
 
 class TestLoggerTests(unittest.TestCase):

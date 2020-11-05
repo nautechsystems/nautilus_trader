@@ -55,6 +55,55 @@ CMD = "[CMD]"
 EVT = "[EVT]"
 
 
+cdef class LogLevelParser:
+
+    @staticmethod
+    cdef str to_string(int value):
+        if value == 1:
+            return "VRB"
+        elif value == 2:
+            return "DBG"
+        elif value == 3:
+            return "INF"
+        elif value == 4:
+            return "WRN"
+        elif value == 5:
+            return "ERR"
+        elif value == 6:
+            return "CRT"
+        elif value == 7:
+            return "FTL"
+        else:
+            return "UNDEFINED"
+
+    @staticmethod
+    cdef LogLevel from_string(str value):
+        if value == "VRB":
+            return LogLevel.VERBOSE
+        elif value == "DBG":
+            return LogLevel.DEBUG
+        elif value == "INF":
+            return LogLevel.INFO
+        elif value == "WRN":
+            return LogLevel.WARNING
+        elif value == "ERR":
+            return LogLevel.ERROR
+        elif value == "CRT":
+            return LogLevel.CRITICAL
+        elif value == "FTL":
+            return LogLevel.FATAL
+        else:
+            return LogLevel.UNDEFINED
+
+    @staticmethod
+    def to_string_py(int value):
+        return LogLevelParser.to_string(value)
+
+    @staticmethod
+    def from_string_py(str value):
+        return LogLevelParser.from_string(value)
+
+
 cdef class LogMessage:
     """
     Represents a log message including timestamp and log level.
@@ -95,7 +144,7 @@ cdef class LogMessage:
         str
 
         """
-        return log_level_to_string(self.level)
+        return LogLevelParser.to_string(self.level)
 
     cdef str as_string(self):
         """
@@ -106,7 +155,7 @@ cdef class LogMessage:
         str
 
         """
-        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{log_level_to_string(self.level)}] {self.text}"
+        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{LogLevelParser.from_string(self.level)}] {self.text}"
 
 
 cdef class Logger:
