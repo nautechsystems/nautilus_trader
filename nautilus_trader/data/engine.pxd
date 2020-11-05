@@ -30,6 +30,10 @@ from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.wrappers cimport BarDataBlock
+from nautilus_trader.data.wrappers cimport InstrumentDataBlock
+from nautilus_trader.data.wrappers cimport QuoteTickDataBlock
+from nautilus_trader.data.wrappers cimport TradeTickDataBlock
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
@@ -126,13 +130,13 @@ cdef class DataEngine:
 
     cdef inline void _handle_data(self, object data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
-    cdef inline void _handle_instruments(self, list instruments) except *
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
-    cdef inline void _handle_quote_ticks(self, list ticks) except *
-    cdef inline void _handle_trade_ticks(self, list ticks) except *
-    cdef inline void _handle_bars(self, BarType bar_type, list bars) except *
+    cdef inline void _handle_instruments(self, InstrumentDataBlock data) except *
+    cdef inline void _handle_quote_ticks(self, QuoteTickDataBlock data) except *
+    cdef inline void _handle_trade_ticks(self, TradeTickDataBlock data) except *
+    cdef inline void _handle_bars(self, BarDataBlock data) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

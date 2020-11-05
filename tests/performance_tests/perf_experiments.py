@@ -16,9 +16,9 @@
 import unittest
 
 from nautilus_trader.common.commands import KillSwitch
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
-from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId

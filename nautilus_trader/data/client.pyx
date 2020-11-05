@@ -181,27 +181,27 @@ cdef class DataClient:
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.process(tick)
 
-    cpdef void handle_quote_ticks(self, list ticks) except *:
-        cdef QuoteTickDataBlock data = QuoteTickDataBlock(ticks)
-        self._engine.process(data)
-
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         self._engine.process(tick)
-
-    cpdef void handle_trade_ticks(self, list ticks) except *:
-        cdef TradeTickDataBlock data = TradeTickDataBlock(ticks)
-        self._engine.process(data)
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
         cdef BarData data = BarData(bar_type, bar)
         self._engine.process(data)
 
+    cpdef void handle_instrument(self, Instrument instrument) except *:
+        self._engine.process(instrument)
+
+    cpdef void handle_quote_ticks(self, list ticks) except *:
+        cdef QuoteTickDataBlock data = QuoteTickDataBlock(ticks)
+        self._engine.process(data)
+
+    cpdef void handle_trade_ticks(self, list ticks) except *:
+        cdef TradeTickDataBlock data = TradeTickDataBlock(ticks)
+        self._engine.process(data)
+
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         cdef BarDataBlock data = BarDataBlock(bar_type, bars)
         self._engine.process((bar_type, bars))
-
-    cpdef void handle_instrument(self, Instrument instrument) except *:
-        self._engine.process(instrument)
 
     cpdef void handle_instruments(self, list instruments) except *:
         cdef InstrumentDataBlock data = InstrumentDataBlock(instruments)

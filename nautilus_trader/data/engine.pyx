@@ -443,6 +443,15 @@ cdef class DataEngine:
             self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")
 
     cdef inline void _handle_request(self, RequestData command) except *:
+        Condition.not_in(command.id, self._correlation_index, "command.id", "self._correlation_index")
+
+        cdef callback = command.options.get(CALLBACK)
+        if callback is None:
+            self._log.error(f"Cannot handle request for {command} (callback was None).")
+            return
+
+        self._correlation_index[command.id] = callback
+
         if command.data_type == Instrument:
             venue = command.options.get(VENUE)
             if venue is not None:
@@ -654,13 +663,13 @@ cdef class DataEngine:
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         elif isinstance(data, QuoteTickDataBlock):
-            self._handle_quote_ticks(data.ticks)
+            self._handle_quote_ticks(data)
         elif isinstance(data, TradeTickDataBlock):
-            self._handle_trade_ticks(data.ticks)
+            self._handle_trade_ticks(data)
         elif isinstance(data, BarDataBlock):
-            self._handle_bars(data.bar_type, data.bars)
+            self._handle_bars(data)
         elif isinstance(data, InstrumentDataBlock):
-            self._handle_instruments(data.instruments)
+            self._handle_instruments(data)
         else:
             self._log.error(f"Cannot handle data ({data} is unrecognized).")
 
@@ -672,11 +681,6 @@ cdef class DataEngine:
         if instrument_handlers:
             for handler in instrument_handlers:
                 handler.handle(instrument)
-
-    cdef inline void _handle_instruments(self, list instruments: [Instrument]) except *:
-        cdef Instrument instrument
-        for instrument in instruments:
-            self._handle_instrument(instrument)
 
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *:
         self.cache.add_quote_tick(tick)
@@ -708,14 +712,43 @@ cdef class DataEngine:
             for handler in bar_handlers:
                 handler(bar_type, bar)
 
-    cdef inline void _handle_quote_ticks(self, list ticks: [QuoteTick]) except *:
-        self.cache.add_quote_ticks(ticks)
+    cdef inline void _handle_instruments(self, InstrumentDataBlock data) except *:
+        cdef Instrument instrument
+        for instrument in data.instruments:
+            self._handle_instrument(instrument)
 
-    cdef inline void _handle_trade_ticks(self, list ticks: [TradeTick]) except *:
-        self.cache.add_trade_ticks(ticks)
+        cdef callback = self._correlation_index.pop(data.correlation_id, None)
+        if callback is None:
+            self._log.error(f"Callback not found for correlation_id {data.correlation_id}.")
 
-    cdef inline void _handle_bars(self, BarType bar_type, list bars: [Bar]) except *:
-        self.cache.add_bars(bar_type, bars)
+        callback(data.instruments)
+
+    cdef inline void _handle_quote_ticks(self, QuoteTickDataBlock data) except *:
+        self.cache.add_quote_ticks(data.ticks)
+
+        cdef callback = self._correlation_index.pop(data.correlation_id, None)
+        if callback is None:
+            self._log.error(f"Callback not found for correlation_id {data.correlation_id}.")
+
+        callback(data.ticks)
+
+    cdef inline void _handle_trade_ticks(self, TradeTickDataBlock data) except *:
+        self.cache.add_trade_ticks(data.ticks)
+
+        cdef callback = self._correlation_index.pop(data.correlation_id, None)
+        if callback is None:
+            self._log.error(f"Callback not found for correlation_id {data.correlation_id}.")
+
+        callback(data.ticks)
+
+    cdef inline void _handle_bars(self, BarDataBlock data) except *:
+        self.cache.add_bars(data.bar_type, data.bars)
+
+        cdef callback = self._correlation_index.pop(data.correlation_id, None)
+        if callback is None:
+            self._log.error(f"Callback not found for correlation_id {data.correlation_id}.")
+
+        callback(data.bar_type, data.bars)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
