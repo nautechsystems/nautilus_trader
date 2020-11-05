@@ -32,63 +32,63 @@ cdef class DataCacheFacade:
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef list symbols(self):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list instruments(self):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list quote_ticks(self, Symbol symbol):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list trade_ticks(self, Symbol symbol):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list bars(self, BarType bar_type):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Instrument instrument(self, Symbol symbol):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int quote_tick_count(self, Symbol symbol) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int trade_tick_count(self, Symbol symbol) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int bar_count(self, BarType bar_type) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint has_quote_ticks(self, Symbol symbol) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint has_trade_ticks(self, Symbol symbol) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint has_bars(self, BarType bar_type) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef double get_xrate(
@@ -97,5 +97,5 @@ cdef class DataCacheFacade:
         Currency to_currency,
         PriceType price_type=PriceType.MID,
     ) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

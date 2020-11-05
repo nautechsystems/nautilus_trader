@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.commands cimport Connect
-from nautilus_trader.common.commands cimport Disconnect
+from nautilus_trader.common.messages cimport Connect
+from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory

@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -39,19 +40,36 @@ cdef class DataClient:
 
     cpdef bint is_connected(self) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_bars(self, BarType bar_type) except *
+    cpdef void subscribe_instrument(self, Symbol symbol) except *
+
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
+
+# -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *
+    cpdef void request_instruments(self, UUID correlation_id) except *
     cpdef void request_quote_ticks(
         self,
         Symbol symbol,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        UUID correlation_id,
     ) except *
     cpdef void request_trade_ticks(
         self,
@@ -59,7 +77,7 @@ cdef class DataClient:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        UUID correlation_id,
     ) except *
     cpdef void request_bars(
         self,
@@ -67,26 +85,17 @@ cdef class DataClient:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        UUID correlation_id,
     ) except *
-    cpdef void request_instrument(self, Symbol symbol, callback) except *
-    cpdef void request_instruments(self, callback) except *
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
-    cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_instrument(self, Symbol symbol) except *
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void handle_quote_ticks(self, list ticks) except *
-    cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *
     cpdef void handle_instrument(self, Instrument instrument) except *
-    cpdef void handle_instruments(self, list instruments) except *
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *
+    cpdef void handle_trade_tick(self, TradeTick tick) except *
+    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *
+
+    cpdef void handle_instruments(self, list instruments, UUID correlation_id) except *
+    cpdef void handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *

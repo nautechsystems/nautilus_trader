@@ -423,11 +423,11 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _modified(self, OrderModified event) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
     cdef void _filled(self, OrderFilled event) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
 

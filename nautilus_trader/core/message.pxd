@@ -59,4 +59,4 @@ cdef class Request(Message):
 
 cdef class Response(Message):
     cdef readonly UUID correlation_id
-    """The message correlation identifier.\n\n:returns: `UUID`"""
+    """The response correlation identifier.\n\n:returns: `UUID`"""

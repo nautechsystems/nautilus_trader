@@ -66,7 +66,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef datetime local_now(self, tzinfo tz):
@@ -332,7 +332,7 @@ cdef class Clock:
             datetime start_time,
             datetime stop_time,
     ):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef inline void _add_timer(self, Timer timer, handler) except *:

@@ -65,3 +65,10 @@ cdef class Bar:
     @staticmethod
     cdef Bar from_serializable_string_c(str value)
     cpdef str to_serializable_string(self)
+
+
+cdef class BarData:
+    cdef readonly BarType bar_type
+    """The type of the bar.\n\n:returns: `BarType`"""
+    cdef readonly Bar bar
+    """The bar data.\n\n:returns: `Bar`"""
