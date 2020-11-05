@@ -18,7 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.generators cimport OrderIdGenerator
-from nautilus_trader.common.uuid cimport LiveUUIDFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -73,7 +73,7 @@ cdef class OrderFactory:
         if clock is None:
             clock = LiveClock()
         if uuid_factory is None:
-            uuid_factory = LiveUUIDFactory()
+            uuid_factory = UUIDFactory()
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock

@@ -45,3 +45,6 @@ cdef class DataCache(DataCacheFacade):
     cpdef void add_quote_tick(self, QuoteTick tick) except *
     cpdef void add_trade_tick(self, TradeTick tick) except *
     cpdef void add_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void add_quote_ticks(self, list ticks) except *
+    cpdef void add_trade_ticks(self, list ticks) except *
+    cpdef void add_bars(self, BarType bar_type, list bars) except *

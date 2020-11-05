@@ -17,7 +17,7 @@ import unittest
 
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.enums import OrderSide
@@ -50,7 +50,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=clock,
-            uuid_factory=TestUUIDFactory(),
+            uuid_factory=UUIDFactory(),
             logger=logger,
         )
 

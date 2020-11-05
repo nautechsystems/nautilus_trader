@@ -93,7 +93,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
-        Add the given instrument.
+        Add the given instrument to the cache.
 
         Parameters
         ----------
@@ -106,7 +106,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
         """
-        Handle the given tick.
+        Add the given tick to the cache.
 
         Parameters
         ----------
@@ -134,7 +134,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_trade_tick(self, TradeTick tick) except *:
         """
-        Handle the given tick.
+        Add the given tick to the cache.
 
         Parameters
         ----------
@@ -158,7 +158,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef void add_bar(self, BarType bar_type, Bar bar) except *:
         """
-        Handle the given bar type and bar.
+        Add the given bar type and bar to the cache.
 
         Parameters
         ----------
@@ -180,6 +180,121 @@ cdef class DataCache(DataCacheFacade):
             self._bars[bar_type] = bars
 
         bars.appendleft(bar)
+
+    cpdef void add_quote_ticks(self, list ticks) except *:
+        """
+        Add the given ticks to the cache, if it is empty.
+
+        Parameters
+        ----------
+        ticks : list[QuoteTick]
+            The tick to handle.
+
+        """
+        Condition.not_none(ticks, "ticks")
+
+        cdef int length = len(ticks)
+        cdef Symbol symbol
+        if length > 0:
+            symbol = ticks[0].symbol
+            self._log.debug(f"Received <QuoteTick[{length}]> data for {symbol}.")
+        else:
+            self._log.debug("Received <QuoteTick[]> data with no ticks.")
+            return
+
+        cached_ticks = self._quote_ticks.get(symbol)
+
+        if cached_ticks is None:
+            # The symbol was not registered
+            cached_ticks = deque(maxlen=self.tick_capacity)
+            self._quote_ticks[symbol] = cached_ticks
+        elif len(cached_ticks) > 0:
+            # Currently the simple solution for multiple consumers requesting
+            # ticks at system spool up is just to add only if the cache is empty.
+            self._log.debug("Cache already contains ticks.")
+            return
+
+        cdef QuoteTick tick
+        for tick in ticks:
+            cached_ticks.appendleft(tick)
+
+        self._bid_quotes[symbol.code] = ticks[-1].bid.as_double()
+        self._ask_quotes[symbol.code] = ticks[-1].ask.as_double()
+
+    cpdef void add_trade_ticks(self, list ticks) except *:
+        """
+        Add the given ticks to the cache, if it is empty.
+
+        Parameters
+        ----------
+        ticks : list[TradeTick]
+            The received tick to handle.
+
+        """
+        Condition.not_none(ticks, "ticks")
+
+        cdef int length = len(ticks)
+        cdef Symbol symbol
+        if length > 0:
+            symbol = ticks[0].symbol
+            self._log.debug(f"Received <TradeTick[{length}]> data for {symbol}.")
+        else:
+            self._log.debug("Received <TradeTick[]> data with no ticks.")
+            return
+
+        cached_ticks = self._trade_ticks.get(symbol)
+
+        if cached_ticks is None:
+            # The symbol was not registered
+            cached_ticks = deque(maxlen=self.tick_capacity)
+            self._trade_ticks[symbol] = cached_ticks
+        elif len(cached_ticks) > 0:
+            # Currently the simple solution for multiple consumers requesting
+            # ticks at system spool up is just to add only if the cache is empty.
+            self._log.debug("Cache already contains ticks.")
+            return
+
+        cdef TradeTick tick
+        for tick in ticks:
+            cached_ticks.appendleft(tick)
+
+    cpdef void add_bars(self, BarType bar_type, list bars) except *:
+        """
+        Handle the given bar type and bar.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the received bar.
+        bars : list[Bar]
+            The received bar to handle.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(bars, "bars")
+
+        cdef int length = len(bars)
+        if length > 0:
+            self._log.debug(f"Received <Bar[{length}]> data for {bar_type.symbol}.")
+        else:
+            self._log.debug("Received <Bar[]> data with no ticks.")
+            return
+
+        cached_bars = self._trade_ticks.get(bar_type.symbol)
+
+        if cached_bars is None:
+            # The symbol was not registered
+            cached_bars = deque(maxlen=self.bar_capacity)
+            self._trade_ticks[bar_type.symbol] = cached_bars
+        elif len(cached_bars) > 0:
+            # Currently the simple solution for multiple consumers requesting
+            # bars at system spool up is just to add only if the cache is empty.
+            self._log.debug("Cache already contains bars.")
+            return
+
+        cdef Bar bar
+        for bar in bars:
+            cached_bars.appendleft(bar)
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 

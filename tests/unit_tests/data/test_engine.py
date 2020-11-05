@@ -21,7 +21,7 @@ import pytz
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import BulkTickBarBuilder
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.wrangling import TickDataWrangler
@@ -49,7 +49,7 @@ class DataEngineTests(unittest.TestCase):
 
     def setUp(self):
         self.clock = TestClock()
-        self.uuid_factory = TestUUIDFactory()
+        self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock)
 
         self.portfolio = Portfolio(

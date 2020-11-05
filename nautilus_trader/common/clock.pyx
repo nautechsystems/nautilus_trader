@@ -23,8 +23,7 @@ from cpython.datetime cimport tzinfo
 
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.uuid cimport LiveUUIDFactory
-from nautilus_trader.common.uuid cimport TestUUIDFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -396,7 +395,7 @@ cdef class TestClock(Clock):
             The initial time for the clock.
 
         """
-        super().__init__(TestUUIDFactory())
+        super().__init__(UUIDFactory())
 
         self._time = initial_time
         self.is_test_clock = True
@@ -486,7 +485,7 @@ cdef class LiveClock(Clock):
         """
         Initialize a new instance of the `LiveClock` class.
         """
-        super().__init__(LiveUUIDFactory())
+        super().__init__(UUIDFactory())
 
     cpdef datetime utc_now(self):
         """

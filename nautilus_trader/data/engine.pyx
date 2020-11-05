@@ -49,6 +49,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -112,6 +113,7 @@ cdef class DataEngine:
 
         self._use_previous_close = config.get('use_previous_close', True)
         self._clients = {}              # type: {Venue, DataClient}
+        self._correlation_index = {}    # type: {UUID, callable}
 
         # Handlers
         self._instrument_handlers = {}  # type: {Symbol, [callable]}
@@ -282,6 +284,7 @@ cdef class DataEngine:
             client.reset()
 
         self.cache.reset()
+        self._correlation_index.clear()
         self._instrument_handlers.clear()
         self._quote_tick_handlers.clear()
         self._trade_tick_handlers.clear()
@@ -675,11 +678,8 @@ cdef class DataEngine:
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=True) except *:
+    cdef inline void _handle_quote_tick(self, QuoteTick tick) except *:
         self.cache.add_quote_tick(tick)
-
-        if not send_to_handlers:
-            return
 
         # Send to portfolio as a priority
         self.portfolio.update_tick(tick)
@@ -690,28 +690,8 @@ cdef class DataEngine:
             for handler in tick_handlers:
                 handler(tick)
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cdef inline void _handle_quote_ticks(self, list ticks: [QuoteTick]) except *:
-        cdef int length = len(ticks)
-        cdef Symbol symbol = ticks[0].symbol if length > 0 else None
-
-        if length > 0:
-            self._log.debug(f"Received <QuoteTick[{length}]> data for {symbol}.")
-        else:
-            self._log.debug("Received <QuoteTick[]> data with no ticks.")
-
-        cdef int i
-        for i in range(length):
-            self._handle_quote_tick(ticks[i], send_to_handlers=False)
-
-    cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=True) except *:
-        cdef Symbol symbol = tick.symbol
-
+    cdef inline void _handle_trade_tick(self, TradeTick tick) except *:
         self.cache.add_trade_tick(tick)
-
-        if not send_to_handlers:
-            return
 
         # Send to all registered tick handlers for that symbol
         cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
@@ -719,26 +699,8 @@ cdef class DataEngine:
             for handler in tick_handlers:
                 handler(tick)
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cdef inline void _handle_trade_ticks(self, list ticks: [TradeTick]) except *:
-        cdef int length = len(ticks)
-        cdef Symbol symbol = ticks[0].symbol if length > 0 else None
-
-        if length > 0:
-            self._log.debug(f"Received <TradeTick[{length}]> data for {symbol}.")
-        else:
-            self._log.debug("Received <TradeTick[]> data with no ticks.")
-
-        cdef int i
-        for i in range(length):
-            self._handle_trade_tick(ticks[i], send_to_handlers=False)
-
-    cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=True) except *:
+    cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *:
         self.cache.add_bar(bar_type, bar)
-
-        if not send_to_handlers:
-            return
 
         # Send to all registered bar handlers for that bar type
         cdef list bar_handlers = self._bar_handlers.get(bar_type)
@@ -746,19 +708,14 @@ cdef class DataEngine:
             for handler in bar_handlers:
                 handler(bar_type, bar)
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
+    cdef inline void _handle_quote_ticks(self, list ticks: [QuoteTick]) except *:
+        self.cache.add_quote_ticks(ticks)
+
+    cdef inline void _handle_trade_ticks(self, list ticks: [TradeTick]) except *:
+        self.cache.add_trade_ticks(ticks)
+
     cdef inline void _handle_bars(self, BarType bar_type, list bars: [Bar]) except *:
-        cdef int length = len(bars)
-
-        self._log.debug(f"Received <Bar[{length}]> data for {bar_type}.")
-
-        if length > 0 and bars[0].timestamp > bars[length - 1].timestamp:
-            raise RuntimeError("Cannot handle <Bar[]> data (incorrectly sorted).")
-
-        cdef int i
-        for i in range(length):
-            self._handle_bar(bar_type, bars[i], send_to_handlers=False)
+        self.cache.add_bars(bar_type, bars)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
