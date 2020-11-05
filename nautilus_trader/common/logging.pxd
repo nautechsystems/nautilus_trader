@@ -46,8 +46,6 @@ cdef class LogLevelParser:
     cdef LogLevel from_string(str value)
 
 
-
-
 cdef class LogMessage:
     cdef readonly datetime timestamp
     """The log message timestamp.\n\n:returns: `datetime`"""

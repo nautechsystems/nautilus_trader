@@ -93,11 +93,9 @@ cdef class Position:
     @staticmethod
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
-    @staticmethod
-    cpdef Money calculate_pnl(self, Decimal avg_open, Decimal avg_close, Decimal quantity, bint is_inverse=*)
-
     cpdef void apply(self, OrderFilled event) except *
 
+    cpdef Money calculate_pnl(self, Decimal avg_open, Decimal avg_close, Decimal quantity)
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
 

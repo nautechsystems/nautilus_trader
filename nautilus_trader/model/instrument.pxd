@@ -98,10 +98,10 @@ cdef class Instrument:
     )
 
     cpdef Money calculate_open_value(
-            self,
-            PositionSide side,
-            Quantity quantity,
-            QuoteTick last,
+        self,
+        PositionSide side,
+        Quantity quantity,
+        QuoteTick last,
     )
 
     cpdef Money calculate_commission(
