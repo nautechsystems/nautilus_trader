@@ -144,17 +144,6 @@ cdef class BarSpecification:
         """
         return self.aggregation in _TIME_AGGREGATED
 
-    cdef str aggregation_string(self):
-        """
-        The bar aggregation as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.aggregation_string()
-
     cdef str price_type_string(self):
         """
         The price type as a string.
