@@ -11,8 +11,6 @@ jobs:
 
   # Publish if we're on master and the commit is tagged
   publish:
-    if: github.ref == 'refs/heads/master'
-    needs: [ test, tag ]
 
     strategy:
       fail-fast: false
