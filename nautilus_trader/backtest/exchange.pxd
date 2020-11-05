@@ -36,7 +36,6 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport LimitOrder
@@ -113,7 +112,7 @@ cdef class SimulatedExchange:
     cdef OrderId _generate_order_id(self, Symbol symbol)
     cdef ExecutionId _generate_execution_id(self)
     cdef AccountState _generate_account_event(self)
-    cdef void _adjust_account(self, OrderFilled event, Position position, Instrument instrument) except *
+    cdef void _adjust_account(self, OrderFilled event, Position position) except *
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
     cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
     cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *

@@ -520,4 +520,4 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         position_closed = self.strategy.execution.positions_closed()[0]
         self.assertEqual(PositionSide.SHORT, position_open.side)
         self.assertEqual(Quantity(50000), position_open.quantity)
-        self.assertEqual(Money(11112.74, USD), position_closed.realized_pnl)
+        self.assertEqual(Money(11114.74, USD), position_closed.realized_pnl)
