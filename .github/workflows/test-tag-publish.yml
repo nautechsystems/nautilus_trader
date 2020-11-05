@@ -1,23 +1,21 @@
-name: publish
+name: test-tag-publish
 
-# Publish to PyPi (if tagged on master)
+# Test, tag then publish pushes on the master branch
 
 on:
   push:
-    tags:
-      - "v[1-9]+.[0-9]+.[0-9]+"
+    branches: [ master ]
 
 jobs:
 
-  # Publish if we're on master and the commit is tagged
-  publish:
+  test-tag-publish:
 
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest ]
         python-version: [ 3.6, 3.7, 3.8 ]
-    name: publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: test-tag-publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -49,6 +47,25 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-publish-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
+      # Run tests
+      - name: Install Redis (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install redis-server
+      - name: Install Redis (macOS)
+        if: runner.os == 'macOS'
+        run: brew install redis
+
+      - name: Run tests (with integrations test suite) [Linux/macOS]
+        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+        run: |
+          redis-server --daemonize yes
+          nox -s tests_with_integration --reuse-existing-virtualenvs
+          redis-cli shutdown
+
+      - name: Run tests (without integrations test suite) [Windows]
+        if: runner.os == 'Windows'
+        run: nox -s tests_without_integration --reuse-existing-virtualenvs
+
       # Install
       - name: Install
         run: poetry install
@@ -56,6 +73,12 @@ jobs:
       # Build
       - name: Build
         run: poetry build
+
+      # Tag the commit with the library version
+      - name: Create git tag
+        uses: salsify/action-detect-and-tag-new-version@v2
+        with:
+          version-command: poetry version --short
 
       # Publish
       - name: Publish to production PyPi
