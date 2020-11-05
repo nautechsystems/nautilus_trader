@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 
@@ -29,18 +30,26 @@ cdef class BarDataBlock:
     """The type of the bar data.\n\n:returns: `BarType`"""
     cdef readonly list bars
     """The bars data.\n\n:returns: `list[BarType]`"""
+    cdef readonly UUID correlation_id
+    """The callback correlation identifier.\n\n:returns: `callable`"""
 
 
 cdef class QuoteTickDataBlock:
     cdef readonly list ticks
     """The ticks data.\n\n:returns: `list[QuoteTick]`"""
+    cdef readonly UUID correlation_id
+    """The callback correlation identifier.\n\n:returns: `callable`"""
 
 
 cdef class TradeTickDataBlock:
     cdef readonly list ticks
     """The ticks data.\n\n:returns: `list[TradeTick]`"""
+    cdef readonly UUID correlation_id
+    """The callback correlation identifier.\n\n:returns: `callable`"""
 
 
 cdef class InstrumentDataBlock:
     cdef readonly list instruments
     """The instruments data.\n\n:returns: `list[Instrument]`"""
+    cdef readonly UUID correlation_id
+    """The callback correlation identifier.\n\n:returns: `callable`"""
