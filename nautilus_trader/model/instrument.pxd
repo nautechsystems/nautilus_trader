@@ -23,9 +23,9 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Instrument:
@@ -88,6 +88,7 @@ cdef class Instrument:
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 
+    cpdef Money calculate_notional(self, Quantity quantity, Decimal close_price)
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price)
     cpdef Money calculate_position_margin(
         self,
@@ -103,22 +104,6 @@ cdef class Instrument:
         QuoteTick last,
     )
 
-    cpdef Money calculate_unrealized_pnl(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Decimal open_price,
-        QuoteTick last,
-    )
-
-    cpdef Money calculate_pnl(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Decimal avg_open,
-        Decimal avg_close,
-    )
-
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
@@ -126,5 +111,4 @@ cdef class Instrument:
         LiquiditySide liquidity_side,
     )
 
-    cdef inline Decimal _calculate_notional(self, Quantity quantity, Decimal close_price)
-    cdef inline Price _get_close_price(self, PositionSide side, QuoteTick last)
+    cdef inline Decimal _get_close_price(self, PositionSide side, QuoteTick last)

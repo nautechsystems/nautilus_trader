@@ -525,43 +525,38 @@ cdef class SimulatedExchange:
             event_timestamp=self._clock.utc_now(),
         )
 
-    cdef void _adjust_account(
-        self,
-        OrderFilled event,
-        Position position,
-        Instrument instrument,
-    ) except *:
-        # xrate is from instrument.base_currency to instrument.settlement_currency
-        Condition.not_none(event, "event")
+    cdef void _adjust_account(self, OrderFilled event, Position position) except *:
+        # position could be None here
 
         if self.frozen_account:
             return  # Nothing to adjust
 
         # Initialize commission and PNL
         cdef Money commission = event.commission
-        cdef Money pnl = Money(0, instrument.base_currency)
+        cdef Money pnl = Money(0, event.commission.currency)
 
         if position is not None and position.entry != event.order_side:
             # Calculate PNL
-            pnl = instrument.calculate_pnl(
-                side=Position.side_from_order_side_c(event.order_side),
-                quantity=event.filled_qty,
+            pnl = position.calculate_pnl(
                 avg_open=position.avg_open,
                 avg_close=event.avg_price,
+                quantity=event.filled_qty,
             )
 
-        if instrument.base_currency != self.account_currency:
-            # Convert to account currency
-            xrate_base_account = self.xrate_calculator.get_rate(
-                from_currency=instrument.base_currency,
-                to_currency=instrument.settlement_currency,
+        cdef double xrate
+        if event.commission.currency != self.account_currency:
+            # Get exchange rate to account currency
+            xrate = self.xrate_calculator.get_rate(
+                from_currency=event.commission.currency,
+                to_currency=self.account_currency,
                 price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
                 bid_quotes=self._build_current_bid_rates(),
                 ask_quotes=self._build_current_ask_rates(),
             )
 
-            commission = Money(event.commission * xrate_base_account, self.account_currency)
-            pnl = Money(pnl * xrate_base_account, self.account_currency)
+            # Convert to account currency
+            commission = Money(event.commission * xrate, self.account_currency)
+            pnl = Money(pnl * xrate, self.account_currency)
 
         # Final PNL
         pnl = Money(pnl - commission, self.account_currency)
@@ -860,7 +855,8 @@ cdef class SimulatedExchange:
             self,
             Order order,
             Price fill_price,
-            LiquiditySide liquidity_side) except *:
+            LiquiditySide liquidity_side,
+    ) except *:
         # Query if there is an existing position for this order
         cdef PositionId position_id = self._position_index.get(order.cl_ord_id)
         # position_id could be None here
@@ -908,7 +904,7 @@ cdef class SimulatedExchange:
             self._clock.utc_now(),
         )
 
-        self._adjust_account(filled, position, instrument)
+        self._adjust_account(filled, position)
 
         self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)

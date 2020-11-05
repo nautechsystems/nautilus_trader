@@ -31,7 +31,6 @@ from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
@@ -640,7 +639,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             if xrate == 0:
                 self._log.error(f"Cannot calculate open value (insufficient data for "
-                                f"{position.base_currency}/{account.currency}).")
+                                f"{instrument.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
             open_value += instrument.calculate_open_value(
@@ -881,6 +880,8 @@ cdef class Portfolio(PortfolioFacade):
             if position.symbol != symbol:
                 continue  # Nothing to calculate
 
+            if instrument.base_currency == account.currency:
+                xrate = 1.
             if xrate == 0:
                 xrate = self._xrate_calculator.get_rate(
                     from_currency=instrument.base_currency,
@@ -891,14 +892,9 @@ cdef class Portfolio(PortfolioFacade):
                 )
             if xrate == 0:
                 self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
-                                f"{position.base_currency}/{account.currency}).")
+                                f"{instrument.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
-            pnl += instrument.calculate_pnl(
-                position.side,
-                position.quantity,
-                position.avg_open,
-                last.bid if position.side == PositionSide.LONG else last.ask,
-            ) * xrate
+            pnl += position.unrealized_pnl(last) * xrate
 
         return Money(pnl, account.currency)
