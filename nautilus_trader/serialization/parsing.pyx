@@ -13,11 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_posix_ms
 
 
 cdef str NONE = str(None)
@@ -27,15 +27,15 @@ cdef class ObjectParser:
 
     @staticmethod
     cdef str datetime_to_string(datetime dt):
-        # noinspection PyUnresolvedReferences
-        return NONE if dt is None else str(long(dt.timestamp()))
+        return NONE if dt is None else str(to_posix_ms(dt))
 
     @staticmethod
     cdef datetime string_to_datetime(str time_string):
         Condition.valid_string(time_string, "time_string")
 
+        # noinspection long
         # noinspection PyUnresolvedReferences
-        return None if time_string == NONE else datetime.fromtimestamp(long(time_string) / 1000, pytz.utc)
+        return None if time_string == NONE else from_posix_ms(long(time_string))
 
     @staticmethod
     def datetime_to_string_py(datetime dt):

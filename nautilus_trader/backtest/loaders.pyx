@@ -14,11 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytz
-
-from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport UNIX_EPOCH
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
@@ -34,8 +32,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 cdef class CSVTickDataLoader:
     """
@@ -135,7 +131,7 @@ cdef class InstrumentLoader:
             settlement_fee=Decimal("0.0000"),
             funding_rate_long=Decimal(),
             funding_rate_short=Decimal("0.003321"),
-            timestamp=_UNIX_EPOCH,
+            timestamp=UNIX_EPOCH,
             info={"is_inverse": True},
         )
 
@@ -170,7 +166,7 @@ cdef class InstrumentLoader:
             settlement_fee=Decimal(),
             funding_rate_long=Decimal(),
             funding_rate_short=Decimal("0.000897"),
-            timestamp=_UNIX_EPOCH,
+            timestamp=UNIX_EPOCH,
             info={"is_inverse": True, "is_quanto": True},
         )
 
@@ -205,7 +201,7 @@ cdef class InstrumentLoader:
             settlement_fee=Decimal(),
             funding_rate_long=Decimal(),
             funding_rate_short=Decimal(),
-            timestamp=_UNIX_EPOCH,
+            timestamp=UNIX_EPOCH,
             info={"is_quanto": True},
         )
 
@@ -240,7 +236,7 @@ cdef class InstrumentLoader:
             settlement_fee=Decimal(),
             funding_rate_long=Decimal(),
             funding_rate_short=Decimal(),
-            timestamp=_UNIX_EPOCH,
+            timestamp=UNIX_EPOCH,
         )
 
     @staticmethod
@@ -274,7 +270,7 @@ cdef class InstrumentLoader:
             settlement_fee=Decimal("0.000"),
             funding_rate_long=Decimal("0"),
             funding_rate_short=Decimal("0"),
-            timestamp=_UNIX_EPOCH,
+            timestamp=UNIX_EPOCH,
         )
 
     @staticmethod
@@ -331,5 +327,5 @@ cdef class InstrumentLoader:
             settlement_fee=Decimal("0.0000"),
             funding_rate_long=Decimal("0.0000"),
             funding_rate_short=Decimal("0.0000"),
-            timestamp=_UNIX_EPOCH,
+            timestamp=UNIX_EPOCH,
         )

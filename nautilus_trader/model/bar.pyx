@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -341,8 +341,6 @@ cdef class Bar:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    # noinspection: fromtimestamp, long
-    # noinspection PyUnresolvedReferences
     @staticmethod
     cdef Bar from_serializable_string_c(str value):
         Condition.valid_string(value, 'value')
@@ -358,7 +356,7 @@ cdef class Bar:
             Price(pieces[2]),
             Price(pieces[3]),
             Quantity(pieces[4]),
-            datetime.fromtimestamp(long(pieces[5]) / 1000, pytz.utc),
+            from_posix_ms(long(pieces[5])),
         )
 
     @staticmethod
@@ -389,7 +387,7 @@ cdef class Bar:
         str
 
         """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{to_posix_ms(self.timestamp)}"
 
 
 cdef class BarData:
