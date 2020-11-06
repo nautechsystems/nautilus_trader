@@ -30,6 +30,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -59,9 +60,9 @@ cdef class BarBuilder:
 
         """
         self.bar_spec = bar_spec
-        self.last_update = None
-        self.initialized = False
         self.use_previous_close = use_previous_close
+        self.initialized = False
+        self.last_timestamp = None
         self.count = 0
 
         self._last_close = None
@@ -80,85 +81,27 @@ cdef class BarBuilder:
                 f"{self._close},"
                 f"{self._volume})")
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void update(self, Price price, Decimal volume, datetime timestamp) except *:
         """
-        Update the builder with the given tick.
+        Update the bar builder.
 
         Parameters
         ----------
-        tick : QuoteTick
-            The tick to update with.
+        price : Price
+            The update price.
+        volume : Decimal
+            The update volume.
+        timestamp : datetime
+            The update timestamp.
 
         """
-        Condition.not_none(tick, "tick")
+        Condition.not_none(price, "price")
+        Condition.not_none(volume, "volume")
+        Condition.not_none(timestamp, "timestamp")
 
-        if self.last_update is not None and tick.timestamp < self.last_update:
-            return  # Previously handled tick
+        if self.last_timestamp and timestamp < self.last_timestamp:
+            return  # Not applicable
 
-        self._update(
-            price=tick.extract_price(self.bar_spec.price_type),
-            volume=tick.extract_volume(self.bar_spec.price_type),
-            timestamp=tick.timestamp,
-        )
-
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
-        """
-        Update the builder with the given tick.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick to update with.
-
-        """
-        Condition.not_none(tick, "tick")
-
-        if self.last_update and tick.timestamp < self.last_update:
-            return  # Previously handled tick
-
-        self._update(
-            price=tick.price,
-            volume=tick.size,
-            timestamp=tick.timestamp,
-        )
-
-    cpdef Bar build(self, datetime close_time=None):
-        """
-        Return a bar from the internal properties.
-
-        Parameters
-        ----------
-        close_time : datetime, optional
-            The closing time for the bar (if None will be last updated time).
-
-        Returns
-        -------
-        Bar
-
-        """
-        if close_time is None:
-            close_time = self.last_update
-
-        if self._open is None:  # No tick was received
-            self._open = self._last_close
-            self._high = self._last_close
-            self._low = self._last_close
-            self._close = self._last_close
-
-        cdef Bar bar = Bar(
-            open_price=self._open,
-            high_price=self._high,
-            low_price=self._low,
-            close_price=self._close,
-            volume=Quantity(self._volume),
-            timestamp=close_time,
-        )
-
-        self._last_close = self._close
-        self._reset()
-        return bar
-
-    cdef void _update(self, Price price, Decimal volume, datetime timestamp) except *:
         if self._open is None:
             # Initialize builder
             self._open = price
@@ -172,9 +115,14 @@ cdef class BarBuilder:
         self._close = price
         self._volume = self._volume + volume
         self.count += 1
-        self.last_update = timestamp
+        self.last_timestamp = timestamp
 
-    cdef void _reset(self) except *:
+    cpdef void reset(self) except *:
+        """
+        Reset the bar builder.
+
+        All stateful values are reset to their initial value.
+        """
         if self.use_previous_close:
             self._open = self._close
             self._high = self._close
@@ -187,6 +135,39 @@ cdef class BarBuilder:
 
         self._volume = Quantity()
         self.count = 0
+
+    cpdef Bar build(self, datetime close_time=None):
+        """
+        Return the aggregated bar and reset.
+
+        Parameters
+        ----------
+        close_time : datetime, optional
+            The closing time for the bar (if None will be last updated time).
+
+        Returns
+        -------
+        Bar
+
+        """
+        if self._open is None:  # No tick was received
+            self._open = self._last_close
+            self._high = self._last_close
+            self._low = self._last_close
+            self._close = self._last_close
+
+        cdef Bar bar = Bar(
+            open_price=self._open,
+            high_price=self._high,
+            low_price=self._low,
+            close_price=self._close,
+            volume=Quantity(self._volume),
+            timestamp=close_time if close_time is not None else self.last_timestamp,
+        )
+
+        self._last_close = self._close
+        self.reset()
+        return bar
 
 
 cdef class BarAggregator:
@@ -232,8 +213,10 @@ cdef class BarAggregator:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void _handle_bar(self, Bar bar) except *:
-        self._handler(self.bar_type, bar)
+    cdef void _build_and_send(self, datetime close=None) except *:
+        cdef Bar bar = self._builder.build(close)
+        cdef BarData data = BarData(self.bar_type, bar)
+        self._handler(data)
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -284,7 +267,12 @@ cdef class TickBarAggregator(BarAggregator):
         """
         Condition.not_none(tick, "tick")
 
-        self._builder.handle_quote_tick(tick)
+        self._builder.update(
+            price=tick.extract_price(self._builder.bar_spec.price_type),
+            volume=tick.extract_volume(self._builder.bar_spec.price_type),
+            timestamp=tick.timestamp,
+        )
+
         self._check_bar_builder()
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -299,20 +287,18 @@ cdef class TickBarAggregator(BarAggregator):
         """
         Condition.not_none(tick, "tick")
 
-        self._builder.handle_trade_tick(tick)
+        self._builder.update(
+            price=tick.price,
+            volume=tick.size,
+            timestamp=tick.timestamp,
+        )
+
         self._check_bar_builder()
 
     cdef inline void _check_bar_builder(self) except *:
         cdef Bar bar
         if self._builder.count == self.step:
-            try:
-                bar = self._builder.build()
-            except ValueError as ex:
-                # Bar was somehow malformed
-                self._log.exception(ex)
-                return
-
-            self._handle_bar(bar)
+            self._build_and_send()
 
 
 cdef class TimeBarAggregator(BarAggregator):
@@ -371,19 +357,22 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         Condition.not_none(tick, "tick")
 
+        cdef Price price = tick.extract_price(self._builder.bar_spec.price_type)
+        cdef Quantity volume = tick.extract_volume(self._builder.bar_spec.price_type)
+
         if self._clock.is_test_clock:
             if self.next_close < tick.timestamp:
                 # Build bar first, then update
                 self._build_bar(self.next_close)
-                self._builder.handle_quote_tick(tick)
+                self._builder.update(price, volume, tick.timestamp)
                 return
             elif self.next_close == tick.timestamp:
                 # Update first, then build bar
-                self._builder.handle_quote_tick(tick)
+                self._builder.update(price, volume, tick.timestamp)
                 self._build_bar(self.next_close)
                 return
 
-        self._builder.handle_quote_tick(tick)
+        self._builder.update(price, volume, tick.timestamp)
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
@@ -401,15 +390,15 @@ cdef class TimeBarAggregator(BarAggregator):
             if self.next_close < tick.timestamp:
                 # Build bar first, then update
                 self._build_bar(self.next_close)
-                self._builder.handle_trade_tick(tick)
+                self._builder.update(tick.price, tick.size, tick.timestamp)
                 return
             elif self.next_close == tick.timestamp:
                 # Update first, then build bar
-                self._builder.handle_trade_tick(tick)
+                self._builder.update(tick.price, tick.size, tick.timestamp)
                 self._build_bar(self.next_close)
                 return
 
-        self._builder.handle_trade_tick(tick)
+        self._builder.update(tick.price, tick.size, tick.timestamp)
 
     cpdef void stop(self) except *:
         """
@@ -494,18 +483,11 @@ cdef class TimeBarAggregator(BarAggregator):
         self.next_close = timer.next_time
 
     cpdef void _build_event(self, TimeEvent event) except *:
-        cdef Bar bar
-        try:
-            if self._builder.use_previous_close and not self._builder.initialized:
-                self._log.error(f"Cannot build {self.bar_type} (no prices received).")
-                return
-
-            bar = self._builder.build(event.timestamp)
-            self._handle_bar(bar)
-        except ValueError as ex:
-            # Bar was somehow malformed
-            self._log.exception(ex)
+        if self._builder.use_previous_close and not self._builder.initialized:
+            self._log.error(f"Cannot build {self.bar_type} (no prices received).")
             return
+
+        self._build_and_send(close=event.timestamp)
 
 
 cdef class BulkTickBarBuilder:
@@ -566,8 +548,8 @@ cdef class BulkTickBarBuilder:
 
         self.callback(self.aggregator.bar_type, self.bars)
 
-    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *:
-        self.bars.append(bar)
+    cpdef void _add_bar(self, BarData data) except *:
+        self.bars.append(data.bar)
 
 
 cdef class BulkTimeBarUpdater:

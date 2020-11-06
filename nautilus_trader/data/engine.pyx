@@ -795,9 +795,6 @@ cdef class DataEngine:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef void _wrap_and_process_bar_data(self, BarType bar_type, Bar bar) except *:  # TODO: Refactor
-        self.process(BarData(bar_type, bar))
-
     cdef inline void _internal_update_instruments(self, list instruments: [Instrument]) except *:
         # Handle all instruments individually
         cdef Instrument instrument
@@ -825,7 +822,7 @@ cdef class DataEngine:
         # Create aggregator
         cdef TimeBarAggregator aggregator = TimeBarAggregator(
             bar_type=bar_type,
-            handler=self._wrap_and_process_bar_data,
+            handler=self.process,
             use_previous_close=self._use_previous_close,
             clock=self._clock,
             logger=self._log.get_logger(),
@@ -857,7 +854,7 @@ cdef class DataEngine:
         # Create aggregator - start aggregating from now
         return TickBarAggregator(
             bar_type=bar_type,
-            handler=self._wrap_and_process_bar_data,
+            handler=self.process,
             logger=self._log.get_logger(),
         )
 

@@ -20,6 +20,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.objects cimport Price
@@ -31,12 +32,12 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class BarBuilder:
     cdef readonly BarSpecification bar_spec
     """The builders bar specification.\n\n:returns: `BarSpecification`"""
-    cdef readonly datetime last_update
-    """The builders last update timestamp.\n\n:returns: `datetime`"""
-    cdef readonly bint initialized
-    """If the builder is initialized.\n\n:returns: `bool`"""
     cdef readonly bint use_previous_close
     """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
+    cdef readonly bint initialized
+    """If the builder is initialized.\n\n:returns: `bool`"""
+    cdef readonly datetime last_timestamp
+    """The builders last update timestamp.\n\n:returns: `datetime`"""
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
@@ -47,11 +48,9 @@ cdef class BarBuilder:
     cdef Price _close
     cdef Decimal _volume
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void handle_trade_tick(self, TradeTick tick) except *
+    cpdef void update(self, Price price, Decimal volume, datetime timestamp) except *
+    cpdef void reset(self) except *
     cpdef Bar build(self, datetime close_time=*)
-    cdef void _update(self, Price price, Decimal volume, datetime timestamp) except *
-    cdef void _reset(self) except *
 
 
 cdef class BarAggregator:
@@ -64,7 +63,7 @@ cdef class BarAggregator:
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cpdef void _handle_bar(self, Bar bar) except *
+    cdef void _build_and_send(self, datetime close=*) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -94,7 +93,7 @@ cdef class BulkTickBarBuilder:
     cdef object callback
     cdef list bars
 
-    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void _add_bar(self, BarData data) except *
 
 
 cdef class BulkTimeBarUpdater:
