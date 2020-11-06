@@ -62,7 +62,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self._volume = Quantity()
+        self._volume = Decimal()
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -143,7 +143,7 @@ cdef class BarBuilder:
             high_price=self._high,
             low_price=self._low,
             close_price=self._close,
-            volume=self._volume,
+            volume=Quantity(self._volume),
             timestamp=close_time,
         )
 
@@ -151,7 +151,7 @@ cdef class BarBuilder:
         self._reset()
         return bar
 
-    cdef void _update(self, Price price, Quantity volume, datetime timestamp) except *:
+    cdef void _update(self, Price price, Decimal volume, datetime timestamp) except *:
         if self._open is None:
             # Initialize builder
             self._open = price
@@ -164,7 +164,7 @@ cdef class BarBuilder:
             self._low = price
 
         self._close = price
-        self._volume = Quantity(self._volume + volume)
+        self._volume = self._volume + volume
         self.count += 1
         self.last_update = timestamp
 
@@ -233,6 +233,9 @@ cdef class BarAggregator:
 cdef class TickBarAggregator(BarAggregator):
     """
     Provides a means of building tick bars from ticks.
+
+    When received tick count reaches the step threshold of the bar
+    specification, then a bar is created and sent to the handler.
     """
 
     def __init__(
@@ -242,7 +245,7 @@ cdef class TickBarAggregator(BarAggregator):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarBuilder` class.
+        Initialize a new instance of the `TickBarAggregator` class.
 
         Parameters
         ----------
@@ -309,6 +312,9 @@ cdef class TickBarAggregator(BarAggregator):
 cdef class TimeBarAggregator(BarAggregator):
     """
     Provides a means of building time bars from ticks with an internal timer.
+
+    When the time reaches the next time interval of the bar specification, then
+    a bar is created and sent to the handler.
     """
     def __init__(
             self,

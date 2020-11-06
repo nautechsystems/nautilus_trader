@@ -85,6 +85,25 @@ class BarSpecificationTests(unittest.TestCase):
         # Assert
         self.assertEqual(spec, expected)
 
+    @parameterized.expand([
+        [BarSpecification(1, BarAggregation.MINUTE, PriceType.BID), True, False, False],
+        [BarSpecification(1000, BarAggregation.TICK, PriceType.MID), False, True, False],
+        [BarSpecification(10000, BarAggregation.NOTIONAL_RUNS, PriceType.MID), False, False, True],
+    ])
+    def test_aggregation_methods(
+            self,
+            bar_spec,
+            is_time_aggregated,
+            is_threshold_aggregated,
+            is_information_aggregated,
+    ):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(is_time_aggregated, bar_spec.is_time_aggregated())
+        self.assertEqual(is_threshold_aggregated, bar_spec.is_threshold_aggregated())
+        self.assertEqual(is_information_aggregated, bar_spec.is_information_aggregated())
+
 
 class BarTypeTests(unittest.TestCase):
 

@@ -23,7 +23,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -45,12 +45,12 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef Quantity _volume
+    cdef Decimal _volume
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
     cpdef Bar build(self, datetime close_time=*)
-    cdef void _update(self, Price price, Quantity volume, datetime timestamp) except *
+    cdef void _update(self, Price price, Decimal volume, datetime timestamp) except *
     cdef void _reset(self) except *
 
 
