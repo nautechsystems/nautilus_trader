@@ -576,7 +576,7 @@ cdef class DataEngine:
 
         if request.data_type == Instrument:
             venue = request.metadata.get(VENUE)
-            if venue is not None:
+            if venue:
                 self._handle_request_instruments(
                     venue,
                     request.id,

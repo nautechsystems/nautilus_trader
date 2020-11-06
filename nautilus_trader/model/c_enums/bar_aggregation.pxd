@@ -18,14 +18,17 @@ cpdef enum BarAggregation:
     UNDEFINED = 0,  # Invalid value
     TICK = 1,
     TICK_IMBALANCE = 2,
-    VOLUME = 3,
-    VOLUME_IMBALANCE = 4,
-    DOLLAR = 5,
-    DOLLAR_IMBALANCE = 6
-    SECOND = 7,
-    MINUTE = 8,
-    HOUR = 9,
-    DAY = 10,
+    TICK_RUNS = 3,
+    VOLUME = 4,
+    VOLUME_IMBALANCE = 5,
+    VOLUME_RUNS = 6,
+    NOTIONAL = 7,
+    NOTIONAL_IMBALANCE = 8
+    NOTIONAL_RUNS = 9,
+    SECOND = 10,
+    MINUTE = 11,
+    HOUR = 12,
+    DAY = 13,
 
 
 cdef class BarAggregationParser:

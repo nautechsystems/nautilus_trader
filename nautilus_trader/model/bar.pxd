@@ -32,8 +32,9 @@ cdef class BarSpecification:
 
     @staticmethod
     cdef BarSpecification from_string_c(str value)
-    cdef bint is_time_aggregated(self) except *
-    cdef str price_type_string(self)
+    cpdef bint is_time_aggregated(self) except *
+    cpdef bint is_threshold_aggregated(self) except *
+    cpdef bint is_information_aggregated(self) except *
 
 
 cdef class BarType:

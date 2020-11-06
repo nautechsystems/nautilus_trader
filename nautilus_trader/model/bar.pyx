@@ -28,12 +28,31 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef list _TIME_AGGREGATED = [
+# Aggregation methods which are time driven
+cdef list _TIME_AGGREGATION = [
     BarAggregation.SECOND,
     BarAggregation.MINUTE,
     BarAggregation.HOUR,
     BarAggregation.DAY,
 ]
+
+# Aggregation methods which are threshold-driven
+cdef list _THRESHOLD_AGGREGATION = [
+    BarAggregation.TICK,
+    BarAggregation.TICK_IMBALANCE,
+    BarAggregation.VOLUME,
+    BarAggregation.VOLUME_IMBALANCE,
+    BarAggregation.NOTIONAL,
+    BarAggregation.NOTIONAL_IMBALANCE,
+]
+
+# Aggregation methods which are information driven
+cdef list _INFORMATION_AGGREGATION = [
+    BarAggregation.TICK_RUNS,
+    BarAggregation.VOLUME_RUNS,
+    BarAggregation.NOTIONAL_RUNS,
+]
+
 
 cdef class BarSpecification:
     """
@@ -133,27 +152,38 @@ cdef class BarSpecification:
         """
         return BarSpecification.from_string_c(value)
 
-    cdef bint is_time_aggregated(self) except *:
+    cpdef bint is_time_aggregated(self) except *:
         """
-        If the aggregation is by certain time interval.
+        If the aggregation method is time-driven.
 
         Returns
         -------
         bool
 
         """
-        return self.aggregation in _TIME_AGGREGATED
+        return self.aggregation in _TIME_AGGREGATION
 
-    cdef str price_type_string(self):
+    cpdef bint is_threshold_aggregated(self) except *:
         """
-        The price type as a string.
+        If the aggregation method is threshold-driven.
 
         Returns
         -------
-        str
+        bool
 
         """
-        return PriceTypeParser.to_string(self.price_type)
+        return self.aggregation in _THRESHOLD_AGGREGATION
+
+    cpdef bint is_information_aggregated(self) except *:
+        """
+        If the aggregation method is information-driven.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.aggregation in _INFORMATION_AGGREGATION
 
 
 cdef class BarType:

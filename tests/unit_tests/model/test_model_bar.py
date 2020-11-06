@@ -74,7 +74,7 @@ class BarSpecificationTests(unittest.TestCase):
         ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
         ["15-MINUTE-MID", BarSpecification(15, BarAggregation.MINUTE, PriceType.MID)],
         ["100-TICK-LAST", BarSpecification(100, BarAggregation.TICK, PriceType.LAST)],
-        ["10000-DOLLAR_IMBALANCE-MID", BarSpecification(10000, BarAggregation.DOLLAR_IMBALANCE, PriceType.MID)],
+        ["10000-NOTIONAL_IMBALANCE-MID", BarSpecification(10000, BarAggregation.NOTIONAL_IMBALANCE, PriceType.MID)],
 
     ])
     def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
