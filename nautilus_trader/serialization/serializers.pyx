@@ -221,7 +221,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if isinstance(order, PassiveOrder):
             package[PRICE] = str(order.price)
             if order.expire_time is not None:
-                package[EXPIRE_TIME] = str(long(order.expire_time.timestamp()))
+                package[EXPIRE_TIME] = ObjectParser.datetime_to_string(order.expire_time)
 
         if isinstance(order, LimitOrder):
             package[POST_ONLY] = str(order.is_post_only)
@@ -263,7 +263,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef Quantity quantity = Quantity(unpacked[QUANTITY].decode(UTF8))
         cdef TimeInForce time_in_force = TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8))
         cdef UUID init_id = UUID.from_string_c(unpacked[INIT_ID].decode(UTF8))
-        cdef datetime timestamp = datetime.fromtimestamp(long(unpacked[TIMESTAMP].decode(UTF8)), pytz.utc)
+        cdef datetime timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if order_type == OrderType.MARKET:
             return MarketOrder(
@@ -280,7 +280,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         cdef bytes expire_time_str = unpacked.get(EXPIRE_TIME)
         cdef datetime expire_time = None
         if expire_time_str is not None:
-            expire_time = datetime.fromtimestamp(long(expire_time_str.decode(UTF8)), pytz.utc)
+            expire_time = ObjectParser.string_to_datetime((expire_time_str.decode(UTF8)))
         if order_type == OrderType.LIMIT:
             return LimitOrder(
                 cl_ord_id=cl_ord_id,
@@ -354,7 +354,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict package = {
             TYPE: type(command).__name__,
             ID: command.id.value,
-            TIMESTAMP: str(long(command.timestamp.timestamp())),
+            TIMESTAMP: ObjectParser.datetime_to_string(command.timestamp),
         }
 
         if isinstance(command, SubmitOrder):
@@ -416,7 +416,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         cdef str command_type = unpacked[TYPE].decode(UTF8)
         cdef UUID command_id = UUID.from_string_c(unpacked[ID].decode(UTF8))
-        cdef datetime command_timestamp = datetime.fromtimestamp(long(unpacked[TIMESTAMP].decode(UTF8)), pytz.utc)
+        cdef datetime command_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         if command_type == SubmitOrder.__name__:
             return SubmitOrder(
@@ -504,7 +504,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict package = {
             TYPE: type(event).__name__,
             ID: event.id.value,
-            TIMESTAMP: str(long(event.timestamp.timestamp())),
+            TIMESTAMP: ObjectParser.datetime_to_string(event.timestamp),
         }
 
         if isinstance(event, AccountState):
@@ -629,7 +629,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef str event_type = unpacked[TYPE].decode(UTF8)
         cdef UUID event_id = UUID.from_string_c(unpacked[ID].decode(UTF8))
-        cdef datetime event_timestamp = datetime.fromtimestamp(long(unpacked[TIMESTAMP].decode(UTF8)), pytz.utc)
+        cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
 
         cdef Currency currency
         if event_type == AccountState.__name__:
