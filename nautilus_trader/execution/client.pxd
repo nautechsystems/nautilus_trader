@@ -35,12 +35,13 @@ cdef class ExecutionClient:
 
     cpdef bint is_connected(self) except *
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
-
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void modify_order(self, ModifyOrder command) except *

@@ -64,8 +64,6 @@ cdef class ExecutionClient:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
-
     cpdef bint is_connected(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -85,6 +83,8 @@ cdef class ExecutionClient:
     cpdef void dispose(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
+
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         """Abstract method (implement in subclass)."""
