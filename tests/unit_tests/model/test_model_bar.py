@@ -14,11 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-
-import pytz
 import unittest
 
 from parameterized import parameterized
+import pytz
 
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
