@@ -151,8 +151,6 @@ cdef class DataEngine:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef void _wrap_and_process_bar_data(self, BarType bar_type, Bar bar) except *
-
     cdef inline void _internal_update_instruments(self, list instruments) except *
     cdef inline void _start_generating_bars(self, BarType bar_type, handler) except *
     cdef inline TimeBarAggregator _create_time_bar_aggregator(self, BarType bar_type)

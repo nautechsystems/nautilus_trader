@@ -45,7 +45,48 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 class BarBuilderTests(unittest.TestCase):
 
-    def test_build_with_no_updates_raises_exception(self):
+    def test_instantiate(self):
+        # Arrange
+        bar_spec = TestStubs.bar_spec_1min_mid()
+        builder = BarBuilder(bar_spec, use_previous_close=False)
+
+        # Act
+        # Assert
+        self.assertEqual(bar_spec, builder.bar_spec)
+        self.assertFalse(builder.use_previous_close)
+        self.assertFalse(builder.initialized)
+        self.assertIsNone(builder.last_timestamp)
+        self.assertEqual(0, builder.count)
+
+    def test_single_update_results_in_expected_properties(self):
+        # Arrange
+        bar_spec = TestStubs.bar_spec_1min_mid()
+        builder = BarBuilder(bar_spec, use_previous_close=True)
+
+        # Act
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+
+        # Assert
+        self.assertTrue(builder.initialized)
+        self.assertEqual(UNIX_EPOCH, builder.last_timestamp)
+        self.assertEqual(1, builder.count)
+
+    def test_multiple_updates_correctly_increments_count(self):
+        # Arrange
+        bar_spec = TestStubs.bar_spec_1min_mid()
+        builder = BarBuilder(bar_spec, use_previous_close=True)
+
+        # Act
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+
+        # Assert
+        self.assertEqual(5, builder.count)
+
+    def test_build_when_no_updates_raises_exception(self):
         # Arrange
         bar_spec = TestStubs.bar_spec_1min_mid()
         builder = BarBuilder(bar_spec, use_previous_close=False)
@@ -54,83 +95,14 @@ class BarBuilderTests(unittest.TestCase):
         # Assert
         self.assertRaises(TypeError, builder.build)
 
-    def test_update(self):
-        # Arrange
-        bar_spec = TestStubs.bar_spec_1min_mid()
-        builder = BarBuilder(bar_spec, use_previous_close=True)
-
-        tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        # Act
-        builder.handle_quote_tick(tick1)
-        builder.handle_quote_tick(tick2)
-        builder.handle_quote_tick(tick3)
-
-        # Assert
-        self.assertEqual(bar_spec, builder.bar_spec)
-        self.assertEqual(3, builder.count)
-        self.assertEqual(UNIX_EPOCH, builder.last_update)
-
-    def test_build_bid(self):
+    def test_build_when_received_updates_returns_expected_bar(self):
         # Arrange
         bar_spec = TestStubs.bar_spec_1min_bid()
         builder = BarBuilder(bar_spec, use_previous_close=True)
 
-        tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        builder.handle_quote_tick(tick1)
-        builder.handle_quote_tick(tick2)
-        builder.handle_quote_tick(tick3)
+        builder.update(Price("1.00001"), Quantity("1.0"), UNIX_EPOCH)
+        builder.update(Price("1.00002"), Quantity("1.5"), UNIX_EPOCH)
+        builder.update(Price("1.00000"), Quantity("1.5"), UNIX_EPOCH + timedelta(seconds=1))
 
         # Act
         bar = builder.build()  # Also resets builder
@@ -140,58 +112,9 @@ class BarBuilderTests(unittest.TestCase):
         self.assertEqual(Price("1.00002"), bar.high)
         self.assertEqual(Price("1.00000"), bar.low)
         self.assertEqual(Price("1.00000"), bar.close)
-        self.assertEqual(Quantity(3), bar.volume)
-        self.assertEqual(UNIX_EPOCH, bar.timestamp)
-        self.assertEqual(UNIX_EPOCH, builder.last_update)
-        self.assertEqual(0, builder.count)
-
-    def test_build_mid(self):
-        # Arrange
-        bar_spec = TestStubs.bar_spec_1min_mid()
-        builder = BarBuilder(bar_spec, use_previous_close=True)
-
-        tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        builder.handle_quote_tick(tick1)
-        builder.handle_quote_tick(tick2)
-        builder.handle_quote_tick(tick3)
-
-        # Act
-        bar = builder.build()  # Also resets builder
-
-        # Assert
-        self.assertEqual(Price("1.000025"), bar.open)
-        self.assertEqual(Price("1.000035"), bar.high)
-        self.assertEqual(Price("1.000015"), bar.low)
-        self.assertEqual(Price("1.000015"), bar.close)
-        self.assertEqual(Quantity(6), bar.volume)
-        self.assertEqual(UNIX_EPOCH, bar.timestamp)
-        self.assertEqual(UNIX_EPOCH, builder.last_update)
+        self.assertEqual(Quantity("4.0"), bar.volume)
+        self.assertEqual(UNIX_EPOCH + timedelta(seconds=1), bar.timestamp)
+        self.assertEqual(UNIX_EPOCH + timedelta(seconds=1), builder.last_timestamp)
         self.assertEqual(0, builder.count)
 
     def test_build_with_previous_close(self):
@@ -199,50 +122,21 @@ class BarBuilderTests(unittest.TestCase):
         bar_spec = TestStubs.bar_spec_1min_mid()
         builder = BarBuilder(bar_spec, use_previous_close=True)
 
-        tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00001"),
-            ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
+        builder.update(Price("1.00001"), Quantity("1.0"), UNIX_EPOCH)
+        builder.build()  # This close should become the next open
 
-        tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00002"),
-            ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
+        builder.update(Price("1.00000"), Quantity("1.0"), UNIX_EPOCH)
+        builder.update(Price("1.00003"), Quantity("1.0"), UNIX_EPOCH)
+        builder.update(Price("1.00002"), Quantity("1.0"), UNIX_EPOCH)
 
-        tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM,
-            bid=Price("1.00000"),
-            ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
-            timestamp=UNIX_EPOCH,
-        )
-
-        builder.handle_quote_tick(tick1)
-        builder.handle_quote_tick(tick2)
-        builder.handle_quote_tick(tick3)
-        builder.build()
-
-        # Act
-        bar = builder.build()  # Also resets builder
+        bar2 = builder.build()
 
         # Assert
-        self.assertEqual(Price("1.000015"), bar.open)
-        self.assertEqual(Price("1.000015"), bar.high)
-        self.assertEqual(Price("1.000015"), bar.low)
-        self.assertEqual(Price("1.000015"), bar.close)
-        self.assertEqual(Quantity(), bar.volume)
-        self.assertEqual(UNIX_EPOCH, bar.timestamp)
-        self.assertEqual(UNIX_EPOCH, builder.last_update)
-        self.assertEqual(0, builder.count)
+        self.assertEqual(Price("1.00001"), bar2.open)
+        self.assertEqual(Price("1.00003"), bar2.high)
+        self.assertEqual(Price("1.00000"), bar2.low)
+        self.assertEqual(Price("1.00002"), bar2.close)
+        self.assertEqual(Quantity("3.0"), bar2.volume)
 
 
 class TickBarAggregatorTests(unittest.TestCase):
@@ -250,7 +144,7 @@ class TickBarAggregatorTests(unittest.TestCase):
     def test_update_sends_bar_to_handler(self):
         # Arrange
         bar_store = ObjectStorer()
-        handler = bar_store.store_2
+        handler = bar_store.store
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
@@ -290,11 +184,11 @@ class TickBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0][1].open)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price("1.000015"), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price('1.000015'), bar_store.get_store()[0][1].close)
-        self.assertEqual(Quantity(6), bar_store.get_store()[0][1].volume)
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.000015"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.000015'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(6), bar_store.get_store()[0].bar.volume)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):
@@ -303,7 +197,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         # Arrange
         clock = TestClock()
         bar_store = ObjectStorer()
-        handler = bar_store.store_2
+        handler = bar_store.store
         symbol = TestStubs.symbol_audusd_fxcm()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
@@ -345,12 +239,12 @@ class TimeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0][1].open)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0][1].high)
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0][1].low)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0][1].close)
-        self.assertEqual(Quantity(4), bar_store.get_store()[0][1].volume)
-        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0][1].timestamp)
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(4), bar_store.get_store()[0].bar.volume)
+        self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), bar_store.get_store()[0].bar.timestamp)
 
 
 class BulkTickBarBuilderTests(unittest.TestCase):
@@ -384,4 +278,5 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         builder.receive(ticks)
 
         # Assert
+        print(bar_store.get_store())
         self.assertEqual(333, len(bar_store.get_store()[0][1]))
