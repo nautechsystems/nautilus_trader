@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Contains the test suite for `NautilusTrader`.
+"""
+
 import os
 
 

@@ -39,6 +39,10 @@ cpdef inline double fast_mean(list values):
     -------
     double
 
+    Notes
+    -----
+    > 10x faster than `np.mean`.
+
     """
     cdef int length = len(values)
 
@@ -81,6 +85,10 @@ cpdef inline double fast_mean_iterated(
     -------
     double
 
+    Notes
+    -----
+    > 10x faster than `np.mean`.
+
     """
     cdef int length = len(values)
     if length < expected_length:
@@ -105,6 +113,10 @@ cpdef inline double fast_std(list values):
     -------
     double
 
+    Notes
+    -----
+    > 10x faster than `np.std`.
+
     """
     return fast_std_with_mean(values, fast_mean(values))
 
@@ -126,6 +138,10 @@ cpdef inline double fast_std_with_mean(list values, double mean):
     Returns
     -------
     double
+
+    Notes
+    -----
+    > 10x faster than `np.std`.
 
     """
     cdef int length = len(values)

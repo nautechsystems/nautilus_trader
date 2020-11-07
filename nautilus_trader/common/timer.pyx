@@ -15,8 +15,6 @@
 
 from threading import Timer as TimerThread
 
-import pytz
-
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -25,9 +23,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
-
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
-_UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
 cdef class TimeEvent(Event):
@@ -209,7 +204,7 @@ cdef class Timer:
             self.expired = True
 
     cpdef void cancel(self) except *:
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
 
@@ -247,7 +242,7 @@ cdef class TestTimer(Timer):
         Condition.valid_string(name, "name")
         super().__init__(name, callback, interval, start_time, stop_time)
 
-        self._uuid_factory = TestUUIDFactory()
+        self._uuid_factory = UUIDFactory()
 
     cpdef list advance(self, datetime to_time):
         """

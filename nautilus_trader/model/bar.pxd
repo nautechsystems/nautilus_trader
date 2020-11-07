@@ -32,9 +32,9 @@ cdef class BarSpecification:
 
     @staticmethod
     cdef BarSpecification from_string_c(str value)
-    cdef bint is_time_aggregated(self) except *
-    cdef str aggregation_string(self)
-    cdef str price_type_string(self)
+    cpdef bint is_time_aggregated(self) except *
+    cpdef bint is_threshold_aggregated(self) except *
+    cpdef bint is_information_aggregated(self) except *
 
 
 cdef class BarType:
@@ -42,9 +42,11 @@ cdef class BarType:
     """The symbol of the bar type.\n\n:returns: `Symbol`"""
     cdef readonly BarSpecification spec
     """The specification of the bar type.\n\n:returns: `BarSpecification`"""
+    cdef readonly bint is_internal_aggregation
+    """If bar aggregation is internal to the platform.\n\n:returns: `bint`"""
 
     @staticmethod
-    cdef BarType from_string_c(str value)
+    cdef BarType from_string_c(str value, bint is_internal_aggregation=*)
 
 
 cdef class Bar:
@@ -66,3 +68,10 @@ cdef class Bar:
     @staticmethod
     cdef Bar from_serializable_string_c(str value)
     cpdef str to_serializable_string(self)
+
+
+cdef class BarData:
+    cdef readonly BarType bar_type
+    """The type of the bar.\n\n:returns: `BarType`"""
+    cdef readonly Bar bar
+    """The bar data.\n\n:returns: `Bar`"""

@@ -17,9 +17,12 @@ from datetime import datetime
 from datetime import timedelta
 import unittest
 
+from parameterized import parameterized
 import pandas as pd
 import pytz
 
+from nautilus_trader.core.datetime import to_posix_ms
+from nautilus_trader.core.datetime import from_posix_ms
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import format_iso8601
@@ -30,6 +33,34 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestFunctionsTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],
+        [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
+        [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), 1357002000000],
+        [datetime(2020, 1, 2, 3, 2, microsecond=1001, tzinfo=pytz.utc), 1577934120001],
+    ])
+    def test_to_posix_ms_with_various_values_returns_expected_long(self, value, expected):
+        # Arrange
+        # Act
+        posix = to_posix_ms(value)
+
+        # Assert
+        self.assertEqual(expected, posix)
+
+    @parameterized.expand([
+        [-2674800000, datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc)],
+        [0, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
+        [1357002000000, datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)],
+        [1577934120001, datetime(2020, 1, 2, 3, 2, tzinfo=pytz.utc)],
+    ])
+    def test_from_posix_ms_with_various_values_returns_expected_datetime(self, value, expected):
+        # Arrange
+        # Act
+        dt = from_posix_ms(value)
+
+        # Assert
+        self.assertEqual(expected, dt)
 
     def test_is_datetime_utc_given_tz_naive_datetime_returns_false(self):
         # Arrange

@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+The top level package contains all sub-packages needed for `NautilusTrader`.
+"""
+
 import os
 
 

@@ -126,19 +126,22 @@ cdef class TradingStrategy:
     cpdef dict save(self)
     cpdef void load(self, dict state) except *
 
-# -- DATA COMMANDS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe_instrument(self, Symbol symbol) except *
+    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
+    cpdef void subscribe_bars(self, BarType bar_type) except *
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
+    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *
+
+# -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_quote_ticks(self, Symbol symbol) except *
     cpdef void request_trade_ticks(self, Symbol symbol) except *
     cpdef void request_bars(self, BarType bar_type) except *
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
-    cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_instrument(self, Symbol symbol) except *
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 

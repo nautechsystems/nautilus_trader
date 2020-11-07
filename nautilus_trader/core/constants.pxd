@@ -95,10 +95,6 @@ cdef str SETTLEMENT_FEE
 cdef str FUNDING_LONG
 cdef str FUNDING_SHORT
 
-cdef str QUERY
 cdef str FROM_DATETIME
 cdef str TO_DATETIME
 cdef str LIMIT
-
-cdef str HANDLER
-cdef str CALLBACK

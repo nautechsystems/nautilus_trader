@@ -18,26 +18,17 @@ import unittest
 
 import pytz
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
-from nautilus_trader.data.engine import BulkTickBarBuilder
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.data.wrangling import TickDataWrangler
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.data import TestDataProvider
-from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
 
@@ -49,7 +40,7 @@ class DataEngineTests(unittest.TestCase):
 
     def setUp(self):
         self.clock = TestClock()
-        self.uuid_factory = TestUUIDFactory()
+        self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock)
 
         self.portfolio = Portfolio(
@@ -144,37 +135,3 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0.80005, result)
-
-
-class BulkTickBarBuilderTests(unittest.TestCase):
-
-    def test_given_list_of_ticks_aggregates_tick_bars(self):
-        # Arrange
-        tick_data = TestDataProvider.usdjpy_test_ticks()
-        bid_data = TestDataProvider.usdjpy_1min_bid()
-        ask_data = TestDataProvider.usdjpy_1min_ask()
-        self.wrangler = TickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
-            data_ticks=tick_data,
-            data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data},
-        )
-        self.wrangler.pre_process(0)
-
-        bar_store = ObjectStorer()
-        handler = bar_store.store_2
-        symbol = TestStubs.symbol_usdjpy_fxcm()
-        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(symbol, bar_spec)
-
-        clock = TestClock()
-        logger = TestLogger(clock)
-
-        ticks = self.wrangler.build_ticks()
-        builder = BulkTickBarBuilder(bar_type, logger, handler)
-
-        # Act
-        builder.receive(ticks)
-
-        # Assert
-        self.assertEqual(333, len(bar_store.get_store()[0][1]))

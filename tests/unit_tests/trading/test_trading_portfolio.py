@@ -19,7 +19,7 @@ from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
@@ -61,7 +61,7 @@ class PortfolioTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
-        uuid_factor = TestUUIDFactory()
+        uuid_factor = UUIDFactory()
         logger = TestLogger(self.clock)
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER", "000"),

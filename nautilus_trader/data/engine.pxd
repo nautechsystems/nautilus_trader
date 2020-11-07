@@ -16,16 +16,18 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.commands cimport Connect
-from nautilus_trader.common.commands cimport Disconnect
-from nautilus_trader.common.commands cimport RequestData
-from nautilus_trader.common.commands cimport Subscribe
-from nautilus_trader.common.commands cimport Unsubscribe
+from nautilus_trader.common.messages cimport Connect
+from nautilus_trader.common.messages cimport Disconnect
+from nautilus_trader.common.messages cimport DataRequest
+from nautilus_trader.common.messages cimport DataResponse
+from nautilus_trader.common.messages cimport Subscribe
+from nautilus_trader.common.messages cimport Unsubscribe
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.cache cimport DataCache
@@ -48,11 +50,12 @@ cdef class DataEngine:
     cdef FiniteStateMachine _fsm
     cdef bint _use_previous_close
     cdef dict _clients
+    cdef dict _correlation_index
     cdef dict _instrument_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
-    cdef dict _bar_aggregators
     cdef dict _bar_handlers
+    cdef dict _bar_aggregators
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
@@ -62,6 +65,10 @@ cdef class DataEngine:
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int data_count
     """The total count of data objects received by the engine.\n\n:returns: `int`"""
+    cdef readonly int request_count
+    """The total count of requests received by the engine.\n\n:returns: `int`"""
+    cdef readonly int response_count
+    """The total count of responses received by the engine.\n\n:returns: `int`"""
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -72,6 +79,8 @@ cdef class DataEngine:
 
     cpdef void execute(self, Command command) except *
     cpdef void process(self, object data) except *
+    cpdef void send(self, DataRequest request) except *
+    cpdef void receive(self, DataResponse response) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
     cpdef void update_instruments(self, Venue venue) except *
@@ -84,7 +93,7 @@ cdef class DataEngine:
     cdef inline void _handle_disconnect(self, Disconnect command) except *
     cdef inline void _handle_subscribe(self, Subscribe command) except *
     cdef inline void _handle_unsubscribe(self, Unsubscribe command) except *
-    cdef inline void _handle_request(self, RequestData command) except *
+    cdef inline void _handle_request(self, DataRequest request) except *
     cdef inline void _handle_subscribe_instrument(self, Symbol symbol, handler) except *
     cdef inline void _handle_subscribe_quote_ticks(self, Symbol symbol, handler) except *
     cdef inline void _handle_subscribe_trade_ticks(self, Symbol symbol, handler) except *
@@ -93,15 +102,18 @@ cdef class DataEngine:
     cdef inline void _handle_unsubscribe_quote_ticks(self, Symbol symbol, handler) except *
     cdef inline void _handle_unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
     cdef inline void _handle_unsubscribe_bars(self, BarType bar_type, handler) except *
-    cdef inline void _handle_request_instrument(self, Symbol symbol, callback) except *
-    cdef inline void _handle_request_instruments(self, Venue venue, callback) except *
+
+# -- REQUEST HANDLERS ------------------------------------------------------------------------------
+
+    cdef inline void _handle_request_instrument(self, Symbol symbol, UUID correlation_id) except *
+    cdef inline void _handle_request_instruments(self, Venue venue, UUID correlation_id) except *
     cdef inline void _handle_request_quote_ticks(
         self,
         Symbol symbol,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        UUID correlation_id,
     ) except *
     cdef inline void _handle_request_trade_ticks(
         self,
@@ -109,7 +121,7 @@ cdef class DataEngine:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        UUID correlation_id,
     ) except *
     cdef inline void _handle_request_bars(
         self,
@@ -117,36 +129,38 @@ cdef class DataEngine:
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        UUID correlation_id,
     ) except *
-
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, object data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
-    cdef inline void _handle_instruments(self, list instruments) except *
-    cdef inline void _handle_quote_tick(self, QuoteTick tick, bint send_to_handlers=*) except *
-    cdef inline void _handle_quote_ticks(self, list ticks) except *
-    cdef inline void _handle_trade_tick(self, TradeTick tick, bint send_to_handlers=*) except *
-    cdef inline void _handle_trade_ticks(self, list ticks) except *
-    cdef inline void _handle_bar(self, BarType bar_type, Bar bar, bint send_to_handlers=*) except *
-    cdef inline void _handle_bars(self, BarType bar_type, list bars) except *
+    cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
+    cdef inline void _handle_trade_tick(self, TradeTick tick) except *
+    cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
+
+# -- RESPONSE HANDLERS -----------------------------------------------------------------------------
+
+    cdef inline void _handle_response(self, DataResponse response) except *
+    cdef inline void _handle_instruments(self, list instruments, UUID correlation_id) except *
+    cdef inline void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *
+    cdef inline void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *
+    cdef inline void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef void _py_handle_bar(self, BarType bar_type, Bar bar) except *
     cdef inline void _internal_update_instruments(self, list instruments) except *
-    cdef inline void _start_generating_bars(self, BarType bar_type, handler) except *
-    cdef inline void _stop_generating_bars(self, BarType bar_type, handler) except *
+    cdef inline void _start_bar_aggregator(self, BarType bar_type) except *
+    cdef inline void _stop_bar_aggregator(self, BarType bar_type) except *
+    cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_bar_handler(self, BarType bar_type, handler) except *
-    cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *
+    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler) except *
     cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler) except *
     cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler) except *
     cdef inline void _remove_bar_handler(self, BarType bar_type, handler) except *
-    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler) except *
     cdef inline void _bulk_build_tick_bars(
         self,
         BarType bar_type,
@@ -155,19 +169,3 @@ cdef class DataEngine:
         int limit,
         callback,
     ) except *
-
-
-cdef class BulkTickBarBuilder:
-    cdef TickBarAggregator aggregator
-    cdef object callback
-    cdef list bars
-
-    cpdef void receive(self, list ticks) except *
-    cpdef void _add_bar(self, BarType bar_type, Bar bar) except *
-
-
-cdef class BulkTimeBarUpdater:
-    cdef TimeBarAggregator aggregator
-    cdef datetime start_time
-
-    cpdef void receive(self, list ticks) except *

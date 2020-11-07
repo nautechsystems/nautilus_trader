@@ -20,9 +20,9 @@ from parameterized import parameterized
 from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
+from nautilus_trader.core.message import Response
 from nautilus_trader.core.message import message_type_from_string
 from nautilus_trader.core.message import message_type_to_string
-from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.stubs import UNIX_EPOCH
 

@@ -20,8 +20,10 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -31,12 +33,12 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class BarBuilder:
     cdef readonly BarSpecification bar_spec
     """The builders bar specification.\n\n:returns: `BarSpecification`"""
-    cdef readonly datetime last_update
-    """The builders last update timestamp.\n\n:returns: `datetime`"""
-    cdef readonly bint initialized
-    """If the builder is initialized.\n\n:returns: `bool`"""
     cdef readonly bint use_previous_close
     """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
+    cdef readonly bint initialized
+    """If the builder is initialized.\n\n:returns: `bool`"""
+    cdef readonly datetime last_timestamp
+    """The builders last update timestamp.\n\n:returns: `datetime`"""
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
@@ -45,13 +47,11 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef Quantity _volume
+    cdef Decimal volume
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void handle_trade_tick(self, TradeTick tick) except *
+    cpdef void update(self, Price price, Decimal size, datetime timestamp) except *
+    cpdef void reset(self) except *
     cpdef Bar build(self, datetime close_time=*)
-    cdef void _update(self, Price price, Quantity volume, datetime timestamp) except *
-    cdef void _reset(self) except *
 
 
 cdef class BarAggregator:
@@ -64,13 +64,25 @@ cdef class BarAggregator:
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cpdef void _handle_bar(self, Bar bar) except *
+    cdef void _apply_update(self, Price price, Quantity size, datetime timestamp) except *
+    cdef inline void _build_and_send(self, datetime close=*) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
-    cdef int step
+    cdef readonly int step
+    """The aggregators size threshold.\n\n:returns: `int`"""
 
-    cdef inline void _check_bar_builder(self) except *
+
+cdef class VolumeBarAggregator(BarAggregator):
+    cdef readonly int step
+    """The aggregators volume threshold.\n\n:returns: `int`"""
+
+
+cdef class ValueBarAggregator(BarAggregator):
+    cdef readonly int step
+    """The aggregators value threshold.\n\n:returns: `int`"""
+    cdef readonly Decimal cum_value
+    """The aggregators current cumulative value.\n\n:returns: `Decimal`"""
 
 
 cdef class TimeBarAggregator(BarAggregator):
@@ -87,3 +99,16 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _set_build_timer(self) except *
     cpdef void _build_bar(self, datetime at_time) except *
     cpdef void _build_event(self, TimeEvent event) except *
+
+
+cdef class BulkTickBarBuilder:
+    cdef TickBarAggregator aggregator
+    cdef object callback
+    cdef list bars
+
+    cpdef void _add_bar(self, BarData data) except *
+
+
+cdef class BulkTimeBarUpdater:
+    cdef TimeBarAggregator aggregator
+    cdef datetime start_time

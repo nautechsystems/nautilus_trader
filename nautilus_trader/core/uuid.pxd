@@ -23,6 +23,3 @@ cdef class UUID:
 
     @staticmethod
     cdef UUID from_string_c(str value)
-
-
-cpdef UUID uuid4()

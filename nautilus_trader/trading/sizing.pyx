@@ -70,7 +70,7 @@ cdef class PositionSizer:
             int units=1,
             int unit_batch_size=0,
     ):
-        """Abstract method."""
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef Decimal _calculate_risk_ticks(self, Price entry, Price stop_loss):
