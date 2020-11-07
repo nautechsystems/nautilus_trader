@@ -26,14 +26,18 @@ from nautilus_trader.data.aggregation import BarBuilder
 from nautilus_trader.data.aggregation import BulkTickBarBuilder
 from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
+from nautilus_trader.data.aggregation import VolumeBarAggregator
 from nautilus_trader.data.wrangling import TickDataWrangler
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.identifiers import TradeMatchId
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
@@ -141,7 +145,55 @@ class BarBuilderTests(unittest.TestCase):
 
 class TickBarAggregatorTests(unittest.TestCase):
 
-    def test_update_sends_bar_to_handler(self):
+    def test_handle_quote_tick_when_count_below_threshold_updates(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
+            bid_size=Quantity(1),
+            ask_size=Quantity(1),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+
+        # Assert
+        self.assertEqual(0, len(bar_store.get_store()))
+
+    def test_handle_trade_tick_when_count_below_threshold_updates(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00001"),
+            size=Quantity(1),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123456"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+
+        # Assert
+        self.assertEqual(0, len(bar_store.get_store()))
+
+    def test_handle_quote_tick_when_count_at_threshold_sends_bar_to_handler(self):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
@@ -189,25 +241,122 @@ class TickBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.000015"), bar_store.get_store()[0].bar.low)
         self.assertEqual(Price('1.000015'), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity(6), bar_store.get_store()[0].bar.volume)
+
+    def test_handle_trade_tick_when_count_at_threshold_sends_bar_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00001"),
+            size=Quantity(1),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123456"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick2 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00002"),
+            size=Quantity(1),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123457"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick3 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00000"),
+            size=Quantity(1),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123458"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+        aggregator.handle_trade_tick(tick2)
+        aggregator.handle_trade_tick(tick3)
+
+        # Assert
+        self.assertEqual(1, len(bar_store.get_store()))
+        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(3), bar_store.get_store()[0].bar.volume)
 
 
 class VolumeBarAggregatorTests(unittest.TestCase):
 
-    def test_update_sends_bar_to_handler(self):
+    def test_handle_quote_tick_when_volume_below_threshold_updates(self):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
         symbol = TestStubs.symbol_audusd_fxcm()
-        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
+        bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
-        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
             symbol=AUDUSD_FXCM,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid_size=Quantity(3000),
+            ask_size=Quantity(2000),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+
+        # Assert
+        self.assertEqual(0, len(bar_store.get_store()))
+
+    def test_handle_trade_tick_when_volume_below_threshold_updates(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00001"),
+            size=Quantity(1),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123456"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+
+        # Assert
+        self.assertEqual(0, len(bar_store.get_store()))
+
+    def test_handle_quote_tick_when_volume_at_threshold_sends_bar_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
+            bid_size=Quantity(3000),
+            ask_size=Quantity(2000),
             timestamp=UNIX_EPOCH,
         )
 
@@ -215,8 +364,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid_size=Quantity(4000),
+            ask_size=Quantity(2000),
             timestamp=UNIX_EPOCH,
         )
 
@@ -224,8 +373,8 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_FXCM,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
-            bid_size=Quantity(1),
-            ask_size=Quantity(1),
+            bid_size=Quantity(3000),
+            ask_size=Quantity(2000),
             timestamp=UNIX_EPOCH,
         )
 
@@ -236,11 +385,178 @@ class VolumeBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, len(bar_store.get_store()))
-        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].bar.open)
-        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].bar.high)
-        self.assertEqual(Price("1.000015"), bar_store.get_store()[0].bar.low)
-        self.assertEqual(Price('1.000015'), bar_store.get_store()[0].bar.close)
-        self.assertEqual(Quantity(6), bar_store.get_store()[0].bar.volume)
+        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
+
+    def test_handle_trade_tick_when_volume_at_threshold_sends_bar_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00001"),
+            size=Quantity(3000),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123456"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick2 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00002"),
+            size=Quantity(4000),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123457"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick3 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00000"),
+            size=Quantity(3000),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123458"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+        aggregator.handle_trade_tick(tick2)
+        aggregator.handle_trade_tick(tick3)
+
+        # Assert
+        self.assertEqual(1, len(bar_store.get_store()))
+        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
+
+    def test_handle_quote_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
+            bid_size=Quantity(2000),
+            ask_size=Quantity(2000),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick2 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
+            bid_size=Quantity(3000),
+            ask_size=Quantity(3000),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick3 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
+            bid_size=Quantity(25000),
+            ask_size=Quantity(25000),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+        aggregator.handle_quote_tick(tick3)
+
+        # Assert
+        self.assertEqual(3, len(bar_store.get_store()))
+        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.open)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[1].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[1].bar.volume)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.open)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[2].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[2].bar.volume)
+
+    def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00001"),
+            size=Quantity(2000),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123456"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick2 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00002"),
+            size=Quantity(3000),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123457"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick3 = TradeTick(
+            symbol=AUDUSD_FXCM,
+            price=Price("1.00000"),
+            size=Quantity(25000),
+            maker=Maker.BUYER,
+            match_id=TradeMatchId("123458"),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_trade_tick(tick1)
+        aggregator.handle_trade_tick(tick2)
+        aggregator.handle_trade_tick(tick3)
+
+        # Assert
+        self.assertEqual(3, len(bar_store.get_store()))
+        self.assertEqual(Price("1.00001"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.00002"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[0].bar.volume)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.open)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[1].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[1].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[1].bar.volume)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.open)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.high)
+        self.assertEqual(Price("1.00000"), bar_store.get_store()[2].bar.low)
+        self.assertEqual(Price('1.00000'), bar_store.get_store()[2].bar.close)
+        self.assertEqual(Quantity(10000), bar_store.get_store()[2].bar.volume)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):

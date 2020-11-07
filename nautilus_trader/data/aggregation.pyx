@@ -330,24 +330,24 @@ cdef class VolumeBarAggregator(BarAggregator):
         self.step = bar_type.spec.step
 
     cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
-        cdef Decimal update_size = size
-        cdef Decimal difference
+        cdef Decimal size_update = size
+        cdef Decimal size_diff
 
-        while update_size > 0:  # While there is size to apply
-            if self._builder.volume + update_size < self.step:
+        while size_update > 0:  # While there is size to apply
+            if self._builder.volume + size_update < self.step:
                 # Update and break
                 self._builder.update(
                     price=price,
-                    volume=update_size,
+                    size=size_update,
                     timestamp=timestamp,
                 )
                 break
 
-            difference = self.step - self._builder.volume
-            # Update builder up to the step threshold
+            size_diff = self.step - self._builder.volume
+            # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                volume=difference,
+                size=size_diff,
                 timestamp=timestamp,
             )
 
@@ -355,8 +355,8 @@ cdef class VolumeBarAggregator(BarAggregator):
             self._build_and_send()
 
             # Decrement the update size
-            update_size -= difference
-            assert update_size >= 0
+            size_update -= size_diff
+            assert size_update >= 0
 
 
 cdef class TimeBarAggregator(BarAggregator):
