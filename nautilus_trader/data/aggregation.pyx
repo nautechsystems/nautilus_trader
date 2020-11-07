@@ -359,6 +359,79 @@ cdef class VolumeBarAggregator(BarAggregator):
             assert size_update >= 0
 
 
+cdef class ValueBarAggregator(BarAggregator):
+    """
+    Provides a means of building value bars from ticks.
+
+    When received value reaches the step threshold of the bar
+    specification, then a bar is created and sent to the handler.
+    """
+
+    def __init__(
+            self,
+            BarType bar_type not None,
+            handler not None,
+            Logger logger not None,
+    ):
+        """
+        Initialize a new instance of the `TickBarAggregator` class.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the aggregator.
+        handler : callable
+            The bar handler for the aggregator.
+        logger : Logger
+            The logger for the aggregator.
+
+        """
+        super().__init__(
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
+            use_previous_close=False,
+        )
+
+        self.step = bar_type.spec.step
+        self.cum_value = Decimal()  # Cumulative value
+
+    cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
+        cdef Decimal size_update = size
+        cdef Decimal value_update
+        cdef Decimal value_diff
+        cdef Decimal size_diff
+
+        while size_update > 0:  # While there is value to apply
+            value_update = price * size_update  # Calculated value in quote currency
+            if self.cum_value + value_update < self.step:
+                # Update and break
+                self.cum_value = Decimal(self.cum_value + value_update, precision=price.precision_c())
+                self._builder.update(
+                    price=price,
+                    size=size_update,
+                    timestamp=timestamp,
+                )
+                break
+
+            value_diff = self.step - self.cum_value
+            size_diff = Decimal(size * (value_diff / value_update), precision=size.precision_c())
+            # Update builder to the step threshold
+            self._builder.update(
+                price=price,
+                size=size_diff,
+                timestamp=timestamp,
+            )
+
+            # Build a bar and reset builder and cum value
+            self._build_and_send()
+            self.cum_value = Decimal()
+
+            # Decrement the update size
+            size_update -= size_diff
+            assert size_update >= 0
+
+
 cdef class TimeBarAggregator(BarAggregator):
     """
     Provides a means of building time bars from ticks with an internal timer.

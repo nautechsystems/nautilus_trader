@@ -188,13 +188,14 @@ cdef class BarSpecification:
 
 cdef class BarType:
     """
-    Represents the symbol and bar specification or a bar or block of bars.
+    Represents the symbol and bar specification of bar data.
     """
 
     def __init__(
             self,
             Symbol symbol not None,
             BarSpecification bar_spec not None,
+            is_internal_aggregation=True,
     ):
         """
         Initialize a new instance of the `BarType` class.
@@ -205,13 +206,26 @@ cdef class BarType:
             The bar symbol.
         bar_spec : BarSpecification
             The bar specification.
+        is_internal_aggregation : bool
+            If bars are aggregated internally by the platform. If True the
+            `DataEngine` will subscribe to the necessary ticks and aggregate
+            bars accordingly. Else if False then bars will be subscribed to
+            directly from the exchange/broker.
+
+        Notes
+        -----
+        It is expected that all bar aggregation methods other than time will be
+        internally aggregated.
 
         """
         self.symbol = symbol
         self.spec = bar_spec
+        self.is_internal_aggregation = is_internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
-        return self.symbol == other.symbol and self.spec == other.spec
+        return self.symbol == other.symbol \
+            and self.spec == other.spec \
+            and self.is_internal_aggregation == other.is_internal_aggregation
 
     def __ne__(self, BarType other) -> bool:
         return not self == other
@@ -223,10 +237,10 @@ cdef class BarType:
         return f"{self.symbol}-{self.spec}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self})"
+        return f"{type(self).__name__}({self}, is_internal_aggregation={self.is_internal_aggregation})"
 
     @staticmethod
-    cdef BarType from_string_c(str value):
+    cdef BarType from_string_c(str value, bint is_internal_aggregation=True):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -241,10 +255,10 @@ cdef class BarType:
             PriceTypeParser.from_string(pieces[3]),
         )
 
-        return BarType(symbol, bar_spec)
+        return BarType(symbol, bar_spec, is_internal_aggregation)
 
     @staticmethod
-    def from_string(str value) -> BarType:
+    def from_string(str value, bint is_internal_aggregation=False) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -252,6 +266,8 @@ cdef class BarType:
         ----------
         value : str
             The bar type string to parse.
+        is_internal_aggregation : bool
+            If bars were aggregated internally by the platform.
 
         Returns
         -------
@@ -263,7 +279,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_string_c(value)
+        return BarType.from_string_c(value, is_internal_aggregation)
 
 
 cdef class Bar:

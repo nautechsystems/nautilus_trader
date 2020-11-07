@@ -449,8 +449,8 @@ cdef class BacktestDataClient(DataClient):
         # Do nothing for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
-        pass
-        # Do nothing for backtest
+        self._log.error(f"Cannot subscribe to externally aggregated bars "
+                        f"(backtesting only supports internal aggregation at this stage).")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         pass
@@ -465,8 +465,8 @@ cdef class BacktestDataClient(DataClient):
         # Do nothing for backtest
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        pass
-        # Do nothing for backtest
+        self._log.error(f"Cannot unsubscribe from externally aggregated bars "
+                        f"(backtesting only supports internal aggregation at this stage).")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         pass

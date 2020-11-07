@@ -927,7 +927,7 @@ cdef class TradingStrategy:
 
         self.log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
-    cpdef void subscribe_bars(self, BarType bar_type, bint self_generated=True) except *:
+    cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
         Subscribe to `Bar` data for the given bar type.
 
@@ -935,11 +935,6 @@ cdef class TradingStrategy:
         ----------
         bar_type : BarType
             The bar type to subscribe to.
-        self_generated : bool, optional
-            If bars should be `self generated` by the platform. If false then
-            bars will be subscribed to directly from the exchange/broker, else
-            the `DataEngine` will subscribe to the necessary ticks and aggregate
-            bars accordingly.
 
         """
         Condition.not_none(bar_type, "bar_type")
@@ -947,10 +942,7 @@ cdef class TradingStrategy:
 
         cdef Subscribe subscribe = Subscribe(
             data_type=Bar,
-            metadata={
-                BAR_TYPE: bar_type,
-                "self_generated": self_generated,
-            },
+            metadata={BAR_TYPE: bar_type},
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),

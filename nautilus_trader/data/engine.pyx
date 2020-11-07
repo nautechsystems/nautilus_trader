@@ -54,12 +54,15 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
+from nautilus_trader.data.aggregation cimport ValueBarAggregator
+from nautilus_trader.data.aggregation cimport VolumeBarAggregator
 from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
 from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -121,7 +124,6 @@ cdef class DataEngine:
 
         # Aggregators
         self._bar_aggregators = {}      # type: {BarType, BarAggregator}
-        self._self_generated = set()    # type: {BarType}
 
         # Public components
         self.portfolio = portfolio
@@ -319,7 +321,6 @@ cdef class DataEngine:
         self._trade_tick_handlers.clear()
         self._bar_handlers.clear()
         self._bar_aggregators.clear()
-        self._self_generated.clear()
         self._clock.cancel_all_timers()
         self.command_count = 0
         self.data_count = 0
@@ -442,7 +443,6 @@ cdef class DataEngine:
         elif command.data_type == Bar:
             self._handle_subscribe_bars(
                 command.metadata.get(BAR_TYPE),
-                command.metadata.get("self_generated", False),
                 command.handler,
             )
         else:
@@ -499,21 +499,17 @@ cdef class DataEngine:
         self._add_trade_tick_handler(symbol, handler)
         self._clients[symbol.venue].subscribe_trade_ticks(symbol)
 
-    cdef inline void _handle_subscribe_bars(self, BarType bar_type, bint self_generated, handler: callable) except *:
+    cdef inline void _handle_subscribe_bars(self, BarType bar_type, handler: callable) except *:
         # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
         Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
 
-        if bar_type in self._self_generated and not self_generated:
-            self._log.error(f"Cannot subscribe (already self generating bars for {bar_type}).")
-            return
-
-        if self_generated and bar_type not in self._self_generated:
-            # Self generated and aggregation not started
-            self._start_generating_bars(bar_type, handler)
+        if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
+            # Aggregation not started
+            self._start_bar_aggregator(bar_type)
         else:
-            # Not self generated
+            # External aggregation
             self._clients[bar_type.symbol.venue].subscribe_bars(bar_type)
 
         self._add_bar_handler(bar_type, handler)
@@ -551,15 +547,15 @@ cdef class DataEngine:
         Condition.callable(handler, "handler")
         Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
 
-        if bar_type not in self._self_generated:
+        if bar_type.is_internal_aggregation:
+            # Internal aggregation
+            self._remove_bar_handler(bar_type, handler)
+            if bar_type not in self._bar_handlers:
+                self._stop_bar_aggregator(bar_type)
+        else:
+            # External aggregation
             self._clients[bar_type.symbol.venue].unsubscribe_bars(bar_type)
             self._remove_bar_handler(bar_type, handler)
-            return
-
-        # Bar type was being self generated
-        self._remove_bar_handler(bar_type, handler)
-        if bar_type not in self._bar_handlers:
-            self._stop_generating_bars(bar_type, handler)
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
@@ -801,15 +797,56 @@ cdef class DataEngine:
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cdef inline void _start_generating_bars(self, BarType bar_type, handler: callable) except *:
+    cdef inline void _start_bar_aggregator(self, BarType bar_type) except *:
         if bar_type.spec.is_time_aggregated():
-            aggregator = self._create_time_bar_aggregator(bar_type)
-        else:
-            aggregator = self._create_tick_bar_aggregator(bar_type)
+            # Create aggregator
+            aggregator = TimeBarAggregator(
+                bar_type=bar_type,
+                handler=self.process,
+                use_previous_close=self._use_previous_close,
+                clock=self._clock,
+                logger=self._log.get_logger(),
+            )
+
+            # Update aggregator with latest data
+            bulk_updater = BulkTimeBarUpdater(aggregator)
+            data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
+
+            request = DataRequest(
+                data_type=data_type,
+                metadata={
+                    SYMBOL: bar_type.symbol,
+                    FROM_DATETIME: aggregator.get_start_time(),
+                    TO_DATETIME: None,
+                    LIMIT: 0,
+                },
+                callback=bulk_updater.receive,
+                request_id=self._uuid_factory.generate(),
+                request_timestamp=self._clock.utc_now(),
+            )
+            # Send request directly to handler as control is already inside engine
+            self._handle_request(request)
+        elif bar_type.spec.aggregation == BarAggregation.TICK:
+            aggregator = TickBarAggregator(
+                bar_type=bar_type,
+                handler=self.process,
+                logger=self._log.get_logger(),
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VOLUME:
+            aggregator = VolumeBarAggregator(
+                bar_type=bar_type,
+                handler=self.process,
+                logger=self._log.get_logger(),
+            )
+        elif bar_type.spec.aggregation == BarAggregation.VALUE:
+            aggregator = ValueBarAggregator(
+                bar_type=bar_type,
+                handler=self.process,
+                logger=self._log.get_logger(),
+            )
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator
-        self._self_generated.add(bar_type)
         self._log.debug(f"Added {aggregator} for {bar_type} bars.")
 
         # Subscribe to required data
@@ -818,48 +855,8 @@ cdef class DataEngine:
         else:
             self._handle_subscribe_quote_ticks(bar_type.symbol, aggregator.handle_quote_tick)
 
-    cdef inline TimeBarAggregator _create_time_bar_aggregator(self, BarType bar_type):
-        # Create aggregator
-        cdef TimeBarAggregator aggregator = TimeBarAggregator(
-            bar_type=bar_type,
-            handler=self.process,
-            use_previous_close=self._use_previous_close,
-            clock=self._clock,
-            logger=self._log.get_logger(),
-        )
-
-        # Update aggregator with latest data
-        cdef BulkTimeBarUpdater bulk_updater = BulkTimeBarUpdater(aggregator)
-        cdef type data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-        cdef DataRequest request = DataRequest(
-            data_type=data_type,
-            metadata={
-                SYMBOL: bar_type.symbol,
-                FROM_DATETIME: aggregator.get_start_time(),
-                TO_DATETIME: None,
-                LIMIT: 0,
-            },
-            callback=bulk_updater.receive,
-            request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
-        )
-
-        # Send request directly to handler as control is already inside engine
-        self._handle_request(request)
-
-        return aggregator
-
-    cdef inline TickBarAggregator _create_tick_bar_aggregator(self, BarType bar_type):
-        # Create aggregator - start aggregating from now
-        return TickBarAggregator(
-            bar_type=bar_type,
-            handler=self.process,
-            logger=self._log.get_logger(),
-        )
-
-    cdef inline void _stop_generating_bars(self, BarType bar_type, handler: callable) except *:
-        aggregator = self._bar_aggregators[bar_type]
+    cdef inline void _stop_bar_aggregator(self, BarType bar_type) except *:
+        cdef aggregator = self._bar_aggregators[bar_type]
         if isinstance(aggregator, TimeBarAggregator):
             aggregator.stop()
 
@@ -871,7 +868,6 @@ cdef class DataEngine:
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
-        self._self_generated.discard(bar_type)
 
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._instrument_handlers:

@@ -42,9 +42,11 @@ cdef class BarType:
     """The symbol of the bar type.\n\n:returns: `Symbol`"""
     cdef readonly BarSpecification spec
     """The specification of the bar type.\n\n:returns: `BarSpecification`"""
+    cdef readonly bint is_internal_aggregation
+    """If bar aggregation is internal to the platform.\n\n:returns: `bint`"""
 
     @staticmethod
-    cdef BarType from_string_c(str value)
+    cdef BarType from_string_c(str value, bint is_internal_aggregation=*)
 
 
 cdef class Bar:
