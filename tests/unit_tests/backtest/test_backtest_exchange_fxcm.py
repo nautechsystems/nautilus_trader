@@ -67,8 +67,6 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.portfolio.update_instrument(USDJPY_FXCM)
-
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
@@ -76,6 +74,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             logger=self.logger,
             config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
+        self.data_engine.cache.add_instrument(USDJPY_FXCM)
+        self.portfolio.register_cache(self.data_engine.cache)
 
         self.analyzer = PerformanceAnalyzer()
         self.trader_id = TraderId("TESTER", "000")

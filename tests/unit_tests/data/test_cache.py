@@ -23,6 +23,9 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import JPY
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -34,8 +37,9 @@ from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
-AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
+FXCM = Venue("FXCM")
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol('USD/JPY', FXCM))
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol('AUD/USD', FXCM))
 
 
 class DataCacheTests(unittest.TestCase):
@@ -61,13 +65,13 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.quote_ticks(AUDUSD_FXCM))
+        self.assertEqual([], self.cache.quote_ticks(AUDUSD_FXCM.symbol))
 
     def test_trade_ticks_for_unknown_symbol_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.trade_ticks(AUDUSD_FXCM))
+        self.assertEqual([], self.cache.trade_ticks(AUDUSD_FXCM.symbol))
 
     def test_bars_for_unknown_symbol_returns_empty_list(self):
         # Arrange
@@ -79,25 +83,25 @@ class DataCacheTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.cache.quote_tick_count(AUDUSD_FXCM))
+        self.assertEqual(0, self.cache.quote_tick_count(AUDUSD_FXCM.symbol))
 
     def test_trade_tick_count_for_unknown_symbol_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_FXCM))
+        self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_FXCM.symbol))
 
     def test_has_quote_ticks_for_unknown_symbol_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_quote_ticks(AUDUSD_FXCM))
+        self.assertFalse(self.cache.has_quote_ticks(AUDUSD_FXCM.symbol))
 
     def test_has_trade_ticks_for_unknown_symbol_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_trade_ticks(AUDUSD_FXCM))
+        self.assertFalse(self.cache.has_trade_ticks(AUDUSD_FXCM.symbol))
 
     def test_has_bars_for_unknown_bar_type_returns_false(self):
         # Arrange
@@ -129,7 +133,7 @@ class DataCacheTests(unittest.TestCase):
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         tick = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -147,7 +151,7 @@ class DataCacheTests(unittest.TestCase):
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         tick = TradeTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
@@ -185,7 +189,7 @@ class DataCacheTests(unittest.TestCase):
 
     def test_get_quote_tick_with_two_ticks_returns_expected_tick(self):
         tick1 = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -194,7 +198,7 @@ class DataCacheTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00001"),
             Price("1.00003"),
             Quantity(1),
@@ -206,15 +210,15 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_quote_tick(tick2)
 
         # Act
-        result = self.cache.quote_tick(AUDUSD_FXCM, index=0)
+        result = self.cache.quote_tick(AUDUSD_FXCM.symbol, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.quote_tick_count(AUDUSD_FXCM))
+        self.assertEqual(2, self.cache.quote_tick_count(AUDUSD_FXCM.symbol))
         self.assertEqual(tick2, result)
 
     def test_get_trade_tick_with_one_tick_returns_expected_tick(self):
         tick1 = TradeTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
@@ -223,7 +227,7 @@ class DataCacheTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00001"),
             Quantity(20000),
             Maker.SELLER,
@@ -235,10 +239,10 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_tick(tick2)
 
         # Act
-        result = self.cache.trade_tick(AUDUSD_FXCM, index=0)
+        result = self.cache.trade_tick(AUDUSD_FXCM.symbol, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.trade_tick_count(AUDUSD_FXCM))
+        self.assertEqual(2, self.cache.trade_tick_count(AUDUSD_FXCM.symbol))
         self.assertEqual(tick2, result)
 
     def test_get_bar_with_one_bar_returns_expected_bar(self):
@@ -270,3 +274,45 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, self.cache.bar_count(bar_type))
         self.assertEqual(bar2, result)
+
+    def test_get_exchange_rate_returns_correct_rate(self):
+        # Arrange
+        self.cache.add_instrument(USDJPY_FXCM)
+
+        tick = QuoteTick(
+            USDJPY_FXCM.symbol,
+            Price("110.80000"),
+            Price("110.80010"),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.get_xrate(FXCM, JPY, USD)
+
+        # Assert
+        self.assertEqual(0.009025266685348969, result)
+
+    def test_get_exchange_rate_with_no_conversion(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_FXCM)
+
+        tick = QuoteTick(
+            AUDUSD_FXCM.symbol,
+            Price("0.80000"),
+            Price("0.80010"),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.get_xrate(FXCM, AUD, USD)
+
+        # Assert
+        self.assertEqual(0.80005, result)

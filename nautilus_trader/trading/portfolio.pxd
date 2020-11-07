@@ -17,18 +17,17 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
 cdef class PortfolioFacade:
@@ -52,9 +51,8 @@ cdef class Portfolio(PortfolioFacade):
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
-    cdef ExchangeRateCalculator _xrate_calculator
+    cdef DataCacheFacade _data
 
-    cdef dict _instruments
     cdef dict _ticks
     cdef dict _accounts
     cdef dict _orders_working
@@ -63,12 +61,14 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict _net_positions
     cdef dict _unrealized_pnls_symbol
     cdef dict _unrealized_pnls_venue
-    cdef dict _xrate_symbols
+
+# -- REGISTRATION ----------------------------------------------------------------------------------
+
+    cpdef void register_cache(self, DataCacheFacade cache) except *
+    cpdef void register_account(self, Account account) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void register_account(self, Account account) except *
-    cpdef void update_instrument(self, Instrument instrument) except *
     cpdef void update_tick(self, QuoteTick tick) except *
     cpdef void update_orders_working(self, set orders) except *
     cpdef void update_order(self, Order order) except *
@@ -79,10 +79,7 @@ cdef class Portfolio(PortfolioFacade):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline Decimal _net_position(self, Symbol symbol)
-    cdef inline tuple _build_quote_table(self, Venue venue)
     cdef inline set _symbols_open_for_venue(self, Venue venue)
-    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *
-    cdef inline bint _is_fx_spot(self, Instrument instrument) except *
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *
     cdef inline void _handle_position_closed(self, PositionClosed event) except *

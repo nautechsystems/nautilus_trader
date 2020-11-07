@@ -77,6 +77,7 @@ class TraderTests(unittest.TestCase):
             config={'use_previous_close': False},
         )
 
+        self.portfolio.register_cache(self.data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         self.exec_db = BypassExecutionDatabase(
