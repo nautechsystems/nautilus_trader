@@ -32,7 +32,7 @@ from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.uuid cimport TestUUIDFactory
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -105,7 +105,7 @@ cdef class BacktestEngine:
 
         self.test_clock = TestClock()
         self.test_clock.set_time(self.clock.utc_now())
-        self.uuid_factory = TestUUIDFactory()
+        self.uuid_factory = UUIDFactory()
 
         self.analyzer = PerformanceAnalyzer()
 

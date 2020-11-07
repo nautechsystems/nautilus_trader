@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -28,12 +28,31 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef list _TIME_AGGREGATED = [
+# Aggregation methods which are time driven
+cdef list _TIME_AGGREGATION = [
     BarAggregation.SECOND,
     BarAggregation.MINUTE,
     BarAggregation.HOUR,
     BarAggregation.DAY,
 ]
+
+# Aggregation methods which are threshold-driven
+cdef list _THRESHOLD_AGGREGATION = [
+    BarAggregation.TICK,
+    BarAggregation.TICK_IMBALANCE,
+    BarAggregation.VOLUME,
+    BarAggregation.VOLUME_IMBALANCE,
+    BarAggregation.VALUE,
+    BarAggregation.VALUE_IMBALANCE,
+]
+
+# Aggregation methods which are information driven
+cdef list _INFORMATION_AGGREGATION = [
+    BarAggregation.TICK_RUNS,
+    BarAggregation.VOLUME_RUNS,
+    BarAggregation.VALUE_RUNS,
+]
+
 
 cdef class BarSpecification:
     """
@@ -133,49 +152,50 @@ cdef class BarSpecification:
         """
         return BarSpecification.from_string_c(value)
 
-    cdef bint is_time_aggregated(self) except *:
+    cpdef bint is_time_aggregated(self) except *:
         """
-        If the aggregation is by certain time interval.
+        If the aggregation method is time-driven.
 
         Returns
         -------
         bool
 
         """
-        return self.aggregation in _TIME_AGGREGATED
+        return self.aggregation in _TIME_AGGREGATION
 
-    cdef str aggregation_string(self):
+    cpdef bint is_threshold_aggregated(self) except *:
         """
-        The bar aggregation as a string.
+        If the aggregation method is threshold-driven.
 
         Returns
         -------
-        str
+        bool
 
         """
-        return self.aggregation_string()
+        return self.aggregation in _THRESHOLD_AGGREGATION
 
-    cdef str price_type_string(self):
+    cpdef bint is_information_aggregated(self) except *:
         """
-        The price type as a string.
+        If the aggregation method is information-driven.
 
         Returns
         -------
-        str
+        bool
 
         """
-        return PriceTypeParser.to_string(self.price_type)
+        return self.aggregation in _INFORMATION_AGGREGATION
 
 
 cdef class BarType:
     """
-    Represents the symbol and bar specification or a bar or block of bars.
+    Represents the symbol and bar specification of bar data.
     """
 
     def __init__(
             self,
             Symbol symbol not None,
             BarSpecification bar_spec not None,
+            is_internal_aggregation=True,
     ):
         """
         Initialize a new instance of the `BarType` class.
@@ -186,13 +206,26 @@ cdef class BarType:
             The bar symbol.
         bar_spec : BarSpecification
             The bar specification.
+        is_internal_aggregation : bool
+            If bars are aggregated internally by the platform. If True the
+            `DataEngine` will subscribe to the necessary ticks and aggregate
+            bars accordingly. Else if False then bars will be subscribed to
+            directly from the exchange/broker.
+
+        Notes
+        -----
+        It is expected that all bar aggregation methods other than time will be
+        internally aggregated.
 
         """
         self.symbol = symbol
         self.spec = bar_spec
+        self.is_internal_aggregation = is_internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
-        return self.symbol == other.symbol and self.spec == other.spec
+        return self.symbol == other.symbol \
+            and self.spec == other.spec \
+            and self.is_internal_aggregation == other.is_internal_aggregation
 
     def __ne__(self, BarType other) -> bool:
         return not self == other
@@ -204,10 +237,10 @@ cdef class BarType:
         return f"{self.symbol}-{self.spec}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self})"
+        return f"{type(self).__name__}({self}, is_internal_aggregation={self.is_internal_aggregation})"
 
     @staticmethod
-    cdef BarType from_string_c(str value):
+    cdef BarType from_string_c(str value, bint is_internal_aggregation=True):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -222,10 +255,10 @@ cdef class BarType:
             PriceTypeParser.from_string(pieces[3]),
         )
 
-        return BarType(symbol, bar_spec)
+        return BarType(symbol, bar_spec, is_internal_aggregation)
 
     @staticmethod
-    def from_string(str value) -> BarType:
+    def from_string(str value, bint is_internal_aggregation=False) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -233,6 +266,8 @@ cdef class BarType:
         ----------
         value : str
             The bar type string to parse.
+        is_internal_aggregation : bool
+            If bars were aggregated internally by the platform.
 
         Returns
         -------
@@ -244,7 +279,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_string_c(value)
+        return BarType.from_string_c(value, is_internal_aggregation)
 
 
 cdef class Bar:
@@ -322,8 +357,6 @@ cdef class Bar:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    # noinspection: fromtimestamp, long
-    # noinspection PyUnresolvedReferences
     @staticmethod
     cdef Bar from_serializable_string_c(str value):
         Condition.valid_string(value, 'value')
@@ -339,7 +372,7 @@ cdef class Bar:
             Price(pieces[2]),
             Price(pieces[3]),
             Quantity(pieces[4]),
-            datetime.fromtimestamp(long(pieces[5]) / 1000, pytz.utc),
+            from_posix_ms(long(pieces[5])),
         )
 
     @staticmethod
@@ -370,4 +403,28 @@ cdef class Bar:
         str
 
         """
-        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{long(self.timestamp.timestamp())}"
+        return f"{self.open},{self.high},{self.low},{self.close},{self.volume},{to_posix_ms(self.timestamp)}"
+
+
+cdef class BarData:
+    """
+    Represents bar data of a `BarType` and `Bar`.
+    """
+
+    def __init__(self, BarType bar_type not None, Bar bar not None):
+        """
+        Initialize a new instance of the `BarData` class.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the data.
+        bar : Bar
+            The bar data.
+
+        """
+        self.bar_type = bar_type
+        self.bar = bar
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(bar_type={self.bar_type}, bar={self.bar})"

@@ -15,10 +15,10 @@
 
 import unittest
 
-from nautilus_trader.common.component import ComponentFSMFactory
 from nautilus_trader.common.c_enums.component_state import ComponentState
 from nautilus_trader.common.c_enums.component_state import ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger
+from nautilus_trader.common.component import ComponentFSMFactory
 from nautilus_trader.core.fsm import FiniteStateMachine
 from nautilus_trader.core.fsm import InvalidStateTrigger
 

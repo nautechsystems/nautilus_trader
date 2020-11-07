@@ -22,20 +22,26 @@ cdef class BarAggregationParser:
         elif value == 2:
             return 'TICK_IMBALANCE'
         elif value == 3:
-            return 'VOLUME'
+            return 'TICK_RUNS'
         elif value == 4:
-            return 'VOLUME_IMBALANCE'
+            return 'VOLUME'
         elif value == 5:
-            return 'DOLLAR'
+            return 'VOLUME_IMBALANCE'
         elif value == 6:
-            return 'DOLLAR_IMBALANCE'
+            return 'VOLUME_RUNS'
         elif value == 7:
-            return 'SECOND'
+            return 'VALUE'
         elif value == 8:
-            return 'MINUTE'
+            return 'VALUE_IMBALANCE'
         elif value == 9:
-            return 'HOUR'
+            return 'VALUE_RUNS'
         elif value == 10:
+            return 'SECOND'
+        elif value == 11:
+            return 'MINUTE'
+        elif value == 12:
+            return 'HOUR'
+        elif value == 13:
             return 'DAY'
         else:
             return 'UNDEFINED'
@@ -46,14 +52,20 @@ cdef class BarAggregationParser:
             return BarAggregation.TICK
         elif value == 'TICK_IMBALANCE':
             return BarAggregation.TICK_IMBALANCE
+        elif value == 'TICK_RUNS':
+            return BarAggregation.TICK_RUNS
         elif value == 'VOLUME':
             return BarAggregation.VOLUME
         elif value == 'VOLUME_IMBALANCE':
             return BarAggregation.VOLUME_IMBALANCE
-        elif value == 'DOLLAR':
-            return BarAggregation.DOLLAR
-        elif value == 'DOLLAR_IMBALANCE':
-            return BarAggregation.DOLLAR_IMBALANCE
+        elif value == 'VOLUME_RUNS':
+            return BarAggregation.VOLUME_RUNS
+        elif value == 'VALUE':
+            return BarAggregation.VALUE
+        elif value == 'VALUE_IMBALANCE':
+            return BarAggregation.VALUE_IMBALANCE
+        elif value == 'VALUE_RUNS':
+            return BarAggregation.VALUE_RUNS
         elif value == 'SECOND':
             return BarAggregation.SECOND
         elif value == 'MINUTE':

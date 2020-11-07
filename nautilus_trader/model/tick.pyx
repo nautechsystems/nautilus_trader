@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport from_posix_ms
+from nautilus_trader.core.datetime cimport to_posix_ms
 from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.c_enums.maker cimport MakerParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -154,15 +154,13 @@ cdef class QuoteTick:
         if len(pieces) != 5:
             raise ValueError(f"The QuoteTick string value was malformed, was {values}")
 
-        # noinspection: long, fromtimestamp
-        # noinspection PyUnresolvedReferences
         return QuoteTick(
             symbol,
             Price(pieces[0]),
             Price(pieces[1]),
             Quantity(pieces[2]),
             Quantity(pieces[3]),
-            datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
+            from_posix_ms(long(pieces[4])),
         )
 
     @staticmethod
@@ -189,8 +187,6 @@ cdef class QuoteTick:
         """
         return QuoteTick.from_serializable_string_c(symbol, values)
 
-    # noinspection: long, timestamp.timestamp()
-    # noinspection PyUnresolvedReferences
     cpdef str to_serializable_string(self):
         """
         The serializable string representation of this object.
@@ -200,7 +196,7 @@ cdef class QuoteTick:
         str
 
         """
-        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{long(self.timestamp.timestamp())}"
+        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{to_posix_ms(self.timestamp)}"
 
 
 cdef class TradeTick:
@@ -289,15 +285,13 @@ cdef class TradeTick:
         if len(pieces) != 5:
             raise ValueError(f"The TradeTick string value was malformed, was {values}")
 
-        # noinspection: long, fromtimestamp
-        # noinspection PyUnresolvedReferences
         return TradeTick(
             symbol,
             Price(pieces[0]),
             Quantity(pieces[1]),
             MakerParser.from_string(pieces[2]),
             TradeMatchId(pieces[3]),
-            datetime.fromtimestamp(long(pieces[4]) / 1000, pytz.utc),
+            from_posix_ms(long(pieces[4])),
         )
 
     @staticmethod
@@ -333,10 +327,8 @@ cdef class TradeTick:
         str
 
         """
-        # noinspection: long, timestamp.timestamp()
-        # noinspection PyUnresolvedReferences
         return (f"{self.price},"
                 f"{self.size},"
                 f"{MakerParser.to_string(self.maker)},"
                 f"{self.match_id},"
-                f"{long(self.timestamp.timestamp())}")
+                f"{to_posix_ms(self.timestamp)}")

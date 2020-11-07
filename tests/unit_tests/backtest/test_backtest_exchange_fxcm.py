@@ -23,7 +23,7 @@ from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -58,7 +58,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
-        self.uuid_factory = TestUUIDFactory()
+        self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock)
 
         self.portfolio = Portfolio(
@@ -104,7 +104,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             config=self.config,
             fill_model=FillModel(),
             clock=self.clock,
-            uuid_factory=TestUUIDFactory(),
+            uuid_factory=UUIDFactory(),
             logger=self.logger,
         )
 

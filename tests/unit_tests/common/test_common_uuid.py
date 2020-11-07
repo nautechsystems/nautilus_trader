@@ -15,32 +15,15 @@
 
 import unittest
 
-from nautilus_trader.common.uuid import LiveUUIDFactory
-from nautilus_trader.common.uuid import TestUUIDFactory
+from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import UUID
 
 
 class UUIDFactoryTests(unittest.TestCase):
 
-    def test_factory_returns_identical_uuids(self):
-        # Arrange
-        factory = TestUUIDFactory()
-
-        # Act
-        result1 = factory.generate()
-        result2 = factory.generate()
-        result3 = factory.generate()
-
-        self.assertEqual(UUID, type(result1))
-        self.assertEqual(result1, result2)
-        self.assertEqual(result2, result3)
-
-
-class LiveGuidFactoryTests(unittest.TestCase):
-
     def test_factory_returns_unique_uuids(self):
         # Arrange
-        factory = LiveUUIDFactory()
+        factory = UUIDFactory()
 
         # Act
         result1 = factory.generate()
