@@ -131,7 +131,7 @@ class BarTypeTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual("AUD/USD.FXCM-1-MINUTE-BID", str(bar_type))
-        self.assertEqual("BarType(AUD/USD.FXCM-1-MINUTE-BID)", repr(bar_type))
+        self.assertEqual("BarType(AUD/USD.FXCM-1-MINUTE-BID, is_internal_aggregation=True)", repr(bar_type))
 
     @parameterized.expand([
         [""],
@@ -153,7 +153,7 @@ class BarTypeTests(unittest.TestCase):
     def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
-        bar_type = BarType.from_string(value)
+        bar_type = BarType.from_string(value, is_internal_aggregation=True)
 
         # Assert
         self.assertEqual(bar_type, expected)

@@ -56,7 +56,6 @@ cdef class DataEngine:
     cdef dict _trade_tick_handlers
     cdef dict _bar_handlers
     cdef dict _bar_aggregators
-    cdef set _self_generated
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
@@ -98,7 +97,7 @@ cdef class DataEngine:
     cdef inline void _handle_subscribe_instrument(self, Symbol symbol, handler) except *
     cdef inline void _handle_subscribe_quote_ticks(self, Symbol symbol, handler) except *
     cdef inline void _handle_subscribe_trade_ticks(self, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_bars(self, BarType bar_type, bint self_generated, handler) except *
+    cdef inline void _handle_subscribe_bars(self, BarType bar_type, handler) except *
     cdef inline void _handle_unsubscribe_instrument(self, Symbol symbol, handler) except *
     cdef inline void _handle_unsubscribe_quote_ticks(self, Symbol symbol, handler) except *
     cdef inline void _handle_unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
@@ -152,10 +151,8 @@ cdef class DataEngine:
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _internal_update_instruments(self, list instruments) except *
-    cdef inline void _start_generating_bars(self, BarType bar_type, handler) except *
-    cdef inline TimeBarAggregator _create_time_bar_aggregator(self, BarType bar_type)
-    cdef inline TickBarAggregator _create_tick_bar_aggregator(self, BarType bar_type)
-    cdef inline void _stop_generating_bars(self, BarType bar_type, handler) except *
+    cdef inline void _start_bar_aggregator(self, BarType bar_type) except *
+    cdef inline void _stop_bar_aggregator(self, BarType bar_type) except *
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler) except *

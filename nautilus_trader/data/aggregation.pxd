@@ -69,11 +69,20 @@ cdef class BarAggregator:
 
 
 cdef class TickBarAggregator(BarAggregator):
-    cdef int step
+    cdef readonly int step
+    """The aggregators size threshold.\n\n:returns: `int`"""
 
 
 cdef class VolumeBarAggregator(BarAggregator):
-    cdef int step
+    cdef readonly int step
+    """The aggregators volume threshold.\n\n:returns: `int`"""
+
+
+cdef class ValueBarAggregator(BarAggregator):
+    cdef readonly int step
+    """The aggregators value threshold.\n\n:returns: `int`"""
+    cdef readonly Decimal cum_value
+    """The aggregators current cumulative value.\n\n:returns: `Decimal`"""
 
 
 cdef class TimeBarAggregator(BarAggregator):
