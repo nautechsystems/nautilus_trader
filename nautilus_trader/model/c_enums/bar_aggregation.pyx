@@ -30,11 +30,11 @@ cdef class BarAggregationParser:
         elif value == 6:
             return 'VOLUME_RUNS'
         elif value == 7:
-            return 'NOTIONAL'
+            return 'VALUE'
         elif value == 8:
-            return 'NOTIONAL_IMBALANCE'
+            return 'VALUE_IMBALANCE'
         elif value == 9:
-            return 'NOTIONAL_RUNS'
+            return 'VALUE_RUNS'
         elif value == 10:
             return 'SECOND'
         elif value == 11:
@@ -60,12 +60,12 @@ cdef class BarAggregationParser:
             return BarAggregation.VOLUME_IMBALANCE
         elif value == 'VOLUME_RUNS':
             return BarAggregation.VOLUME_RUNS
-        elif value == 'NOTIONAL':
-            return BarAggregation.NOTIONAL
-        elif value == 'NOTIONAL_IMBALANCE':
-            return BarAggregation.NOTIONAL_IMBALANCE
-        elif value == 'NOTIONAL_RUNS':
-            return BarAggregation.NOTIONAL_RUNS
+        elif value == 'VALUE':
+            return BarAggregation.VALUE
+        elif value == 'VALUE_IMBALANCE':
+            return BarAggregation.VALUE_IMBALANCE
+        elif value == 'VALUE_RUNS':
+            return BarAggregation.VALUE_RUNS
         elif value == 'SECOND':
             return BarAggregation.SECOND
         elif value == 'MINUTE':

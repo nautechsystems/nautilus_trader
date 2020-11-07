@@ -191,6 +191,58 @@ class TickBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Quantity(6), bar_store.get_store()[0].bar.volume)
 
 
+class VolumeBarAggregatorTests(unittest.TestCase):
+
+    def test_update_sends_bar_to_handler(self):
+        # Arrange
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(symbol, bar_spec)
+        aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
+
+        tick1 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00001"),
+            ask=Price("1.00004"),
+            bid_size=Quantity(1),
+            ask_size=Quantity(1),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick2 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00002"),
+            ask=Price("1.00005"),
+            bid_size=Quantity(1),
+            ask_size=Quantity(1),
+            timestamp=UNIX_EPOCH,
+        )
+
+        tick3 = QuoteTick(
+            symbol=AUDUSD_FXCM,
+            bid=Price("1.00000"),
+            ask=Price("1.00003"),
+            bid_size=Quantity(1),
+            ask_size=Quantity(1),
+            timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        aggregator.handle_quote_tick(tick1)
+        aggregator.handle_quote_tick(tick2)
+        aggregator.handle_quote_tick(tick3)
+
+        # Assert
+        self.assertEqual(1, len(bar_store.get_store()))
+        self.assertEqual(Price("1.000025"), bar_store.get_store()[0].bar.open)
+        self.assertEqual(Price("1.000035"), bar_store.get_store()[0].bar.high)
+        self.assertEqual(Price("1.000015"), bar_store.get_store()[0].bar.low)
+        self.assertEqual(Price('1.000015'), bar_store.get_store()[0].bar.close)
+        self.assertEqual(Quantity(6), bar_store.get_store()[0].bar.volume)
+
+
 class TimeBarAggregatorTests(unittest.TestCase):
 
     def test_update_timed_with_test_clock_sends_single_bar_to_handler(self):

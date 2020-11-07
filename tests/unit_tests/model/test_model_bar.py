@@ -74,7 +74,7 @@ class BarSpecificationTests(unittest.TestCase):
         ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
         ["15-MINUTE-MID", BarSpecification(15, BarAggregation.MINUTE, PriceType.MID)],
         ["100-TICK-LAST", BarSpecification(100, BarAggregation.TICK, PriceType.LAST)],
-        ["10000-NOTIONAL_IMBALANCE-MID", BarSpecification(10000, BarAggregation.NOTIONAL_IMBALANCE, PriceType.MID)],
+        ["10000-VALUE_IMBALANCE-MID", BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID)],
 
     ])
     def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
@@ -88,7 +88,7 @@ class BarSpecificationTests(unittest.TestCase):
     @parameterized.expand([
         [BarSpecification(1, BarAggregation.MINUTE, PriceType.BID), True, False, False],
         [BarSpecification(1000, BarAggregation.TICK, PriceType.MID), False, True, False],
-        [BarSpecification(10000, BarAggregation.NOTIONAL_RUNS, PriceType.MID), False, False, True],
+        [BarSpecification(10000, BarAggregation.VALUE_RUNS, PriceType.MID), False, False, True],
     ])
     def test_aggregation_methods(
             self,

@@ -22,9 +22,9 @@ cpdef enum BarAggregation:
     VOLUME = 4,
     VOLUME_IMBALANCE = 5,
     VOLUME_RUNS = 6,
-    NOTIONAL = 7,
-    NOTIONAL_IMBALANCE = 8
-    NOTIONAL_RUNS = 9,
+    VALUE = 7,
+    VALUE_IMBALANCE = 8
+    VALUE_RUNS = 9,
     SECOND = 10,
     MINUTE = 11,
     HOUR = 12,

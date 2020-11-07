@@ -23,8 +23,9 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Decimal
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -46,9 +47,9 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef Decimal _volume
+    cdef Decimal volume
 
-    cpdef void update(self, Price price, Decimal volume, datetime timestamp) except *
+    cpdef void update(self, Price price, Decimal size, datetime timestamp) except *
     cpdef void reset(self) except *
     cpdef Bar build(self, datetime close_time=*)
 
@@ -63,13 +64,16 @@ cdef class BarAggregator:
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cdef void _build_and_send(self, datetime close=*) except *
+    cdef void _apply_update(self, Price price, Quantity size, datetime timestamp) except *
+    cdef inline void _build_and_send(self, datetime close=*) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
     cdef int step
 
-    cdef inline void _check_bar_builder(self) except *
+
+cdef class VolumeBarAggregator(BarAggregator):
+    cdef int step
 
 
 cdef class TimeBarAggregator(BarAggregator):
