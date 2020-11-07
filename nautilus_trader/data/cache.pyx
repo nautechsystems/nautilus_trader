@@ -26,9 +26,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -57,6 +60,7 @@ cdef class DataCache(DataCacheFacade):
 
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._xrate_calculator = ExchangeRateCalculator()
+        self._xrate_symbols = {}
 
         # Capacities
         self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
@@ -66,8 +70,6 @@ cdef class DataCache(DataCacheFacade):
 
         # Cached data
         self._instruments = {}  # type: {Symbol, Instrument}
-        self._bid_quotes = {}   # type: {Symbol, float}
-        self._ask_quotes = {}   # type: {Symbol, float}
         self._quote_ticks = {}  # type: {Symbol, [QuoteTick]}
         self._trade_ticks = {}  # type: {Symbol, [TradeTick]}
         self._bars = {}         # type: {BarType, [Bar]}
@@ -85,8 +87,7 @@ cdef class DataCache(DataCacheFacade):
         self._log.info("Resetting cache...")
 
         self._instruments.clear()
-        self._bid_quotes.clear()
-        self._ask_quotes.clear()
+        self._xrate_symbols.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._bars.clear()
@@ -102,6 +103,11 @@ cdef class DataCache(DataCacheFacade):
 
         """
         self._instruments[instrument.symbol] = instrument
+
+        if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
+            self._xrate_symbols[instrument.symbol] = (f"{instrument.base_currency}/"
+                                                      f"{instrument.quote_currency}")
+
         self._log.info(f"Updated instrument {instrument.symbol}")
 
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
@@ -117,12 +123,6 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(tick, "tick")
 
         cdef Symbol symbol = tick.symbol
-
-        # Update latest quotes
-        self._bid_quotes[symbol.code] = tick.bid.as_double()
-        self._ask_quotes[symbol.code] = tick.ask.as_double()
-
-        # Update ticks and spreads
         ticks = self._quote_ticks.get(symbol)
 
         if ticks is None:
@@ -145,8 +145,6 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(tick, "tick")
 
         cdef Symbol symbol = tick.symbol
-
-        # Update ticks
         ticks = self._trade_ticks.get(symbol)
 
         if ticks is None:
@@ -217,9 +215,6 @@ cdef class DataCache(DataCacheFacade):
         cdef QuoteTick tick
         for tick in ticks:
             cached_ticks.appendleft(tick)
-
-        self._bid_quotes[symbol.code] = ticks[-1].bid.as_double()
-        self._ask_quotes[symbol.code] = ticks[-1].ask.as_double()
 
     cpdef void add_trade_ticks(self, list ticks) except *:
         """
@@ -317,7 +312,7 @@ cdef class DataCache(DataCacheFacade):
         list[Instrument]
 
         """
-        return sorted(list(self._instruments.values()))
+        return list(self._instruments.values())
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
@@ -405,12 +400,8 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        QuoteTick
-
-        Raises
-        ------
-        IndexError
-            If tick index is out of range.
+        QuoteTick or None
+            If no ticks or no tick at index then returns None.
 
         Notes
         -----
@@ -419,7 +410,14 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._quote_ticks.get(symbol, [])[index]
+        ticks = self._quote_ticks.get(symbol)
+        if not ticks:
+            return None
+
+        try:
+            return ticks[index]
+        except IndexError:
+            return None
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
         """
@@ -435,12 +433,8 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        TradeTick
-
-        Raises
-        ------
-        IndexError
-            If tick index is out of range.
+        TradeTick or None
+            If no ticks or no tick at index then returns None.
 
         Notes
         -----
@@ -449,7 +443,14 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._trade_ticks.get(symbol)[index]
+        ticks = self._trade_ticks.get(symbol)
+        if not ticks:
+            return None
+
+        try:
+            return ticks[index]
+        except IndexError:
+            return None
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
@@ -465,12 +466,8 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        Bar
-
-        Raises
-        ------
-        IndexError
-            If bar index is out of range.
+        Bar or None
+            If no bars or no bar at index then returns None.
 
         Notes
         -----
@@ -479,7 +476,14 @@ cdef class DataCache(DataCacheFacade):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        return self._bars.get(bar_type)[index]
+        bars = self._bars.get(bar_type)
+        if not bars:
+            return None
+
+        try:
+            return bars[index]
+        except IndexError:
+            return None
 
     cpdef int quote_tick_count(self, Symbol symbol) except *:
         """
@@ -594,6 +598,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef double get_xrate(
             self,
+            Venue venue,
             Currency from_currency,
             Currency to_currency,
             PriceType price_type=PriceType.MID,
@@ -603,6 +608,8 @@ cdef class DataCache(DataCacheFacade):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the exchange rate.
         from_currency : Currency
             The currency to convert from.
         to_currency : Currency
@@ -623,10 +630,41 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(from_currency, "from_currency")
         Condition.not_none(to_currency, "to_currency")
 
+        cdef tuple quotes = self._build_quote_table(venue)
+
         return self._xrate_calculator.get_rate(
             from_currency=from_currency,
             to_currency=to_currency,
             price_type=price_type,
-            bid_quotes=self._bid_quotes,
-            ask_quotes=self._ask_quotes,
+            bid_quotes=quotes[0],  # Bid
+            ask_quotes=quotes[1],  # Ask
         )
+
+    # noinspection: [base_quote]
+    # noinspection PyUnresolvedReferences
+    cdef inline tuple _build_quote_table(self, Venue venue):
+        cdef dict bid_quotes = {}
+        cdef dict ask_quotes = {}
+
+        cdef Symbol symbol
+        cdef str base_quote
+        for symbol, base_quote in self._xrate_symbols.items():
+            if symbol.venue != venue:
+                continue
+
+            ticks = self._quote_ticks.get(symbol)
+            if not ticks:
+                # No quotes for symbol
+                continue
+
+            bid_quotes[base_quote] = ticks[0].bid.as_double()
+            ask_quotes[base_quote] = ticks[0].ask.as_double()
+
+        return bid_quotes, ask_quotes
+
+    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
+        return instrument.asset_class == AssetClass.CRYPTO \
+               and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
+
+    cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
+        return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT

@@ -220,6 +220,7 @@ cdef class BacktestEngine:
 
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
+        self.portfolio.register_cache(self.data_engine.cache)
         self.exchange.register_client(self.exec_client)
 
         self.trader = Trader(

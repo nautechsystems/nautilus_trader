@@ -13,25 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import unittest
-
-import pytz
 
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.model.currencies import AUD
-from nautilus_trader.model.currencies import JPY
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
 
 
+FXCM = Venue("FXCM")
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
@@ -55,6 +48,8 @@ class DataEngineTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
+
+        self.portfolio.register_cache(self.data_engine.cache)
 
     def test_registered_venues_when_nothing_registered_returns_empty_list(self):
         # Arrange
@@ -97,41 +92,3 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, self.data_engine.command_count)
         self.assertEqual(0, self.data_engine.data_count)
-
-    def test_get_exchange_rate_returns_correct_rate(self):
-        # Arrange
-        tick = QuoteTick(
-            USDJPY_FXCM,
-            Price("110.80000"),
-            Price("110.80010"),
-            Quantity(1),
-            Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
-        )
-
-        self.data_engine.process(tick)
-
-        # Act
-        result = self.data_engine.cache.get_xrate(JPY, USD)
-
-        # Assert
-        self.assertEqual(0.009025266685348969, result)
-
-    def test_get_exchange_rate_with_no_conversion(self):
-        # Arrange
-        tick = QuoteTick(
-            AUDUSD_FXCM,
-            Price("0.80000"),
-            Price("0.80010"),
-            Quantity(1),
-            Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
-        )
-
-        self.data_engine.process(tick)
-
-        # Act
-        result = self.data_engine.cache.get_xrate(AUD, USD)
-
-        # Assert
-        self.assertEqual(0.80005, result)

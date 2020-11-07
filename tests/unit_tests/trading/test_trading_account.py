@@ -21,6 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.data.cache import DataCache
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -58,6 +59,7 @@ class AccountTests(unittest.TestCase):
         self.account = Account(state)
         self.portfolio = Portfolio(self.clock, uuid_factor, logger)
         self.portfolio.register_account(self.account)
+        self.portfolio.register_cache(DataCache(logger))
 
     def test_queries_when_no_portfolio_returns_none(self):
         # Arrange

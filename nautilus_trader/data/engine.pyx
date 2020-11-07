@@ -693,7 +693,6 @@ cdef class DataEngine:
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
-        self.portfolio.update_instrument(instrument)
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
         if instrument_handlers:
