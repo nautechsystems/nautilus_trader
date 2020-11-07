@@ -42,15 +42,15 @@ cdef list _THRESHOLD_AGGREGATION = [
     BarAggregation.TICK_IMBALANCE,
     BarAggregation.VOLUME,
     BarAggregation.VOLUME_IMBALANCE,
-    BarAggregation.NOTIONAL,
-    BarAggregation.NOTIONAL_IMBALANCE,
+    BarAggregation.VALUE,
+    BarAggregation.VALUE_IMBALANCE,
 ]
 
 # Aggregation methods which are information driven
 cdef list _INFORMATION_AGGREGATION = [
     BarAggregation.TICK_RUNS,
     BarAggregation.VOLUME_RUNS,
-    BarAggregation.NOTIONAL_RUNS,
+    BarAggregation.VALUE_RUNS,
 ]
 
 
