@@ -208,10 +208,8 @@ cdef class TickDataWrangler:
                         pd.to_datetime(self.tick_data.index)))
 
     cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
-        """
-        Build a tick from the given values. The function expects the values to
-        be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
-        """
+        # Build a tick from the given values. The function expects the values to
+        # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
             self.instrument.symbol,
             Price(values[0], self.instrument.price_precision),
@@ -222,10 +220,8 @@ cdef class TickDataWrangler:
         )
 
     cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
-        """
-        Build a tick from the given values. The function expects the values to
-        be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
-        """
+        # Build a tick from the given values. The function expects the values to
+        # be an ndarray with 2 elements [bid, ask] of type double.
         return QuoteTick(
             self.instrument.symbol,
             Price(values[0], self.instrument.price_precision),

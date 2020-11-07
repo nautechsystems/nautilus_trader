@@ -23,7 +23,7 @@ which presents a read-only facade for consumers.
 
 The engine employs a simple fan-in fan-out messaging pattern to receive data
 from the `DataClient` instances, and sending those to the registered
-handlers, namely the `Portfolio` and `TradingStrategy` instances.
+handlers.
 
 Alternative implementations can be written on top which just need to override
 the engines `execute`, `process`, `send` and `receive` methods.
