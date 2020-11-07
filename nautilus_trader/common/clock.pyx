@@ -57,13 +57,6 @@ cdef class Clock:
         self.next_event_name = None
 
     cpdef datetime utc_now(self):
-        """
-        Returns
-        -------
-        datetime
-            The current tz-aware UTC time of the clock.
-
-        """
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
