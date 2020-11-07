@@ -86,8 +86,8 @@ cdef class DataCache(DataCacheFacade):
         """
         self._log.info("Resetting cache...")
 
-        self._instruments.clear()
         self._xrate_symbols.clear()
+        self._instruments.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._bars.clear()
@@ -630,6 +630,9 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(from_currency, "from_currency")
         Condition.not_none(to_currency, "to_currency")
 
+        if from_currency == to_currency:
+            return 1.  # No conversion necessary
+
         cdef tuple quotes = self._build_quote_table(venue)
 
         return self._xrate_calculator.get_rate(
@@ -664,7 +667,7 @@ cdef class DataCache(DataCacheFacade):
 
     cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
         return instrument.asset_class == AssetClass.CRYPTO \
-               and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
+            and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
 
     cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
         return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT
