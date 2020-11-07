@@ -450,6 +450,8 @@ cdef class TradingStrategy:
         """
         Handle the given tick.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         tick : QuoteTick
@@ -483,6 +485,8 @@ cdef class TradingStrategy:
         """
         Handle the given list of ticks by handling each tick individually.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         ticks : list[QuoteTick]
@@ -506,6 +510,8 @@ cdef class TradingStrategy:
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
         """
         Handle the given tick.
+
+        System method (not intended to be called by users).
 
         Parameters
         ----------
@@ -540,6 +546,8 @@ cdef class TradingStrategy:
         """
         Handle the given list of ticks by handling each tick individually.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         ticks : list[TradeTick]
@@ -563,6 +571,8 @@ cdef class TradingStrategy:
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """
         Handle the given bar type and bar.
+
+        System method (not intended to be called by users).
 
         Parameters
         ----------
@@ -600,6 +610,8 @@ cdef class TradingStrategy:
         """
         Handle the given bar type and bars by handling each bar individually.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         bar_type : BarType
@@ -626,6 +638,8 @@ cdef class TradingStrategy:
         """
         Handle the given data object.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         data : object
@@ -644,6 +658,8 @@ cdef class TradingStrategy:
     cpdef void handle_event(self, Event event) except *:
         """
         Hand the given event.
+
+        System method (not intended to be called by users).
 
         Parameters
         ----------
