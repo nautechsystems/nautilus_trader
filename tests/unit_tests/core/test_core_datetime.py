@@ -17,18 +17,18 @@ from datetime import datetime
 from datetime import timedelta
 import unittest
 
-from parameterized import parameterized
 import pandas as pd
+from parameterized import parameterized
 import pytz
 
-from nautilus_trader.core.datetime import to_posix_ms
-from nautilus_trader.core.datetime import from_posix_ms
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import format_iso8601
+from nautilus_trader.core.datetime import from_posix_ms
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
+from nautilus_trader.core.datetime import to_posix_ms
 from tests.test_kit.stubs import UNIX_EPOCH
 
 

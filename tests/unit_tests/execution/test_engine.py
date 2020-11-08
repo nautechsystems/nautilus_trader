@@ -229,7 +229,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(0, self.cache.positions_closed_count())
-        self.assertTrue(self.cache.position_exists_for_order(order.cl_ord_id))
 
     def test_handle_position_opening_with_position_id_none(self):
         # Arrange
@@ -281,7 +280,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(1, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(0, self.cache.positions_closed_count())
-        self.assertTrue(self.cache.position_exists_for_order(order.cl_ord_id))
 
     def test_add_to_existing_position_on_order_fill(self):
         # Arrange
@@ -726,7 +724,6 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertIn(position_id, self.cache.position_ids(strategy_id=strategy.id))
         self.assertIn(position_id_flipped, self.cache.position_ids())
         self.assertIn(position_id_flipped, self.cache.position_ids(strategy_id=strategy.id))
-        self.assertTrue(order_id_flipped, self.cache.position_exists_for_order(order_id_flipped))
         self.assertEqual(2, self.cache.positions_total_count())
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())

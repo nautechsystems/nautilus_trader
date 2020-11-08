@@ -184,7 +184,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             # 2- Build _index_position_orders -> {PositionId, {ClientOrderId}}
             if position_id not in self._index_position_orders:
                 self._index_position_orders[position_id] = set()
-            self._index_position_orders[position_id].add(position.cl_ord_id)
+            index_position_orders = self._index_position_orders[position_id]
+            for cl_ord_id in self.position.order_ids:
+                index_position_orders.add(cl_ord_id)
 
             # 3- Build _index_symbol_positions -> {Symbol, {PositionId}}
             if position.symbol not in self._index_symbol_positions:
@@ -200,10 +202,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_positions.add(position_id)
 
             # 6- Build _index_positions_open -> {PositionId}
-            if position.is_open:
+            if position.is_open_c():
                 self._index_positions_open.add(position_id)
             # 6- Build _index_positions_closed -> {PositionId}
-            elif position.is_closed:
+            elif position.is_closed_c():
                 self._index_positions_closed.add(position_id)
 
             # 7- Build _index_strategies -> {StrategyId}
@@ -505,7 +507,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(position, "position")
 
-        if position.is_closed:
+        if position.is_closed_c():
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
@@ -1201,47 +1203,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return position_id in self._index_positions
 
-    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id) except *:
-        """
-        Return a value indicating whether there is a position associated with
-        the given client order identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        cdef PositionId position_id = self._index_order_position.get(cl_ord_id)
-        if position_id is None:
-            return False
-        return position_id in self._index_positions
-
-    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id) except *:
-        """
-        Return a value indicating whether there is a position identifier indexed
-        for the given identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The client order identifier.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-
-        return cl_ord_id in self._index_order_position
-
     cpdef bint is_position_open(self, PositionId position_id) except *:
         """
         Return a value indicating whether a position with the given identifier
@@ -1378,9 +1339,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         cdef Position position
         for position in positions:
-            if position.is_long:
+            if position.is_long_c():
                 net_quantity = Decimal(net_quantity + position.quantity)
-            elif position.is_short:
+            elif position.is_short_c():
                 net_quantity = Decimal(net_quantity - position.quantity)
 
         return net_quantity
