@@ -18,10 +18,61 @@ import unittest
 
 from parameterized import parameterized
 
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.objects import Price
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
+
+
+class PriceTests(unittest.TestCase):
+
+    def test_str_repr(self):
+        # Arrange
+        price = Price(1.00000, 5)
+
+        # Act
+        # Assert
+        self.assertEqual("1.00000", str(price))
+        self.assertEqual("Price('1.00000')", repr(price))
+
+
+class QuantityTests(unittest.TestCase):
+
+    def test_instantiate_with_negative_value_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, Quantity, -1)
+
+    @parameterized.expand([
+        [Quantity("0"), "0"],
+        [Quantity("10.05"), "10.05"],
+        [Quantity("1000"), "1,000"],
+        [Quantity("1112"), "1,112"],
+        [Quantity("120100"), "120,100"],
+        [Quantity("200000"), "200,000"],
+        [Quantity("1000000"), "1,000,000"],
+        [Quantity("2500000"), "2,500,000"],
+        [Quantity("1111111"), "1,111,111"],
+        [Quantity("2523000"), "2,523,000"],
+        [Quantity("100000000"), "100,000,000"],
+    ])
+    def test_str_and_to_string(self, value, expected):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual(expected, Quantity(value).to_string())
+
+    def test_str_repr(self):
+        # Arrange
+        quantity = Quantity(2100.1666666, 6)
+
+        # Act
+        # Assert
+        self.assertEqual("2100.166667", str(quantity))
+        self.assertEqual("Quantity('2100.166667')", repr(quantity))
 
 
 class MoneyTests(unittest.TestCase):
