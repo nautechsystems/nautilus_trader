@@ -29,12 +29,11 @@ print(
     f"ANNOTATION_MODE={ANNOTATION_MODE}"
 )
 
-# ------------------------------------------------------------------------------
-# Cython (edit here only)
-# ------------------------------------------------------------------------------
+##########################
+#  Cython build options  #
+##########################
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
-# Cython build options
 Options.docstrings = True  # Include docstrings in modules
 Options.emit_code_comments = True
 Options.annotate = ANNOTATION_MODE  # Create annotated html files for each .pyx
