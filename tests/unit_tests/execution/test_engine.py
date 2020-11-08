@@ -175,7 +175,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order)
 
         # Assert
-        self.assertIn(submit_order, self.exec_client.received_commands)
+        self.assertIn(submit_order, self.exec_client.commands)
         self.assertTrue(self.cache.order_exists(order.cl_ord_id))
 
     def test_handle_order_fill_event(self):

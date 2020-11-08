@@ -63,6 +63,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -151,9 +152,21 @@ cdef class DataEngine:
         return sorted(list(self._clients.keys()))
 
     @property
+    def subscribed_instruments(self):
+        """
+        The instruments subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return sorted(list(self._instrument_handlers.keys()))
+
+    @property
     def subscribed_quote_ticks(self):
         """
-        Return the quote tick symbols subscribed to.
+        The quote tick symbols subscribed to.
 
         Returns
         -------
@@ -165,7 +178,7 @@ cdef class DataEngine:
     @property
     def subscribed_trade_ticks(self):
         """
-        Return the trade tick symbols subscribed to.
+        The trade tick symbols subscribed to.
 
         Returns
         -------
@@ -177,7 +190,7 @@ cdef class DataEngine:
     @property
     def subscribed_bars(self):
         """
-        Return the bar types subscribed to.
+        The bar types subscribed to.
 
         Returns
         -------
@@ -185,18 +198,6 @@ cdef class DataEngine:
 
         """
         return sorted(list(self._bar_handlers.keys()))
-
-    @property
-    def subscribed_instruments(self):
-        """
-        Return the instruments subscribed to.
-
-        Returns
-        -------
-        list[Symbol]
-
-        """
-        return sorted(list(self._instrument_handlers.keys()))
 
 # --REGISTRATION -----------------------------------------------------------------------------------
 
@@ -354,6 +355,12 @@ cdef class DataEngine:
     cpdef void update_instruments(self, Venue venue) except *:
         """
         Update all instruments for the given venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the update.
+
         """
         Condition.not_none(venue, "venue")
         Condition.is_in(venue, self._clients, "venue", "_clients")
@@ -366,7 +373,7 @@ cdef class DataEngine:
             command_timestamp=self._clock.utc_now(),
         )
 
-        # Send to start of queue as this method could be called at any time
+        # Send to external API entry as this method could be called at any time
         self.execute(request)
 
     cpdef void update_instruments_all(self) except *:
@@ -392,7 +399,7 @@ cdef class DataEngine:
         elif isinstance(command, Unsubscribe):
             self._handle_unsubscribe(command)
         else:
-            self._log.error(f"Cannot handle command ({command} is unrecognized).")
+            self._log.error(f"Cannot handle unrecognized command {command}.")
 
     cdef inline void _handle_connect(self, Connect command) except *:
         self._log.info("Connecting all clients...")
@@ -402,7 +409,7 @@ cdef class DataEngine:
             client = self._clients.get(command.venue)
             if client is None:
                 self._log.error(f"Cannot execute {command} "
-                                f"(venue {command.venue} not registered).")
+                                f"({command.venue} {type(command.venue).__name__} not registered).")
             else:
                 client.connect()
         else:
@@ -417,7 +424,7 @@ cdef class DataEngine:
             client = self._clients.get(command.venue)
             if client is None:
                 self._log.error(f"Cannot execute {command} "
-                                f"(venue {command.venue} not registered).")
+                                f"({command.venue} {type(command.venue).__name__} not registered).")
             else:
                 client.disconnect()
         else:
@@ -446,7 +453,7 @@ cdef class DataEngine:
                 command.handler,
             )
         else:
-            self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")
+            self._log.error(f"Cannot subscribe to unrecognized data type {command.data_type}.")
 
     cdef inline void _handle_unsubscribe(self, Unsubscribe command) except *:
         if command.data_type == Instrument:
@@ -470,13 +477,13 @@ cdef class DataEngine:
                 command.handler,
             )
         else:
-            self._log.error(f"Cannot handle command ({command.data_type} is unrecognized).")
+            self._log.error(f"Cannot unsubscribe from unrecognized data type {command.data_type}.")
 
     cdef inline void _handle_subscribe_instrument(self, Symbol symbol, handler: callable) except *:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
         self._add_instrument_handler(symbol, handler)
         self._clients[symbol.venue].subscribe_instrument(symbol)
@@ -485,7 +492,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
         self._add_quote_tick_handler(symbol, handler)
         self._clients[symbol.venue].subscribe_quote_ticks(symbol)
@@ -494,7 +501,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
         self._add_trade_tick_handler(symbol, handler)
         self._clients[symbol.venue].subscribe_trade_ticks(symbol)
@@ -503,7 +510,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
-        Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
+        Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "self._clients")
 
         if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
             # Aggregation not started
@@ -518,7 +525,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
         self._clients[symbol.venue].unsubscribe_instrument(symbol)
         self._remove_instrument_handler(symbol, handler)
@@ -527,7 +534,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
         self._clients[symbol.venue].unsubscribe_quote_ticks(symbol)
         self._remove_quote_tick_handler(symbol, handler)
@@ -536,7 +543,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "_clients")
+        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
         self._clients[symbol.venue].unsubscribe_trade_ticks(symbol)
         self._remove_trade_tick_handler(symbol, handler)
@@ -545,7 +552,7 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
-        Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "_clients")
+        Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "self._clients")
 
         if bar_type.is_internal_aggregation:
             # Internal aggregation
@@ -607,7 +614,7 @@ cdef class DataEngine:
                 request.id,
             )
         else:
-            self._log.error(f"Cannot handle request (data_type {request.data_type} is unrecognized).")
+            self._log.error(f"Cannot handle request (data type {request.data_type} is unrecognized).")
 
     cdef inline void _handle_request_instrument(self, Symbol symbol, UUID correlation_id) except *:
         Condition.is_in(symbol.venue, self._clients, "venue", "self._clients")
@@ -689,7 +696,7 @@ cdef class DataEngine:
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         else:
-            self._log.error(f"Cannot handle data ({data} is unrecognized).")
+            self._log.error(f"Cannot handle unrecognized data type {data}.")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
@@ -843,6 +850,10 @@ cdef class DataEngine:
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
+        else:
+            raise RuntimeError(f"Cannot start aggregator "
+                               f"(BarAggregation.{BarAggregationParser.to_string(bar_type.spec.aggregation)} "
+                               f"not currently supported in this version)")
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator
