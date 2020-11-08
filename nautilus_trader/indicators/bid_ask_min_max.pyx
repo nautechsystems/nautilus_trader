@@ -52,7 +52,7 @@ cdef class BidAskMinMax(Indicator):
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
-        Given a QuoteTick, run its bid/ask through the indicator
+        Update the indicator with the given tick.
 
         Parameters
         ----------

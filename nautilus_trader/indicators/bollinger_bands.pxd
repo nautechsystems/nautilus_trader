@@ -17,11 +17,18 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class BollingerBands(Indicator):
-    cdef int _period
-    cdef double _k
     cdef object _ma
     cdef object _prices
-    cdef double _value_upper
-    cdef double _value_lower
+
+    cdef readonly int period
+    """The period for the moving average.\n\n:returns: `int`"""
+    cdef readonly double k
+    """The standard deviation multiple.\n\n:returns: `double`"""
+    cdef readonly double upper
+    """The current value of the upper band.\n\n:returns: `double`"""
+    cdef readonly double middle
+    """The current value of the middle band.\n\n:returns: `double`"""
+    cdef readonly double lower
+    """The current value of the lower band.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double high, double low, double close) except *

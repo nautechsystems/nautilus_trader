@@ -18,6 +18,8 @@ from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 
 cdef class WeightedMovingAverage(MovingAverage):
     cdef object _inputs
-    cdef object _weights
+
+    cdef readonly object weights
+    """The weights for the moving average calculation.\n\n:returns: `list[double]`"""
 
     cpdef void update_raw(self, double value) except *

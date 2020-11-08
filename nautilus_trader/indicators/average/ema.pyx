@@ -47,20 +47,8 @@ cdef class ExponentialMovingAverage(MovingAverage):
         Condition.positive_int(period, "period")
         super().__init__(period, params=[period], price_type=price_type)
 
-        self._alpha = 2.0 / (period + 1.0)
+        self.alpha = 2.0 / (period + 1.0)
         self.value = 0
-
-    @property
-    def alpha(self):
-        """
-        The moving average alpha value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._alpha
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -119,7 +107,7 @@ cdef class ExponentialMovingAverage(MovingAverage):
             self.value = value
 
         self._increment_count()
-        self.value = self._alpha * value + ((1.0 - self._alpha) * self.value)
+        self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
 
     cpdef void reset(self) except *:
         """

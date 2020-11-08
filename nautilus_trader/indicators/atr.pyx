@@ -65,24 +65,12 @@ cdef class AverageTrueRange(Indicator):
             ],
         )
 
-        self._period = period
+        self.period = period
         self._ma = MovingAverageFactory.create(period, ma_type)
         self._use_previous = use_previous
         self._value_floor = value_floor
         self._previous_close = 0
         self.value = 0
-
-    @property
-    def period(self):
-        """
-        The indicators window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
 
     cpdef void handle_bar(self, Bar bar) except *:
         """

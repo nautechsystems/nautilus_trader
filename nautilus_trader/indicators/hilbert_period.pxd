@@ -29,9 +29,9 @@ cdef class HilbertPeriod(Indicator):
     cdef object _delta_phase
 
     cdef readonly int period
-    """The indicators period.\n\n:returns: `int`"""
+    """The window period.\n\n:returns: `int`"""
     cdef readonly double value
-    """The indicators current value.\n\n:returns: `double`"""
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low) except *

@@ -18,8 +18,13 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class SpreadAnalyzer(Indicator):
-    cdef Symbol _symbol
-    cdef int _capacity
     cdef object _spreads
-    cdef double _current
-    cdef double _average
+
+    cdef readonly Symbol symbol
+    """The indicators symbol.\n\n:returns: `Symbol`"""
+    cdef readonly int capacity
+    """The indicators spread capacity.\n\n:returns: `int`"""
+    cdef readonly double current
+    """The current spread.\n\n:returns: `double`"""
+    cdef readonly double average
+    """The current average spread.\n\n:returns: `double`"""
