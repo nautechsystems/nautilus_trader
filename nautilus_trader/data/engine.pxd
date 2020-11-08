@@ -28,8 +28,6 @@ from nautilus_trader.core.constants cimport *  # str constants
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.aggregation cimport TickBarAggregator
-from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar

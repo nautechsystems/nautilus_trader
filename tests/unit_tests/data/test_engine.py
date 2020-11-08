@@ -19,12 +19,17 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.messages import Connect
+from nautilus_trader.common.messages import Disconnect
+from nautilus_trader.common.messages import KillSwitch
 
 
 FXCM = Venue("FXCM")
+BINANCE = Venue("BINANCE")
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 
@@ -57,6 +62,12 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([], self.data_engine.registered_venues)
 
+    def test_subscribed_instruments_when_nothing_subscribed_returns_empty_list(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_instruments)
+
     def test_subscribed_quote_ticks_when_nothing_subscribed_returns_empty_list(self):
         # Arrange
         # Act
@@ -83,6 +94,8 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, self.data_engine.command_count)
         self.assertEqual(0, self.data_engine.data_count)
+        self.assertEqual(0, self.data_engine.request_count)
+        self.assertEqual(0, self.data_engine.response_count)
 
     def test_dispose(self):
         # Arrange
@@ -92,3 +105,47 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, self.data_engine.command_count)
         self.assertEqual(0, self.data_engine.data_count)
+        self.assertEqual(0, self.data_engine.request_count)
+        self.assertEqual(0, self.data_engine.response_count)
+
+    def test_given_kill_switch_currently_does_nothing(self):
+        # Arrange
+        kill = KillSwitch(
+            trader_id=TraderId("TESTER", "000"),
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(kill)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_given_connect_when_no_data_clients_registered_does_nothing(self):
+        # Arrange
+        connect = Connect(
+            venue=BINANCE,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(connect)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_given_disconnect_when_no_data_clients_registered_does_nothing(self):
+        # Arrange
+        disconnect = Disconnect(
+            venue=BINANCE,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(disconnect)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)

@@ -68,31 +68,31 @@ class TestStubs:
 
     @staticmethod
     def symbol_btcusd_bitmex() -> Symbol:
-        return Symbol("BTC/USD", Venue('BITMEX'))
+        return Symbol("BTC/USD", Venue("BITMEX"))
 
     @staticmethod
     def symbol_ethusd_bitmex() -> Symbol:
-        return Symbol("ETH/USD", Venue('BITMEX'))
+        return Symbol("ETH/USD", Venue("BITMEX"))
 
     @staticmethod
     def symbol_btcusdt_binance() -> Symbol:
-        return Symbol("BTC/USDT", Venue('BINANCE'))
+        return Symbol("BTC/USDT", Venue("BINANCE"))
 
     @staticmethod
     def symbol_ethusdt_binance() -> Symbol:
-        return Symbol("ETH/USDT", Venue('BINANCE'))
+        return Symbol("ETH/USDT", Venue("BINANCE"))
 
     @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
-        return Symbol("AUD/USD", Venue('FXCM'))
+        return Symbol("AUD/USD", Venue("FXCM"))
 
     @staticmethod
     def symbol_gbpusd_fxcm() -> Symbol:
-        return Symbol("GBP/USD", Venue('FXCM'))
+        return Symbol("GBP/USD", Venue("FXCM"))
 
     @staticmethod
     def symbol_usdjpy_fxcm() -> Symbol:
-        return Symbol("USD/JPY", Venue('FXCM'))
+        return Symbol("USD/JPY", Venue("FXCM"))
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
