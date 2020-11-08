@@ -96,7 +96,6 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_position(position)
 
         # Assert
-        self.assertTrue(self.cache.position_exists_for_order(order.cl_ord_id))
         self.assertTrue(self.cache.position_exists(position.id))
         self.assertIn(position.id, self.cache.position_ids())
         self.assertIn(position, self.cache.positions())
@@ -483,12 +482,6 @@ class ExecutionCacheTests(unittest.TestCase):
         # Act
         # Assert
         self.assertFalse(self.cache.order_exists(ClientOrderId("O-123456")))
-
-    def test_position_indexed_for_order_when_no_indexing_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.cache.position_indexed_for_order(ClientOrderId("O-123456")))
 
     def test_get_order_when_no_order_returns_none(self):
         # Arrange

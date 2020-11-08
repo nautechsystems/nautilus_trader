@@ -17,15 +17,15 @@ import unittest
 
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.messages import Connect
+from nautilus_trader.common.messages import Disconnect
+from nautilus_trader.common.messages import KillSwitch
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
-from nautilus_trader.common.messages import Connect
-from nautilus_trader.common.messages import Disconnect
-from nautilus_trader.common.messages import KillSwitch
 
 
 FXCM = Venue("FXCM")

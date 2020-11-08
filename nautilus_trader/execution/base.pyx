@@ -89,28 +89,6 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- POSITION QUERIES ------------------------------------------------------------------------------
-
-    cpdef Position position(self, PositionId position_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef PositionId position_id(self, ClientOrderId cl_ord_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef list positions(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef list positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef list positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef bint order_exists(self, ClientOrderId cl_ord_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -135,15 +113,29 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+# -- POSITION QUERIES ------------------------------------------------------------------------------
+
+    cpdef Position position(self, PositionId position_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef PositionId position_id(self, ClientOrderId cl_ord_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef list positions(self, Symbol symbol=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef list positions_open(self, Symbol symbol=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef list positions_closed(self, Symbol symbol=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef bint position_exists(self, PositionId position_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
