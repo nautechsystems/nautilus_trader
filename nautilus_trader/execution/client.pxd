@@ -49,4 +49,4 @@ cdef class ExecutionClient:
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 
-    cpdef void handle_event(self, Event event) except *
+    cpdef void _handle_event(self, Event event) except *

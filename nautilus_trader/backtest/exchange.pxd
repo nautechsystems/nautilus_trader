@@ -15,12 +15,12 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
-from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands cimport CancelOrder
@@ -58,7 +58,7 @@ cdef class SimulatedExchange:
     cdef readonly Venue venue
     cdef readonly OMSType oms_type
     cdef readonly ExecutionCache exec_cache
-    cdef readonly ExecutionClient exec_client
+    cdef readonly BacktestExecClient exec_client
     cdef readonly dict instruments
     cdef readonly dict data_ticks
     cdef readonly int day_number
@@ -91,10 +91,7 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
 
-    cdef void _set_slippages(self) except *
-    cdef dict _build_current_bid_rates(self)
-    cdef dict _build_current_ask_rates(self)
-    cpdef void register_client(self, ExecutionClient client) except *
+    cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef datetime time_now(self)
@@ -108,29 +105,32 @@ cdef class SimulatedExchange:
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef PositionId _generate_position_id(self, Symbol symbol)
-    cdef OrderId _generate_order_id(self, Symbol symbol)
-    cdef ExecutionId _generate_execution_id(self)
-    cdef AccountState _generate_account_event(self)
-    cdef void _adjust_account(self, OrderFilled event, Position position) except *
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
-    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef void _submit_order(self, Order order) except *
-    cdef void _accept_order(self, Order order) except *
-    cdef void _reject_order(self, Order order, str reason) except *
-    cdef void _cancel_reject_order(self, ClientOrderId order_id, str response, str reason) except *
-    cdef void _expire_order(self, PassiveOrder order) except *
-    cdef void _process_order(self, Order order) except *
-    cdef void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *
-    cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *
-    cdef void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *
-    cdef void _work_order(self, Order order) except *
-    cdef void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
-    cdef void _clean_up_child_orders(self, ClientOrderId order_id) except *
-    cdef void _check_oco_order(self, ClientOrderId order_id) except *
-    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *
-    cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *
-    cdef void _cancel_order(self, PassiveOrder order) except *
+    cdef inline void _set_slippages(self) except *
+    cdef inline dict _build_current_bid_rates(self)
+    cdef inline dict _build_current_ask_rates(self)
+    cdef inline PositionId _generate_position_id(self, Symbol symbol)
+    cdef inline OrderId _generate_order_id(self, Symbol symbol)
+    cdef inline ExecutionId _generate_execution_id(self)
+    cdef inline AccountState _generate_account_event(self)
+    cdef inline void _adjust_account(self, OrderFilled event, Position position) except *
+    cdef inline void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
+    cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
+    cdef inline bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
+    cdef inline bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *
+    cdef inline bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *
+    cdef inline void _submit_order(self, Order order) except *
+    cdef inline void _accept_order(self, Order order) except *
+    cdef inline void _reject_order(self, Order order, str reason) except *
+    cdef inline void _cancel_reject_order(self, ClientOrderId order_id, str response, str reason) except *
+    cdef inline void _expire_order(self, PassiveOrder order) except *
+    cdef inline void _process_order(self, Order order) except *
+    cdef inline void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *
+    cdef inline void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *
+    cdef inline void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *
+    cdef inline void _work_order(self, Order order) except *
+    cdef inline void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
+    cdef inline void _clean_up_child_orders(self, ClientOrderId order_id) except *
+    cdef inline void _check_oco_order(self, ClientOrderId order_id) except *
+    cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *
+    cdef inline void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *
+    cdef inline void _cancel_order(self, PassiveOrder order) except *
