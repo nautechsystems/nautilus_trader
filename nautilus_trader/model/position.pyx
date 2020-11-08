@@ -84,8 +84,8 @@ cdef class Position:
         return f"{type(self).__name__}(id={self.id.value}, {self.status_string_c()})"
 
     cdef str status_string_c(self):
-        cdef str quantity = "" if self.relative_quantity == 0 else self.quantity.to_string()
-        return f"{PositionSideParser.to_string(self.side)} {quantity} {self.symbol}"
+        cdef str quantity = " " if self.relative_quantity == 0 else f" {self.quantity.to_string()} "
+        return f"{PositionSideParser.to_string(self.side)}{quantity}{self.symbol}"
 
     cdef bint is_open_c(self) except *:
         return self.side != PositionSide.FLAT

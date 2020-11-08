@@ -28,8 +28,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.events cimport PositionClosed
@@ -40,10 +38,10 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
 cdef class PortfolioFacade:
@@ -125,9 +123,8 @@ cdef class Portfolio(PortfolioFacade):
         self._clock = clock
         self._uuid_factory = uuid_factory
         self._log = LoggerAdapter(type(self).__name__, logger)
-        self._xrate_calculator = ExchangeRateCalculator()
+        self._data = None  # Initialized when cache registered
 
-        self._instruments = {}             # type: {Symbol: Instrument}
         self._ticks = {}                   # type: {Symbol: QuoteTick}
         self._accounts = {}                # type: {Venue: Account}
         self._orders_working = {}          # type: {Venue: {Order}}
@@ -136,9 +133,22 @@ cdef class Portfolio(PortfolioFacade):
         self._net_positions = {}           # type: {Symbol: Decimal}
         self._unrealized_pnls_symbol = {}  # type: {Symbol: Money}
         self._unrealized_pnls_venue = {}   # type: {Venue: Money}
-        self._xrate_symbols = {}           # type: {Symbol: str}
 
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void register_cache(self, DataCacheFacade cache) except *:
+        """
+        Register the given data cache with the portfolio.
+
+        Parameters
+        ----------
+        cache : DataCacheFacade
+            The data cache to register.
+
+        """
+        Condition.not_none(cache, "cache")
+
+        self._data = cache
 
     cpdef void register_account(self, Account account) except *:
         """
@@ -161,24 +171,6 @@ cdef class Portfolio(PortfolioFacade):
         cdef AccountId account_id = account.id
         self._accounts[account_id.issuer_as_venue()] = account
         account.register_portfolio(self)
-
-    cpdef void update_instrument(self, Instrument instrument) except *:
-        """
-        Update the portfolio with the given instrument.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument to update.
-
-        """
-        Condition.not_none(instrument, "instrument")
-
-        self._instruments[instrument.symbol] = instrument
-
-        if self._is_crypto_spot_or_swap(instrument) or self._is_fx_spot(instrument):
-            self._xrate_symbols[instrument.symbol] = (f"{instrument.base_currency}/"
-                                                      f"{instrument.quote_currency}")
 
     cpdef void update_tick(self, QuoteTick tick) except *:
         """
@@ -331,7 +323,6 @@ cdef class Portfolio(PortfolioFacade):
         """
         self._log.debug(f"Resetting...")
 
-        self._instruments.clear()
         self._ticks.clear()
         self._accounts.clear()
         self._orders_working.clear()
@@ -340,7 +331,6 @@ cdef class Portfolio(PortfolioFacade):
         self._net_positions.clear()
         self._unrealized_pnls_symbol.clear()
         self._unrealized_pnls_venue.clear()
-        self._xrate_symbols.clear()
 
         self._log.info("Reset.")
 
@@ -478,9 +468,15 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(venue, "venue")
 
+        if self._data is None:
+            self._log.error(f"Cannot calculate order margin "
+                            f"(no data cache registered).")
+            return None
+
         cdef Account account = self._accounts.get(venue)
         if account is None:
-            self._log.error(f"Cannot get order margin (no account registered for {venue}).")
+            self._log.error(f"Cannot calculate order margin "
+                            f"(no account registered for {venue}).")
             return None
 
         return account.order_margin()
@@ -501,9 +497,15 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(venue, "venue")
 
+        if self._data is None:
+            self._log.error(f"Cannot calculate position margin "
+                            f"(no data cache registered).")
+            return None
+
         cdef Account account = self._accounts.get(venue)
         if account is None:
-            self._log.error(f"Cannot get position margin (no account registered for {venue}).")
+            self._log.error(f"Cannot calculate position margin "
+                            f"(no account registered for {venue}).")
             return None
 
         return account.position_margin()
@@ -523,6 +525,11 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(venue, "venue")
+
+        if self._data is None:
+            self._log.error(f"Cannot calculate unrealized PNL "
+                            f"(no data cache registered).")
+            return None
 
         cdef Money unrealized_pnl = self._unrealized_pnls_venue.get(venue)
 
@@ -574,6 +581,11 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
+        if self._data is None:
+            self._log.error(f"Cannot calculate unrealized PNL "
+                            f"(no data cache registered).")
+            return None
+
         cdef Money pnl = self._unrealized_pnls_symbol.get(symbol)
         if pnl is not None:
             return pnl
@@ -599,18 +611,20 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(venue, "venue")
 
+        if self._data is None:
+            self._log.error(f"Cannot calculate open value "
+                            f"(no data cache registered).")
+            return None
+
         cdef Account account = self._accounts.get(venue)
         if account is None:
-            self._log.error(f"Cannot calculate open value (no account registered for {venue}).")
+            self._log.error(f"Cannot calculate open value "
+                            f"(no account registered for {venue}).")
             return None
 
         cdef set positions_open = self._positions_open.get(venue)
         if not positions_open:
             return Money(0, account.currency)
-
-        cdef tuple quotes = self._build_quote_table(venue)
-        cdef dict bid_quotes = quotes[0]
-        cdef dict ask_quotes = quotes[1]
 
         cdef double xrate
         cdef double open_value = 0
@@ -618,24 +632,23 @@ cdef class Portfolio(PortfolioFacade):
         cdef Instrument instrument
         cdef QuoteTick last
         for position in positions_open:
-            instrument = self._instruments.get(position.symbol)
+            instrument = self._data.instrument(position.symbol)
             if instrument is None:
                 self._log.error(f"Cannot calculate open value "
                                 f"(no instrument for {position.symbol}).")
                 return None  # Cannot calculate
 
-            last = self._ticks.get(position.symbol)
+            last = self._data.quote_tick(position.symbol)
             if last is None:
-                self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no last tick for {position.symbol}).")
+                self._log.error(f"Cannot calculate open value "
+                                f"(no quotes for {position.symbol}).")
                 continue  # Cannot calculate
 
-            xrate = self._xrate_calculator.get_rate(
+            xrate = self._data.get_xrate(
+                venue=venue,
                 from_currency=instrument.base_currency,
                 to_currency=account.currency,
                 price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                bid_quotes=bid_quotes,
-                ask_quotes=ask_quotes,
             )
             if xrate == 0:
                 self._log.error(f"Cannot calculate open value (insufficient data for "
@@ -656,41 +669,12 @@ cdef class Portfolio(PortfolioFacade):
         cdef Decimal net_position = self._net_positions.get(symbol)
         return net_position if net_position is not None else Decimal()
 
-    # noinspection: [base_quote]
-    # noinspection PyUnresolvedReferences
-    cdef inline tuple _build_quote_table(self, Venue venue):
-        cdef dict bid_quotes = {}
-        cdef dict ask_quotes = {}
-
-        cdef Symbol symbol
-        cdef str base_quote
-        cdef QuoteTick tick
-        for symbol, base_quote in self._xrate_symbols.items():
-            if symbol.venue != venue:
-                continue
-
-            tick = self._ticks.get(symbol)
-            if tick is None:
-                continue
-
-            bid_quotes[base_quote] = tick.bid.as_double()
-            ask_quotes[base_quote] = tick.ask.as_double()
-
-        return bid_quotes, ask_quotes
-
     cdef inline set _symbols_open_for_venue(self, Venue venue):
         cdef Position position
         cdef set positions_open = self._positions_open.get(venue)
         if positions_open is None:
             return set()
         return {position.symbol for position in positions_open}
-
-    cdef inline bint _is_crypto_spot_or_swap(self, Instrument instrument) except *:
-        return instrument.asset_class == AssetClass.CRYPTO \
-            and (instrument.asset_type == AssetType.SPOT or instrument.asset_type == AssetType.SWAP)
-
-    cdef inline bint _is_fx_spot(self, Instrument instrument) except *:
-        return instrument.asset_class == AssetClass.FX and instrument.asset_type == AssetType.SPOT
 
     cdef inline void _handle_position_opened(self, PositionOpened event) except *:
         cdef Venue venue = event.position.symbol.venue
@@ -743,16 +727,12 @@ cdef class Portfolio(PortfolioFacade):
         if working_orders is None:
             return  # Nothing to calculate
 
-        cdef tuple quotes = self._build_quote_table(venue)
-        cdef dict bid_quotes = quotes[0]
-        cdef dict ask_quotes = quotes[1]
-
         cdef double xrate
         cdef double margin = 0
         cdef Order order
         cdef Instrument instrument
         for order in working_orders:
-            instrument = self._instruments.get(order.symbol)
+            instrument = self._data.instrument(order.symbol)
             if instrument is None:
                 self._log.error(f"Cannot calculate order initial margin "
                                 f"(no instrument for {order.symbol}).")
@@ -761,12 +741,11 @@ cdef class Portfolio(PortfolioFacade):
             if instrument.leverage == 1:
                 continue  # No margin necessary
 
-            xrate = self._xrate_calculator.get_rate(
+            xrate = self._data.get_xrate(
+                venue=venue,
                 from_currency=instrument.settlement_currency,
                 to_currency=account.currency,
                 price_type=PriceType.BID if order.side == OrderSide.SELL else PriceType.ASK,
-                bid_quotes=bid_quotes,
-                ask_quotes=ask_quotes,
             )
             if xrate == 0:
                 self._log.error(f"Cannot calculate order initial margin (insufficient data for "
@@ -798,15 +777,12 @@ cdef class Portfolio(PortfolioFacade):
         if open_positions is None:
             return  # Nothing to calculate
 
-        cdef tuple quotes = self._build_quote_table(venue)
-        cdef dict bid_quotes = quotes[0]
-        cdef dict ask_quotes = quotes[1]
         cdef double xrate
         cdef double margin = 0
         cdef Position position
         cdef Instrument instrument
         for position in open_positions:
-            instrument = self._instruments.get(position.symbol)
+            instrument = self._data.instrument(position.symbol)
             if instrument is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
                                 f"(no instrument for {position.symbol}).")
@@ -815,18 +791,17 @@ cdef class Portfolio(PortfolioFacade):
             if instrument.leverage == 1:
                 continue  # No margin necessary
 
-            last = self._ticks.get(position.symbol)
+            last = self._data.quote_tick(position.symbol)
             if last is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no last tick for {position.symbol}).")
+                                f"(no quotes for {position.symbol}).")
                 continue  # Cannot calculate
 
-            xrate = self._xrate_calculator.get_rate(
+            xrate = self._data.get_xrate(
+                venue=venue,
                 from_currency=instrument.base_currency,
                 to_currency=account.currency,
                 price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                bid_quotes=bid_quotes,
-                ask_quotes=ask_quotes,
             )
             if xrate == 0:
                 self._log.error(f"Cannot calculate position maintenance margin "
@@ -857,21 +832,17 @@ cdef class Portfolio(PortfolioFacade):
         if positions_open is None:
             return Money(0, account.currency)
 
-        cdef QuoteTick last = self._ticks.get(symbol)
+        cdef QuoteTick last = self._data.quote_tick(symbol)
         if last is None:
             self._log.error(f"Cannot calculate unrealized PNL "
                             f"(no quotes for {symbol}).")
             return None  # Cannot calculate
 
-        cdef Instrument instrument = self._instruments.get(symbol)
+        cdef Instrument instrument = self._data.instrument(symbol)
         if instrument is None:
             self._log.error(f"Cannot calculate unrealized PNL "
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
-
-        cdef tuple quotes = self._build_quote_table(symbol.venue)
-        cdef dict bid_quotes = quotes[0]
-        cdef dict ask_quotes = quotes[1]
 
         cdef double pnl = 0
         cdef double xrate = 0
@@ -883,12 +854,11 @@ cdef class Portfolio(PortfolioFacade):
             if instrument.base_currency == account.currency:
                 xrate = 1.
             if xrate == 0:
-                xrate = self._xrate_calculator.get_rate(
+                xrate = self._data.get_xrate(
+                    venue=symbol.venue,
                     from_currency=instrument.base_currency,
                     to_currency=account.currency,
                     price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                    bid_quotes=bid_quotes,
-                    ask_quotes=ask_quotes,
                 )
             if xrate == 0:
                 self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "

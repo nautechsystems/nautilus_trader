@@ -106,7 +106,7 @@ cdef class InstrumentLoader:
         Return the BitMEX XBT/USD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("XBT/USD", Venue('BITMEX')),
+            symbol=Symbol("XBT/USD", Venue("BITMEX")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=BTC,
@@ -141,7 +141,7 @@ cdef class InstrumentLoader:
         Return the BitMEX ETH/USD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/USD", Venue('BITMEX')),
+            symbol=Symbol("ETH/USD", Venue("BITMEX")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=ETH,
@@ -176,7 +176,7 @@ cdef class InstrumentLoader:
         Return the BitMEX ETH/XBT perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/XBT", Venue('BITMEX')),
+            symbol=Symbol("ETH/XBT", Venue("BITMEX")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=ETH,
@@ -211,7 +211,7 @@ cdef class InstrumentLoader:
         Return the Binance BTC/USDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("BTC/USDT", Venue('BINANCE')),
+            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SPOT,
             base_currency=BTC,
@@ -245,7 +245,7 @@ cdef class InstrumentLoader:
         Return the Binance ETH/USDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/USDT", Venue('BINANCE')),
+            symbol=Symbol("ETH/USDT", Venue("BINANCE")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SPOT,
             base_currency=ETH,

@@ -131,6 +131,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.realized_pnl)
         self.assertEqual(Money(49.00, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(49.00, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=P-123456, LONG 100,000 AUD/USD.FXCM)", repr(position))
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -177,6 +178,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.realized_pnl)
         self.assertEqual(Money(-47.00, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(-47.00, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.FXCM)", repr(position))
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -222,6 +224,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.realized_pnl)
         self.assertEqual(Money(24.50, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(24.50, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=P-123456, LONG 50,000 AUD/USD.FXCM)", repr(position))
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -276,6 +279,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.realized_pnl)
         self.assertEqual(Money(-46.50, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(-46.50, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.FXCM)", repr(position))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
@@ -346,6 +350,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(0, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=P-123456, FLAT AUD/USD.FXCM)", repr(position))
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
@@ -411,6 +416,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-2.000, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(-2.000, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.FXCM)", repr(position))
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
@@ -470,6 +476,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(0, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(0, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.FXCM)", repr(position))
 
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
@@ -524,6 +531,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(19.00, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(19.00, USD), position.total_pnl(last))
+        self.assertEqual("Position(id=P-123456, FLAT AUD/USD.FXCM)", repr(position))
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
@@ -619,6 +627,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(0.00347507, BTC), position.realized_pnl)
         self.assertEqual(9999.88155922039, position.avg_open.as_double())
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19 BTC/USDT.BINANCE)", repr(position))
 
     def test_calculate_pnl_for_long_position_win(self):
         # Arrange
@@ -677,6 +686,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money(-0.01857143, BTC), pnl)
 
+    # TODO: Reinstate tests
     # def test_calculate_pnl_for_short_position_win(self):
     #     # Arrange
     #     instrument = InstrumentLoader.btcusdt_binance()
