@@ -22,6 +22,7 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.data.cache import DataCache
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
@@ -79,14 +80,18 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH
         )
 
+        self.data_cache = DataCache(logger)
         self.account = Account(state)
+
         self.portfolio = Portfolio(self.clock, uuid_factor, logger)
         self.portfolio.register_account(self.account)
-        self.portfolio.update_instrument(AUDUSD_FXCM)
-        self.portfolio.update_instrument(GBPUSD_FXCM)
-        self.portfolio.update_instrument(BTCUSDT_BINANCE)
-        self.portfolio.update_instrument(BTCUSD_BITMEX)
-        self.portfolio.update_instrument(ETHUSD_BITMEX)
+        self.portfolio.register_cache(self.data_cache)
+
+        self.data_cache.add_instrument(AUDUSD_FXCM)
+        self.data_cache.add_instrument(GBPUSD_FXCM)
+        self.data_cache.add_instrument(BTCUSDT_BINANCE)
+        self.data_cache.add_instrument(BTCUSD_BITMEX)
+        self.data_cache.add_instrument(ETHUSD_BITMEX)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange
@@ -167,7 +172,7 @@ class PortfolioTests(unittest.TestCase):
         order = self.order_factory.market(
             BTCUSDT_BINANCE.symbol,
             OrderSide.BUY,
-            Quantity(10),
+            Quantity("10.000000"),
         )
 
         fill = TestStubs.event_order_filled(
@@ -183,11 +188,12 @@ class PortfolioTests(unittest.TestCase):
             BTCUSDT_BINANCE.symbol,
             Price("10500.05"),
             Price("10501.51"),
-            Quantity("2.54"),
-            Quantity("0.91"),
+            Quantity("2.540000"),
+            Quantity("0.910000"),
             UNIX_EPOCH,
         )
 
+        self.data_cache.add_quote_tick(last)
         self.portfolio.update_tick(last)
 
         position = Position(fill)
@@ -232,6 +238,7 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
+        self.data_cache.add_quote_tick(last)
         self.portfolio.update_tick(last)
 
         position = Position(fill)
@@ -284,6 +291,8 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
+        self.data_cache.add_quote_tick(last_ethusd)
+        self.data_cache.add_quote_tick(last_btcusd)
         self.portfolio.update_tick(last_ethusd)
         self.portfolio.update_tick(last_btcusd)
 
@@ -395,6 +404,7 @@ class PortfolioTests(unittest.TestCase):
         position = Position(fill)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.data_cache.add_quote_tick(last_ethusd)
         self.portfolio.update_tick(last_ethusd)
 
         # Act
@@ -437,6 +447,8 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
+        self.data_cache.add_quote_tick(last_audusd)
+        self.data_cache.add_quote_tick(last_gbpusd)
         self.portfolio.update_tick(last_audusd)
         self.portfolio.update_tick(last_gbpusd)
 
@@ -500,6 +512,7 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
+        self.data_cache.add_quote_tick(last_audusd)
         self.portfolio.update_tick(last_audusd)
 
         order1 = self.order_factory.market(
@@ -649,6 +662,8 @@ class PortfolioTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
+        self.data_cache.add_quote_tick(last_audusd)
+        self.data_cache.add_quote_tick(last_gbpusd)
         self.portfolio.update_tick(last_audusd)
         self.portfolio.update_tick(last_gbpusd)
 

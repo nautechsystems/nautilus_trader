@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
@@ -139,9 +141,24 @@ cdef class TradingStrategy:
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_quote_ticks(self, Symbol symbol) except *
-    cpdef void request_trade_ticks(self, Symbol symbol) except *
-    cpdef void request_bars(self, BarType bar_type) except *
+    cpdef void request_quote_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
+    ) except *
+    cpdef void request_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
+    ) except *
+    cpdef void request_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime=*,
+        datetime to_datetime=*,
+    ) except *
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 

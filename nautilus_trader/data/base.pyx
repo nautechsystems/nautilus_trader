@@ -19,6 +19,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -93,6 +94,7 @@ cdef class DataCacheFacade:
 
     cpdef double get_xrate(
         self,
+        Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=PriceType.MID,

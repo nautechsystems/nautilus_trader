@@ -74,6 +74,7 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
             config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
+        self.portfolio.register_cache(self.data_engine.cache)
 
         self.analyzer = PerformanceAnalyzer()
 

@@ -20,6 +20,7 @@ from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
@@ -64,6 +65,7 @@ class ExecutionEngineTests(unittest.TestCase):
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
+        self.portfolio.register_cache(DataCache(self.logger))
 
         self.analyzer = PerformanceAnalyzer()
 
@@ -173,7 +175,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order)
 
         # Assert
-        self.assertIn(submit_order, self.exec_client.received_commands)
+        self.assertIn(submit_order, self.exec_client.commands)
         self.assertTrue(self.cache.order_exists(order.cl_ord_id))
 
     def test_handle_order_fill_event(self):

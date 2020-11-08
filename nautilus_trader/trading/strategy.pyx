@@ -23,7 +23,10 @@ fully "wired" into the platform. Exceptions will be raised if a `TradingStrategy
 attempts to operate without a managing `Trader` instance.
 
 """
+
 import cython
+
+from cpython.datetime cimport datetime
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
@@ -450,6 +453,8 @@ cdef class TradingStrategy:
         """
         Handle the given tick.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         tick : QuoteTick
@@ -483,6 +488,8 @@ cdef class TradingStrategy:
         """
         Handle the given list of ticks by handling each tick individually.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         ticks : list[QuoteTick]
@@ -506,6 +513,8 @@ cdef class TradingStrategy:
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
         """
         Handle the given tick.
+
+        System method (not intended to be called by users).
 
         Parameters
         ----------
@@ -540,6 +549,8 @@ cdef class TradingStrategy:
         """
         Handle the given list of ticks by handling each tick individually.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         ticks : list[TradeTick]
@@ -563,6 +574,8 @@ cdef class TradingStrategy:
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """
         Handle the given bar type and bar.
+
+        System method (not intended to be called by users).
 
         Parameters
         ----------
@@ -600,6 +613,8 @@ cdef class TradingStrategy:
         """
         Handle the given bar type and bars by handling each bar individually.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         bar_type : BarType
@@ -626,6 +641,8 @@ cdef class TradingStrategy:
         """
         Handle the given data object.
 
+        System method (not intended to be called by users).
+
         Parameters
         ----------
         data : object
@@ -644,6 +661,8 @@ cdef class TradingStrategy:
     cpdef void handle_event(self, Event event) except *:
         """
         Hand the given event.
+
+        System method (not intended to be called by users).
 
         Parameters
         ----------
@@ -1054,25 +1073,42 @@ cdef class TradingStrategy:
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_quote_ticks(self, Symbol symbol) except *:
+    cpdef void request_quote_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
+    ) except *:
         """
-        Request the historical quote ticks for the given parameters from the data service.
+        Request historical quote ticks for the given parameters from the data
+        engine.
 
         Parameters
         ----------
         symbol : Symbol
             The tick symbol for the request.
+        from_datetime : datetime, optional
+            The specified from datetime for the data
+        to_datetime : datetime, optional
+            The specified to datetime for the data. If None then will default
+            to the current datetime.
+
+        Notes
+        -----
+        Always limited to the tick capacity of the `DataEngine` cache.
 
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         cdef DataRequest request = DataRequest(
             data_type=QuoteTick,
             metadata={
                 SYMBOL: symbol,
-                FROM_DATETIME: None,
-                TO_DATETIME: None,
+                FROM_DATETIME: from_datetime,
+                TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.tick_capacity,
             },
             callback=self.handle_quote_ticks,
@@ -1082,25 +1118,42 @@ cdef class TradingStrategy:
 
         self._data_engine.send(request)
 
-    cpdef void request_trade_ticks(self, Symbol symbol) except *:
+    cpdef void request_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
+    ) except *:
         """
-        Request the historical trade ticks for the given parameters from the data service.
+        Request historical trade ticks for the given parameters from the data
+        engine.
 
         Parameters
         ----------
         symbol : Symbol
             The tick symbol for the request.
+        from_datetime : datetime, optional
+            The specified from datetime for the data
+        to_datetime : datetime, optional
+            The specified to datetime for the data. If None then will default
+            to the current datetime.
+
+        Notes
+        -----
+        Always limited to the tick capacity of the `DataEngine` cache.
 
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         cdef DataRequest request = DataRequest(
             data_type=TradeTick,
             metadata={
                 SYMBOL: symbol,
-                FROM_DATETIME: None,
-                TO_DATETIME: None,
+                FROM_DATETIME: from_datetime,
+                TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.tick_capacity,
             },
             callback=self.handle_trade_ticks,
@@ -1110,25 +1163,41 @@ cdef class TradingStrategy:
 
         self._data_engine.send(request)
 
-    cpdef void request_bars(self, BarType bar_type) except *:
+    cpdef void request_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
+    ) except *:
         """
-        Request the historical bars for the given parameters from the data service.
+        Request historical bars for the given parameters from the data engine.
 
         Parameters
         ----------
         bar_type : BarType
             The bar type for the request.
+        from_datetime : datetime, optional
+            The specified from datetime for the data
+        to_datetime : datetime, optional
+            The specified to datetime for the data. If None then will default
+            to the current datetime.
+
+        Notes
+        -----
+        Always limited to the bar capacity of the `DataEngine` cache.
 
         """
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_engine")
+        if from_datetime is not None and to_datetime is not None:
+            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         cdef DataRequest request = DataRequest(
             data_type=Bar,
             metadata={
                 BAR_TYPE: bar_type,
-                FROM_DATETIME: None,
-                TO_DATETIME: None,
+                FROM_DATETIME: from_datetime,
+                TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.bar_capacity,
             },
             callback=self.handle_bars,
