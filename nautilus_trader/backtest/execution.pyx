@@ -16,6 +16,7 @@
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
@@ -35,7 +36,8 @@ cdef class BacktestExecClient(ExecutionClient):
             SimulatedExchange market not None,
             AccountId account_id not None,
             ExecutionEngine engine not None,
-            TestLogger logger not None):
+            TestLogger logger not None,
+    ):
         """
         Initialize a new instance of the `BacktestExecClient` class.
 
@@ -95,21 +97,18 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        Condition.not_none(command, "command")
-
         self._market.handle_submit_order(command)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
-        Condition.not_none(command, "command")
-
         self._market.handle_submit_bracket_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        Condition.not_none(command, "command")
-
         self._market.handle_cancel_order(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        Condition.not_none(command, "command")
-
         self._market.handle_modify_order(command)
+
+# -- HANDLERS --------------------------------------------------------------------------------------
+
+    cdef void handle_event(self, Event event) except *:
+        self._handle_event(event)

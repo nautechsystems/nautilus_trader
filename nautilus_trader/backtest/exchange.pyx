@@ -18,6 +18,7 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.config cimport BacktestConfig
+from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport TestClock
@@ -162,27 +163,15 @@ cdef class SimulatedExchange:
 
         self._set_slippages()
 
-    cdef void _set_slippages(self) except *:
-        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
-
-        for symbol, instrument in self.instruments.items():
-            slippage_index[symbol] = instrument.tick_size
-
-        self._slippages = slippage_index
-
-    cdef dict _build_current_bid_rates(self):
-        cdef Symbol symbol
-        cdef QuoteTick tick
-        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
-
-    cdef dict _build_current_ask_rates(self):
-        cdef Symbol symbol
-        cdef QuoteTick tick
-        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
-
-    cpdef void register_client(self, ExecutionClient client) except *:
+    cpdef void register_client(self, BacktestExecClient client) except *:
         """
         Register the given execution client with this market.
+
+        Parameters
+        ----------
+        client : BacktestExecClient
+            The client to register
+
         """
         Condition.not_none(client, "client")
 
@@ -498,23 +487,41 @@ cdef class SimulatedExchange:
 
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
-    cdef PositionId _generate_position_id(self, Symbol symbol):
+    cdef inline void _set_slippages(self) except *:
+        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
+
+        for symbol, instrument in self.instruments.items():
+            slippage_index[symbol] = instrument.tick_size
+
+        self._slippages = slippage_index
+
+    cdef inline dict _build_current_bid_rates(self):
+        cdef Symbol symbol
+        cdef QuoteTick tick
+        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
+
+    cdef inline dict _build_current_ask_rates(self):
+        cdef Symbol symbol
+        cdef QuoteTick tick
+        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
+
+    cdef inline PositionId _generate_position_id(self, Symbol symbol):
         cdef int pos_count = self._symbol_pos_count.get(symbol, 0)
         pos_count += 1
         self._symbol_pos_count[symbol] = pos_count
         return PositionId(f"B-{symbol.code}-{pos_count}")
 
-    cdef OrderId _generate_order_id(self, Symbol symbol):
+    cdef inline OrderId _generate_order_id(self, Symbol symbol):
         cdef int ord_count = self._symbol_ord_count.get(symbol, 0)
         ord_count += 1
         self._symbol_ord_count[symbol] = ord_count
         return OrderId(f"B-{symbol.code}-{ord_count}")
 
-    cdef ExecutionId _generate_execution_id(self):
+    cdef inline ExecutionId _generate_execution_id(self):
         self._executions_count += 1
         return ExecutionId(f"E-{self._executions_count}")
 
-    cdef AccountState _generate_account_event(self):
+    cdef inline AccountState _generate_account_event(self):
         return AccountState(
             account_id=self.exec_client.account_id,
             currency=self.account_currency,
@@ -525,7 +532,7 @@ cdef class SimulatedExchange:
             event_timestamp=self._clock.utc_now(),
         )
 
-    cdef void _adjust_account(self, OrderFilled event, Position position) except *:
+    cdef inline void _adjust_account(self, OrderFilled event, Position position) except *:
         # position could be None here
 
         if self.frozen_account:
@@ -571,7 +578,7 @@ cdef class SimulatedExchange:
         self.account.apply(account_state)
         self.exec_client.handle_event(account_state)
 
-    cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
+    cdef inline void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         Condition.not_none(timestamp, "timestamp")
         Condition.not_none(self.exec_client, "exec_client")
 
@@ -632,19 +639,19 @@ cdef class SimulatedExchange:
             self.account.apply(account_state)
             self.exec_client.handle_event(account_state)
 
-    cdef bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
+    cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *:
+    cdef inline bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_limit_filled()
 
-    cdef bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *:
+    cdef inline bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.bid == order_price and self.fill_model.is_stop_filled()
 
-    cdef bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *:
+    cdef inline bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.bid == order_price and self.fill_model.is_limit_filled()
 
-    cdef void _submit_order(self, Order order) except *:
+    cdef inline void _submit_order(self, Order order) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.account.id,
@@ -656,7 +663,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(submitted)
 
-    cdef void _accept_order(self, Order order) except *:
+    cdef inline void _accept_order(self, Order order) except *:
         # Generate event
 
         cdef OrderAccepted accepted = OrderAccepted(
@@ -670,7 +677,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(accepted)
 
-    cdef void _reject_order(self, Order order, str reason) except *:
+    cdef inline void _reject_order(self, Order order, str reason) except *:
         if order.state_c() != OrderState.SUBMITTED:
             self._log.error(f"Cannot reject order, state was {order.state_string_c()}.")
             return
@@ -689,7 +696,7 @@ cdef class SimulatedExchange:
         self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
-    cdef void _cancel_reject_order(
+    cdef inline void _cancel_reject_order(
             self,
             ClientOrderId order_id,
             str response,
@@ -707,7 +714,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(cancel_reject)
 
-    cdef void _expire_order(self, PassiveOrder order) except *:
+    cdef inline void _expire_order(self, PassiveOrder order) except *:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             self.account.id,
@@ -733,7 +740,7 @@ cdef class SimulatedExchange:
             self._check_oco_order(order.cl_ord_id)
         self._clean_up_child_orders(order.cl_ord_id)
 
-    cdef void _process_order(self, Order order) except *:
+    cdef inline void _process_order(self, Order order) except *:
         Condition.not_in(order.cl_ord_id, self._working_orders, "order.id", "working_orders")
 
         cdef Instrument instrument = self.instruments[order.symbol]
@@ -764,7 +771,7 @@ cdef class SimulatedExchange:
         else:
             self._process_passive_order(order, current_market)
 
-    cdef void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *:
+    cdef inline void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *:
         self._accept_order(order)
 
         if order.side == OrderSide.BUY:
@@ -786,7 +793,7 @@ cdef class SimulatedExchange:
         else:
             raise RuntimeError(f"Invalid order side, was {OrderSideParser.to_string(order.side)}")
 
-    cdef void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *:
+    cdef inline void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
             if order.price >= current_market.ask:
                 if order.is_post_only:
@@ -812,7 +819,7 @@ cdef class SimulatedExchange:
         self._accept_order(order)
         self._work_order(order)
 
-    cdef void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *:
+    cdef inline void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *:
         if order.side == OrderSide.BUY:
             if order.price < current_market.ask:
                 self._reject_order(order, f"BUY STOP order price of {order.price} is too "
@@ -828,7 +835,7 @@ cdef class SimulatedExchange:
         self._accept_order(order)
         self._work_order(order)
 
-    cdef void _work_order(self, Order order) except *:
+    cdef inline void _work_order(self, Order order) except *:
         # Order now becomes working
         self._working_orders[order.cl_ord_id] = order
 
@@ -851,7 +858,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(working)
 
-    cdef void _fill_order(
+    cdef inline void _fill_order(
             self,
             Order order,
             Price fill_price,
@@ -924,13 +931,13 @@ cdef class SimulatedExchange:
                         self._cancel_order(order)
                 del self._position_oco_orders[position.id]
 
-    cdef void _clean_up_child_orders(self, ClientOrderId order_id) except *:
+    cdef inline void _clean_up_child_orders(self, ClientOrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated
         # with the given identifier.
         if order_id in self._child_orders:
             del self._child_orders[order_id]
 
-    cdef void _check_oco_order(self, ClientOrderId order_id) except *:
+    cdef inline void _check_oco_order(self, ClientOrderId order_id) except *:
         # Check held OCO orders and remove any paired with the given order_id
         cdef ClientOrderId oco_order_id
         cdef Order oco_order
@@ -952,7 +959,7 @@ cdef class SimulatedExchange:
                 self._cancel_oco_order(self._working_orders[oco_order_id], order_id)
                 del self._working_orders[oco_order_id]
 
-    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
+    cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to reject
         # oco_order_id is the other order_id for this OCO pair
         if order.is_completed_c():
@@ -971,7 +978,7 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(event)
 
-    cdef void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
+    cdef inline void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
         # oco_order_id is the other order_id for this OCO pair
         if order.is_completed_c():
@@ -991,7 +998,7 @@ cdef class SimulatedExchange:
         self._log.debug(f"Cancelling {order.cl_ord_id} OCO order from {oco_order_id}.")
         self.exec_client.handle_event(event)
 
-    cdef void _cancel_order(self, PassiveOrder order) except *:
+    cdef inline void _cancel_order(self, PassiveOrder order) except *:
         if order.is_completed_c():
             self._log.debug(f"Cannot cancel order, state was already {order.state_string_c()}.")
             return
