@@ -20,9 +20,13 @@ from nautilus_trader.model.objects cimport Price
 
 cdef class BidAskMinMax(Indicator):
     cdef readonly Symbol symbol
+    """The symbol for inbound ticks.\n\n:returns: `Symbol`"""
     cdef readonly timedelta lookback
+    """The look back duration in time.\n\n:returns: `timedelta`"""
     cdef readonly WindowedMinMaxPrices bids
+    """The windowed min max prices.\n\n:returns: `WindowedMinMaxPrices`"""
     cdef readonly WindowedMinMaxPrices asks
+    """The windowed min max prices.\n\n:returns: `WindowedMinMaxPrices`"""
 
 
 cdef class WindowedMinMaxPrices:
@@ -30,8 +34,11 @@ cdef class WindowedMinMaxPrices:
     cdef object _max_prices
 
     cdef readonly timedelta lookback
+    """The look back duration in time.\n\n:returns: `timedelta`"""
     cdef readonly Price min_price
+    """The minimum price in the window.\n\n:returns: `Price`"""
     cdef readonly Price max_price
+    """The maximum price in the window.\n\n:returns: `Price`"""
 
     cpdef void add_price(self, datetime ts, Price price) except *
     cpdef void reset(self) except *

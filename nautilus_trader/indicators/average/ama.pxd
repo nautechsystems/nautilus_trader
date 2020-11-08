@@ -18,13 +18,20 @@ from nautilus_trader.indicators.efficiency_ratio cimport EfficiencyRatio
 
 
 cdef class AdaptiveMovingAverage(MovingAverage):
-    cdef int _period_er
-    cdef int _period_alpha_fast
-    cdef int _period_alpha_slow
-    cdef double _alpha_fast
-    cdef double _alpha_slow
-    cdef double _alpha_diff
     cdef EfficiencyRatio _efficiency_ratio
     cdef double _prior_value
+
+    cdef readonly int period_er
+    """The period of the internal `EfficiencyRatio` indicator.\n\n:returns: `double`"""
+    cdef readonly int period_alpha_fast
+    """The period of the fast smoothing constant.\n\n:returns: `double`"""
+    cdef readonly int period_alpha_slow
+    """The period of the slow smoothing constant.\n\n:returns: `double`"""
+    cdef readonly double alpha_fast
+    """The alpha fast value.\n\n:returns: `double`"""
+    cdef readonly double alpha_slow
+    """The alpha slow value.\n\n:returns: `double`"""
+    cdef readonly double alpha_diff
+    """The alpha difference value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double value) except *

@@ -50,36 +50,12 @@ cdef class RelativeStrengthIndex(Indicator):
         Condition.positive_int(period, "period")
         super().__init__(params=[period, ma_type.name])
 
-        self._period = period
+        self.period = period
         self._rsi_max = 1
         self._average_gain = MovingAverageFactory.create(period, ma_type)
         self._average_loss = MovingAverageFactory.create(period, ma_type)
         self._last_value = 0
-        self._value = 0
-
-    @property
-    def period(self):
-        """
-        The indicators window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -128,12 +104,12 @@ cdef class RelativeStrengthIndex(Indicator):
                 self._set_initialized(True)
 
         if self._average_loss.value == 0:
-            self._value = self._rsi_max
+            self.value = self._rsi_max
             return
 
         cdef double rs = self._average_gain.value / self._average_loss.value
 
-        self._value = self._rsi_max - (self._rsi_max / (1 + rs))
+        self.value = self._rsi_max - (self._rsi_max / (1 + rs))
         self._last_value = value
 
     cpdef void reset(self) except *:
@@ -146,4 +122,4 @@ cdef class RelativeStrengthIndex(Indicator):
         self._average_gain.reset()
         self._average_loss.reset()
         self._last_value = 0
-        self._value = 0
+        self.value = 0

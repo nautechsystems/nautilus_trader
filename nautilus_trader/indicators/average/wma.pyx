@@ -60,20 +60,8 @@ cdef class WeightedMovingAverage(MovingAverage):
         super().__init__(period, params=[period, weights], price_type=price_type)
 
         self._inputs = deque(maxlen=period)
-        self._weights = weights
+        self.weights = weights
         self.value = 0
-
-    @property
-    def weights(self):
-        """
-        The weights for the moving average calculation.
-
-        Returns
-        -------
-        list[double]
-
-        """
-        return self._weights
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -131,9 +119,9 @@ cdef class WeightedMovingAverage(MovingAverage):
         self._inputs.append(value)
 
         if self.initialized or self.weights is None:
-            self.value = np.average(self._inputs, weights=self._weights, axis=0)
+            self.value = np.average(self._inputs, weights=self.weights, axis=0)
         else:
-            self.value = np.average(self._inputs, weights=self._weights[-len(self._inputs):], axis=0)
+            self.value = np.average(self._inputs, weights=self.weights[-len(self._inputs):], axis=0)
 
     cpdef void reset(self) except *:
         """

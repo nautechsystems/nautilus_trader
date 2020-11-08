@@ -50,61 +50,13 @@ cdef class DonchianChannel(Indicator):
         Condition.positive_int(period, "period")
         super().__init__(params=[period])
 
-        self._period = period
-        self._upper = deque(maxlen=period)
-        self._lower = deque(maxlen=period)
+        self.period = period
+        self._upper_prices = deque(maxlen=period)
+        self._lower_prices = deque(maxlen=period)
 
-        self._value_upper = 0
-        self._value_middle = 0
-        self._value_lower = 0
-
-    @property
-    def period(self):
-        """
-        The period for the moving average.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def upper(self):
-        """
-        The value of the upper channel.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_upper
-
-    @property
-    def middle(self):
-        """
-        The value of the middle channel.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_middle
-
-    @property
-    def lower(self):
-        """
-        The value of the lower channel.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_lower
+        self.upper = 0
+        self.middle = 0
+        self.lower = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -162,19 +114,19 @@ cdef class DonchianChannel(Indicator):
 
         """
         # Add data to queues
-        self._upper.append(high)
-        self._lower.append(low)
+        self._upper_prices.append(high)
+        self._lower_prices.append(low)
 
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
-            if len(self._upper) >= self._period and len(self._lower) >= self._period:
+            if len(self._upper_prices) >= self.period and len(self._lower_prices) >= self.period:
                 self._set_initialized(True)
 
         # Set values
-        self._value_upper = max(self._upper)
-        self._value_lower = min(self._lower)
-        self._value_middle = (self._value_upper + self._value_lower) / 2
+        self.upper = max(self._upper_prices)
+        self.lower = min(self._lower_prices)
+        self.middle = (self.upper + self.lower) / 2
 
     cpdef void reset(self) except *:
         """
@@ -183,9 +135,9 @@ cdef class DonchianChannel(Indicator):
         All stateful values are reset to their initial value.
         """
         self._reset_base()
-        self._upper.clear()
-        self._lower.clear()
+        self._upper_prices.clear()
+        self._lower_prices.clear()
 
-        self._value_upper = 0
-        self._value_middle = 0
-        self._value_lower = 0
+        self.upper = 0
+        self.middle = 0
+        self.lower = 0

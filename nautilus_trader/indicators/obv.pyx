@@ -22,7 +22,8 @@ from nautilus_trader.model.bar cimport Bar
 
 cdef class OnBalanceVolume(Indicator):
     """
-    An indicator which calculates the momentum of relative positive or negative volume.
+    An indicator which calculates the momentum of relative positive or negative
+    volume.
     """
 
     def __init__(self, int period=0):
@@ -43,33 +44,9 @@ cdef class OnBalanceVolume(Indicator):
         Condition.not_negative(period, "period")
         super().__init__(params=[period])
 
-        self._period = period
+        self.period = period
         self._obv = deque(maxlen=None if period == 0 else period)
-        self._value = 0
-
-    @property
-    def period(self):
-        """
-        The indicators window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -115,12 +92,12 @@ cdef class OnBalanceVolume(Indicator):
         else:
             self._obv.append(0)
 
-        self._value = sum(self._obv)
+        self.value = sum(self._obv)
 
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
-            if (self._period == 0 and len(self._obv) > 0) or len(self._obv) >= self._period:
+            if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
                 self._set_initialized(True)
 
     cpdef void reset(self) except *:
@@ -131,3 +108,4 @@ cdef class OnBalanceVolume(Indicator):
         """
         self._reset_base()
         self._obv.clear()
+        self.value = 0

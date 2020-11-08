@@ -17,9 +17,12 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class RateOfChange(Indicator):
-    cdef int _period
     cdef bint _use_log
     cdef object _prices
-    cdef double _value
+
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double value
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double price) except *
