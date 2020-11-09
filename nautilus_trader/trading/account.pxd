@@ -35,6 +35,10 @@ cdef class Account:
     cdef readonly Currency currency
     """The accounts currency.\n\n:returns: `Currency`"""
 
+    cdef AccountState last_event_c(self)
+    cdef list events_c(self)
+    cdef int event_count_c(self)
+
     cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *
     cpdef void update_order_margin(self, Money margin) except *

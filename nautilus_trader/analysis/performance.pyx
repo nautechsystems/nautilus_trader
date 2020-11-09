@@ -36,6 +36,8 @@ from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
+from nautilus_trader.core.datetime cimport datetime_date
+from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
@@ -77,7 +79,7 @@ cdef class PerformanceAnalyzer:
         self._account_currency = account.currency
         self._account_balance = account.balance()
 
-        cdef AccountState initial = account.events[0]
+        cdef AccountState initial = account.events_c()[0]
         self._account_starting_balance = initial.balance
 
         self._daily_returns = pd.Series(dtype=float64)
@@ -120,8 +122,6 @@ cdef class PerformanceAnalyzer:
 
         self._realized_pnls.loc[position_id.value] = realized_pnl.as_double()
 
-    # noinspection: timestamp.date()
-    # noinspection PyUnresolvedReferences
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
         Add return data to the analyzer.
@@ -136,9 +136,9 @@ cdef class PerformanceAnalyzer:
         """
         Condition.not_none(timestamp, "time")
 
-        cdef date index_date = timestamp.date()
+        cdef date index_date = datetime_date(timestamp)
         if index_date not in self._daily_returns:
-            self._daily_returns.loc[index_date] = 0.0
+            self._daily_returns.loc[index_date] = 0
 
         self._daily_returns.loc[index_date] += value
 
@@ -211,7 +211,7 @@ cdef class PerformanceAnalyzer:
 
         """
         if len(self._realized_pnls.index) == 0:
-            return 0.
+            return 0
 
         return max(self._realized_pnls)
 
@@ -225,7 +225,7 @@ cdef class PerformanceAnalyzer:
 
         """
         if len(self._realized_pnls.index) == 0:
-            return 0.
+            return 0
 
         return min(self._realized_pnls)
 
@@ -238,10 +238,11 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if len(self._realized_pnls.index) == 0:
-            return 0.
+        cdef list winners = [x for x in self._realized_pnls if x > 0]
+        if len(winners) == 0:
+            return 0
 
-        return min([x for x in self._realized_pnls if x > 0])
+        return min(winners)
 
     cpdef double min_loser(self) except *:
         """
@@ -252,10 +253,11 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if len(self._realized_pnls.index) == 0:
-            return 0.
+        cdef list losers = [x for x in self._realized_pnls if x <= 0]
+        if len(losers) == 0:
+            return 0
 
-        return max([x for x in self._realized_pnls if x <= 0])
+        return max(losers)  # max is least loser
 
     cpdef double avg_winner(self) except *:
         """
@@ -266,10 +268,11 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if len(self._realized_pnls.index) == 0:
-            return 0.
+        cdef list winners = [x for x in self._realized_pnls if x > 0]
+        if len(winners) == 0:
+            return 0
 
-        return np.mean([x for x in self._realized_pnls if x > 0])
+        return fast_mean(winners)
 
     cpdef double avg_loser(self) except *:
         """
@@ -280,10 +283,11 @@ cdef class PerformanceAnalyzer:
         double
 
         """
-        if len(self._realized_pnls.index) == 0:
-            return 0.
+        cdef list losers = [x for x in self._realized_pnls if x <= 0]
+        if len(losers) == 0:
+            return 0
 
-        return np.mean([x for x in self._realized_pnls if x <= 0])
+        return fast_mean(losers)
 
     cpdef double win_rate(self) except *:
         """
@@ -295,12 +299,12 @@ cdef class PerformanceAnalyzer:
 
         """
         if len(self._realized_pnls) == 0:
-            return 0.
+            return 0
 
         cdef list winners = [x for x in self._realized_pnls if x > 0]
         cdef list losers = [x for x in self._realized_pnls if x <= 0]
 
-        return len(winners) / max(1., (len(winners) + len(losers)))
+        return len(winners) / max(1, (len(winners) + len(losers)))
 
     cpdef double expectancy(self) except *:
         """
@@ -312,10 +316,10 @@ cdef class PerformanceAnalyzer:
 
         """
         if len(self._realized_pnls.index) == 0:
-            return 0.
+            return 0
 
         cdef double win_rate = self.win_rate()
-        cdef double loss_rate = 1.0 - win_rate
+        cdef double loss_rate = 1 - win_rate
 
         return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
 

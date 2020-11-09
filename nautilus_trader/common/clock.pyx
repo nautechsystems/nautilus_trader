@@ -458,7 +458,7 @@ cdef class TestClock(Clock):
 
         self._update_timing()
         self._time = to_time
-        return sorted(events)
+        return events
 
     cdef Timer _create_timer(
             self,
