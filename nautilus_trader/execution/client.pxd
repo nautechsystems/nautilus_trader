@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -25,6 +27,8 @@ from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class ExecutionClient:
+    cdef Clock _clock
+    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef ExecutionEngine _engine
 
@@ -33,12 +37,12 @@ cdef class ExecutionClient:
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
 
-    cpdef bint is_connected(self) except *
-
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+
+    cpdef bint is_connected(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

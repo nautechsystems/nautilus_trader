@@ -214,6 +214,8 @@ class MockExecutionClient(ExecutionClient):
             venue,
             account_id,
             exec_engine,
+            clock,
+            uuid_factory,
             logger,
     ):
         """
@@ -227,6 +229,10 @@ class MockExecutionClient(ExecutionClient):
             The account_id for the client.
         exec_engine : ExecutionEngine
             The execution engine for the component.
+        clock : Clock
+            The clock for the component.
+        uuid_factory : UUIDFactory
+            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
@@ -235,23 +241,31 @@ class MockExecutionClient(ExecutionClient):
             venue,
             account_id,
             exec_engine,
+            clock,
+            uuid_factory,
             logger,
         )
 
+        self._is_connected = False
         self.calls = []
         self.commands = []
 
     def connect(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
+        self._is_connected = True
 
     def disconnect(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
+        self._is_connected = False
 
     def dispose(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def reset(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def is_connected(self):
+        return self._is_connected
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

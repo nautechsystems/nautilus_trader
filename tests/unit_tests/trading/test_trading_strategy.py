@@ -113,6 +113,8 @@ class TradingStrategyTests(unittest.TestCase):
             market=self.market,
             account_id=account_id,
             engine=self.exec_engine,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

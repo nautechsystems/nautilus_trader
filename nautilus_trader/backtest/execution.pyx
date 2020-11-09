@@ -15,6 +15,8 @@
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.logging cimport TestLogger
+from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -35,6 +37,8 @@ cdef class BacktestExecClient(ExecutionClient):
             SimulatedExchange market not None,
             AccountId account_id not None,
             ExecutionEngine engine not None,
+            TestClock clock not None,
+            UUIDFactory uuid_factory not None,
             TestLogger logger not None,
     ):
         """
@@ -56,6 +60,8 @@ cdef class BacktestExecClient(ExecutionClient):
             market.venue,
             account_id,
             engine,
+            clock,
+            uuid_factory,
             logger,
         )
 

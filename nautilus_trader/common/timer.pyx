@@ -109,6 +109,10 @@ cdef class TimeEventHandler:
     def __ge__(self, TimeEventHandler other) -> bool:
         return self.event.timestamp >= other.event.timestamp
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"event={self.event})")
+
 
 cdef class Timer:
     """

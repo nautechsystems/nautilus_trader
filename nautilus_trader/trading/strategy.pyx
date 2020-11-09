@@ -739,7 +739,7 @@ cdef class TradingStrategy:
 
         # Clean up clock
         cdef list timer_names = self.clock.timer_names()
-        self.clock.cancel_all_timers()
+        self.clock.cancel_timers()
 
         cdef str name
         for name in timer_names:

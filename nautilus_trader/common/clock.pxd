@@ -17,7 +17,6 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport LiveTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport Timer
@@ -25,7 +24,6 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 
 
 cdef class Clock:
-    cdef LoggerAdapter _log
     cdef UUIDFactory _uuid_factory
     cdef dict _timers
     cdef dict _handlers
@@ -59,7 +57,7 @@ cdef class Clock:
         handler=*,
     ) except *
     cpdef void cancel_timer(self, str name) except *
-    cpdef void cancel_all_timers(self) except *
+    cpdef void cancel_timers(self) except *
 
     cdef Timer _create_timer(
         self,
