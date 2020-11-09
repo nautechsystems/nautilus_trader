@@ -20,8 +20,8 @@ from nautilus_trader.execution.base import ExecutionCacheFacade
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
 

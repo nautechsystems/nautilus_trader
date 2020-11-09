@@ -53,8 +53,8 @@ RECV = "<--"
 SENT = "-->"
 CMD = "[CMD]"
 EVT = "[EVT]"
-CMD = "[REQ]"
-EVT = "[RES]"
+REQ = "[REQ]"
+RES = "[RES]"
 
 
 cdef class LogLevelParser:
