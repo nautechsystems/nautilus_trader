@@ -345,7 +345,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         self._log.debug(f"Added Account(id={account.id.value}).")
 
-    cpdef void add_order(self, Order order, PositionId position_id) except *:
+    cpdef void add_order(self, Order order) except *:
         """
         Add the given order to the execution cache indexed with the given
         identifiers.
@@ -354,12 +354,9 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         ----------
         order : Order
             The order to add.
-        position_id : PositionId
-            The position identifier to index for the order.
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(position_id, "position_id")
 
         cdef bytes last_event = self._event_serializer.serialize(order.last_event_c())
         cdef int reply = self._redis.rpush(self._key_orders + order.cl_ord_id.value, last_event)

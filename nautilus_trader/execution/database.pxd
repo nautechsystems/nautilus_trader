@@ -44,7 +44,7 @@ cdef class ExecutionDatabase:
     cpdef void delete_strategy(self, StrategyId strategy_id) except *
 
     cpdef void add_account(self, Account account) except *
-    cpdef void add_order(self, Order order, PositionId position_id) except *
+    cpdef void add_order(self, Order order) except *
     cpdef void add_position(self, Position position) except *
 
     cpdef void update_account(self, Account account) except *
