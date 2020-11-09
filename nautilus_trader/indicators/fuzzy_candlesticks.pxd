@@ -49,7 +49,7 @@ cdef class FuzzyCandlesticks(Indicator):
     cdef double _last_close
 
     cdef readonly int period
-    """The indicators period.\n\n:returns: `int`"""
+    """The window period.\n\n:returns: `int`"""
     cdef readonly list vector
     """The fuzzy candle represented as a vector of ints.\n\n:returns: `list[int]`"""
     cdef readonly FuzzyCandle value

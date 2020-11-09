@@ -25,8 +25,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
-# noinspection: Event attributes
-# noinspection PyUnresolvedReferences
 cdef class ReportProvider:
     """
     Provides various trading reports.
@@ -135,7 +133,7 @@ cdef class ReportProvider:
         """
         Condition.not_none(account, "account")
 
-        cdef list events = account.events
+        cdef list events = account.events_c()
 
         if not events:
             return pd.DataFrame()
@@ -159,7 +157,7 @@ cdef class ReportProvider:
             "quantity": order.quantity,
             "avg_price": "None" if order.avg_price is None else order.avg_price.as_double(),
             "slippage": order.slippage.as_double(),
-            "timestamp": order.last_event.timestamp,
+            "timestamp": order.last_event_c().timestamp,
         }
 
     cdef dict _position_to_dict(self, Position position):

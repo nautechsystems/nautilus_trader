@@ -26,7 +26,7 @@ cdef class HilbertTransform(Indicator):
     cdef object _quadrature
 
     cdef readonly int period
-    """The indicators period.\n\n:returns: `int`"""
+    """The window period.\n\n:returns: `int`"""
     cdef readonly double value_in_phase
     """The last in-phase value (real part of complex number).\n\n:returns: `double`"""
     cdef readonly double value_quad

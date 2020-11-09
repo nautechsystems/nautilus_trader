@@ -18,11 +18,14 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class RelativeStrengthIndex(Indicator):
-    cdef int _period
     cdef double _rsi_max
     cdef MovingAverage _average_gain
     cdef MovingAverage _average_loss
     cdef double _last_value
-    cdef double _value
+
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double value
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double value) except *

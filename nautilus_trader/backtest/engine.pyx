@@ -357,8 +357,8 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             # noinspection: Object has warned attribute
             # noinspection PyUnresolvedReferences
-            time_events += sorted(strategy.clock.advance_time(timestamp))
-        for event_handler in time_events:
+            time_events += strategy.clock.advance_time(timestamp)
+        for event_handler in sorted(time_events):
             self.test_clock.set_time(event_handler.event.timestamp)
             event_handler.handle()
         self.test_clock.set_time(timestamp)

@@ -129,12 +129,6 @@ cdef class Decimal:
         else:
             return Decimal(Decimal._extract_value(self) * Decimal._extract_value(other))
 
-    def __div__(self, other) -> Decimal or float:
-        if isinstance(self, float) or isinstance(other, float):
-            return Decimal._eval_double(self, other, _MATH_DIV)
-        else:
-            return Decimal(Decimal._extract_value(self) / Decimal._extract_value(other))
-
     def __truediv__(self, other) -> Decimal or float:
         if isinstance(self, float) or isinstance(other, float):
             return Decimal._eval_double(self, other, _MATH_TRUEDIV)
@@ -233,7 +227,7 @@ cdef class Decimal:
 
     cpdef object as_decimal(self):
         """
-        The value of the decimal as a built-in `decimal.Decimal`.
+        Return the value of the decimal as a built-in `decimal.Decimal`.
 
         Returns
         -------
@@ -244,7 +238,7 @@ cdef class Decimal:
 
     cpdef double as_double(self) except *:
         """
-        The value of the decimal as a `double`.
+        Return the value of the decimal as a `double`.
 
         Returns
         -------

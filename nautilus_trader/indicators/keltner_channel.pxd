@@ -20,13 +20,19 @@ from nautilus_trader.model.bar cimport Bar
 
 
 cdef class KeltnerChannel(Indicator):
-    cdef int _period
-    cdef double _k_multiplier
     cdef MovingAverage _ma
     cdef AverageTrueRange _atr
-    cdef double _value_upper
-    cdef double _value_middle
-    cdef double _value_lower
+
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double k_multiplier
+    """The k multiplier.\n\n:returns: `double`"""
+    cdef readonly double upper
+    """The current value of the upper channel.\n\n:returns: `double`"""
+    cdef readonly double middle
+    """The current value of the middle channel.\n\n:returns: `double`"""
+    cdef readonly double lower
+    """The current value of the lower channel.\n\n:returns: `double`"""
 
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close) except *

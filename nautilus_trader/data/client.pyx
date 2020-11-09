@@ -24,7 +24,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.messages cimport DataResponse
@@ -181,19 +181,19 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cpdef void handle_instrument(self, Instrument instrument) except *:
+    cpdef void _handle_instrument(self, Instrument instrument) except *:
         self._engine.process(instrument)
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    cpdef void _handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.process(tick)
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    cpdef void _handle_trade_tick(self, TradeTick tick) except *:
         self._engine.process(tick)
 
-    cpdef void handle_bar(self, BarType bar_type, Bar bar) except *:
+    cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
         self._engine.process(BarData(bar_type=bar_type, bar=bar))
 
-    cpdef void handle_instruments(self, list instruments, UUID correlation_id) except *:
+    cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             data_type=Instrument,
             metadata={VENUE: self.venue},
@@ -205,7 +205,7 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+    cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             data_type=QuoteTick,
             metadata={SYMBOL: symbol},
@@ -217,7 +217,7 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+    cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             data_type=TradeTick,
             metadata={SYMBOL: symbol},
@@ -229,7 +229,7 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
+    cpdef void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             data_type=Bar,
             metadata={BAR_TYPE: bar_type},

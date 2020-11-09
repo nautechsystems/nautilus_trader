@@ -18,9 +18,13 @@ from nautilus_trader.indicators.keltner_channel cimport KeltnerChannel
 
 
 cdef class KeltnerPosition(Indicator):
-    cdef int _period
-    cdef double _k_multiplier
     cdef KeltnerChannel _kc
-    cdef double _value
+
+    cdef readonly int period
+    """The window period.\n\n:returns: `int`"""
+    cdef readonly double k_multiplier
+    """The K multiplier.\n\n:returns: `double`"""
+    cdef readonly double value
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double high, double low, double close) except *

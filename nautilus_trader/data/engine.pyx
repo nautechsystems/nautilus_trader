@@ -47,7 +47,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.uuid cimport UUID
@@ -408,8 +408,8 @@ cdef class DataEngine:
         if command.venue is not None:
             client = self._clients.get(command.venue)
             if client is None:
-                self._log.error(f"Cannot execute {command} "
-                                f"({command.venue} {type(command.venue).__name__} not registered).")
+                self._log.error(f"Cannot handle command "
+                                f"(no client registered for {command.venue}).")
             else:
                 client.connect()
         else:
@@ -423,8 +423,8 @@ cdef class DataEngine:
         if command.venue is not None:
             client = self._clients.get(command.venue)
             if client is None:
-                self._log.error(f"Cannot execute {command} "
-                                f"({command.venue} {type(command.venue).__name__} not registered).")
+                self._log.error(f"Cannot handle command "
+                                f"(no client registered for {command.venue}).")
             else:
                 client.disconnect()
         else:
@@ -483,76 +483,116 @@ cdef class DataEngine:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
+
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {symbol.venue}).")
+            return
 
         self._add_instrument_handler(symbol, handler)
-        self._clients[symbol.venue].subscribe_instrument(symbol)
+        client.subscribe_instrument(symbol)
 
     cdef inline void _handle_subscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
+
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {symbol.venue}).")
+            return
 
         self._add_quote_tick_handler(symbol, handler)
-        self._clients[symbol.venue].subscribe_quote_ticks(symbol)
+        client.subscribe_quote_ticks(symbol)
 
     cdef inline void _handle_subscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
+
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {symbol.venue}).")
+            return
 
         self._add_trade_tick_handler(symbol, handler)
-        self._clients[symbol.venue].subscribe_trade_ticks(symbol)
+        client.subscribe_trade_ticks(symbol)
 
     cdef inline void _handle_subscribe_bars(self, BarType bar_type, handler: callable) except *:
         # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
-        Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "self._clients")
+
+        cdef DataClient client = self._clients.get(bar_type.symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {bar_type.symbol.venue}).")
+            return
+
+        self._add_bar_handler(bar_type, handler)
 
         if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
             # Aggregation not started
             self._start_bar_aggregator(bar_type)
         else:
             # External aggregation
-            self._clients[bar_type.symbol.venue].subscribe_bars(bar_type)
-
-        self._add_bar_handler(bar_type, handler)
+            client.subscribe_bars(bar_type)
 
     cdef inline void _handle_unsubscribe_instrument(self, Symbol symbol, handler: callable) except *:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
-        self._clients[symbol.venue].unsubscribe_instrument(symbol)
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {symbol.venue}).")
+            return
+
+        client.unsubscribe_trade_ticks(symbol)
         self._remove_instrument_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_quote_ticks(self, Symbol symbol, handler: callable) except *:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
-        self._clients[symbol.venue].unsubscribe_quote_ticks(symbol)
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {symbol.venue}).")
+            return
+
+        client.unsubscribe_quote_ticks(symbol)
         self._remove_quote_tick_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_trade_ticks(self, Symbol symbol, handler: callable) except *:
         # Validate message data
         Condition.not_none(symbol, "symbol")
         Condition.callable(handler, "handler")
-        Condition.is_in(symbol.venue, self._clients, "symbol.venue", "self._clients")
 
-        self._clients[symbol.venue].unsubscribe_trade_ticks(symbol)
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {symbol.venue}).")
+            return
+
+        client.unsubscribe_trade_ticks(symbol)
         self._remove_trade_tick_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_bars(self, BarType bar_type, handler: callable) except *:
         # Validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
-        Condition.is_in(bar_type.symbol.venue, self._clients, "bar_type.symbol.venue", "self._clients")
+
+        cdef DataClient client = self._clients.get(bar_type.symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle command "
+                            f"(no client registered for {bar_type.symbol.venue}).")
+            return
 
         if bar_type.is_internal_aggregation:
             # Internal aggregation
@@ -561,7 +601,7 @@ cdef class DataEngine:
                 self._stop_bar_aggregator(bar_type)
         else:
             # External aggregation
-            self._clients[bar_type.symbol.venue].unsubscribe_bars(bar_type)
+            client.unsubscribe_bars(bar_type)
             self._remove_bar_handler(bar_type, handler)
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
@@ -614,17 +654,26 @@ cdef class DataEngine:
                 request.id,
             )
         else:
-            self._log.error(f"Cannot handle request (data type {request.data_type} is unrecognized).")
+            self._log.error(f"Cannot handle request "
+                            f"(data type {request.data_type} is unrecognized).")
 
     cdef inline void _handle_request_instrument(self, Symbol symbol, UUID correlation_id) except *:
-        Condition.is_in(symbol.venue, self._clients, "venue", "self._clients")
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle request "
+                            f"(no client registered for {symbol.venue}).")
+            return
 
-        self._clients[symbol.venue].request_instrument(symbol, correlation_id)
+        client.request_instrument(symbol, correlation_id)
 
     cdef inline void _handle_request_instruments(self, Venue venue, UUID correlation_id) except *:
-        Condition.is_in(venue, self._clients, "venue", "self._clients")
+        cdef DataClient client = self._clients.get(venue)
+        if client is None:
+            self._log.error(f"Cannot handle request "
+                            f"(no client registered for {venue}).")
+            return
 
-        self._clients[venue].request_instruments(venue, correlation_id)
+        client.request_instruments(correlation_id)
 
     cdef inline void _handle_request_quote_ticks(
             self,
@@ -634,9 +683,13 @@ cdef class DataEngine:
             int limit,
             UUID correlation_id,
     ) except *:
-        Condition.is_in(symbol.venue, self._clients, "venue", "self._clients")
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle request "
+                            f"(no client registered for {symbol.venue}).")
+            return
 
-        self._clients[symbol.venue].request_quote_ticks(
+        client.request_quote_ticks(
             symbol,
             from_datetime,
             to_datetime,
@@ -652,9 +705,13 @@ cdef class DataEngine:
             int limit,
             UUID correlation_id,
     ) except *:
-        Condition.is_in(symbol.venue, self._clients, "venue", "self._clients")
+        cdef DataClient client = self._clients.get(symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle request "
+                            f"(no client registered for {symbol.venue}).")
+            return
 
-        self._clients[symbol.venue].request_trade_ticks(
+        client.request_trade_ticks(
             symbol,
             from_datetime,
             to_datetime,
@@ -670,10 +727,14 @@ cdef class DataEngine:
             int limit,
             UUID correlation_id,
     ) except *:
-        Condition.is_in(bar_type.symbol.venue, self._clients, "venue", "self._clients")
+        cdef DataClient client = self._clients.get(bar_type.symbol.venue)
+        if client is None:
+            self._log.error(f"Cannot handle request "
+                            f"(no client registered for {bar_type.symbol.venue}).")
+            return
 
-        # TODO: Handle case of tick bars
-        self._clients[bar_type.symbol.venue].request_bars(
+        # TODO: Handle cases other than time bars direct from exchange/broker
+        client.request_bars(
             bar_type,
             from_datetime,
             to_datetime,
@@ -818,6 +879,7 @@ cdef class DataEngine:
             bulk_updater = BulkTimeBarUpdater(aggregator)
             data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
 
+            # noinspection PyUnresolvedReferences
             request = DataRequest(
                 data_type=data_type,
                 metadata={
@@ -1011,6 +1073,7 @@ cdef class DataEngine:
             callback,
         )
 
+        # noinspection PyUnresolvedReferences
         self._handle_request_quote_ticks(
             bar_type.symbol,
             from_datetime,

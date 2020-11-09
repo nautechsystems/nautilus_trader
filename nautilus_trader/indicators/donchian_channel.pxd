@@ -17,11 +17,16 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class DonchianChannel(Indicator):
-    cdef int _period
-    cdef object _upper
-    cdef object _lower
-    cdef double _value_upper
-    cdef double _value_middle
-    cdef double _value_lower
+    cdef object _upper_prices
+    cdef object _lower_prices
+
+    cdef readonly int period
+    """The period for the moving average.\n\n:returns: `int`"""
+    cdef readonly double upper
+    """The current value of the upper band.\n\n:returns: `double`"""
+    cdef readonly double middle
+    """The current value of the middle band.\n\n:returns: `double`"""
+    cdef readonly double lower
+    """The current value of the lower band.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double high, double low) except *

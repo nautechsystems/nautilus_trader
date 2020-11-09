@@ -47,60 +47,12 @@ cdef class SpreadAnalyzer(Indicator):
         Condition.positive_int(capacity, "capacity")
         super().__init__(params=[symbol, capacity])
 
-        self._symbol = symbol
-        self._capacity = capacity
+        self.symbol = symbol
+        self.capacity = capacity
         self._spreads = deque(maxlen=capacity)
 
-        self._current = 0
-        self._average = 0
-
-    @property
-    def symbol(self):
-        """
-        The indicators subject symbol.
-
-        Returns
-        -------
-        Symbol
-
-        """
-        return self._symbol
-
-    @property
-    def capacity(self):
-        """
-        The indicators spread capacity.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._capacity
-
-    @property
-    def current(self):
-        """
-        The current spread value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._current
-
-    @property
-    def average(self):
-        """
-        The average spread value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._average
+        self.current = 0
+        self.average = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
@@ -118,25 +70,25 @@ cdef class SpreadAnalyzer(Indicator):
 
         """
         Condition.not_none(tick, "tick")
-        Condition.equal(self._symbol, tick.symbol, "symbol", "tick.symbol")
+        Condition.equal(self.symbol, tick.symbol, "symbol", "tick.symbol")
 
         # Check initialization
         if not self.initialized:
             self._set_has_inputs(True)
-            if len(self._spreads) == self._capacity:
+            if len(self._spreads) == self.capacity:
                 self._set_initialized(True)
 
         cdef double spread = tick.ask.as_double() - tick.bid.as_double()
 
-        self._current = spread
+        self.current = spread
         self._spreads.append(spread)
 
         # Update average spread
-        self._average = fast_mean_iterated(
+        self.average = fast_mean_iterated(
             values=list(self._spreads),
             next_value=spread,
-            current_value=self._average,
-            expected_length=self._capacity,
+            current_value=self.average,
+            expected_length=self.capacity,
             drop_left=False,
         )
 
@@ -148,5 +100,5 @@ cdef class SpreadAnalyzer(Indicator):
         """
         self._reset_base()
         self._spreads.clear()
-        self._current = 0
-        self._average = 0
+        self.current = 0
+        self.average = 0

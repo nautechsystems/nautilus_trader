@@ -24,27 +24,27 @@ cdef class Swings(Indicator):
     cdef object _low_inputs
 
     cdef readonly int period
-    """The indicators period.\n\n:returns: `int`"""
+    """The window period.\n\n:returns: `int`"""
     cdef readonly int direction
     """The current swing direction.\n\n:returns: `int`"""
     cdef readonly bint changed
     """If the swing direction changed at the last bar.\n\n:returns: `bool`"""
     cdef readonly datetime high_datetime
-    """The indicators period.\n\n:returns: `datetime`"""
+    """The last swing high time.\n\n:returns: `datetime`"""
     cdef readonly datetime low_datetime
-    """The indicators period.\n\n:returns: `datetime`"""
+    """The last swing low time.\n\n:returns: `datetime`"""
     cdef readonly double high_price
-    """The price at the last swing high.\n\n:returns: `double`"""
+    """The last swing high price.\n\n:returns: `double`"""
     cdef readonly double low_price
-    """The price at the last swing low.\n\n:returns: `double`"""
+    """The last swing low price.\n\n:returns: `double`"""
     cdef readonly double length
     """The length of the current swing.\n\n:returns: `double`"""
     cdef readonly int duration
     """The current swing duration.\n\n:returns: `int`"""
     cdef readonly int since_high
-    """The bars since the last swing low.\n\n:returns: `int`"""
-    cdef readonly int since_low
     """The bars since the last swing high.\n\n:returns: `int`"""
+    cdef readonly int since_low
+    """The bars since the last swing low.\n\n:returns: `int`"""
 
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, datetime timestamp) except *

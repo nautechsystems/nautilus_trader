@@ -15,23 +15,27 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.messages import Connect
+from nautilus_trader.common.messages import DataRequest
+from nautilus_trader.common.messages import DataResponse
+from nautilus_trader.common.messages import Disconnect
+from nautilus_trader.common.messages import KillSwitch
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
-from nautilus_trader.common.messages import Connect
-from nautilus_trader.common.messages import Disconnect
-from nautilus_trader.common.messages import KillSwitch
 
 
 FXCM = Venue("FXCM")
 BINANCE = Venue("BINANCE")
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class DataEngineTests(unittest.TestCase):
@@ -149,3 +153,42 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
+
+    def test_given_request_when_no_data_clients_registered_does_nothing(self):
+        # Arrange
+        handler = []
+        request = DataRequest(
+            data_type=QuoteTick,
+            metadata={
+                "Symbol": AUDUSD_FXCM.symbol,
+                "FromDateTime": None,
+                "ToDateTime": None,
+                "Limit": 1000,
+            },
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            request_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.send(request)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.request_count)
+
+    def test_given_response_when_no_data_clients_registered_does_nothing(self):
+        # Arrange
+        response = DataResponse(
+            data_type=QuoteTick,
+            metadata={},  # Malformed response anyway
+            data=[],
+            correlation_id=self.uuid_factory.generate(),
+            response_id=self.uuid_factory.generate(),
+            response_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.receive(response)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.response_count)

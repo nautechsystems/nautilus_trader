@@ -20,6 +20,7 @@
 .profile/
 .pytest_cache/
 .python-version
+.vscode/
 __pycache__
 build/
 dist/

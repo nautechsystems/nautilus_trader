@@ -433,10 +433,10 @@ cdef class BacktestDataClient(DataClient):
             self._log.warning(f"No instrument found for {symbol}.")
             return
 
-        self.handle_instruments([instrument], correlation_id)
+        self._handle_instruments([instrument], correlation_id)
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
-        self.handle_instruments(list(self._data.instruments.values()), correlation_id)
+        self._handle_instruments(list(self._data.instruments.values()), correlation_id)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 

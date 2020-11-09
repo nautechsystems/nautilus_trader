@@ -250,7 +250,7 @@ cdef class FuzzyCandlesticks(Indicator):
             double mean_length,
             double sd_lengths):
         # Fuzzify the candle size from the given inputs
-        if length == 0.0:
+        if length == 0:
             return CandleSize.NONE
 
         cdef double x
@@ -290,7 +290,7 @@ cdef class FuzzyCandlesticks(Indicator):
             double mean_body_percent,
             double sd_body_percents):
         # Fuzzify the candle body size from the given inputs
-        if body_percent == 0.0:
+        if body_percent == 0:
             return CandleBodySize.NONE
 
         cdef double x
@@ -320,7 +320,7 @@ cdef class FuzzyCandlesticks(Indicator):
             double mean_wick_percent,
             double sd_wick_percents):
         # Fuzzify the candle wick size from the given inputs
-        if wick_percent == 0.0:
+        if wick_percent == 0:
             return CandleWickSize.NONE
 
         cdef double x
@@ -350,9 +350,9 @@ cdef class FuzzyCandlesticks(Indicator):
         self._body_percents.clear()
         self._upper_wick_percents.clear()
         self._lower_wick_percents.clear()
-        self._last_open = 0.0
-        self._last_high = 0.0
-        self._last_low = 0.0
-        self._last_close = 0.0
+        self._last_open = 0
+        self._last_high = 0
+        self._last_low = 0
+        self._last_close = 0
         self.vector = None
         self.value = None

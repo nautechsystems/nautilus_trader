@@ -24,7 +24,7 @@ from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.uuid cimport UUID

@@ -276,6 +276,8 @@ class DecimalTests(unittest.TestCase):
         [Decimal(), 1, Decimal, 0],
         [Decimal(1), 2, Decimal, 0.5],
         [2, Decimal(1), Decimal, 0.5],
+        [2.1, Decimal("1.1"), float, 1],
+        [4.4, Decimal("1.1"), float, 4],
         [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
         [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, 0.9166666666666666],
     ])
@@ -298,6 +300,8 @@ class DecimalTests(unittest.TestCase):
         [Decimal(100), 10, Decimal, 0],
         [Decimal(23), 2, Decimal, 1],
         [2, Decimal(1), Decimal, 0.5],
+        [2.1, Decimal("1.1"), float, 1.0],
+        [1.1, Decimal("2.1"), float, 1.1],
         [Decimal("1.1"), Decimal("0.2"), Decimal, 0.9166666666666666],
         [Decimal("1.1"), decimal.Decimal("0.2"), Decimal, 0.9166666666666666],
     ])
