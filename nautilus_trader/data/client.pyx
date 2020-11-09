@@ -24,7 +24,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.messages cimport DataResponse

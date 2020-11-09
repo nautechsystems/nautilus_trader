@@ -43,7 +43,7 @@ from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.constants cimport *  # str constants
+from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.engine cimport DataEngine
@@ -499,14 +499,14 @@ cdef class TradingStrategy:
         Condition.not_none(ticks, "ticks")  # Could be empty
 
         cdef int length = len(ticks)
-        cdef Symbol symbol = ticks[0].symbol if length > 0 else None
+        cdef QuoteTick first = ticks[0] if length > 0 else None
+        cdef Symbol symbol = first.symbol if first is not None else None
 
         if length > 0:
             self.log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
         else:
             self.log.warning("Received <QuoteTick[]> data with no ticks.")
 
-        cdef int i
         for i in range(length):
             self.handle_quote_tick(ticks[i], is_historical=True)
 
@@ -560,14 +560,14 @@ cdef class TradingStrategy:
         Condition.not_none(ticks, "ticks")  # Could be empty
 
         cdef int length = len(ticks)
-        cdef Symbol symbol = ticks[0].symbol if length > 0 else None
+        cdef TradeTick first = ticks[0] if length > 0 else None
+        cdef Symbol symbol = first.symbol if first is not None else None
 
         if length > 0:
             self.log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
         else:
             self.log.warning("Received <TradeTick[]> data with no ticks.")
 
-        cdef int i
         for i in range(length):
             self.handle_trade_tick(ticks[i], is_historical=True)
 
@@ -627,13 +627,14 @@ cdef class TradingStrategy:
         Condition.not_none(bars, "bars")  # Can be empty
 
         cdef int length = len(bars)
+        cdef Bar first = bars[0] if length > 0 else None
+        cdef Bar last = bars[length - 1] if length > 0 else None
 
         self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
 
-        if length > 0 and bars[0].timestamp > bars[length - 1].timestamp:
-            raise RuntimeError("Cannot handle <Bar[]> data (incorrectly sorted).")
+        if length > 0 and first.timestamp > last.timestamp:
+            raise RuntimeError(f"Cannot handle <Bar[{length}]> data (incorrectly sorted).")
 
-        cdef int i
         for i in range(length):
             self.handle_bar(bar_type, bars[i], is_historical=True)
 
@@ -1334,7 +1335,7 @@ cdef class TradingStrategy:
 
         if not modifying:
             self.log.error(
-                "Cannot send command ModifyOrder "
+                "Cannot create command ModifyOrder "
                 "(both new_quantity and new_price were None)."
             )
             return

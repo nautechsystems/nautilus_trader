@@ -185,7 +185,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             if position_id not in self._index_position_orders:
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
-            for cl_ord_id in self.position.order_ids:
+
+            # noinspection PyUnresolvedReferences
+            for cl_ord_id in position.order_ids:
                 index_position_orders.add(cl_ord_id)
 
             # 3- Build _index_symbol_positions -> {Symbol, {PositionId}}

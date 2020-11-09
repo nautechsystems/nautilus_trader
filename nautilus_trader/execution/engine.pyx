@@ -372,8 +372,8 @@ cdef class ExecutionEngine:
         if command.venue is not None:
             client = self._clients.get(command.venue)
             if client is None:
-                self._log.error(f"Cannot execute {command} "
-                                f"(venue {command.venue} not registered).")
+                self._log.error(f"Cannot handle {command} "
+                                f"(no client registered for {command.venue}).")
             else:
                 client.connect()
         else:
@@ -388,7 +388,7 @@ cdef class ExecutionEngine:
             client = self._clients.get(command.venue)
             if client is None:
                 self._log.error(f"Cannot execute {command} "
-                                f"(venue {command.venue} not registered).")
+                                f"(no client registered for {command.venue}).")
             else:
                 client.disconnect()
         else:
@@ -398,8 +398,8 @@ cdef class ExecutionEngine:
     cdef inline void _handle_submit_order(self, SubmitOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.error(f"Cannot execute {command} "
-                            f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot handle {command} "
+                            f"(no client registered for {command.venue}).")
             return
 
         # Validate command
@@ -420,8 +420,8 @@ cdef class ExecutionEngine:
     cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.error(f"Cannot execute {command} "
-                            f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot handle {command} "
+                            f"(no client registered for {command.venue}).")
             return
 
         # Validate command
@@ -455,8 +455,8 @@ cdef class ExecutionEngine:
     cdef inline void _handle_modify_order(self, ModifyOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.error(f"Cannot execute {command} "
-                            f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot handle {command} "
+                            f"(no client registered for {command.venue}).")
             return
 
         # Validate command
@@ -470,8 +470,8 @@ cdef class ExecutionEngine:
     cdef inline void _handle_cancel_order(self, CancelOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.error(f"Cannot execute {command} "
-                            f"(venue {command.venue} not registered).")
+            self._log.error(f"Cannot handle {command} "
+                            f"(no client registered for {command.venue}).")
             return
 
         # Validate command
@@ -779,6 +779,7 @@ cdef class ExecutionEngine:
         cdef Position position
         for position in positions:
             if position.symbol not in counts:
+                # noinspection PyUnresolvedReferences
                 counts[position.symbol] = 0
             counts[position.symbol] += 1
 
