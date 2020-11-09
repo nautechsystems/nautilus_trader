@@ -643,8 +643,6 @@ cdef class DataCache(DataCacheFacade):
             ask_quotes=quotes[1],  # Ask
         )
 
-    # noinspection: [base_quote]
-    # noinspection PyUnresolvedReferences
     cdef inline tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}

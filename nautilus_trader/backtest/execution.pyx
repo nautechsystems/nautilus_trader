@@ -15,7 +15,6 @@
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.logging cimport TestLogger
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine

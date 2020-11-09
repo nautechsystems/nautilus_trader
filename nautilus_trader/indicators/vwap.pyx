@@ -54,8 +54,6 @@ cdef class VolumeWeightedAveragePrice(Indicator):
             bar.timestamp,
         )
 
-    # noinspection timestamp.day
-    # noinspection PyUnresolvedReferences
     cpdef void update_raw(
             self,
             double price,

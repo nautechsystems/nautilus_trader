@@ -255,8 +255,6 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        # noinspection: total_seconds()
-        # noinspection PyUnresolvedReferences
         Condition.true(interval.total_seconds() > 0, "interval positive")
         Condition.callable(handler, "handler")
 
@@ -505,8 +503,6 @@ cdef class LiveClock(Clock):
         # such as UTC. The preferred way of dealing with times is to always work
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
-        # noinspection: datetime.now
-        # noinspection PyUnresolvedReferences
         return datetime.now(tz=pytz.utc)
 
     cdef Timer _create_timer(

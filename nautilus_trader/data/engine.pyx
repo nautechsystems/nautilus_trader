@@ -879,6 +879,7 @@ cdef class DataEngine:
             bulk_updater = BulkTimeBarUpdater(aggregator)
             data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
 
+            # noinspection bulk_updater.receive
             # noinspection PyUnresolvedReferences
             request = DataRequest(
                 data_type=data_type,
@@ -1073,6 +1074,7 @@ cdef class DataEngine:
             callback,
         )
 
+        # noinspection bar_builder.receive
         # noinspection PyUnresolvedReferences
         self._handle_request_quote_ticks(
             bar_type.symbol,
