@@ -126,7 +126,6 @@ cpdef inline double fast_std(list values):
 cpdef inline double fast_std_with_mean(list values, double mean):
     """
     Return the standard deviation from the given values and mean.
-    Note - garbage in garbage out for given mean.
 
     Parameters
     ----------
@@ -142,6 +141,7 @@ cpdef inline double fast_std_with_mean(list values, double mean):
     Notes
     -----
     > 10x faster than `np.std`.
+    Garbage in garbage out for given mean.
 
     """
     cdef int length = len(values)
@@ -159,8 +159,6 @@ cpdef inline double basis_points_as_percentage(double basis_points):
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
 
-    1 basis point = 0.01%.
-
     Parameters
     ----------
     basis_points : double
@@ -169,6 +167,10 @@ cpdef inline double basis_points_as_percentage(double basis_points):
     Returns
     -------
     double
+
+    Notes
+    -----
+    1 basis point = 0.01%.
 
     """
     return basis_points * 0.0001
