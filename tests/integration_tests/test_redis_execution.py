@@ -107,10 +107,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId.null()
-
         # Act
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
         # Assert
         self.assertEqual(order, self.database.load_order(order.cl_ord_id))
@@ -123,9 +121,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
+        position_id = PositionId('P-1')
         order_filled = TestStubs.event_order_filled(order, position_id=position_id, fill_price=Price("1.00000"))
         position = Position(order_filled)
 
@@ -157,8 +155,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
         order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
@@ -181,8 +178,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
         order.apply(TestStubs.event_order_submitted(order))
         self.database.update_order(order)
@@ -207,7 +203,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         )
 
         position_id = PositionId('P-1')
-        self.database.add_order(order1, position_id)
+        self.database.add_order(order1)
 
         order1.apply(TestStubs.event_order_submitted(order1))
         self.database.update_order(order1)
@@ -226,7 +222,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             AUDUSD_FXCM,
             OrderSide.SELL,
             Quantity(100000))
-        self.database.add_order(order2, position_id)
+        self.database.add_order(order2)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         self.database.update_order(order2)
@@ -292,8 +288,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
         # Act
         result = self.database.load_order(order.cl_ord_id)
@@ -319,9 +314,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
+        position_id = PositionId('P-1')
         order_filled = TestStubs.event_order_filled(order, position_id=position_id, fill_price=Price("1.00000"))
         position = Position(order_filled)
 
@@ -377,8 +372,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order, position_id)
+        self.database.add_order(order)
 
         # Act
         result = self.database.load_orders()
@@ -403,9 +397,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        position_id = PositionId('P-1')
-        self.database.add_order(order1, position_id)
+        self.database.add_order(order1)
 
+        position_id = PositionId('P-1')
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
         order1.apply(TestStubs.event_order_working(order1))
@@ -437,9 +431,9 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        position1_id = PositionId('P-1')
-        self.database.add_order(order1, position1_id)
+        self.database.add_order(order1)
 
+        position1_id = PositionId('P-1')
         filled = TestStubs.event_order_filled(order1, position_id=position1_id, fill_price=Price("1.00000"))
         position1 = Position(filled)
         self.database.update_order(order1)
@@ -452,8 +446,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        position2_id = PositionId('P-2')
-        self.database.add_order(order2, position2_id)
+        self.database.add_order(order2)
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))

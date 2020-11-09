@@ -369,7 +369,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)
 
         # Update database
-        self._database.add_order(order, position_id)  # Logs
+        self._database.add_order(order)  # Logs
 
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """

@@ -86,7 +86,7 @@ cdef class ExecutionDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void add_order(self, Order order, PositionId position_id) except *:
+    cpdef void add_order(self, Order order) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -164,7 +164,7 @@ cdef class BypassExecutionDatabase(ExecutionDatabase):
         # NO-OP
         pass
 
-    cpdef void add_order(self, Order order, PositionId position_id) except *:
+    cpdef void add_order(self, Order order) except *:
         # NO-OP
         pass
 
