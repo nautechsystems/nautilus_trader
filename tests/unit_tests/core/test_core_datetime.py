@@ -13,26 +13,42 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import date
 from datetime import datetime
 from datetime import timedelta
 import unittest
 
-from parameterized import parameterized
 import pandas as pd
+from parameterized import parameterized
 import pytz
 
-from nautilus_trader.core.datetime import to_posix_ms
-from nautilus_trader.core.datetime import from_posix_ms
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
+from nautilus_trader.core.datetime import datetime_date
 from nautilus_trader.core.datetime import format_iso8601
+from nautilus_trader.core.datetime import from_posix_ms
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
+from nautilus_trader.core.datetime import to_posix_ms
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestFunctionsTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), date(1969, 12, 1)],
+        [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), date(1970, 1, 1)],
+        [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), date(2013, 1, 1)],
+        [datetime(2020, 1, 2, 3, 2, microsecond=1001, tzinfo=pytz.utc), date(2020, 1, 2)],
+    ])
+    def test_datetime_date_from_various_timestamps_returns_correct_date(self, value, expected):
+        # Arrange
+        # Act
+        result = datetime_date(value)
+
+        # Assert
+        self.assertEqual(expected, result)
 
     @parameterized.expand([
         [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],

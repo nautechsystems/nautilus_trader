@@ -66,47 +66,11 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             ]
         )
 
-        self._fast_period = fast_period
-        self._slow_period = slow_period
+        self.fast_period = fast_period
+        self.slow_period = slow_period
         self._fast_ma = MovingAverageFactory.create(fast_period, ma_type)
         self._slow_ma = MovingAverageFactory.create(slow_period, ma_type)
-        self._value = 0
-
-    @property
-    def fast_period(self):
-        """
-        The indicators fast window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._fast_period
-
-    @property
-    def slow_period(self):
-        """
-        The indicators slow window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._slow_period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -134,7 +98,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         """
         self._fast_ma.update_raw(close)
         self._slow_ma.update_raw(close)
-        self._value = self._fast_ma.value - self._slow_ma.value
+        self.value = self._fast_ma.value - self._slow_ma.value
 
         # Initialization logic
         if not self.initialized:
@@ -151,4 +115,4 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self._reset_base()
         self._fast_ma.reset()
         self._slow_ma.reset()
-        self._value = 0
+        self.value = 0

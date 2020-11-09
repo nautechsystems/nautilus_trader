@@ -169,11 +169,11 @@ cdef class TickDataWrangler:
         df_ticks_c = pd.DataFrame(data=data_close)
 
         # Drop rows with no volume
-        df_ticks_o = df_ticks_o[(df_ticks_h[["bid_size"]] > 0).all(axis=1)]
+        df_ticks_o = df_ticks_o[(df_ticks_o[["bid_size"]] > 0).all(axis=1)]
         df_ticks_h = df_ticks_h[(df_ticks_h[["bid_size"]] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[["bid_size"]] > 0).all(axis=1)]
         df_ticks_c = df_ticks_c[(df_ticks_c[["bid_size"]] > 0).all(axis=1)]
-        df_ticks_o = df_ticks_o[(df_ticks_h[["ask_size"]] > 0).all(axis=1)]
+        df_ticks_o = df_ticks_o[(df_ticks_o[["ask_size"]] > 0).all(axis=1)]
         df_ticks_h = df_ticks_h[(df_ticks_h[["ask_size"]] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[["ask_size"]] > 0).all(axis=1)]
         df_ticks_c = df_ticks_c[(df_ticks_c[["ask_size"]] > 0).all(axis=1)]

@@ -65,77 +65,18 @@ cdef class BollingerBands(Indicator):
         Condition.positive(k, "k")
         super().__init__(params=[period, k, ma_type.name])
 
-        self._period = period
-        self._k = k
+        self.period = period
+        self.k = k
         self._ma = MovingAverageFactory.create(period, ma_type)
         self._prices = deque(maxlen=period)
 
-        self._value_upper = 0
-        self._value_lower = 0
-
-    @property
-    def period(self):
-        """
-        The indicators period for the moving average.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def k(self):
-        """
-        The indicators standard deviation multiple.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._k
-
-    @property
-    def upper(self):
-        """
-        The value of the upper band.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_upper
-
-    @property
-    def middle(self):
-        """
-        The value of the moving average.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._ma.value
-
-    @property
-    def lower(self):
-        """
-        The value of the lower band.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_lower
+        self.upper = 0
+        self.middle = 0
+        self.lower = 0
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """
-        Update the indicator with the given ticks high and low prices.
+        Update the indicator with the given tick.
 
         Parameters
         ----------
@@ -152,7 +93,7 @@ cdef class BollingerBands(Indicator):
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """
-        Update the indicator with the given ticks price.
+        Update the indicator with the given tick.
 
         Parameters
         ----------
@@ -206,15 +147,16 @@ cdef class BollingerBands(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
-            if len(self._prices) >= self._period:
+            if len(self._prices) >= self.period:
                 self._set_initialized(True)
 
         # Calculate values
         cdef double std = fast_std_with_mean(values=list(self._prices), mean=self._ma.value)
 
         # Set values
-        self._value_upper = self._ma.value + (self._k * std)
-        self._value_lower = self._ma.value - (self._k * std)
+        self.upper = self._ma.value + (self.k * std)
+        self.middle = self._ma.value
+        self.lower = self._ma.value - (self.k * std)
 
     cpdef void reset(self) except *:
         """
@@ -226,5 +168,6 @@ cdef class BollingerBands(Indicator):
         self._ma.reset()
         self._prices.clear()
 
-        self._value_upper = 0
-        self._value_lower = 0
+        self.upper = 0
+        self.middle = 0
+        self.lower = 0

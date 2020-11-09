@@ -72,73 +72,13 @@ cdef class KeltnerChannel(Indicator):
             ]
         )
 
-        self._period = period
-        self._k_multiplier = k_multiplier
+        self.period = period
+        self.k_multiplier = k_multiplier
         self._ma = MovingAverageFactory.create(period, ma_type)
         self._atr = AverageTrueRange(period, ma_type_atr, use_previous, atr_floor)
-        self._value_upper = 0
-        self._value_middle = 0
-        self._value_lower = 0
-
-    @property
-    def period(self):
-        """
-        The indicators window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def k_multiplier(self):
-        """
-        The indicators k multiplier.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._k_multiplier
-
-    @property
-    def upper(self):
-        """
-        The value of the upper channel.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_upper
-
-    @property
-    def middle(self):
-        """
-        The value of the middle channel.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_middle
-
-    @property
-    def lower(self):
-        """
-        The value of the lower channel.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_lower
+        self.upper = 0
+        self.middle = 0
+        self.lower = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -182,9 +122,9 @@ cdef class KeltnerChannel(Indicator):
         self._ma.update_raw(typical_price)
         self._atr.update_raw(high, low, close)
 
-        self._value_upper = self._ma.value + (self._atr.value * self._k_multiplier)
-        self._value_middle = self._ma.value
-        self._value_lower = self._ma.value - (self._atr.value * self._k_multiplier)
+        self.upper = self._ma.value + (self._atr.value * self.k_multiplier)
+        self.middle = self._ma.value
+        self.lower = self._ma.value - (self._atr.value * self.k_multiplier)
 
         # Initialization logic
         if not self.initialized:
@@ -201,6 +141,6 @@ cdef class KeltnerChannel(Indicator):
         self._reset_base()
         self._ma.reset()
         self._atr.reset()
-        self._value_upper = 0
-        self._value_middle = 0
-        self._value_lower = 0
+        self.upper = 0
+        self.middle = 0
+        self.lower = 0

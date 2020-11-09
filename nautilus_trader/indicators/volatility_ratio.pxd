@@ -18,11 +18,15 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class VolatilityRatio(Indicator):
-    cdef int _fast_period
-    cdef int _slow_period
     cdef AverageTrueRange _atr_fast
     cdef AverageTrueRange _atr_slow
-    cdef double _value
+
+    cdef readonly int fast_period
+    """The period of the fast ATR.\n\n:returns: `int`"""
+    cdef readonly int slow_period
+    """The period of the slow ATR.\n\n:returns: `int`"""
+    cdef readonly double value
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double high, double low, double close) except *
     cdef void _check_initialized(self) except *

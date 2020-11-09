@@ -46,7 +46,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         Parameters
         ----------
         period_er : int
-            The period for the internal Efficiency Ratio (> 0).
+            The period for the internal `EfficiencyRatio` indicator (> 0).
         period_alpha_fast : int
             The period for the fast smoothing constant (> 0).
         period_alpha_slow : int
@@ -65,13 +65,13 @@ cdef class AdaptiveMovingAverage(MovingAverage):
                                  period_alpha_slow],
                          price_type=price_type)
 
-        self._period_er = period_er
-        self._period_alpha_fast = period_alpha_fast
-        self._period_alpha_slow = period_alpha_slow
-        self._alpha_fast = 2. / (float(self._period_alpha_fast) + 1.)
-        self._alpha_slow = 2. / (float(self._period_alpha_slow) + 1.)
-        self._alpha_diff = self._alpha_fast - self._alpha_slow
-        self._efficiency_ratio = EfficiencyRatio(self._period_er)
+        self.period_er = period_er
+        self.period_alpha_fast = period_alpha_fast
+        self.period_alpha_slow = period_alpha_slow
+        self.alpha_fast = 2. / (float(period_alpha_fast) + 1.)
+        self.alpha_slow = 2. / (float(period_alpha_slow) + 1.)
+        self.alpha_diff = self.alpha_fast - self.alpha_slow
+        self._efficiency_ratio = EfficiencyRatio(self.period_er)
         self._prior_value = 0
         self.value = 0
 
@@ -136,7 +136,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         self._prior_value = self.value
 
         # Calculate smoothing constant (sc)
-        cdef double sc = pow(self._efficiency_ratio.value * self._alpha_diff + self._alpha_slow, 2)
+        cdef double sc = pow(self._efficiency_ratio.value * self.alpha_diff + self.alpha_slow, 2)
 
         # Calculate AMA
         self.value = self._prior_value + sc * (value - self._prior_value)

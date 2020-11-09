@@ -65,47 +65,11 @@ cdef class Pressure(Indicator):
             ]
         )
 
-        self._period = period
+        self.period = period
         self._atr = AverageTrueRange(period, MovingAverageType.EXPONENTIAL, atr_floor)
         self._average_volume = MovingAverageFactory.create(period, ma_type)
-        self._value = 0
-        self._value_cumulative = 0
-
-    @property
-    def period(self):
-        """
-        The window period for the indicator.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
-
-    @property
-    def value_cumulative(self):
-        """
-        The indicators cumulative value across the period.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_cumulative
+        self.value = 0
+        self.value_cumulative = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -159,15 +123,15 @@ cdef class Pressure(Indicator):
 
         # Guard against zero values
         if self._average_volume.value == 0 or self._atr.value == 0:
-            self._value = 0
+            self.value = 0
             return
 
         cdef double relative_volume = volume / self._average_volume.value
         cdef double buy_pressure = ((close - low) / self._atr.value) * relative_volume
         cdef double sell_pressure = ((high - close) / self._atr.value) * relative_volume
 
-        self._value = buy_pressure - sell_pressure
-        self._value_cumulative += self.value
+        self.value = buy_pressure - sell_pressure
+        self.value_cumulative += self.value
 
     cpdef void reset(self) except *:
         """
@@ -178,5 +142,5 @@ cdef class Pressure(Indicator):
         self._reset_base()
         self._atr.reset()
         self._average_volume.reset()
-        self._value = 0
-        self._value_cumulative = 0
+        self.value = 0
+        self.value_cumulative = 0

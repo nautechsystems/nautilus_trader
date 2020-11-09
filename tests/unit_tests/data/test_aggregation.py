@@ -33,13 +33,13 @@ from nautilus_trader.data.wrangling import TickDataWrangler
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.identifiers import TradeMatchId
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs

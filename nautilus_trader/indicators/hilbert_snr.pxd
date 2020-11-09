@@ -33,7 +33,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
     cdef double _amplitude
 
     cdef readonly int period
-    """The indicators period.\n\n:returns: `int`"""
+    """The window period.\n\n:returns: `int`"""
     cdef readonly double value
     """The last amplitude value.\n\n:returns: `double`"""
 

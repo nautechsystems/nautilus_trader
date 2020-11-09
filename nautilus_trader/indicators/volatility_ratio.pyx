@@ -77,47 +77,11 @@ cdef class VolatilityRatio(Indicator):
             ]
         )
 
-        self._fast_period = fast_period
-        self._slow_period = slow_period
+        self.fast_period = fast_period
+        self.slow_period = slow_period
         self._atr_fast = AverageTrueRange(fast_period, ma_type, use_previous, value_floor)
         self._atr_slow = AverageTrueRange(slow_period, ma_type, use_previous, value_floor)
-        self._value = 0
-
-    @property
-    def fast_period(self):
-        """
-        The indicators fast window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._fast_period
-
-    @property
-    def slow_period(self):
-        """
-        The indicators slow window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._slow_period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -160,7 +124,7 @@ cdef class VolatilityRatio(Indicator):
         self._atr_slow.update_raw(high, low, close)
 
         if self._atr_fast.value > 0:  # Guard against divide by zero
-            self._value = self._atr_slow.value / self._atr_fast.value
+            self.value = self._atr_slow.value / self._atr_fast.value
 
         self._check_initialized()
 
@@ -180,4 +144,4 @@ cdef class VolatilityRatio(Indicator):
         self._reset_base()
         self._atr_fast.reset()
         self._atr_slow.reset()
-        self._value = 0
+        self.value = 0

@@ -13,9 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.execution.client cimport ExecutionClient
 
 
 cdef class BacktestExecClient(ExecutionClient):
     cdef SimulatedExchange _market
+
+# -- HANDLERS --------------------------------------------------------------------------------------
+
+    cdef void handle_event(self, Event event) except *

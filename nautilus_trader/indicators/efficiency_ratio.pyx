@@ -45,34 +45,10 @@ cdef class EfficiencyRatio(Indicator):
         Condition.true(period >= 2, "period >= 2")
         super().__init__(params=[period])
 
-        self._period = period
+        self.period = period
         self._inputs = deque(maxlen=period)
         self._deltas = deque(maxlen=period)
-        self._value = 0
-
-    @property
-    def period(self):
-        """
-        The indicators window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period
-
-    @property
-    def value(self):
-        """
-        The indicators current value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value
+        self.value = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -105,7 +81,7 @@ cdef class EfficiencyRatio(Indicator):
             self._set_has_inputs(True)
             if len(self._inputs) < 2:
                 return  # Not enough data
-            elif len(self._inputs) >= self._period:
+            elif len(self._inputs) >= self.period:
                 self._set_initialized(True)
 
         # Add data to queues
@@ -116,9 +92,9 @@ cdef class EfficiencyRatio(Indicator):
         cdef double sum_deltas = sum(self._deltas)
 
         if sum_deltas > 0:
-            self._value = net_diff / sum_deltas
+            self.value = net_diff / sum_deltas
         else:
-            self._value = 0
+            self.value = 0
 
     cpdef void reset(self) except *:
         """
@@ -129,4 +105,4 @@ cdef class EfficiencyRatio(Indicator):
         self._reset_base()
         self._inputs.clear()
         self._deltas.clear()
-        self._value = 0
+        self.value = 0

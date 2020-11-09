@@ -18,10 +18,14 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class MovingAverageConvergenceDivergence(Indicator):
-    cdef int _fast_period
-    cdef int _slow_period
     cdef MovingAverage _fast_ma
     cdef MovingAverage _slow_ma
-    cdef double _value
+
+    cdef readonly int fast_period
+    """The fast moving average window period.\n\n:returns: `int`"""
+    cdef readonly int slow_period
+    """The slow moving average window period.\n\n:returns: `int`"""
+    cdef readonly double value
+    """The current value.\n\n:returns: `double`"""
 
     cpdef void update_raw(self, double close) except *

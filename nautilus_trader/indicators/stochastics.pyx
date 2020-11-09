@@ -24,6 +24,11 @@ cdef class Stochastics(Indicator):
     """
     An oscillator which can indicate when an asset may be over bought or over
     sold.
+
+    References
+    ----------
+    https://www.forextraders.com/forex-education/forex-indicators/stochastics-indicator-explained/
+
     """
 
     def __init__(self, int period_k, int period_d):
@@ -49,63 +54,15 @@ cdef class Stochastics(Indicator):
         Condition.positive_int(period_d, "period_d")
         super().__init__(params=[period_k, period_d])
 
-        self._period_k = period_k
-        self._period_d = period_d
+        self.period_k = period_k
+        self.period_d = period_d
         self._highs = deque(maxlen=period_k)
         self._lows = deque(maxlen=period_k)
         self._c_sub_l = deque(maxlen=period_d)
         self._h_sub_l = deque(maxlen=period_d)
 
-        self._value_k = 0
-        self._value_d = 0
-
-    @property
-    def period_k(self):
-        """
-        The indicators K window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period_k
-
-    @property
-    def period_d(self):
-        """
-        The indicators D window period.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._period_d
-
-    @property
-    def value_k(self):
-        """
-        The indicators current K line value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_k
-
-    @property
-    def value_d(self):
-        """
-        The indicators current D line value.
-
-        Returns
-        -------
-        double
-
-        """
-        return self._value_d
+        self.value_k = 0
+        self.value_d = 0
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -153,7 +110,7 @@ cdef class Stochastics(Indicator):
 
         # Initialization logic
         if not self.initialized:
-            if len(self._highs) == self._period_k and len(self._lows) == self._period_k:
+            if len(self._highs) == self.period_k and len(self._lows) == self.period_k:
                 self._set_initialized(True)
 
         cdef double k_max_high = max(self._highs)
@@ -165,9 +122,8 @@ cdef class Stochastics(Indicator):
         if k_max_high == k_min_low:
             return  # Divide by zero guard
 
-        # https://www.forextraders.com/forex-education/forex-indicators/stochastics-indicator-explained/
-        self._value_k = 100 * ((close - k_min_low) / (k_max_high - k_min_low))
-        self._value_d = 100 * (sum(self._c_sub_l) / sum(self._h_sub_l))
+        self.value_k = 100 * ((close - k_min_low) / (k_max_high - k_min_low))
+        self.value_d = 100 * (sum(self._c_sub_l) / sum(self._h_sub_l))
 
     cpdef void reset(self) except *:
         """
@@ -181,5 +137,5 @@ cdef class Stochastics(Indicator):
         self._c_sub_l.clear()
         self._h_sub_l.clear()
 
-        self._value_k = 0.
-        self._value_d = 0.
+        self.value_k = 0
+        self.value_d = 0

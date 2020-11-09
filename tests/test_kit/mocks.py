@@ -14,16 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-
 import inspect
 
-from nautilus_trader.data.client import DataClient
-from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import UUID
+from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue

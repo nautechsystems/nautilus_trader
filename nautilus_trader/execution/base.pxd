@@ -63,8 +63,6 @@ cdef class ExecutionCacheFacade:
     cpdef list positions_open(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list positions_closed(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef bint position_exists(self, PositionId position_id) except *
-    cpdef bint position_exists_for_order(self, ClientOrderId cl_ord_id) except *
-    cpdef bint position_indexed_for_order(self, ClientOrderId cl_ord_id) except *
     cpdef bint is_position_open(self, PositionId position_id) except *
     cpdef bint is_position_closed(self, PositionId position_id) except *
     cpdef int positions_total_count(self, Symbol symbol=*, StrategyId strategy_id=*) except *

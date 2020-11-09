@@ -22,7 +22,11 @@ well as ISO 8601 conversion.
 import pandas as pd
 import pytz
 
+from cpython.datetime cimport date
 from cpython.datetime cimport datetime
+from cpython.datetime cimport date_year
+from cpython.datetime cimport date_month
+from cpython.datetime cimport date_day
 from cpython.datetime cimport datetime_tzinfo
 from cpython.datetime cimport timedelta
 from cpython.unicode cimport PyUnicode_Contains
@@ -31,6 +35,29 @@ from nautilus_trader.core.correctness cimport Condition
 
 # Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+
+
+cpdef date datetime_date(datetime timestamp):
+    """
+    Return the date from a datetime.
+
+    Parameters
+    ----------
+    timestamp : datetime
+        The timestamp to get the date from.
+
+    Returns
+    -------
+    date
+
+    Notes
+    -----
+    This function is necessary to provide fast access to a raw CPython date from
+    a datetime, and avoids unresolved references to `.date()` from cimported
+    datetimes throughout the codebase.
+
+    """
+    return date(date_year(timestamp), date_month(timestamp), date_day(timestamp))
 
 
 cpdef long to_posix_ms(datetime timestamp) except *:
