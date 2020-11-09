@@ -80,12 +80,6 @@ cdef class DataClient:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
 
-    cpdef bint is_connected(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
     cpdef void connect(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -102,7 +96,15 @@ cdef class DataClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef bint is_connected(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
@@ -116,7 +118,7 @@ cdef class DataClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -129,10 +131,6 @@ cdef class DataClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

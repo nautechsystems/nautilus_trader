@@ -20,6 +20,7 @@ import unittest
 from parameterized import parameterized
 import pytz
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.decimal import Decimal
@@ -47,9 +48,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-BTCUSD_BINANCE = TestStubs.symbol_btcusdt_binance()
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+BTCUSD_BINANCE = InstrumentLoader.btcusdt_binance()
 
 
 class PositionTests(unittest.TestCase):
@@ -85,7 +85,7 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -98,7 +98,7 @@ class PositionTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -136,7 +136,7 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -149,7 +149,7 @@ class PositionTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -183,7 +183,7 @@ class PositionTests(unittest.TestCase):
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -198,7 +198,7 @@ class PositionTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -229,7 +229,7 @@ class PositionTests(unittest.TestCase):
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -255,7 +255,7 @@ class PositionTests(unittest.TestCase):
         position = Position(fill1)
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -284,7 +284,7 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -322,7 +322,7 @@ class PositionTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -355,13 +355,13 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -389,7 +389,7 @@ class PositionTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -421,12 +421,12 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000))
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000))
 
@@ -442,7 +442,7 @@ class PositionTests(unittest.TestCase):
         )
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -481,19 +481,19 @@ class PositionTests(unittest.TestCase):
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order3 = self.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(200000),
         )
@@ -503,7 +503,7 @@ class PositionTests(unittest.TestCase):
         fill3 = TestStubs.event_order_filled(order3, PositionId("P-123456"), StrategyId("S", "001"), fill_price=Price("1.00010"))
 
         last = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -536,31 +536,31 @@ class PositionTests(unittest.TestCase):
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
         order1 = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.BUY,
             Quantity(12),
         )
 
         order2 = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.BUY,
             Quantity(17),
         )
 
         order3 = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.SELL,
             Quantity(9),
         )
 
         order4 = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.BUY,
             Quantity(3),
         )
 
         order5 = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.SELL,
             Quantity(4),
         )
@@ -632,7 +632,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_long_position_win(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.BUY,
             Quantity(12),
         )
@@ -660,7 +660,7 @@ class PositionTests(unittest.TestCase):
     def test_calculate_pnl_for_long_position_loss(self):
         # Arrange
         order = self.order_factory.market(
-            BTCUSD_BINANCE,
+            BTCUSD_BINANCE.symbol,
             OrderSide.BUY,
             Quantity(12),
         )
