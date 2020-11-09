@@ -509,4 +509,4 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return last.ask
         else:
-            raise RuntimeError(f"(position side was {PositionSideParser.to_string(self.side)})")
+            raise RuntimeError(f"position side was {PositionSideParser.to_string(self.side)}")
