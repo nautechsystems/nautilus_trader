@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
@@ -72,6 +73,7 @@ cdef class TradingStrategy:
     cdef readonly OrderFactory order_factory
     """The trading strategies order factory.\n\n:returns: `OrderFactory`"""
 
+    cdef ComponentState state_c(self)
     cdef str state_string_c(self)
 
     cpdef list registered_indicators(self)

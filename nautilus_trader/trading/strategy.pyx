@@ -130,6 +130,9 @@ cdef class TradingStrategy:
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value})"
 
+    cdef ComponentState state_c(self):
+        return <ComponentState>self._fsm.state
+
     cdef str state_string_c(self):
         return self._fsm.state_string_c()
 
@@ -143,7 +146,7 @@ cdef class TradingStrategy:
         ComponentState
 
         """
-        return self._fsm.state
+        return self.state_c()
 
     cpdef list registered_indicators(self):
         """

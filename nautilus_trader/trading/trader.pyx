@@ -162,10 +162,7 @@ cdef class Trader:
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            # Design assumption that no strategies are running
-            # noinspection: strategy.state
-            # noinspection PyUnresolvedReferences
-            assert not strategy.state == ComponentState.RUNNING
+            Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() != RUNNING")
 
         # Dispose of current strategies
         for strategy in self._strategies:
@@ -241,9 +238,7 @@ cdef class Trader:
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            # noinspection: strategy.state
-            # noinspection PyUnresolvedReferences
-            if strategy.state == ComponentState.RUNNING:
+            if strategy.state_c() == ComponentState.RUNNING:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")

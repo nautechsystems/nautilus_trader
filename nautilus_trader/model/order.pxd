@@ -49,8 +49,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Order:
-    cdef list _execution_ids
     cdef list _events
+    cdef list _execution_ids
     cdef FiniteStateMachine _fsm
 
     cdef readonly ClientOrderId cl_ord_id
@@ -88,7 +88,11 @@ cdef class Order:
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 
-    cdef int state_c(self) except *
+    cdef OrderState state_c(self) except *
+    cdef OrderEvent last_event_c(self)
+    cdef list events_c(self)
+    cdef list execution_ids_c(self)
+    cdef int event_count_c(self)
     cdef str state_string_c(self)
     cdef str status_string_c(self)
     cdef bint is_buy_c(self) except *

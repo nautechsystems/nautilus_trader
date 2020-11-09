@@ -106,8 +106,8 @@ cdef class Order:
             The order initialized event.
 
         """
-        self._execution_ids = []  # type: [ExecutionId]
         self._events = [event]    # type: [OrderEvent]
+        self._execution_ids = []  # type: [ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
@@ -150,8 +150,20 @@ cdef class Order:
                 f"state={self._fsm.state_string_c()}, "
                 f"{self.status_string_c()})")
 
-    cdef int state_c(self) except *:
-        return self._fsm.state
+    cdef OrderState state_c(self) except *:
+        return <OrderState>self._fsm.state
+
+    cdef OrderEvent last_event_c(self):
+        return self._events[-1]
+
+    cdef list events_c(self):
+        return self._events.copy()
+
+    cdef list execution_ids_c(self):
+        return self._execution_ids.copy()
+
+    cdef int event_count_c(self):
+        return len(self._events)
 
     cdef str state_string_c(self):
         return self._fsm.state_string_c()
@@ -193,19 +205,7 @@ cdef class Order:
         OrderEvent
 
         """
-        return self._events[-1]
-
-    @property
-    def execution_ids(self):
-        """
-        The execution identifiers.
-
-        Returns
-        -------
-        list[ExecutionId]
-
-        """
-        return self._execution_ids.copy()
+        return self.last_event_c()
 
     @property
     def events(self):
@@ -217,7 +217,19 @@ cdef class Order:
         list[OrderEvent]
 
         """
-        return self._events.copy()
+        return self.events_c()
+
+    @property
+    def execution_ids(self):
+        """
+        The execution identifiers.
+
+        Returns
+        -------
+        list[ExecutionId]
+
+        """
+        return self.execution_ids_c()
 
     @property
     def event_count(self):
@@ -229,7 +241,7 @@ cdef class Order:
         int
 
         """
-        return len(self._events)
+        return self.event_count_c()
 
     @property
     def is_buy(self):
@@ -503,7 +515,7 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        options[PRICE] = str(price)  # price should never be None
+        options[PRICE] = str(price)  # price checked not None
         if expire_time is not None:
             options[EXPIRE_TIME] = expire_time
 
