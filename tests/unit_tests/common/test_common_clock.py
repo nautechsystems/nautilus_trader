@@ -21,6 +21,7 @@ import unittest
 import pytz
 
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -31,13 +32,276 @@ class TimeEventTests(unittest.TestCase):
     def test_sort_time_events(self):
         # Arrange
         event1 = TimeEvent("123", uuid4(), UNIX_EPOCH)
-        event2 = TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1))
+        event2 = TimeEvent("123", uuid4(), UNIX_EPOCH)
+        event3 = TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1))
 
         # Act
-        result = sorted([event2, event1])
+        # Stable sort as event1 and event2 remain in order
+        result = sorted([event3, event1, event2])
 
         # Assert
-        self.assertEqual([event1, event2], result)
+        self.assertEqual([event1, event2, event3], result)
+
+
+class TestClockTests(unittest.TestCase):
+
+    def test_instantiate_has_expected_time_and_properties(self):
+        # Arrange
+        init_time = UNIX_EPOCH + timedelta(minutes=1)
+        clock = TestClock(UNIX_EPOCH + timedelta(minutes=1))
+
+        # Act
+        # Assert
+        self.assertEqual(init_time, clock.utc_now())
+        self.assertTrue(clock.is_test_clock)
+
+    def test_set_time_changes_time(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        clock.set_time(UNIX_EPOCH + timedelta(minutes=1))
+
+        # Assert
+        self.assertEqual(UNIX_EPOCH + timedelta(minutes=1), clock.utc_now())
+
+    def test_advance_time_changes_time_produces_empty_list(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        events = clock.advance_time(UNIX_EPOCH + timedelta(minutes=1))
+
+        # Assert
+        self.assertEqual(UNIX_EPOCH + timedelta(minutes=1), clock.utc_now())
+        self.assertEqual([], events)
+
+    def test_advance_time_given_time_in_past_raises_value_error(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, clock.advance_time, UNIX_EPOCH - timedelta(minutes=1))
+
+    def test_local_now(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        result = clock.local_now(pytz.timezone("Australia/Sydney"))
+
+        self.assertEqual("1970-01-01 10:00:00+10:00", str(result))
+
+    def test_delta(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        events = clock.delta(UNIX_EPOCH - timedelta(minutes=9))
+
+        self.assertEqual(timedelta(minutes=9), events)
+
+    def test_cancel_timer_when_no_timers_does_nothing(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        clock.cancel_timer("BOGUS_ALERT")
+
+        # Assert
+        self.assertEqual([], clock.timer_names())
+        self.assertEqual(0, clock.timer_count)
+
+    def test_cancel_timers_when_no_timers_does_nothing(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+
+        # Act
+        clock.cancel_timers()
+
+        # Assert
+        self.assertEqual([], clock.timer_names())
+        self.assertEqual(0, clock.timer_count)
+
+    def test_set_time_alert(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        name = "TEST_ALERT"
+        interval = timedelta(minutes=10)
+        alert_time = clock.utc_now() + interval
+        handler = []
+
+        # Act
+        clock.set_time_alert(name, alert_time, handler.append)
+
+        # Assert
+        self.assertEqual(["TEST_ALERT"], clock.timer_names())
+        self.assertEqual("TEST_ALERT", clock.timer("TEST_ALERT").name)
+        self.assertEqual(1, clock.timer_count)
+
+    def test_cancel_time_alert_when_timer_removes_timer(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        name = "TEST_ALERT"
+        interval = timedelta(milliseconds=300)
+        alert_time = clock.utc_now() + interval
+        handler = []
+
+        clock.set_time_alert(name, alert_time, handler.append)
+
+        # Act
+        clock.cancel_timer(name)
+
+        # Assert
+        self.assertEqual([], clock.timer_names())
+        self.assertEqual(0, clock.timer_count)
+
+    def test_cancel_timers_when_multiple_times_removes_all_timers(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        interval = timedelta(milliseconds=300)
+        alert_time = clock.utc_now() + interval
+        handler = []
+
+        clock.set_time_alert("TEST_ALERT1", alert_time, handler.append)
+        clock.set_time_alert("TEST_ALERT2", alert_time, handler.append)
+        clock.set_time_alert("TEST_ALERT3", alert_time, handler.append)
+        clock.set_time_alert("TEST_ALERT4", alert_time, handler.append)
+        clock.set_time_alert("TEST_ALERT5", alert_time, handler.append)
+
+        # Act
+        clock.cancel_timers()
+
+        # Assert
+        self.assertEqual([], clock.timer_names())
+        self.assertEqual(0, clock.timer_count)
+
+    def test_set_timer(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        name = "TEST_TIMER"
+        interval = timedelta(minutes=1)
+        alert_time = clock.utc_now() + interval
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=UNIX_EPOCH + interval,
+            stop_time=None,
+            handler=handler.append
+        )
+
+        # Assert
+        self.assertEqual(["TEST_TIMER"], clock.timer_names())
+        self.assertEqual("TEST_TIMER", clock.timer("TEST_TIMER").name)
+        self.assertEqual(1, clock.timer_count)
+
+    def test_advance_time_with_set_time_alert_triggers_event(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        name = "TEST_ALERT"
+        interval = timedelta(minutes=1)
+        alert_time = clock.utc_now() + interval
+        handler = []
+
+        clock.set_time_alert(name, alert_time, handler.append)
+
+        # Act
+        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=2))
+
+        # Assert
+        self.assertEqual(1, len(event_handlers))
+        self.assertEqual("TEST_ALERT", event_handlers[0].event.name)
+        self.assertEqual([], clock.timer_names())
+        self.assertEqual(0, clock.timer_count)
+
+    def test_advance_time_with_multiple_set_time_alerts_triggers_event(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        interval = timedelta(minutes=1)
+        alert_time = clock.utc_now() + interval
+        handler = []
+
+        clock.set_time_alert("TEST_ALERT1", alert_time, handler.append)
+        clock.set_time_alert("TEST_ALERT2", alert_time, handler.append)
+        clock.set_time_alert("TEST_ALERT3", alert_time, handler.append)
+
+        # Act
+        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=2))
+
+        # Assert
+        self.assertEqual(3, len(event_handlers))
+        self.assertEqual("TEST_ALERT1", event_handlers[0].event.name)
+        self.assertEqual("TEST_ALERT2", event_handlers[1].event.name)
+        self.assertEqual("TEST_ALERT3", event_handlers[2].event.name)
+        self.assertEqual([], clock.timer_names())
+        self.assertEqual(0, clock.timer_count)
+
+    def test_advance_time_with_set_timer_triggers_events(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        name = "TEST_TIMER"
+        interval = timedelta(minutes=1)
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=UNIX_EPOCH + interval,
+            stop_time=None,
+            handler=handler.append
+        )
+
+        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=5))
+
+        # Assert
+        self.assertEqual(4, len(event_handlers))
+        self.assertEqual("TEST_TIMER", event_handlers[0].event.name)
+        self.assertEqual(["TEST_TIMER"], clock.timer_names())
+        self.assertEqual("TEST_TIMER", clock.timer("TEST_TIMER").name)
+        self.assertEqual(1, clock.timer_count)
+
+    def test_advance_time_with_multiple_set_timers_triggers_events(self):
+        # Arrange
+        clock = TestClock(UNIX_EPOCH)
+        name1 = "TEST_TIMER1"
+        name2 = "TEST_TIMER2"
+        interval1 = timedelta(minutes=1)
+        interval2 = timedelta(seconds=30)
+        handler1 = []
+        handler2 = []
+
+        # Act
+        clock.set_timer(
+            name=name1,
+            interval=interval1,
+            start_time=UNIX_EPOCH,
+            stop_time=None,
+            handler=handler1.append
+        )
+
+        clock.set_timer(
+            name=name2,
+            interval=interval2,
+            start_time=UNIX_EPOCH,
+            stop_time=None,
+            handler=handler2.append
+        )
+
+        event_handlers = clock.advance_time(UNIX_EPOCH + timedelta(minutes=5))
+
+        # Assert
+        self.assertEqual(15, len(event_handlers))
+        self.assertEqual("TEST_TIMER2", event_handlers[0].event.name)
+        self.assertEqual("TEST_TIMER1", event_handlers[1].event.name)
+        self.assertEqual(["TEST_TIMER1", "TEST_TIMER2"], clock.timer_names())
+        self.assertEqual("TEST_TIMER1", clock.timer("TEST_TIMER1").name)
+        self.assertEqual("TEST_TIMER2", clock.timer("TEST_TIMER2").name)
+        self.assertEqual(2, clock.timer_count)
 
 
 class LiveClockTests(unittest.TestCase):
@@ -48,13 +312,14 @@ class LiveClockTests(unittest.TestCase):
         self.clock.register_default_handler(self.handler.append)
 
     def tearDown(self):
-        self.clock.cancel_all_timers()
+        self.clock.cancel_timers()
 
     def test_instantiated_clock(self):
         # Arrange
         # Act
         # Assert
         self.assertTrue(self.clock.is_default_handler_registered)
+        self.assertFalse(self.clock.is_test_clock)
         self.assertEqual([], self.clock.timer_names())
 
     def test_utc_now(self):

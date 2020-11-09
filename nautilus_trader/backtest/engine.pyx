@@ -215,6 +215,8 @@ cdef class BacktestEngine:
             market=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
+            clock=self.test_clock,
+            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 

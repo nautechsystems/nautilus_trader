@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
@@ -35,6 +37,8 @@ cdef class ExecutionClient:
             Venue venue not None,
             AccountId account_id not None,
             ExecutionEngine engine not None,
+            Clock clock not None,
+            UUIDFactory uuid_factory not None,
             Logger logger not None):
         """
         Initialize a new instance of the `ExecutionClient` class.
@@ -47,14 +51,20 @@ cdef class ExecutionClient:
             The account identifier for the client.
         engine : ExecutionEngine
             The execution engine to connect to the client.
+        clock : Clock
+            The clock for the component.
+        uuid_factory : UUIDFactory
+            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
         """
         Condition.equal(venue, account_id.issuer_as_venue(), "venue", "account_id.issuer_as_venue()")
 
+        self._clock = clock
+        self._uuid_factory = uuid_factory
+        self._log = LoggerAdapter(f"{type(self).__name__}-{venue.value}", logger)
         self._engine = engine
-        self._log = LoggerAdapter(type(self).__name__, logger)
 
         self.venue = venue
         self.account_id = account_id

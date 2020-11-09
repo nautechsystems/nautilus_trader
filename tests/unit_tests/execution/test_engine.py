@@ -86,6 +86,8 @@ class ExecutionEngineTests(unittest.TestCase):
             self.venue,
             self.account_id,
             self.exec_engine,
+            self.clock,
+            self.uuid_factory,
             self.logger,
         )
 

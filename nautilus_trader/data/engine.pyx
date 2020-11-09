@@ -322,7 +322,7 @@ cdef class DataEngine:
         self._trade_tick_handlers.clear()
         self._bar_handlers.clear()
         self._bar_aggregators.clear()
-        self._clock.cancel_all_timers()
+        self._clock.cancel_timers()
         self.command_count = 0
         self.data_count = 0
         self.request_count = 0
