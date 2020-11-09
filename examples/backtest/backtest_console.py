@@ -37,26 +37,26 @@ from tests.test_kit.data import TestDataProvider
 
 
 if __name__ == "__main__":
-    symbol = Symbol('USD/JPY', Venue('FXCM'))
-    USDJPY = InstrumentLoader.default_fx_ccy(symbol)
+    symbol = Symbol('GBP/USD', Venue('SIM'))
+    GBPUSD = InstrumentLoader.default_fx_ccy(symbol)
 
     data = BacktestDataContainer()
-    data.add_instrument(USDJPY)
+    data.add_instrument(GBPUSD)
     data.add_bars(
-        USDJPY.symbol,
+        GBPUSD.symbol,
         BarAggregation.MINUTE,
         PriceType.BID,
-        TestDataProvider.usdjpy_1min_bid(),  # Stub data from the test kit
+        TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
     data.add_bars(
-        USDJPY.symbol,
+        GBPUSD.symbol,
         BarAggregation.MINUTE,
         PriceType.ASK,
-        TestDataProvider.usdjpy_1min_ask(),  # Stub data from the test kit
+        TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
 
     strategies = [EMACross(
-        symbol=USDJPY.symbol,
+        symbol=GBPUSD.symbol,
         bar_spec=BarSpecification(
             5,
             BarAggregation.MINUTE,
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=strategies,
-        venue=Venue("FXCM"),
+        venue=Venue("SIM"),
         oms_type=OMSType.HEDGING,
         generate_position_ids=False,
         config=config,
@@ -100,8 +100,8 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
-    start = datetime(2013, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2013, 3, 1, 0, 0, 0, 0)
+    start = datetime(2008, 2, 1, 0, 0, 0, 0)
+    stop = datetime(2008, 3, 1, 0, 0, 0, 0)
 
     engine.run(start, stop)
 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
-        print(engine.trader.generate_account_report(AccountId.from_string("FXCM-000-SIMULATED")))
+        print(engine.trader.generate_account_report(AccountId.from_string("SIM-000-SIMULATED")))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

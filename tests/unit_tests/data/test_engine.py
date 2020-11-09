@@ -157,7 +157,6 @@ class DataEngineTests(unittest.TestCase):
 
     def test_given_request_when_no_data_clients_registered_does_nothing(self):
         # Arrange
-        # Hand coded key constants as cannot import C constants
         handler = []
         request = DataRequest(
             data_type=QuoteTick,
@@ -180,7 +179,6 @@ class DataEngineTests(unittest.TestCase):
 
     def test_given_response_when_no_data_clients_registered_does_nothing(self):
         # Arrange
-        # Hand coded key constants as cannot import C constants
         response = DataResponse(
             data_type=QuoteTick,
             metadata={},  # Malformed response anyway

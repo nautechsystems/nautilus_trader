@@ -372,7 +372,7 @@ cdef class Clock:
 
 cdef class TestClock(Clock):
     """
-    Provides a clock for backtesting and unit testing.
+    Provides a monotonic clock for backtesting and unit testing.
     """
     __test__ = False
 
@@ -417,15 +417,26 @@ cdef class TestClock(Clock):
 
     cpdef list advance_time(self, datetime to_time):
         """
-        Iterates the clocks time to the given datetime.
+        Advance the clocks time to the given `datetime`.
 
         Parameters
         ----------
         to_time : datetime
-            The datetime to iterate the test clock to.
+            The datetime to advance the clock to.
+
+        Returns
+        -------
+        list[TimeEvent]
+            Sorted chronologically.
+
+        Raises
+        ------
+        ValueError
+            If to_time is < the clocks current time.
 
         """
         Condition.not_none(to_time, "to_time")
+        Condition.true(to_time >= self._time, "to_time >= self._time")  # Ensure monotonic
 
         cdef list events = []
 
@@ -447,7 +458,7 @@ cdef class TestClock(Clock):
 
         self._update_timing()
         self._time = to_time
-        return events
+        return sorted(events)
 
     cdef Timer _create_timer(
             self,
