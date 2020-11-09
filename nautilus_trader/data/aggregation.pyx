@@ -673,13 +673,11 @@ cdef class BulkTimeBarUpdater:
         """
         if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
             for i in range(len(ticks)):
-                # noinspection PyUnresolvedReferences
                 if ticks[i].timestamp < self.start_time:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_trade_tick(ticks[i])
         else:
             for i in range(len(ticks)):
-                # noinspection PyUnresolvedReferences
                 if ticks[i].timestamp < self.start_time:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_quote_tick(ticks[i])

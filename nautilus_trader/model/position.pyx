@@ -19,6 +19,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -83,6 +84,30 @@ cdef class Position:
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value}, {self.status_string_c()})"
 
+    cdef list cl_ord_ids_c(self):
+        cdef OrderFilled event
+        return sorted(list({event.cl_ord_id for event in self._events}))
+
+    cdef list order_ids_c(self):
+        cdef OrderFilled event
+        return sorted(list({event.order_id for event in self._events}))
+
+    cdef list execution_ids_c(self):
+        cdef OrderFilled event
+        return [event.execution_id for event in self._events]
+
+    cdef list events_c(self):
+        return self._events.copy()
+
+    cdef OrderFilled last_event_c(self):
+        return self._events[-1]
+
+    cdef ExecutionId last_execution_id_c(self):
+        return self._events[-1].execution_id
+
+    cdef int event_count_c(self) except *:
+        return len(self._events)
+
     cdef str status_string_c(self):
         cdef str quantity = " " if self.relative_quantity == 0 else f" {self.quantity.to_string()} "
         return f"{PositionSideParser.to_string(self.side)}{quantity}{self.symbol}"
@@ -113,8 +138,7 @@ cdef class Position:
         Guaranteed not to contain duplicate identifiers.
 
         """
-        cdef OrderFilled event
-        return sorted(list({event.cl_ord_id for event in self._events}))
+        return self.cl_ord_ids_c()
 
     @property
     def order_ids(self):
@@ -130,8 +154,7 @@ cdef class Position:
         Guaranteed not to contain duplicate identifiers.
 
         """
-        cdef OrderFilled event
-        return sorted(list({event.order_id for event in self._events}))
+        return self.order_ids_c()
 
     @property
     def execution_ids(self):
@@ -148,8 +171,7 @@ cdef class Position:
         may contain duplicates.
 
         """
-        cdef OrderFilled event
-        return [event.execution_id for event in self._events]
+        return self.execution_ids_c()
 
     @property
     def events(self):
@@ -161,7 +183,7 @@ cdef class Position:
         list[Event]
 
         """
-        return self._events.copy()
+        return self.events_c()
 
     @property
     def last_event(self):
@@ -173,7 +195,7 @@ cdef class Position:
         OrderFilled
 
         """
-        return self._events[-1]
+        return self.last_event_c()
 
     @property
     def last_execution_id(self):
@@ -185,7 +207,7 @@ cdef class Position:
         ExecutionId
 
         """
-        return self._events[-1].execution_id
+        return self.last_execution_id_c()
 
     @property
     def event_count(self):
@@ -197,7 +219,7 @@ cdef class Position:
         int
 
         """
-        return len(self._events)
+        return self.event_count_c()
 
     @property
     def is_open(self):

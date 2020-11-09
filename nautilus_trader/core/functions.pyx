@@ -148,7 +148,7 @@ cpdef inline double fast_std_with_mean(list values, double mean):
     cdef double std_dev = 0
     cdef int i
     for i in range(length):
-        # noinspection: Object has warned attribute
+        # noinspection: -
         # noinspection PyUnresolvedReferences
         std_dev += pow(values[i] - mean, 2)
 

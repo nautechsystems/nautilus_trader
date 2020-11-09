@@ -139,7 +139,6 @@ cpdef bint is_tz_aware(time_object) except *:
     if isinstance(time_object, datetime):
         return datetime_tzinfo(time_object) is not None
     elif isinstance(time_object, pd.DataFrame):
-        # noinspection PyUnresolvedReferences
         return hasattr(time_object.index, "tz") or time_object.index.tz is not None
     else:
         raise ValueError(f"Cannot check timezone awareness of a {type(time_object)} object")
@@ -163,7 +162,6 @@ cpdef bint is_tz_naive(time_object) except *:
     return not is_tz_aware(time_object)
 
 
-# noinspection PyUnresolvedReferences
 cpdef datetime as_utc_timestamp(datetime timestamp):
     """
     Ensure the given timestamp is a tz-aware UTC pd.Timestamp.

@@ -15,6 +15,7 @@
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -44,6 +45,7 @@ cdef class Trader:
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
+    cdef ComponentState state_c(self)
     cdef str state_string_c(self)
     cdef list strategies_c(self)
 

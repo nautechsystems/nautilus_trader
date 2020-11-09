@@ -355,8 +355,6 @@ cdef class BacktestEngine:
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: [TimeEventHandler]
         for strategy in self.trader.strategies_c():
-            # noinspection: Object has warned attribute
-            # noinspection PyUnresolvedReferences
             time_events += strategy.clock.advance_time(timestamp)
         for event_handler in sorted(time_events):
             self.test_clock.set_time(event_handler.event.timestamp)

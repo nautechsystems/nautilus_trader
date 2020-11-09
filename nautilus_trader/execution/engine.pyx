@@ -779,7 +779,6 @@ cdef class ExecutionEngine:
         cdef Position position
         for position in positions:
             if position.symbol not in counts:
-                # noinspection PyUnresolvedReferences
                 counts[position.symbol] = 0
             counts[position.symbol] += 1
 

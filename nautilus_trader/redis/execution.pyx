@@ -336,7 +336,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self._key_accounts + account.id.value, self._event_serializer.serialize(account.last_event))
+        pipe.rpush(self._key_accounts + account.id.value, self._event_serializer.serialize(account.last_event_c()))
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -380,7 +380,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes last_event = self._event_serializer.serialize(position.last_event)
+        cdef bytes last_event = self._event_serializer.serialize(position.last_event_c())
         cdef int reply = self._redis.rpush(self._key_positions + position.id.value, last_event)
 
         # Check data integrity of reply
@@ -461,7 +461,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(position.last_event)
+        cdef bytes serialized_event = self._event_serializer.serialize(position.last_event_c())
         cdef int reply = self._redis.rpush(self._key_positions + position.id.value, serialized_event)
 
         # Check data integrity of reply

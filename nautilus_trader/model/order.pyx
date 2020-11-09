@@ -401,8 +401,6 @@ cdef class Order:
             self._fsm.trigger(OrderState.WORKING)
             self._modified(event)
         elif isinstance(event, OrderFilled):
-            # noinspection event.is_partial_fill (attribute on OrderFilled)
-            # noinspection PyUnresolvedReferences
             if event.is_partial_fill:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
                 self._filled(event)

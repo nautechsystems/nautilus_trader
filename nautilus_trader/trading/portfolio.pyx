@@ -752,8 +752,6 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
-            # noinspection: order.price
-            # noinspection PyUnresolvedReferences
             # Calculate margin
             margin += instrument.calculate_order_margin(
                 order.quantity,

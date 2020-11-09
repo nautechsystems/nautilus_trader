@@ -186,7 +186,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
 
-            # noinspection PyUnresolvedReferences
             for cl_ord_id in position.order_ids:
                 index_position_orders.add(cl_ord_id)
 

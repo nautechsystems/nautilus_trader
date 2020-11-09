@@ -392,8 +392,6 @@ cdef class Bar:
         """
         return Bar.from_serializable_string_c(value)
 
-    # noinspection: timestamp()
-    # noinspection PyUnresolvedReferences
     cpdef str to_serializable_string(self):
         """
         The serializable string representation of this object.
