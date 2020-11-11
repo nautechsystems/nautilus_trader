@@ -17,9 +17,10 @@ import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.core.decimal import Decimal
-from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import Symbol
@@ -51,13 +52,13 @@ class InstrumentTests(unittest.TestCase):
         instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
-        pnl = instrument.calculate_order_margin(
+        margin = instrument.calculate_order_margin(
             Quantity(100000),
             Price("11493.60"),
         )
 
         # Assert
-        self.assertEqual(Money(0.01392079, BTC), pnl)
+        self.assertEqual(Money(0.01392079, BTC), margin)
 
     def test_calculate_position_margin_with_no_leverage_returns_zero(self):
         # Arrange
@@ -119,14 +120,14 @@ class InstrumentTests(unittest.TestCase):
         )
 
         # Act
-        pnl = instrument.calculate_open_value(
+        value = instrument.calculate_open_value(
             PositionSide.LONG,
             Quantity(10),
             last
         )
 
         # Assert
-        self.assertEqual(Money(10.00000000, BTC), pnl)
+        self.assertEqual(Money(114936.00000000, USDT), value)
 
     def test_calculate_open_value_for_inverse(self):
         # Arrange
@@ -142,14 +143,14 @@ class InstrumentTests(unittest.TestCase):
         )
 
         # Act
-        pnl = instrument.calculate_open_value(
+        value = instrument.calculate_open_value(
             PositionSide.LONG,
             Quantity(100000),
             last
         )
 
         # Assert
-        self.assertEqual(Money(8.70049419, BTC), pnl)
+        self.assertEqual(Money(8.70049419, BTC), value)
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange
@@ -177,7 +178,7 @@ class InstrumentTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money(30.00, AUD), commission)
+        self.assertEqual(Money(24.02, USD), commission)
 
     def test_calculate_commission_crypto_taker(self):
         # Arrange
@@ -205,4 +206,4 @@ class InstrumentTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money(44.00, USD), commission)
+        self.assertEqual(Money(5293.64, JPY), commission)

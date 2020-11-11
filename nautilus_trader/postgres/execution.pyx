@@ -113,7 +113,7 @@ cdef class PostgresExecutionDatabase(ExecutionDatabase):
     cpdef void add_account(self, Account account) except *:
         raise NotImplemented()
 
-    cpdef void add_order(self, Order order, PositionId position_id) except *:
+    cpdef void add_order(self, Order order) except *:
         raise NotImplemented()
 
     cpdef void add_position(self, Position position) except *:

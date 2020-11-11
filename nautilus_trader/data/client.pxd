@@ -38,26 +38,24 @@ cdef class DataClient:
     cdef readonly Venue venue
     """The clients venue.\n\n:returns: `Venue`"""
 
-    cpdef bint is_connected(self) except *
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
 
+    cpdef bint is_connected(self) except *
+
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    cpdef void subscribe_instrument(self, Symbol symbol) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_instrument(self, Symbol symbol) except *
 
+    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 

@@ -18,12 +18,14 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.data.base cimport DataCacheFacade
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.tick cimport QuoteTick
@@ -87,3 +89,4 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline void _update_order_margin(self, Venue venue)
     cdef inline void _update_position_margin(self, Venue venue)
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol)
+    cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side)

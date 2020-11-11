@@ -24,7 +24,6 @@ A running instance could be either a test/backtest or live implementation - the
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.logging cimport Logger
@@ -106,6 +105,9 @@ cdef class Trader:
 
         self.initialize_strategies(strategies)
 
+    cdef ComponentState state_c(self):
+        return <ComponentState>self._fsm.state
+
     cdef str state_string_c(self):
         return self._fsm.state_string_c()
 
@@ -121,7 +123,7 @@ cdef class Trader:
             The traders current state.
 
         """
-        return self._fsm.state
+        return self.state_c()
 
     cpdef list strategy_ids(self):
         """
@@ -329,8 +331,6 @@ cdef class Trader:
         cdef dict states = {}
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            # noinspection: states[strategy.id]
-            # noinspection PyUnresolvedReferences
             states[strategy.id] = strategy.state_string_c()
 
         return states

@@ -109,6 +109,10 @@ cdef class TimeEventHandler:
     def __ge__(self, TimeEventHandler other) -> bool:
         return self.event.timestamp >= other.event.timestamp
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"event={self.event})")
+
 
 cdef class Timer:
     """
@@ -142,8 +146,6 @@ cdef class Timer:
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
-        # noinspection: total_seconds
-        # noinspection PyUnresolvedReferences
         Condition.positive(interval.total_seconds(), "interval")
         if stop_time:
             Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")

@@ -881,10 +881,22 @@ cdef class SimulatedExchange:
         if instrument is None:
             raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
 
+        cdef Decimal xrate = None
+        if instrument.is_quanto:
+            # Get exchange rate between base and settlement currencies
+            xrate = Decimal(self.xrate_calculator.get_rate(
+                from_currency=instrument.base_currency,
+                to_currency=instrument.settlement_currency,
+                price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
+                bid_quotes=self._build_current_bid_rates(),
+                ask_quotes=self._build_current_ask_rates(),
+            ))
+
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
             fill_price,
             liquidity_side,
+            xrate,
         )
 
         # Generate event
@@ -899,13 +911,11 @@ cdef class SimulatedExchange:
             order.side,
             order.quantity,
             order.quantity,
-            Quantity(),  # Not modeling partial fills just yet
+            Quantity(),  # Not modeling partial fills yet
             fill_price,
             commission,
             liquidity_side,
-            instrument.base_currency,
-            instrument.quote_currency,
-            instrument.is_inverse,
+            instrument.get_cost_spec(xrate),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),

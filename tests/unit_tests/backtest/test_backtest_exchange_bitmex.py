@@ -110,6 +110,8 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
             market=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

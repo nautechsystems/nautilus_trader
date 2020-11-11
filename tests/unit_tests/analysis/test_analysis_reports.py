@@ -17,6 +17,7 @@ from datetime import timedelta
 import unittest
 
 from nautilus_trader.analysis.reports import ReportProvider
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -27,12 +28,13 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = Symbol("AUD/USD", Venue('FXCM'))
-GBPUSD_FXCM = Symbol("GBP/USD", Venue('FXCM'))
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue('FXCM')))
+GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", Venue('FXCM')))
 
 
 class ReportProviderTests(unittest.TestCase):
@@ -79,8 +81,9 @@ class ReportProviderTests(unittest.TestCase):
     def test_generate_orders_report(self):
         # Arrange
         report_provider = ReportProvider()
+
         order1 = self.order_factory.limit(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -91,7 +94,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -103,6 +106,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = TestStubs.event_order_filled(
             order1,
+            instrument=AUDUSD_FXCM,
             position_id=PositionId("P-1"),
             fill_price=Price("0.80011"),
         )
@@ -131,7 +135,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -142,7 +146,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -156,7 +160,13 @@ class ReportProviderTests(unittest.TestCase):
         order2.apply(accepted2)
         order2.apply(working2)
 
-        filled = TestStubs.event_order_filled(order1, PositionId("P-1"), StrategyId("S", "1"), Price("0.80011"))
+        filled = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_FXCM,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("0.80011"),
+        )
 
         order1.apply(filled)
 
@@ -180,8 +190,39 @@ class ReportProviderTests(unittest.TestCase):
         # Arrange
         report_provider = ReportProvider()
 
-        position1 = TestStubs.position_which_is_closed(PositionId("P-1"))
-        position2 = TestStubs.position_which_is_closed(PositionId("P-2"))
+        order1 = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_FXCM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00010"),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_FXCM,
+            position_id=PositionId("P-123457"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00010"),
+        )
+
+        position1 = Position(fill1)
+        position1.apply(fill2)
+
+        position2 = Position(fill1)
+        position2.apply(fill2)
 
         positions = [position1, position2]
 
@@ -193,11 +234,11 @@ class ReportProviderTests(unittest.TestCase):
         self.assertEqual("position_id", report.index.name)
         self.assertEqual(position1.id.value, report.index[0])
         self.assertEqual("AUD/USD", report.iloc[0]["symbol"])
-        self.assertEqual("SELL", report.iloc[0]["entry"])
+        self.assertEqual("BUY", report.iloc[0]["entry"])
         self.assertEqual(100000, report.iloc[0]["peak_quantity"])
         self.assertEqual(1.0001, report.iloc[0]["avg_open"])
         self.assertEqual(1.0001, report.iloc[0]["avg_close"])
-        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["opened_time"])
-        self.assertEqual(UNIX_EPOCH + timedelta(minutes=5), report.iloc[0]["closed_time"])
+        self.assertEqual(UNIX_EPOCH, report.iloc[0]["opened_time"])
+        self.assertEqual(UNIX_EPOCH, report.iloc[0]["closed_time"])
         self.assertEqual(0, report.iloc[0]["realized_points"])
         self.assertEqual(0, report.iloc[0]["realized_return"])

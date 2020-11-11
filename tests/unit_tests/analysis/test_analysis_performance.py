@@ -17,12 +17,21 @@ from datetime import datetime
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.loaders import InstrumentLoader
+from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class AnalyzerTests(unittest.TestCase):
@@ -30,6 +39,11 @@ class AnalyzerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
+        self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER", "000"),
+            strategy_id=StrategyId("S", "001"),
+            clock=TestClock(),
+        )
 
     def test_get_daily_returns_when_no_data_returns_empty_series(self):
         # Arrange
@@ -81,12 +95,40 @@ class AnalyzerTests(unittest.TestCase):
 
     def test_get_realized_pnls_when_all_flat_positions_returns_expected_series(self):
         # Arrange
-        position1 = TestStubs.position_which_is_closed(PositionId('1'))
-        position2 = TestStubs.position_which_is_closed(PositionId('2'))
+        order1 = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_FXCM,
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_FXCM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00000"),
+        )
+
+        position1 = Position(fill1)
+        position1.apply(fill2)
+
+        position2 = Position(fill1)
+        position2.apply(fill2)
 
         self.analyzer.add_positions([position1, position2])
 
         # Act
 
         # Assert
-        self.assertTrue(all(self.analyzer.get_realized_pnls()) == 0)
+        self.assertTrue(all(self.analyzer.get_realized_pnls()))

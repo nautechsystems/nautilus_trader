@@ -19,6 +19,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -55,9 +56,8 @@ cdef class Position:
         self.relative_quantity = Decimal()
         self.quantity = Quantity()
         self.peak_quantity = Quantity()
-        self.base_currency = event.base_currency
-        self.quote_currency = event.quote_currency
-        self.is_inverse = event.is_inverse
+        self.cost_spec = event.cost_spec
+        self.settlement_currency = event.cost_spec.settlement_currency
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
         self.closed_time = None    # Can be None
@@ -66,8 +66,8 @@ cdef class Position:
         self.avg_close = Decimal()
         self.realized_points = Decimal()
         self.realized_return = Decimal()
-        self.realized_pnl = Money(0, event.base_currency)
-        self.commission = Money(0, event.base_currency)
+        self.realized_pnl = Money(0, self.settlement_currency)
+        self.commissions = Money(0, self.settlement_currency)
 
         self.apply(event)
 
@@ -82,6 +82,30 @@ cdef class Position:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value}, {self.status_string_c()})"
+
+    cdef list cl_ord_ids_c(self):
+        cdef OrderFilled event
+        return sorted(list({event.cl_ord_id for event in self._events}))
+
+    cdef list order_ids_c(self):
+        cdef OrderFilled event
+        return sorted(list({event.order_id for event in self._events}))
+
+    cdef list execution_ids_c(self):
+        cdef OrderFilled event
+        return [event.execution_id for event in self._events]
+
+    cdef list events_c(self):
+        return self._events.copy()
+
+    cdef OrderFilled last_event_c(self):
+        return self._events[-1]
+
+    cdef ExecutionId last_execution_id_c(self):
+        return self._events[-1].execution_id
+
+    cdef int event_count_c(self) except *:
+        return len(self._events)
 
     cdef str status_string_c(self):
         cdef str quantity = " " if self.relative_quantity == 0 else f" {self.quantity.to_string()} "
@@ -113,8 +137,7 @@ cdef class Position:
         Guaranteed not to contain duplicate identifiers.
 
         """
-        cdef OrderFilled event
-        return sorted(list({event.cl_ord_id for event in self._events}))
+        return self.cl_ord_ids_c()
 
     @property
     def order_ids(self):
@@ -130,8 +153,7 @@ cdef class Position:
         Guaranteed not to contain duplicate identifiers.
 
         """
-        cdef OrderFilled event
-        return sorted(list({event.order_id for event in self._events}))
+        return self.order_ids_c()
 
     @property
     def execution_ids(self):
@@ -148,8 +170,7 @@ cdef class Position:
         may contain duplicates.
 
         """
-        cdef OrderFilled event
-        return [event.execution_id for event in self._events]
+        return self.execution_ids_c()
 
     @property
     def events(self):
@@ -161,7 +182,7 @@ cdef class Position:
         list[Event]
 
         """
-        return self._events.copy()
+        return self.events_c()
 
     @property
     def last_event(self):
@@ -173,7 +194,7 @@ cdef class Position:
         OrderFilled
 
         """
-        return self._events[-1]
+        return self.last_event_c()
 
     @property
     def last_execution_id(self):
@@ -185,7 +206,7 @@ cdef class Position:
         ExecutionId
 
         """
-        return self._events[-1].execution_id
+        return self.last_execution_id_c()
 
     @property
     def event_count(self):
@@ -197,7 +218,7 @@ cdef class Position:
         int
 
         """
-        return len(self._events)
+        return self.event_count_c()
 
     @property
     def is_open(self):
@@ -293,9 +314,8 @@ cdef class Position:
 
         self._events.append(event)
 
-        # Update total commission
-        assert event.commission.currency == self.base_currency
-        self.commission = Money(self.commission + event.commission, self.commission.currency)
+        assert self.commissions.currency == event.commission.currency
+        self.commissions = Money(self.commissions + event.commission, self.commissions.currency)
 
         # Calculate avg prices, points, return, PNL
         if event.order_side == OrderSide.BUY:
@@ -323,6 +343,7 @@ cdef class Position:
             Decimal avg_open,
             Decimal avg_close,
             Decimal quantity,
+            Decimal xrate=None,
     ):
         """
         Return the calculated PNL from the given parameters.
@@ -335,24 +356,39 @@ cdef class Position:
             The average close price.
         quantity : Decimal
             The quantity for the calculation.
+        xrate : Decimal, optional
+            The exchange rate for the calculation (only applicable for quanto
+            instruments).
 
         Returns
         -------
         Money
+            In the settlement currency.
+
+        Raises
+        ------
+        ValueError
+            If is_quanto and xrate is None.
 
         """
         Condition.not_none(avg_open, "avg_open")
         Condition.not_none(avg_close, "avg_close")
         Condition.not_none(quantity, "quantity")
+        if self.cost_spec.is_quanto:
+            Condition.not_none(xrate, "xrate")
 
-        cdef Decimal pnl = self._calculate_return(avg_open, avg_close) * quantity
+        cdef Decimal points
+        if self.cost_spec.is_inverse:
+            points = self._calculate_points_inverse(avg_open, avg_close)
+        else:
+            points = self._calculate_points(avg_open, avg_close)
 
-        if self.is_inverse:
-            pnl *= (1 / avg_close)
+        if self.cost_spec.is_quanto:
+            points *= xrate
 
-        return Money(pnl, self.base_currency)
+        return Money(points * quantity, self.settlement_currency)
 
-    cpdef Money unrealized_pnl(self, QuoteTick last):
+    cpdef Money unrealized_pnl(self, QuoteTick last, Decimal xrate=None):
         """
         Return the unrealized PNL from the given last quote tick.
 
@@ -360,27 +396,37 @@ cdef class Position:
         ----------
         last : QuoteTick
             The last tick for the calculation.
+        xrate : Decimal, optional
+            The exchange rate for the calculation (only applicable for quanto
+            instruments).
 
         Returns
         -------
         Money
+            In the settlement currency.
 
         Raises
         ------
         ValueError
             If last.symbol != self.symbol
+        ValueError
+            If is_quanto and xrate is None.
 
         """
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
         if self.side == PositionSide.FLAT:
-            return Money(0, self.base_currency)
+            return Money(0, self.settlement_currency)
 
-        cdef Decimal close_price = self._get_close_price(last)
-        return self.calculate_pnl(self.avg_open, close_price, self.quantity)
+        return self.calculate_pnl(
+            avg_open=self.avg_open,
+            avg_close=self._get_close_price(last),
+            quantity=self.quantity,
+            xrate=xrate,
+        )
 
-    cpdef Money total_pnl(self, QuoteTick last):
+    cpdef Money total_pnl(self, QuoteTick last, Decimal xrate=None):
         """
         Return the total PNL from the given last quote tick.
 
@@ -388,6 +434,9 @@ cdef class Position:
         ----------
         last : QuoteTick
             The last tick for the calculation.
+        xrate : Decimal, optional
+            The exchange rate for the calculation (only applicable for quanto
+            instruments).
 
         Returns
         -------
@@ -397,12 +446,14 @@ cdef class Position:
         ------
         ValueError
             If last.symbol != self.symbol
+        ValueError
+            If is_quanto and xrate is None.
 
         """
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
-        return Money(self.realized_pnl + self.unrealized_pnl(last), self.base_currency)
+        return Money(self.realized_pnl + self.unrealized_pnl(last, xrate), self.settlement_currency)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
         cdef Decimal realized_pnl = event.commission
@@ -416,7 +467,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_open, self.avg_close)
             realized_pnl += self.calculate_pnl(self.avg_open, event.avg_price, event.filled_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.base_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.settlement_currency)
 
         # Update quantities
         self._buy_quantity = self._buy_quantity + event.filled_qty
@@ -434,7 +485,7 @@ cdef class Position:
             self.realized_return = self._calculate_return(self.avg_open, self.avg_close)
             realized_pnl += self.calculate_pnl(self.avg_open, event.avg_price, event.filled_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.base_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.settlement_currency)
 
         # Update quantities
         self._sell_quantity = self._sell_quantity + event.filled_qty
@@ -475,6 +526,14 @@ cdef class Position:
         else:
             return Decimal()  # FLAT
 
+    cdef inline Decimal _calculate_points_inverse(self, Decimal avg_open, Decimal avg_close):
+        if self.side == PositionSide.LONG:
+            return (1 / avg_open) - (1 / avg_close)
+        elif self.side == PositionSide.SHORT:
+            return (1 / avg_close) - (1 / avg_open)
+        else:
+            return Decimal()  # FLAT
+
     cdef inline Decimal _calculate_return(self, Decimal avg_open, Decimal avg_close):
         if self.side == PositionSide.FLAT:
             return Decimal()
@@ -487,4 +546,5 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return last.ask
         else:
-            raise RuntimeError(f"(position side was {PositionSideParser.to_string(self.side)})")
+            raise RuntimeError(f"invalid PositionSide, "
+                               f"was {PositionSideParser.to_string(self.side)}")
