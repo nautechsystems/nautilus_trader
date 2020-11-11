@@ -548,7 +548,7 @@ cdef class Instrument:
         Decimal xrate=None,
     ):
         """
-        Calculate the commissions generated from a transaction with the given
+        Calculate the commission generated from a transaction with the given
         parameters.
 
         Parameters

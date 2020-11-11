@@ -129,7 +129,6 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
-        print("\n")
 
     def test_serialize_and_deserialize_market_orders(self):
         # Arrange
@@ -230,7 +229,6 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
-        print("\n")
 
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange

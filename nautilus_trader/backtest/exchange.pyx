@@ -538,7 +538,7 @@ cdef class SimulatedExchange:
         if self.frozen_account:
             return  # Nothing to adjust
 
-        # Initialize commissions and PNL
+        # Initialize commission and PNL
         cdef Money commission = event.commission
         cdef Money pnl = Money(0, event.commission.currency)
 
@@ -876,7 +876,7 @@ cdef class SimulatedExchange:
             position = self.exec_cache.position(position_id)
             position_id = position.id
 
-        # Calculate commissions
+        # Calculate commission
         cdef Instrument instrument = self.instruments.get(order.symbol)
         if instrument is None:
             raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")

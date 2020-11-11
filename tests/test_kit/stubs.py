@@ -250,12 +250,12 @@ class TestStubs:
     def event_order_filled(
             order,
             instrument,
-            liquidity_side=LiquiditySide.TAKER,
             position_id=None,
             strategy_id=None,
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
+            liquidity_side=LiquiditySide.TAKER,
             xrate=None,
     ) -> OrderFilled:
         if position_id is None:
