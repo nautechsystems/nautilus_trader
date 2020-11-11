@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import msgpack
-import pytz
 
 from cpython.datetime cimport datetime
 
@@ -57,6 +56,9 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport CostSpecification
+from nautilus_trader.model.instrument cimport InverseCostSpecification
+from nautilus_trader.model.instrument cimport QuantoCostSpecification
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.objects cimport Price
@@ -81,7 +83,7 @@ cdef class MsgPackSerializer:
     @staticmethod
     cdef bytes serialize(dict message):
         """
-        Serialize the given message to MessagePack specification bytes.
+        Serialize the given message to `MessagePack` specification bytes.
 
         Parameters
         ----------
@@ -100,7 +102,7 @@ cdef class MsgPackSerializer:
     @staticmethod
     cdef dict deserialize(bytes message_bytes, bint raw_values=True):
         """
-        Deserialize the given MessagePack specification bytes to a dictionary.
+        Deserialize the given `MessagePack` specification bytes to a dictionary.
 
         Parameters
         ----------
@@ -126,7 +128,7 @@ cdef class MsgPackSerializer:
 
 cdef class MsgPackDictionarySerializer(DictionarySerializer):
     """
-    Provides a serializer for dictionaries for the MsgPack specification.
+    Provides a serializer for dictionaries for the `MessagePack` specification.
 
     """
 
@@ -174,9 +176,97 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
 
 
+cdef class MsgPackCostSpecificationSerializer:
+    """
+    Provides a `CostSpecification` serializer for the `MessagePack` specification.
+    """
+
+    @staticmethod
+    cdef bytes serialize(CostSpecification cost_spec):
+        """
+        Serialize the given dictionary with string keys and values to bytes.
+
+        Parameters
+        ----------
+        cost_spec : dict
+            The cost_spec dictionary to serialize.
+
+        Returns
+        -------
+        bytes
+
+        """
+        Condition.not_none(cost_spec, "cost_spec")
+
+        cdef dict package = {
+            "Type": type(cost_spec).__name__,
+            QUOTE_CURRENCY: str(cost_spec.quote_currency),
+            "Rounding": cost_spec.rounding
+        }
+
+        if isinstance(cost_spec, InverseCostSpecification):
+            package[BASE_CURRENCY] = str(cost_spec.base_currency)
+        if isinstance(cost_spec, QuantoCostSpecification):
+            package["SettlementCurrency"] = str(cost_spec.settlement_currency)
+            package["IsInverse"] = str(cost_spec.is_inverse)
+            package["XRate"] = str(cost_spec.xrate)
+
+        return MsgPackSerializer.serialize(package)
+
+    @staticmethod
+    cdef CostSpecification deserialize(bytes cost_spec_bytes):
+        """
+        Deserialize the given bytes to a dictionary with string keys and values.
+
+        Parameters
+        ----------
+        cost_spec_bytes : bytes
+            The cost specification bytes to deserialize.
+
+        Returns
+        -------
+        dict
+
+        """
+        Condition.not_none(cost_spec_bytes, "cost_spec_bytes")
+
+        cdef dict unpacked = MsgPackSerializer.deserialize(cost_spec_bytes)
+
+        cdef str cost_spec_type = unpacked["Type"].decode(UTF8)
+        cdef Currency quote_currency = Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8))
+        cdef str rounding = unpacked["Rounding"].decode(UTF8)
+
+        if cost_spec_type == "CostSpecification":
+            return CostSpecification(
+                quote_currency=quote_currency,
+                rounding=rounding,
+            )
+
+        if cost_spec_type == "InverseCostSpecification":
+            return InverseCostSpecification(
+                base_currency=Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
+                quote_currency=quote_currency,
+                rounding=rounding,
+            )
+
+        if cost_spec_type == "QuantoCostSpecification":
+            return QuantoCostSpecification(
+                base_currency=Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
+                quote_currency=quote_currency,
+                settlement_currency=Currency.from_string_c(unpacked["SettlementCurrency"].decode(UTF8)),
+                is_inverse=unpacked["IsInverse"].decode(UTF8) == "True",
+                xrate=Decimal(unpacked["XRate"].decode(UTF8)),
+                rounding=rounding,
+            )
+
+        else:
+            raise RuntimeError()
+
+
+
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
-    Provides a command serializer for the MessagePack specification.
+    Provides a `Command` serializer for the `MessagePack` specification.
 
     """
 
@@ -231,7 +321,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
     cpdef Order deserialize(self, bytes order_bytes):
         """
-        Return the order deserialized from the given MessagePack specification bytes.
+        Return the `Order` deserialized from the given MessagePack specification bytes.
 
         Parameters
         ----------
@@ -316,7 +406,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
     """
-    Provides a command serializer for the MessagePack specification.
+    Provides a `Command` serializer for the MessagePack specification.
 
     """
 
@@ -332,7 +422,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
     cpdef bytes serialize(self, Command command):
         """
-        Return the serialized MessagePack specification bytes from the given command.
+        Return the serialized `MessagePack` specification bytes from the given command.
 
         Parameters
         ----------
@@ -467,7 +557,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
 cdef class MsgPackEventSerializer(EventSerializer):
     """
-    Provides an event serializer for the MessagePack specification.
+    Provides an `Event` serializer for the `MessagePack` specification.
 
     """
 
@@ -593,9 +683,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_string(event.liquidity_side)
-            package[BASE_CURRENCY] = event.base_currency.code
-            package[QUOTE_CURRENCY] = event.quote_currency.code
-            package[IS_INVERSE] = str(event.is_inverse)
+            package["CostSpec"] = MsgPackCostSpecificationSerializer.serialize(event.cost_spec)
             package[EXECUTION_TIME] = ObjectParser.datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
@@ -768,9 +856,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
                 LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
-                Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
-                Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
-                unpacked[IS_INVERSE].decode(UTF8) == "True",
+                MsgPackCostSpecificationSerializer.deserialize(unpacked["CostSpec"]),
                 ObjectParser.string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,

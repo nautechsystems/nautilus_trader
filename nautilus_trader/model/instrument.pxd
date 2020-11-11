@@ -28,6 +28,31 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+cdef class CostSpecification:
+    cdef readonly Currency quote_currency
+    """The quote currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly Currency settlement_currency
+    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly bint is_inverse
+    """If the instrument is inverse.\n\n:returns: `Currency`"""
+    cdef readonly bint is_quanto
+    """If the instrument is quanto.\n\n:returns: `Currency`"""
+    cdef readonly str rounding
+    """The rounding rule for costing (decimal module constant).\n\n:returns: `str`"""
+
+
+cdef class InverseCostSpecification(CostSpecification):
+    cdef readonly Currency base_currency
+    """The base currency of the instrument.\n\n:returns: `Currency`"""
+
+
+cdef class QuantoCostSpecification(CostSpecification):
+    cdef readonly Currency base_currency
+    """The base currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly Decimal xrate
+    """The exchange rate from cost currency to settlement currency."""
+
+
 cdef class Instrument:
     cdef readonly Symbol symbol
     """The symbol of the instrument.\n\n:returns: `Symbol`"""
@@ -42,9 +67,9 @@ cdef class Instrument:
     cdef readonly Currency settlement_currency
     """The settlement currency of the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
-    """If the instrument is inverse (quantity expressed as quote currency).\n\n:returns: `bool`"""
+    """If the instrument costing is inverse.\n\n:returns: `Currency`"""
     cdef readonly bint is_quanto
-    """If the instrument is quanto.\n\n:returns: `bool`"""
+    """If the instrument costing is quanto.\n\n:returns: `Currency`"""
     cdef readonly int price_precision
     """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -79,8 +104,6 @@ cdef class Instrument:
     """The maker fee rate of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly Decimal taker_fee
     """The taker fee rate of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal settlement_fee
-    """The settlement fee rate of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly Decimal funding_rate_long
     """The funding rate for long positions.\n\n:returns: `Decimal`"""
     cdef readonly Decimal funding_rate_short
@@ -88,13 +111,17 @@ cdef class Instrument:
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 
-    cpdef Money calculate_notional(self, Quantity quantity, Decimal close_price)
-    cpdef Money calculate_order_margin(self, Quantity quantity, Price price)
+    cpdef void set_rounding(self, str rounding) except *
+    cpdef CostSpecification get_cost_spec(self, Decimal xrate=*)
+
+    cpdef Money calculate_notional(self, Quantity quantity, Decimal close_price, Decimal xrate=*)
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price, Decimal xrate=*)
     cpdef Money calculate_position_margin(
         self,
         PositionSide side,
         Quantity quantity,
         QuoteTick last,
+        Decimal xrate=*,
     )
 
     cpdef Money calculate_open_value(
@@ -102,6 +129,7 @@ cdef class Instrument:
         PositionSide side,
         Quantity quantity,
         QuoteTick last,
+        Decimal xrate=*,
     )
 
     cpdef Money calculate_commission(
@@ -109,6 +137,7 @@ cdef class Instrument:
         Quantity quantity,
         Decimal avg_price,
         LiquiditySide liquidity_side,
+        Decimal xrate=*,
     )
 
     cdef inline Decimal _get_close_price(self, PositionSide side, QuoteTick last)

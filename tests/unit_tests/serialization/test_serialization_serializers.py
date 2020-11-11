@@ -48,6 +48,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instrument import CostSpecification
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -630,9 +631,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Price("1.00000"),
             Money(0, USD),
             LiquiditySide.MAKER,
-            AUD,
-            USD,
-            False,
+            CostSpecification(USD),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -662,9 +661,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Price("1.00000"),
             Money(0, USD),
             LiquiditySide.TAKER,
-            AUD,
-            USD,
-            False,
+            CostSpecification(USD),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,

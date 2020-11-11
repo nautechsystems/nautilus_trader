@@ -183,7 +183,7 @@ cdef class Decimal:
     @staticmethod
     cdef inline bint _compare(a, b, int op) except *:
         if isinstance(a, float) or isinstance(b, float):
-            return NotImplemented
+            raise NotImplementedError("cannot compare decimals and floats")
         if isinstance(a, Decimal):
             a = <Decimal>a._value
         if isinstance(b, Decimal):

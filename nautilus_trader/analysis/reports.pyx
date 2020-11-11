@@ -174,7 +174,7 @@ cdef class ReportProvider:
             "realized_points": position.realized_points.as_double(),
             "realized_return": position.realized_return.as_double(),
             "realized_pnl": position.realized_pnl.as_double(),
-            "currency": position.base_currency.code,
+            "currency": str(position.cost_spec.settlement_currency),
         }
 
     cdef dict _account_state_to_dict(self, AccountState event):

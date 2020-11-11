@@ -250,12 +250,12 @@ class DecimalTests(unittest.TestCase):
         [1, Decimal(1), Decimal, 1],
         [1.1, Decimal("1.1"), float, 1],
         [Decimal(), 1, Decimal, 0],
-        [Decimal(1), 2, Decimal, 0.5],
+        [Decimal(1), 2, Decimal, Decimal("0.5")],
         [Decimal(2), 1.1, float, 1.8181818181818181],
-        [2, Decimal(1), Decimal, 0.5],
+        [2, Decimal(1), Decimal, Decimal("2.0")],
         [1.0, Decimal(2), float, 0.5],
-        [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
-        [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, 0.9166666666666666],
+        [Decimal("1.1"), Decimal("1.2"), Decimal, Decimal("0.9166666666666666")],
+        [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, Decimal("0.9166666666666666")],
     ])
     def test_division_with_various_types_returns_expected_result(
             self,
@@ -274,12 +274,12 @@ class DecimalTests(unittest.TestCase):
     @parameterized.expand([
         [1, Decimal(1), Decimal, 1],
         [Decimal(), 1, Decimal, 0],
-        [Decimal(1), 2, Decimal, 0.5],
-        [2, Decimal(1), Decimal, 0.5],
+        [Decimal(1), 2, Decimal, Decimal(0)],
+        [2, Decimal(1), Decimal, Decimal(2)],
         [2.1, Decimal("1.1"), float, 1],
         [4.4, Decimal("1.1"), float, 4],
-        [Decimal("1.1"), Decimal("1.2"), Decimal, 0.9166666666666666],
-        [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, 0.9166666666666666],
+        [Decimal("1.1"), Decimal("1.2"), Decimal, Decimal(0)],
+        [Decimal("1.1"), decimal.Decimal("1.2"), Decimal, Decimal(0)],
     ])
     def test_floor_division_with_various_types_returns_expected_result(
             self,
@@ -299,11 +299,11 @@ class DecimalTests(unittest.TestCase):
         [1, Decimal(1), Decimal, 0],
         [Decimal(100), 10, Decimal, 0],
         [Decimal(23), 2, Decimal, 1],
-        [2, Decimal(1), Decimal, 0.5],
+        [2, Decimal(1), Decimal, 0],
         [2.1, Decimal("1.1"), float, 1.0],
         [1.1, Decimal("2.1"), float, 1.1],
-        [Decimal("1.1"), Decimal("0.2"), Decimal, 0.9166666666666666],
-        [Decimal("1.1"), decimal.Decimal("0.2"), Decimal, 0.9166666666666666],
+        [Decimal("1.1"), Decimal("0.2"), Decimal, Decimal("0.1")],
+        [Decimal("1.1"), decimal.Decimal("0.2"), Decimal, Decimal("0.1")],
     ])
     def test_mod_with_various_types_returns_expected_result(
             self,
@@ -314,6 +314,7 @@ class DecimalTests(unittest.TestCase):
         # Arrange
         # Act
         result = value1 % value2
+        print(2.1 % Decimal("1.1"))
 
         # Assert
         self.assertEqual(expected_type, type(result))
