@@ -182,7 +182,6 @@ class TestClockTests(unittest.TestCase):
         clock = TestClock(UNIX_EPOCH)
         name = "TEST_TIMER"
         interval = timedelta(minutes=1)
-        alert_time = clock.utc_now() + interval
         handler = []
 
         # Act

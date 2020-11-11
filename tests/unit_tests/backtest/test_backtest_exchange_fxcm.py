@@ -401,9 +401,9 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
 
         # Assert
-        self.assertEqual(Money(2.00, USD), account_event1.commission)
-        self.assertEqual(Money(2.00, USD), account_event2.commission)
-        self.assertEqual(Money(1.00, USD), account_event3.commission)
+        self.assertEqual(Money(2.00, USD), account_event1.commissions)
+        self.assertEqual(Money(2.00, USD), account_event2.commissions)
+        self.assertEqual(Money(1.00, USD), account_event3.commissions)
         self.assertTrue(Money(999995.00, USD), account.balance())
 
     def test_realized_pnl_contains_commission(self):
@@ -427,7 +427,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Money(2.00, USD), position.realized_pnl)
-        self.assertEqual(Money(2.00, USD), position.commission)
+        self.assertEqual(Money(2.00, USD), position.commissions)
 
     def test_unrealized_pnl(self):
         # Arrange

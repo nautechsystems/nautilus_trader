@@ -14,23 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-from datetime import timedelta
 
 import pytz
 
-from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -45,7 +40,6 @@ from nautilus_trader.model.events import PositionModified
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -56,7 +50,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 
@@ -256,15 +249,14 @@ class TestStubs:
     @staticmethod
     def event_order_filled(
             order,
+            instrument,
+            liquidity_side=LiquiditySide.TAKER,
             position_id=None,
             strategy_id=None,
             fill_price=None,
             filled_qty=None,
             leaves_qty=None,
-            base_currency=USD,
-            quote_currency=JPY,
-            is_inverse=False,
-            commission=0,
+            xrate=None,
     ) -> OrderFilled:
         if position_id is None:
             position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))
@@ -276,6 +268,13 @@ class TestStubs:
             filled_qty = order.quantity
         if leaves_qty is None:
             leaves_qty = Quantity()
+
+        commission = instrument.calculate_commission(
+            quantity=order.quantity,
+            avg_price=fill_price,
+            liquidity_side=liquidity_side,
+            xrate=xrate,
+        )
 
         return OrderFilled(
             TestStubs.account_id(),
@@ -290,11 +289,9 @@ class TestStubs:
             Quantity(order.quantity - leaves_qty),
             leaves_qty,
             order.price if fill_price is None else fill_price,
-            Money(commission, base_currency),
+            Money(-commission.as_decimal(), commission.currency),
             LiquiditySide.TAKER,
-            base_currency,   # Stub event
-            quote_currency,  # Stub event
-            is_inverse,      # Stub event
+            instrument.get_cost_spec(xrate),
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -369,103 +366,3 @@ class TestStubs:
             uuid4(),
             UNIX_EPOCH,
         )
-
-    @staticmethod
-    def position(number=1, entry_price=None) -> Position:
-        if entry_price is None:
-            entry_price = Price("1.00000")
-
-        generator = PositionIdGenerator(id_tag_trader=IdTag("001"))
-
-        for _i in range(number):
-            generator.generate(TestStubs.symbol_audusd_fxcm())
-
-        order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
-        )
-
-        order = order_factory.market(
-            TestStubs.symbol_audusd_fxcm(),
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        position_id = PositionId(TestStubs.symbol_audusd_fxcm().value)
-        order_filled = TestStubs.event_order_filled(
-            order,
-            position_id=position_id,
-            fill_price=entry_price,
-        )
-
-        position = Position(event=order_filled)
-
-        return position
-
-    @staticmethod
-    def position_which_is_closed(position_id, close_price=None) -> Position:
-
-        if close_price is None:
-            close_price = Price("1.0001")
-
-        order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
-        )
-
-        order = order_factory.market(
-            TestStubs.symbol_audusd_fxcm(),
-            OrderSide.SELL,
-            Quantity(100000),
-        )
-
-        filled1 = OrderFilled(
-            TestStubs.account_id(),
-            order.cl_ord_id,
-            OrderId("1"),
-            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
-            position_id,
-            StrategyId("S", "1"),
-            order.symbol,
-            order.side,
-            order.quantity,
-            order.quantity,
-            Quantity(),
-            close_price,
-            Money(0, USD),
-            LiquiditySide.TAKER,
-            USD,    # Stub event
-            USD,    # Stub event
-            False,  # Stub event
-            UNIX_EPOCH + timedelta(minutes=5),
-            uuid4(),
-            UNIX_EPOCH + timedelta(minutes=5),
-        )
-
-        filled2 = OrderFilled(
-            TestStubs.account_id(),
-            order.cl_ord_id,
-            OrderId("2"),
-            ExecutionId(order.cl_ord_id.value.replace('O', 'E')),
-            position_id,
-            StrategyId("S", "1"),
-            order.symbol,
-            OrderSide.BUY,
-            order.quantity,
-            order.quantity,
-            Quantity(),
-            close_price,
-            Money(0, USD),
-            LiquiditySide.TAKER,
-            USD,    # Stub event
-            USD,    # Stub event
-            False,  # Stub event
-            UNIX_EPOCH + timedelta(minutes=5),
-            uuid4(),
-            UNIX_EPOCH + timedelta(minutes=5),
-        )
-
-        position = Position(filled1)
-        position.apply(filled2)
-
-        return position

@@ -25,7 +25,6 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -715,7 +714,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order2, position_id))
 
         position_id_flipped = PositionId("P-000-AUD/USD.FXCM-1F")
-        order_id_flipped = ClientOrderId(order2.cl_ord_id.value + 'F')
+        #  order_id_flipped = ClientOrderId(order2.cl_ord_id.value + 'F')
 
         # Assert
         self.assertTrue(self.cache.position_exists(position_id))

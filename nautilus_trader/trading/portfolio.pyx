@@ -30,6 +30,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -626,7 +627,7 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return Money(0, account.currency)
 
-        cdef double xrate
+        cdef double xrate_settlement_account
         cdef double open_value = 0
         cdef Position position
         cdef Instrument instrument
@@ -644,13 +645,13 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(no quotes for {position.symbol}).")
                 continue  # Cannot calculate
 
-            xrate = self._data.get_xrate(
-                venue=venue,
-                from_currency=instrument.base_currency,
-                to_currency=account.currency,
-                price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+            xrate_quanto, xrate_account = self._calculate_xrates(
+                instrument=instrument,
+                account=account,
+                side=position.entry,
             )
-            if xrate == 0:
+
+            if xrate_account == 0:
                 self._log.error(f"Cannot calculate open value (insufficient data for "
                                 f"{instrument.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
@@ -659,7 +660,8 @@ cdef class Portfolio(PortfolioFacade):
                 position.side,
                 position.quantity,
                 last,
-            ) * xrate
+                xrate_quanto,
+            ) * xrate_account
 
         return Money(open_value, account.currency)
 
@@ -727,7 +729,8 @@ cdef class Portfolio(PortfolioFacade):
         if working_orders is None:
             return  # Nothing to calculate
 
-        cdef double xrate
+        cdef Decimal xrate_quanto
+        cdef Decimal xrate_account
         cdef double margin = 0
         cdef Order order
         cdef Instrument instrument
@@ -741,13 +744,13 @@ cdef class Portfolio(PortfolioFacade):
             if instrument.leverage == 1:
                 continue  # No margin necessary
 
-            xrate = self._data.get_xrate(
-                venue=venue,
-                from_currency=instrument.settlement_currency,
-                to_currency=account.currency,
-                price_type=PriceType.BID if order.side == OrderSide.SELL else PriceType.ASK,
+            xrate_quanto, xrate_account = self._calculate_xrates(
+                instrument=instrument,
+                account=account,
+                side=order.side,
             )
-            if xrate == 0:
+
+            if xrate_account == 0:
                 self._log.error(f"Cannot calculate order initial margin (insufficient data for "
                                 f"{instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
@@ -756,7 +759,8 @@ cdef class Portfolio(PortfolioFacade):
             margin += instrument.calculate_order_margin(
                 order.quantity,
                 order.price,
-            ) * xrate
+                xrate_quanto,
+            ) * xrate_account
 
         cdef Money order_margin = Money(margin, account.currency)
         account.update_order_margin(order_margin)
@@ -775,7 +779,8 @@ cdef class Portfolio(PortfolioFacade):
         if open_positions is None:
             return  # Nothing to calculate
 
-        cdef double xrate
+        cdef Decimal xrate_quanto
+        cdef Decimal xrate_account
         cdef double margin = 0
         cdef Position position
         cdef Instrument instrument
@@ -795,15 +800,15 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(no quotes for {position.symbol}).")
                 continue  # Cannot calculate
 
-            xrate = self._data.get_xrate(
-                venue=venue,
-                from_currency=instrument.base_currency,
-                to_currency=account.currency,
-                price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
+            xrate_quanto, xrate_account = self._calculate_xrates(
+                instrument=instrument,
+                account=account,
+                side=position.entry,
             )
-            if xrate == 0:
-                self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(insufficient data for {instrument.base_currency}/{account.currency}).")
+
+            if xrate_account == 0:
+                self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
+                                f"{instrument.base_currency}/{account.currency}).")
                 continue  # Cannot calculate
 
             # Calculate margin
@@ -811,7 +816,8 @@ cdef class Portfolio(PortfolioFacade):
                 position.side,
                 position.quantity,
                 last,
-            ) * xrate
+                xrate_quanto,
+            ) * xrate_account
 
         cdef Money position_margin = Money(margin, account.currency)
         account.update_position_margin(position_margin)
@@ -843,26 +849,45 @@ cdef class Portfolio(PortfolioFacade):
             return None  # Cannot calculate
 
         cdef double pnl = 0
-        cdef double xrate = 0
+        cdef Decimal xrate_quanto
+        cdef Decimal xrate_account
         cdef Position position
         for position in positions_open:
             if position.symbol != symbol:
                 continue  # Nothing to calculate
 
-            if instrument.base_currency == account.currency:
-                xrate = 1.
-            if xrate == 0:
-                xrate = self._data.get_xrate(
-                    venue=symbol.venue,
-                    from_currency=instrument.base_currency,
-                    to_currency=account.currency,
-                    price_type=PriceType.BID if position.entry == OrderSide.BUY else PriceType.ASK,
-                )
-            if xrate == 0:
+            xrate_quanto, xrate_account = self._calculate_xrates(
+                instrument=instrument,
+                account=account,
+                side=position.entry,
+            )
+
+            if xrate_account == 0:
                 self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
                                 f"{instrument.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
-            pnl += position.unrealized_pnl(last) * xrate
+            pnl += position.unrealized_pnl(last, xrate_quanto) * xrate_account
 
         return Money(pnl, account.currency)
+
+    cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side):
+        cdef Decimal xrate_quanto = None
+        cdef Currency price_currency
+        if instrument.is_quanto:
+            price_currency = instrument.quote_currency if not instrument.is_inverse else instrument.base_currency
+            xrate_quanto = Decimal(str(self._data.get_xrate(
+            venue=instrument.symbol.venue,
+            from_currency=price_currency,
+            to_currency=instrument.settlement_currency,
+            price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
+        )))
+
+        cdef Decimal xrate_account = Decimal(str(self._data.get_xrate(
+            venue=instrument.symbol.venue,
+            from_currency=instrument.settlement_currency,
+            to_currency=account.currency,
+            price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
+        )))
+
+        return xrate_quanto, xrate_account

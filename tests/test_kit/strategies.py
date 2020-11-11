@@ -453,5 +453,4 @@ class EMACross(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_instrument(self.symbol)
         self.unsubscribe_bars(self.bar_type)

@@ -99,111 +99,6 @@ cdef class InstrumentLoader:
     """
 
     @staticmethod
-    def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
-        """
-        Return the BitMEX XBT/USD perpetual contract for backtesting.
-        """
-        return Instrument(
-            symbol=Symbol("XBT/USD", Venue("BITMEX")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
-            base_currency=BTC,
-            quote_currency=USD,
-            settlement_currency=BTC,
-            price_precision=1,
-            size_precision=0,
-            tick_size=Decimal("0.5"),
-            multiplier=Decimal("1"),
-            leverage=leverage,
-            lot_size=Quantity(1),
-            max_quantity=None,
-            min_quantity=None,
-            max_notional=Money("10000000.0", USD),
-            min_notional=Money("1.0", USD),
-            max_price=Price("1000000.0"),
-            min_price=Price("0.5"),
-            margin_initial=Decimal("0.01"),
-            margin_maintenance=Decimal("0.0035"),
-            maker_fee=Decimal("-0.00025"),
-            taker_fee=Decimal("0.00075"),
-            settlement_fee=Decimal("0.0000"),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal("0.003321"),
-            timestamp=UNIX_EPOCH,
-            info={"is_inverse": True},
-        )
-
-    @staticmethod
-    def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
-        """
-        Return the BitMEX ETH/USD perpetual contract for backtesting.
-        """
-        return Instrument(
-            symbol=Symbol("ETH/USD", Venue("BITMEX")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
-            base_currency=ETH,
-            quote_currency=USD,
-            settlement_currency=BTC,
-            price_precision=2,
-            size_precision=0,
-            tick_size=Decimal("0.05"),
-            multiplier=Decimal("1"),
-            leverage=leverage,
-            lot_size=Quantity(1),
-            max_quantity=Quantity("10000000.0"),
-            min_quantity=Quantity("1.0"),
-            max_notional=None,
-            min_notional=None,
-            max_price=Price("1000000.00"),
-            min_price=Price("0.05"),
-            margin_initial=Decimal("0.02"),
-            margin_maintenance=Decimal("0.007"),
-            maker_fee=Decimal("-0.00025"),
-            taker_fee=Decimal("0.00075"),
-            settlement_fee=Decimal(),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal("0.000897"),
-            timestamp=UNIX_EPOCH,
-            info={"is_inverse": True, "is_quanto": True},
-        )
-
-    @staticmethod
-    def ethxbt_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
-        """
-        Return the BitMEX ETH/XBT perpetual contract for backtesting.
-        """
-        return Instrument(
-            symbol=Symbol("ETH/XBT", Venue("BITMEX")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
-            base_currency=ETH,
-            quote_currency=BTC,
-            settlement_currency=BTC,
-            price_precision=5,
-            size_precision=3,
-            tick_size=Decimal("0.00001"),
-            multiplier=Decimal("0.00001"),
-            leverage=leverage,
-            lot_size=Quantity("1"),
-            max_quantity=Quantity(""),
-            min_quantity=Quantity(1),
-            max_notional=None,
-            min_notional=Money(1.00, USD),
-            max_price=Price("10.00"),
-            min_price=Price("0.05"),
-            margin_initial=Decimal("1.00"),
-            margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.00025"),
-            taker_fee=Decimal("0.00075"),
-            settlement_fee=Decimal(),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal(),
-            timestamp=UNIX_EPOCH,
-            info={"is_quanto": True},
-        )
-
-    @staticmethod
     def btcusdt_binance() -> Instrument:
         """
         Return the Binance BTC/USDT instrument for backtesting.
@@ -214,7 +109,8 @@ cdef class InstrumentLoader:
             asset_type=AssetType.SPOT,
             base_currency=BTC,
             quote_currency=USDT,
-            settlement_currency=BTC,
+            settlement_currency=USDT,
+            is_inverse=False,
             price_precision=2,
             size_precision=6,
             tick_size=Decimal("0.01"),
@@ -231,7 +127,6 @@ cdef class InstrumentLoader:
             margin_maintenance=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            settlement_fee=Decimal(),
             funding_rate_long=Decimal(),
             funding_rate_short=Decimal(),
             timestamp=UNIX_EPOCH,
@@ -248,7 +143,8 @@ cdef class InstrumentLoader:
             asset_type=AssetType.SPOT,
             base_currency=ETH,
             quote_currency=USDT,
-            settlement_currency=ETH,
+            settlement_currency=USDT,
+            is_inverse=False,
             price_precision=2,
             size_precision=5,
             tick_size=Decimal("0.01"),
@@ -265,9 +161,110 @@ cdef class InstrumentLoader:
             margin_maintenance=Decimal("0.35"),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            settlement_fee=Decimal("0.000"),
             funding_rate_long=Decimal("0"),
             funding_rate_short=Decimal("0"),
+            timestamp=UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+        """
+        Return the BitMEX XBT/USD perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("XBT/USD", Venue("BITMEX")),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
+            base_currency=BTC,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            is_inverse=True,
+            price_precision=1,
+            size_precision=0,
+            tick_size=Decimal("0.5"),
+            multiplier=Decimal("1"),
+            leverage=leverage,
+            lot_size=Quantity(1),
+            max_quantity=None,
+            min_quantity=None,
+            max_notional=Money("10000000.0", USD),
+            min_notional=Money("1.0", USD),
+            max_price=Price("1000000.0"),
+            min_price=Price("0.5"),
+            margin_initial=Decimal("0.01"),
+            margin_maintenance=Decimal("0.0035"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal("0.003321"),
+            timestamp=UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+        """
+        Return the BitMEX ETH/USD perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("ETH/USD", Venue("BITMEX")),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
+            base_currency=ETH,
+            quote_currency=USD,
+            settlement_currency=BTC,
+            is_inverse=True,
+            price_precision=2,
+            size_precision=0,
+            tick_size=Decimal("0.05"),
+            multiplier=Decimal("1"),
+            leverage=leverage,
+            lot_size=Quantity(1),
+            max_quantity=Quantity("10000000.0"),
+            min_quantity=Quantity("1.0"),
+            max_notional=None,
+            min_notional=None,
+            max_price=Price("1000000.00"),
+            min_price=Price("0.05"),
+            margin_initial=Decimal("0.02"),
+            margin_maintenance=Decimal("0.007"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal("0.000897"),
+            timestamp=UNIX_EPOCH,
+        )
+
+    @staticmethod
+    def ethxbt_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
+        """
+        Return the BitMEX ETH/XBT perpetual contract for backtesting.
+        """
+        return Instrument(
+            symbol=Symbol("ETH/XBT", Venue("BITMEX")),
+            asset_class=AssetClass.CRYPTO,
+            asset_type=AssetType.SWAP,
+            base_currency=ETH,
+            quote_currency=BTC,
+            settlement_currency=BTC,
+            is_inverse=True,
+            price_precision=5,
+            size_precision=3,
+            tick_size=Decimal("0.00001"),
+            multiplier=Decimal("0.00001"),
+            leverage=leverage,
+            lot_size=Quantity("1"),
+            max_quantity=Quantity(""),
+            min_quantity=Quantity(1),
+            max_notional=None,
+            min_notional=Money(1.00, USD),
+            max_price=Price("10.00"),
+            min_price=Price("0.05"),
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal(),
             timestamp=UNIX_EPOCH,
         )
 
@@ -305,7 +302,8 @@ cdef class InstrumentLoader:
             asset_type=AssetType.SPOT,
             base_currency=Currency.from_string_c(base_currency),
             quote_currency=Currency.from_string_c(quote_currency),
-            settlement_currency=Currency.from_string_c(base_currency),
+            settlement_currency=Currency.from_string_c(quote_currency),
+            is_inverse=False,
             price_precision=price_precision,
             size_precision=0,
             tick_size=Decimal(1 / (10 ** price_precision), price_precision),
@@ -322,7 +320,6 @@ cdef class InstrumentLoader:
             margin_maintenance=Decimal("0.1"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
-            settlement_fee=Decimal("0.0000"),
             funding_rate_long=Decimal("0.0000"),
             funding_rate_short=Decimal("0.0000"),
             timestamp=UNIX_EPOCH,
