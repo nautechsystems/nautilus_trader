@@ -110,6 +110,7 @@ class ExecutionClientTests(unittest.TestCase):
 
         fill = TestStubs.event_order_filled(
             order,
+            AUDUSD_FXCM,
             PositionId("P-123456"),
             StrategyId("S", "001"),
             Price("1.00001"),

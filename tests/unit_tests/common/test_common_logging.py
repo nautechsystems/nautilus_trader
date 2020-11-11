@@ -65,9 +65,6 @@ class LogLevelParserTests(unittest.TestCase):
 
 class TestLoggerTests(unittest.TestCase):
 
-    def setUp(self):
-        print("\n")
-
     def test_log_verbose_messages_to_console(self):
         # Arrange
         logger = TestLogger(clock=TestClock(), level_console=LogLevel.VERBOSE)

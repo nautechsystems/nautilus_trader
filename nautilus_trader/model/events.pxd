@@ -199,7 +199,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Decimal avg_price
     """The average fill price of the event.\n\n:returns: `Decimal`"""
     cdef readonly Money commission
-    """The commissions generated from the fill event.\n\n:returns: `Money`"""
+    """The commission generated from the fill event.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
     cdef readonly CostSpecification cost_spec

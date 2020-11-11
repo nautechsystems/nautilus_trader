@@ -27,6 +27,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -401,9 +402,9 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
 
         # Assert
-        self.assertEqual(Money(2.00, USD), account_event1.commissions)
-        self.assertEqual(Money(2.00, USD), account_event2.commissions)
-        self.assertEqual(Money(1.00, USD), account_event3.commissions)
+        self.assertEqual(Money(180.01, JPY), account_event1.commission)
+        self.assertEqual(Money(180.01, JPY), account_event2.commission)
+        self.assertEqual(Money(90.00, JPY), account_event3.commission)
         self.assertTrue(Money(999995.00, USD), account.balance())
 
     def test_realized_pnl_contains_commission(self):
@@ -426,8 +427,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         position = self.exec_engine.cache.positions_open()[0]
 
         # Assert
-        self.assertEqual(Money(2.00, USD), position.realized_pnl)
-        self.assertEqual(Money(2.00, USD), position.commissions)
+        self.assertEqual(Money(180.01, JPY), position.realized_pnl)
+        self.assertEqual(Money(180.01, JPY), position.commissions)
 
     def test_unrealized_pnl(self):
         # Arrange
@@ -469,7 +470,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         # Assert
         position = self.exec_engine.cache.positions_open()[0]
-        self.assertEqual(Money(5555.37, USD), position.unrealized_pnl(reduce_quote))
+        self.assertEqual(Money(500000.00, JPY), position.unrealized_pnl(reduce_quote))
 
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
         # Arrange
@@ -522,4 +523,4 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         position_closed = self.strategy.execution.positions_closed()[0]
         self.assertEqual(PositionSide.SHORT, position_open.side)
         self.assertEqual(Quantity(50000), position_open.quantity)
-        self.assertEqual(Money(11114.74, USD), position_closed.realized_pnl)
+        self.assertEqual(Money(1000380.02, JPY), position_closed.realized_pnl)

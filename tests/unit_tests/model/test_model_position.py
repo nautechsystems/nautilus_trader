@@ -64,7 +64,6 @@ class PositionTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
-        print("\n")
 
     def test_side_from_order_side_given_undefined_raises_value_error(self):
         # Arrange
