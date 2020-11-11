@@ -43,7 +43,6 @@ cdef class Clock:
             The uuid factory for the clocks time events.
 
         """
-        self._log = None
         self._uuid_factory = uuid_factory
         self._timers = {}    # type: {str, Timer}
         self._handlers = {}  # type: {str, callable}
@@ -255,8 +254,6 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        # noinspection: total_seconds()
-        # noinspection PyUnresolvedReferences
         Condition.true(interval.total_seconds() > 0, "interval positive")
         Condition.callable(handler, "handler")
 
@@ -295,15 +292,15 @@ cdef class Clock:
         Condition.valid_string(name, "name")
 
         cdef Timer timer = self._timers.pop(name, None)
-        if timer is None:
-            self._log.warning(f"Cannot cancel timer (no timer found with name '{name}').")
+        if not timer:
+            # No timer with given name
             return
 
         timer.cancel()
         self._handlers.pop(name, None)
         self._remove_timer(timer)
 
-    cpdef void cancel_all_timers(self) except *:
+    cpdef void cancel_timers(self) except *:
         """
         Cancel all timers.
         """
@@ -438,18 +435,18 @@ cdef class TestClock(Clock):
         Condition.not_none(to_time, "to_time")
         Condition.true(to_time >= self._time, "to_time >= self._time")  # Ensure monotonic
 
-        cdef list events = []
+        cdef list event_handlers = []
 
         if self.timer_count == 0 or to_time < self.next_event_time:
             self._time = to_time
-            return events  # No timer events to iterate
+            return event_handlers  # No timer events to iterate
 
         # Iterate timer events
         cdef TestTimer timer
         cdef TimeEvent event
         for timer in self._stack:
             for event in timer.advance(to_time):
-                events.append(TimeEventHandler(event, timer.callback))
+                event_handlers.append(TimeEventHandler(event, timer.callback))
 
         # Remove expired timers
         for timer in self._stack:
@@ -458,7 +455,7 @@ cdef class TestClock(Clock):
 
         self._update_timing()
         self._time = to_time
-        return events
+        return sorted(event_handlers)
 
     cdef Timer _create_timer(
             self,
@@ -505,8 +502,6 @@ cdef class LiveClock(Clock):
         # such as UTC. The preferred way of dealing with times is to always work
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
-        # noinspection: datetime.now
-        # noinspection PyUnresolvedReferences
         return datetime.now(tz=pytz.utc)
 
     cdef Timer _create_timer(

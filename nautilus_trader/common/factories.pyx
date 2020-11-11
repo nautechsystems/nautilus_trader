@@ -285,8 +285,6 @@ cdef class OrderFactory:
             timestamp=self._clock.utc_now(),
         )
 
-    # noinspection: entry_order.price
-    # noinspection PyUnresolvedReferences
     cpdef BracketOrder bracket(
             self,
             Order entry_order,

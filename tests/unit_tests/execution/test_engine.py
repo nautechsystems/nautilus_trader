@@ -16,6 +16,7 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -25,7 +26,6 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -39,8 +39,8 @@ from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class ExecutionEngineTests(unittest.TestCase):
@@ -86,6 +86,8 @@ class ExecutionEngineTests(unittest.TestCase):
             self.venue,
             self.account_id,
             self.exec_engine,
+            self.clock,
+            self.uuid_factory,
             self.logger,
         )
 
@@ -155,7 +157,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -191,7 +193,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -212,7 +214,7 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_FXCM))
 
         expected_position_id = PositionId("O-19700101-000000-000-001-1")  # Stubbed from order id?
 
@@ -243,7 +245,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -256,14 +258,15 @@ class ExecutionEngineTests(unittest.TestCase):
             PositionId.null(),
             order,
             self.uuid_factory.generate(),
-            self.clock.utc_now())
+            self.clock.utc_now(),
+        )
 
         self.exec_engine.execute(submit_order)
 
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_FXCM))
 
         expected_id = PositionId("O-19700101-000000-000-001-1")  # Stubbed from order id
 
@@ -294,13 +297,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -319,7 +322,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_FXCM))
 
         expected_position_id = PositionId("O-19700101-000000-000-001-1")  # Stubbed from order id?
 
@@ -338,10 +341,10 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, expected_position_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, expected_position_id))
 
         # Assert
-        self.assertTrue(self.cache.position_exists(TestStubs.event_order_filled(order1).position_id))
+        self.assertTrue(self.cache.position_exists(TestStubs.event_order_filled(order1, AUDUSD_FXCM,).position_id))
         self.assertTrue(self.cache.is_position_open(expected_position_id))
         self.assertFalse(self.cache.is_position_closed(expected_position_id))
         self.assertEqual(Position, type(self.cache.position(expected_position_id)))
@@ -366,14 +369,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = strategy.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
@@ -395,7 +398,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, position_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_FXCM, position_id))
 
         submit_order2 = SubmitOrder(
             self.venue,
@@ -412,7 +415,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, position_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, position_id))
 
         # # Assert
         self.assertTrue(self.cache.position_exists(position_id))
@@ -453,14 +456,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy2)
 
         order1 = strategy1.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = strategy2.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -496,10 +499,10 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, position1_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_FXCM, position1_id))
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, position2_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, position2_id))
 
         # Assert
         self.assertTrue(self.cache.position_exists(position1_id))
@@ -555,21 +558,21 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy2)
 
         order1 = strategy1.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = strategy1.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order3 = strategy2.order_factory.stop_market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -616,17 +619,17 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, position_id1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_FXCM, position_id1))
 
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, position_id1))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, position_id1))
 
         self.exec_engine.execute(submit_order3)
         self.exec_engine.process(TestStubs.event_order_submitted(order3))
         self.exec_engine.process(TestStubs.event_order_accepted(order3))
-        self.exec_engine.process(TestStubs.event_order_filled(order3, position_id2))
+        self.exec_engine.process(TestStubs.event_order_filled(order3, AUDUSD_FXCM, position_id2))
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above
@@ -666,13 +669,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            AUDUSD_FXCM,
+            AUDUSD_FXCM.symbol,
             OrderSide.SELL,
             Quantity(150000),
         )
@@ -693,7 +696,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
         self.exec_engine.process(TestStubs.event_order_accepted(order1))
-        self.exec_engine.process(TestStubs.event_order_filled(order1, position_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_FXCM, position_id))
 
         submit_order2 = SubmitOrder(
             self.venue,
@@ -710,10 +713,10 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(submit_order2)
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
-        self.exec_engine.process(TestStubs.event_order_filled(order2, position_id))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, position_id))
 
         position_id_flipped = PositionId("P-000-AUD/USD.FXCM-1F")
-        order_id_flipped = ClientOrderId(order2.cl_ord_id.value + 'F')
+        #  order_id_flipped = ClientOrderId(order2.cl_ord_id.value + 'F')
 
         # Assert
         self.assertTrue(self.cache.position_exists(position_id))

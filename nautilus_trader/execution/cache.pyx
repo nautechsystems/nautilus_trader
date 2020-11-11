@@ -186,7 +186,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
 
-            # noinspection PyUnresolvedReferences
             for cl_ord_id in position.order_ids:
                 index_position_orders.add(cl_ord_id)
 
@@ -370,7 +369,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)
 
         # Update database
-        self._database.add_order(order, position_id)  # Logs
+        self._database.add_order(order)  # Logs
 
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """

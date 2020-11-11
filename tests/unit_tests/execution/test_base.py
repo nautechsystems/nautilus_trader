@@ -119,12 +119,12 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.assertRaises(NotImplementedError, self.facade.is_position_closed, PositionId("P-123456"))
 
     def test_positions_total_count_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.orders_total_count)
+        self.assertRaises(NotImplementedError, self.facade.positions_total_count)
 
     def test_positions_open_count_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.positions_open_count)
 
-    def test_positions_completed_count_when_not_implemented_raises_exception(self):
+    def test_positions_closed_count_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.positions_closed_count)
 
     def test_strategy_id_for_order_when_not_implemented_raises_exception(self):

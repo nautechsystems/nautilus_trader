@@ -739,7 +739,7 @@ cdef class TradingStrategy:
 
         # Clean up clock
         cdef list timer_names = self.clock.timer_names()
-        self.clock.cancel_all_timers()
+        self.clock.cancel_timers()
 
         cdef str name
         for name in timer_names:
@@ -835,8 +835,6 @@ cdef class TradingStrategy:
         self._fsm.trigger(ComponentTrigger.DISPOSED)
         self.log.info(f"state={self._fsm.state_string_c()}.")
 
-    # noinspection order_factory.count (attribute exists as @property)
-    # noinspection PyUnresolvedReferences
     cpdef dict save(self):
         """
         Return the strategy state dictionary to be saved.

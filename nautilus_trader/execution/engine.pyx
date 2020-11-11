@@ -681,9 +681,7 @@ cdef class ExecutionEngine:
             fill.avg_price,
             Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
-            fill.base_currency,
-            fill.quote_currency,
-            fill.is_inverse,
+            fill.cost_spec,
             fill.execution_time,
             fill.id,
             fill.timestamp,
@@ -718,9 +716,7 @@ cdef class ExecutionEngine:
             fill.avg_price,
             Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,
-            fill.base_currency,
-            fill.quote_currency,
-            fill.is_inverse,
+            fill.cost_spec,
             fill.execution_time,
             self._uuid_factory.generate(),  # New event identifier
             fill.timestamp,
@@ -779,7 +775,6 @@ cdef class ExecutionEngine:
         cdef Position position
         for position in positions:
             if position.symbol not in counts:
-                # noinspection PyUnresolvedReferences
                 counts[position.symbol] = 0
             counts[position.symbol] += 1
 

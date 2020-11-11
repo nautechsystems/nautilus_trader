@@ -121,6 +121,8 @@ class TraderTests(unittest.TestCase):
             market=self.market,
             account_id=account_id,
             engine=self.exec_engine,
+            clock=clock,
+            uuid_factory=uuid_factory,
             logger=logger,
         )
 

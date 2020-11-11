@@ -291,7 +291,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double win_rate(self) except *:
         """
-        Return the win rate (after commissions) for the portfolio.
+        Return the win rate (after commission) for the portfolio.
 
         Returns
         -------

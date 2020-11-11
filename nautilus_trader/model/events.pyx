@@ -34,6 +34,8 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport CostSpecification
+from nautilus_trader.model.instrument cimport QuantoCostSpecification
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
@@ -806,9 +808,7 @@ cdef class OrderFilled(OrderEvent):
             Decimal avg_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
-            Currency base_currency not None,
-            Currency quote_currency not None,
-            bint is_inverse,
+            CostSpecification cost_spec not None,
             datetime execution_time not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -844,12 +844,8 @@ cdef class OrderFilled(OrderEvent):
             The average price of all fills on this order.
         liquidity_side : LiquiditySide
             The execution liquidity side.
-        base_currency : Currency
-            The order securities base currency.
-        quote_currency : Currency
-            The order securities quote currency.
-        is_inverse : bool
-            If the instrument base/quote is inverse for quantity and PNL.
+        cost_spec : CostSpecification
+            The event instruments cost specification.
         execution_time : datetime
             The execution time.
         event_id : UUID
@@ -880,11 +876,13 @@ cdef class OrderFilled(OrderEvent):
         self.avg_price = avg_price
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.base_currency = base_currency
-        self.quote_currency = quote_currency
-        self.is_inverse = is_inverse
+        self.cost_spec = cost_spec
         self.execution_time = execution_time
         self.is_completion_trigger = leaves_qty == 0  # Completely filled
+
+        if isinstance(cost_spec, QuantoCostSpecification):
+            # noinspection PyUnresolvedReferences
+            assert cost_spec.xrate is not None
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("

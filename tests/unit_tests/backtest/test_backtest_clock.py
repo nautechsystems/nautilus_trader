@@ -33,7 +33,7 @@ class TestClockTests(unittest.TestCase):
         self.clock.register_default_handler(self.handler.append)
 
     def tearDown(self):
-        self.clock.cancel_all_timers()
+        self.clock.cancel_timers()
 
     def test_instantiated_clock(self):
         # Arrange
