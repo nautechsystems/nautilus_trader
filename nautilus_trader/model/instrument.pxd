@@ -27,31 +27,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class CostSpecification:
-    cdef readonly Currency quote_currency
-    """The quote currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly Currency settlement_currency
-    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly bint is_inverse
-    """If the instrument is inverse.\n\n:returns: `Currency`"""
-    cdef readonly bint is_quanto
-    """If the instrument is quanto.\n\n:returns: `Currency`"""
-    cdef readonly str rounding
-    """The rounding rule for costing (decimal module constant).\n\n:returns: `str`"""
-
-
-cdef class InverseCostSpecification(CostSpecification):
-    cdef readonly Currency base_currency
-    """The base currency of the instrument.\n\n:returns: `Currency`"""
-
-
-cdef class QuantoCostSpecification(CostSpecification):
-    cdef readonly Currency base_currency
-    """The base currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly object xrate
-    """The exchange rate from cost currency to settlement currency.\n\n:returns: `decimal.Decimal`"""
-
-
 cdef class Instrument:
     cdef readonly Symbol symbol
     """The symbol of the instrument.\n\n:returns: `Symbol`"""
@@ -140,3 +115,28 @@ cdef class Instrument:
     )
 
     cdef inline object _get_close_price(self, PositionSide side, QuoteTick last)
+
+
+cdef class CostSpecification:
+    cdef readonly Currency quote_currency
+    """The quote currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly Currency settlement_currency
+    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly bint is_inverse
+    """If the instrument is inverse.\n\n:returns: `Currency`"""
+    cdef readonly bint is_quanto
+    """If the instrument is quanto.\n\n:returns: `Currency`"""
+    cdef readonly str rounding
+    """The rounding rule for costing (decimal module constant).\n\n:returns: `str`"""
+
+
+cdef class InverseCostSpecification(CostSpecification):
+    cdef readonly Currency base_currency
+    """The base currency of the instrument.\n\n:returns: `Currency`"""
+
+
+cdef class QuantoCostSpecification(CostSpecification):
+    cdef readonly Currency base_currency
+    """The base currency of the instrument.\n\n:returns: `Currency`"""
+    cdef readonly object xrate
+    """The exchange rate from cost currency to settlement currency.\n\n:returns: `decimal.Decimal`"""

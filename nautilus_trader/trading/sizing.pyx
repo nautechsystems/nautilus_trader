@@ -169,11 +169,15 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_none(equity, "equity")
         Condition.not_none(entry, "price_entry")
         Condition.not_none(stop_loss, "price_stop_loss")
+        Condition.type(risk, decimal.Decimal, "risk")
         Condition.positive(risk, "risk")
+        Condition.type(exchange_rate, decimal.Decimal, "exchange_rate")
         Condition.not_negative(exchange_rate, "xrate")
+        Condition.type(commission_rate, decimal.Decimal, "commission_rate")
         Condition.not_negative(commission_rate, "commission_rate")
-        Condition.positive_int(units, "units")
+        Condition.type(unit_batch_size, decimal.Decimal, "unit_batch_size")
         Condition.not_negative(unit_batch_size, "unit_batch_size")
+        Condition.positive_int(units, "units")
 
         if exchange_rate == 0:
             return Quantity(precision=self.instrument.size_precision)

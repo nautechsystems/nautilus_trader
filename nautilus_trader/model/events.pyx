@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
@@ -855,6 +857,7 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
+        Condition.type(avg_price, decimal.Decimal, "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         super().__init__(
             cl_ord_id,
@@ -879,10 +882,6 @@ cdef class OrderFilled(OrderEvent):
         self.cost_spec = cost_spec
         self.execution_time = execution_time
         self.is_completion_trigger = leaves_qty == 0  # Completely filled
-
-        if isinstance(cost_spec, QuantoCostSpecification):
-            # noinspection PyUnresolvedReferences
-            assert cost_spec.xrate is not None
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("

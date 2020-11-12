@@ -28,108 +28,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class CostSpecification:
-    """
-    Represents a standard instruments cost specification for accurate
-    calculation of PNLs.
-    """
-
-    def __init__(
-            self,
-            Currency quote_currency,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
-        """
-        Initialize a new instance of the `CostSpecification` class.
-
-        Parameters
-        ----------
-        quote_currency : Currency
-            The instruments quote currency.
-
-        """
-        self.quote_currency = quote_currency
-        self.settlement_currency = quote_currency
-        self.rounding = rounding
-
-
-cdef class InverseCostSpecification(CostSpecification):
-    """
-    Represents an inverse instruments cost specification for accurate
-    calculation of PNLs.
-    """
-
-    def __init__(
-            self,
-            Currency base_currency not None,
-            Currency quote_currency not None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
-        """
-        Initialize a new instance of the `InverseCostSpecification` class.
-
-        Parameters
-        ----------
-        base_currency : Currency
-            The instruments base currency.
-        quote_currency : Currency
-            The instruments quote currency.
-        rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
-            module.
-
-        """
-        super().__init__(quote_currency=quote_currency, rounding=rounding)
-
-        self.base_currency = base_currency
-        self.settlement_currency = base_currency
-        self.is_inverse = True
-
-
-cdef class QuantoCostSpecification(CostSpecification):
-    """
-    Represents a quanto instruments cost specification for accurate
-    calculation of PNLs.
-    """
-
-    def __init__(
-            self,
-            Currency base_currency not None,
-            Currency quote_currency not None,
-            Currency settlement_currency not None,
-            bint is_inverse,
-            object xrate not None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
-    ):
-        """
-        Initialize a new instance of the `QuantoCostSpecification` class.
-
-        Parameters
-        ----------
-        base_currency : Currency
-            The instruments base currency.
-        quote_currency : Currency
-            The instruments quote currency.
-        settlement_currency : Currency
-            The instruments settlement currency.
-        is_inverse : bool
-            If the instrument is inverse.
-        xrate : Decimal
-            The current exchange rate between base and settlement currencies.
-        rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
-            module.
-
-        """
-        super().__init__(quote_currency=quote_currency, rounding=rounding)
-
-        self.base_currency = base_currency
-        self.settlement_currency = settlement_currency
-        self.is_inverse = is_inverse
-        self.is_quanto = True
-        self.xrate = xrate
-
-
 cdef class Instrument:
     """
     Represents a tradeable financial market instrument.
@@ -258,8 +156,11 @@ cdef class Instrument:
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
+        Condition.type(tick_size, decimal.Decimal, "tick_size")
         Condition.positive(tick_size, "tick_size")
+        Condition.type(multiplier, decimal.Decimal, "multiplier")
         Condition.positive(multiplier, "multiplier")
+        Condition.type(leverage, decimal.Decimal, "leverage")
         Condition.positive(leverage, "leverage")
         Condition.positive(lot_size, "lot_size")
         if max_quantity:
@@ -274,9 +175,14 @@ cdef class Instrument:
             Condition.positive(max_price, "max_price")
         if min_price:
             Condition.not_negative(min_price, "min_price")
+        Condition.type(margin_initial, decimal.Decimal, "margin_initial")
         Condition.not_negative(margin_initial, "margin_initial")
+        Condition.type(margin_maintenance, decimal.Decimal, "margin_maintenance")
         Condition.not_negative(margin_maintenance, "margin_maintenance")
-        Condition.not_negative(margin_maintenance, "margin_maintenance")
+        Condition.type(maker_fee, decimal.Decimal, "maker_fee")
+        Condition.type(taker_fee, decimal.Decimal, "taker_fee")
+        Condition.type(funding_rate_long, decimal.Decimal, "funding_rate_long")
+        Condition.type(funding_rate_short, decimal.Decimal, "funding_rate_short")
 
         self.symbol = symbol
         self.asset_class = asset_class
@@ -348,7 +254,7 @@ cdef class Instrument:
 
         """
         if self.is_quanto:
-            Condition.not_none(xrate, "xrate")
+            Condition.type(xrate, decimal.Decimal, "xrate")
 
             return QuantoCostSpecification(
                 base_currency=self.base_currency,
@@ -397,9 +303,9 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
+        Condition.type(close_price, decimal.Decimal, "close_price")
         Condition.not_none(close_price, "close_price")
         if self.is_quanto:
-            Condition.not_none(xrate, "xrate")
             Condition.type(xrate, decimal.Decimal, "xrate")
 
         if self.is_inverse:
@@ -449,7 +355,7 @@ cdef class Instrument:
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        notional = self.calculate_notional(quantity, price, xrate)
+        notional = self.calculate_notional(quantity, price.as_decimal(), xrate)
         margin = notional / self.leverage * self.margin_initial
         margin += notional * self.taker_fee * 2
 
@@ -566,9 +472,8 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The quantity for the transaction.
-        avg_price : Price
-            The average transaction price (only applicable for inverse
-            instruments, else ignored).
+        avg_price : decimal.Decimal
+            The average transaction price.
         liquidity_side : LiquiditySide
             The liquidity side for the transaction.
         xrate : Decimal, optional
@@ -589,6 +494,7 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
+        Condition.type(avg_price, decimal.Decimal, "avg_price")
         Condition.not_none(avg_price, "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         # xrate checked in calculate_notional
@@ -613,3 +519,106 @@ cdef class Instrument:
         else:
             raise RuntimeError(f"invalid PositionSide, "
                                f"was {PositionSideParser.to_string(side)}")
+
+
+
+cdef class CostSpecification:
+    """
+    Represents a standard instruments cost specification for accurate
+    calculation of PNLs.
+    """
+
+    def __init__(
+            self,
+            Currency quote_currency,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
+        """
+        Initialize a new instance of the `CostSpecification` class.
+
+        Parameters
+        ----------
+        quote_currency : Currency
+            The instruments quote currency.
+
+        """
+        self.quote_currency = quote_currency
+        self.settlement_currency = quote_currency
+        self.rounding = rounding
+
+
+cdef class InverseCostSpecification(CostSpecification):
+    """
+    Represents an inverse instruments cost specification for accurate
+    calculation of PNLs.
+    """
+
+    def __init__(
+            self,
+            Currency base_currency not None,
+            Currency quote_currency not None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
+        """
+        Initialize a new instance of the `InverseCostSpecification` class.
+
+        Parameters
+        ----------
+        base_currency : Currency
+            The instruments base currency.
+        quote_currency : Currency
+            The instruments quote currency.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module.
+
+        """
+        super().__init__(quote_currency=quote_currency, rounding=rounding)
+
+        self.base_currency = base_currency
+        self.settlement_currency = base_currency
+        self.is_inverse = True
+
+
+cdef class QuantoCostSpecification(CostSpecification):
+    """
+    Represents a quanto instruments cost specification for accurate
+    calculation of PNLs.
+    """
+
+    def __init__(
+            self,
+            Currency base_currency not None,
+            Currency quote_currency not None,
+            Currency settlement_currency not None,
+            bint is_inverse,
+            object xrate not None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
+        """
+        Initialize a new instance of the `QuantoCostSpecification` class.
+
+        Parameters
+        ----------
+        base_currency : Currency
+            The instruments base currency.
+        quote_currency : Currency
+            The instruments quote currency.
+        settlement_currency : Currency
+            The instruments settlement currency.
+        is_inverse : bool
+            If the instrument is inverse.
+        xrate : Decimal
+            The current exchange rate between base and settlement currencies.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module.
+
+        """
+        super().__init__(quote_currency=quote_currency, rounding=rounding)
+
+        self.base_currency = base_currency
+        self.settlement_currency = settlement_currency
+        self.is_inverse = is_inverse
+        self.is_quanto = True
+        self.xrate = xrate

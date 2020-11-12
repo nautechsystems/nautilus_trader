@@ -595,7 +595,7 @@ cdef class SimulatedExchange:
                 mid_price = mid_prices.get(instrument.symbol)
                 if mid_price is None:
                     market = self._market[instrument.symbol]
-                    mid_price = (market.ask.as_decimal() + market.bid.as_decimal()) / 2
+                    mid_price = (market.ask + market.bid) / 2
                     mid_prices[instrument.symbol] = mid_price
                 interest_rate = self.rollover_calculator.calc_overnight_rate(
                     position.symbol,
@@ -889,7 +889,7 @@ cdef class SimulatedExchange:
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
-            fill_price,
+            fill_price.as_decimal(),
             liquidity_side,
             xrate,
         )
@@ -907,7 +907,7 @@ cdef class SimulatedExchange:
             order.quantity,
             order.quantity,
             Quantity(),  # Not modeling partial fills yet
-            fill_price,
+            fill_price.as_decimal(),
             commission,
             liquidity_side,
             instrument.get_cost_spec(xrate),
