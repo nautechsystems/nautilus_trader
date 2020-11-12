@@ -18,9 +18,9 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -95,9 +95,9 @@ class MoneyTests(unittest.TestCase):
         [decimal.Decimal(), Money(0, USD)],
         [decimal.Decimal("1.1"), Money("1.1", USD)],
         [decimal.Decimal("-1.1"), Money("-1.1", USD)],
-        [Decimal(), Money(0, USD)],
-        [Decimal("1.1"), Money("1.1", USD)],
-        [Decimal("-1.1"), Money("-1.1", USD)],
+        [BaseDecimal(), Money(0, USD)],
+        [BaseDecimal("1.1"), Money("1.1", USD)],
+        [BaseDecimal("-1.1"), Money("-1.1", USD)],
     ])
     def test_instantiate_with_various_valid_inputs_returns_expected_money(self, value, expected):
         # Arrange

@@ -35,7 +35,6 @@ from scipy.stats import kurtosis
 from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.datetime cimport datetime_date
 from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.model.events cimport AccountState
@@ -195,9 +194,9 @@ cdef class PerformanceAnalyzer:
         if self._account_starting_balance is None or self._account_starting_balance.as_decimal() == 0:
             # Protect divide by zero
             return 0.
-        cdef Decimal current = self._account_balance
-        cdef Decimal starting = self._account_starting_balance
-        cdef Decimal difference = current - starting
+        current = self._account_balance
+        starting = self._account_starting_balance
+        difference = current - starting
 
         return (difference / starting) * 100
 

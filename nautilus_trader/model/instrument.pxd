@@ -15,7 +15,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -49,8 +48,8 @@ cdef class InverseCostSpecification(CostSpecification):
 cdef class QuantoCostSpecification(CostSpecification):
     cdef readonly Currency base_currency
     """The base currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly Decimal xrate
-    """The exchange rate from cost currency to settlement currency."""
+    cdef readonly object xrate
+    """The exchange rate from cost currency to settlement currency.\n\n:returns: `decimal.Decimal`"""
 
 
 cdef class Instrument:
@@ -76,12 +75,12 @@ cdef class Instrument:
     """The size precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int cost_precision
     """The cost precision of the instrument.\n\n:returns: `int`"""
-    cdef readonly Decimal tick_size
-    """The tick size of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal multiplier
-    """The multiplier of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal leverage
-    """The leverage of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly object tick_size
+    """The tick size of the instrument.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object multiplier
+    """The multiplier of the instrument.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object leverage
+    """The leverage of the instrument.\n\n:returns: `decimal.Decimal`"""
     cdef readonly Quantity lot_size
     """The lot size of the instrument.\n\n:returns: `Quantity`"""
     cdef readonly Quantity max_quantity
@@ -96,32 +95,32 @@ cdef class Instrument:
     """The maximum printable price for the instrument.\n\n:returns: `Price`"""
     cdef readonly Price min_price
     """The minimum printable price for the instrument.\n\n:returns: `Price`"""
-    cdef readonly Decimal margin_initial
-    """The initial margin rate of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal margin_maintenance
+    cdef readonly object margin_initial
+    """The initial margin rate of the instrument.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object margin_maintenance
     """The maintenance margin rate of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal maker_fee
-    """The maker fee rate of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal taker_fee
-    """The taker fee rate of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal funding_rate_long
-    """The funding rate for long positions.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal funding_rate_short
-    """The funding rate for short positions.\n\n:returns: `Decimal`"""
+    cdef readonly object maker_fee
+    """The maker fee rate of the instrument.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object taker_fee
+    """The taker fee rate of the instrument.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object funding_rate_long
+    """The funding rate for long positions.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object funding_rate_short
+    """The funding rate for short positions.\n\n:returns: `decimal.Decimal`"""
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 
     cpdef void set_rounding(self, str rounding) except *
-    cpdef CostSpecification get_cost_spec(self, Decimal xrate=*)
+    cpdef CostSpecification get_cost_spec(self, object xrate=*)
 
-    cpdef Money calculate_notional(self, Quantity quantity, Decimal close_price, Decimal xrate=*)
-    cpdef Money calculate_order_margin(self, Quantity quantity, Price price, Decimal xrate=*)
+    cpdef Money calculate_notional(self, Quantity quantity, object close_price, object xrate=*)
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price, object xrate=*)
     cpdef Money calculate_position_margin(
         self,
         PositionSide side,
         Quantity quantity,
         QuoteTick last,
-        Decimal xrate=*,
+        object xrate=*,
     )
 
     cpdef Money calculate_open_value(
@@ -129,15 +128,15 @@ cdef class Instrument:
         PositionSide side,
         Quantity quantity,
         QuoteTick last,
-        Decimal xrate=*,
+        object xrate=*,
     )
 
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        Decimal avg_price,
+        object avg_price,
         LiquiditySide liquidity_side,
-        Decimal xrate=*,
+        object xrate=*,
     )
 
-    cdef inline Decimal _get_close_price(self, PositionSide side, QuoteTick last)
+    cdef inline object _get_close_price(self, PositionSide side, QuoteTick last)

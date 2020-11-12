@@ -802,10 +802,10 @@ cdef class OrderFilled(OrderEvent):
             StrategyId strategy_id not None,
             Symbol symbol not None,
             OrderSide order_side,
-            Quantity filled_qty not None,
+            Quantity fill_qty not None,
             Quantity cumulative_qty not None,
             Quantity leaves_qty not None,
-            Decimal avg_price not None,
+            object avg_price not None,
             Money commission not None,
             LiquiditySide liquidity_side,
             CostSpecification cost_spec not None,
@@ -834,14 +834,14 @@ cdef class OrderFilled(OrderEvent):
             The order symbol.
         order_side : OrderSide
             The execution order side.
-        filled_qty : Quantity
+        fill_qty : Quantity
             The filled quantity for this execution.
         cumulative_qty : Quantity
             The total filled quantity for the order.
         leaves_qty : Quantity
             The quantity open for further execution.
-        avg_price : Decimal
-            The average price of all fills on this order.
+        avg_price : decimal.Decimal
+            The average price of the fill.
         liquidity_side : LiquiditySide
             The execution liquidity side.
         cost_spec : CostSpecification
@@ -869,7 +869,7 @@ cdef class OrderFilled(OrderEvent):
         self.strategy_id = strategy_id
         self.symbol = symbol
         self.order_side = order_side
-        self.filled_qty = filled_qty
+        self.fill_qty = fill_qty
         self.cumulative_qty = cumulative_qty
         self.leaves_qty = leaves_qty
         self.is_partial_fill = leaves_qty > 0
@@ -894,7 +894,8 @@ cdef class OrderFilled(OrderEvent):
                 f"symbol={self.symbol}, "
                 f"side={OrderSideParser.to_string(self.order_side)}"
                 f"-{LiquiditySideParser.to_string(self.liquidity_side)}, "
-                f"filled_qty={self.filled_qty.to_string()}, "
+                f"fill_qty={self.fill_qty.to_string()}, "
+                f"cum_qty={self.cumulative_qty.to_string()}, "
                 f"leaves_qty={self.leaves_qty.to_string()}, "
                 f"avg_price={self.avg_price}, "
                 f"commission={self.commission.to_string()}, "

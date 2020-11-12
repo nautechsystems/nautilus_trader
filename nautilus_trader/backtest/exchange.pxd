@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -72,7 +74,7 @@ cdef class SimulatedExchange:
     cdef readonly Money account_balance_activity_day
     cdef readonly ExchangeRateCalculator xrate_calculator
     cdef readonly RolloverInterestCalculator rollover_calculator
-    cdef readonly double rollover_spread
+    cdef readonly object rollover_spread  # type: decimal.Decimal
     cdef readonly Money total_commissions
     cdef readonly Money total_rollover
     cdef readonly bint generate_position_ids

@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.decimal import Decimal
 
 
 class ConditionTests(unittest.TestCase):

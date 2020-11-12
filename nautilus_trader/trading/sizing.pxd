@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -30,20 +29,20 @@ cdef class PositionSizer:
         Price entry,
         Price stop_loss,
         Money equity,
-        Decimal risk,
-        Decimal commission_rate=*,
-        Decimal exchange_rate=*,
-        Decimal hard_limit=*,
+        object risk,
+        object commission_rate=*,
+        object exchange_rate=*,
+        object hard_limit=*,
+        object unit_batch_size=*,
         int units=*,
-        int unit_batch_size=*,
     )
 
-    cdef Decimal _calculate_risk_ticks(self, Price entry, Price stop_loss)
-    cdef Decimal _calculate_riskable_money(
+    cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss)
+    cdef object _calculate_riskable_money(
         self,
         Money equity,
-        Decimal risk,
-        Decimal commission_rate,
+        object risk,
+        object commission_rate,
     )
 
 

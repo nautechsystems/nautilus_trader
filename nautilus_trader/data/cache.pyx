@@ -17,6 +17,8 @@
 The `DataCache` provides an interface for consuming cached market data.
 """
 
+import decimal
+
 from collections import deque
 
 from nautilus_trader.common.logging cimport Logger
@@ -596,13 +598,13 @@ cdef class DataCache(DataCacheFacade):
 
         return self.bar_count(bar_type) > 0
 
-    cpdef double get_xrate(
+    cpdef object get_xrate(
             self,
             Venue venue,
             Currency from_currency,
             Currency to_currency,
             PriceType price_type=PriceType.MID,
-    ) except *:
+    ):
         """
         Return the calculated exchange rate for the given currencies.
 
@@ -619,7 +621,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        double
+        decimal.Decimal
 
         Raises
         ------
@@ -631,7 +633,7 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(to_currency, "to_currency")
 
         if from_currency == to_currency:
-            return 1.  # No conversion necessary
+            return decimal.Decimal(1)  # No conversion necessary
 
         cdef tuple quotes = self._build_quote_table(venue)
 
@@ -658,8 +660,8 @@ cdef class DataCache(DataCacheFacade):
                 # No quotes for symbol
                 continue
 
-            bid_quotes[base_quote] = ticks[0].bid.as_double()
-            ask_quotes[base_quote] = ticks[0].ask.as_double()
+            bid_quotes[base_quote] = ticks[0].bid.as_decimal()
+            ask_quotes[base_quote] = ticks[0].ask.as_decimal()
 
         return bid_quotes, ask_quotes
 

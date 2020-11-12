@@ -16,7 +16,7 @@
 import decimal
 import unittest
 
-from nautilus_trader.core.decimal import Decimal
+from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects import Price
 from tests.test_kit.performance import PerformanceHarness
 
@@ -25,8 +25,8 @@ _PRECISION_5_CONTEXT = decimal.Context(prec=5)
 _BUILTIN_DECIMAL1 = decimal.Decimal("1.00000")
 _BUILTIN_DECIMAL2 = decimal.Decimal("1.00001")
 
-_DECIMAL1 = Decimal("1")
-_DECIMAL2 = Decimal("1.00001")
+_DECIMAL1 = BaseDecimal("1")
+_DECIMAL2 = BaseDecimal("1.00001")
 
 
 class DecimalTesting:
@@ -37,7 +37,7 @@ class DecimalTesting:
 
     @staticmethod
     def make_decimal():
-        Decimal("1.23456")
+        BaseDecimal("1.23456")
 
     @staticmethod
     def float_comparisons():

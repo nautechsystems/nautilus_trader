@@ -15,7 +15,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -188,16 +187,16 @@ cdef class OrderFilled(OrderEvent):
     """The order symbol of the event.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
     """The order side of the event.\n\n:returns: `OrderSide`"""
-    cdef readonly Quantity filled_qty
-    """The order filled quantity of the event.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity fill_qty
+    """The fill quantity of the event.\n\n:returns: `Quantity`"""
     cdef readonly Quantity cumulative_qty
     """The order cumulative filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order quantity remaining to be filled.\n\n:returns: `Quantity`"""
     cdef readonly bint is_partial_fill
     """If the event represents a partial fill of the order.\n\n:returns: `bool`"""
-    cdef readonly Decimal avg_price
-    """The average fill price of the event.\n\n:returns: `Decimal`"""
+    cdef readonly object avg_price
+    """The average fill price of the event.\n\n:returns: `decimal.Decimal`"""
     cdef readonly Money commission
     """The commission generated from the fill event.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side

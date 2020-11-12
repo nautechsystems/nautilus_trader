@@ -15,6 +15,7 @@
 
 from itertools import permutations
 import os
+import decimal
 
 import pandas as pd
 
@@ -34,14 +35,14 @@ cdef class ExchangeRateCalculator:
     An exchange rate is the value of one asset versus that of another.
     """
 
-    cpdef double get_rate(
+    cpdef object get_rate(
             self,
             Currency from_currency,
             Currency to_currency,
             PriceType price_type,
             dict bid_quotes,
             dict ask_quotes
-    ) except *:
+    ):
         """
         Return the calculated exchange rate for the given price type using the
         given dictionary of bid and ask quotes.
@@ -55,13 +56,13 @@ cdef class ExchangeRateCalculator:
         price_type : PriceType
             The price type for conversion.
         bid_quotes : dict
-            The dictionary of currency pair bid quotes dict[str, double].
+            The dictionary of currency pair bid quotes dict[str, decimal.Decimal].
         ask_quotes : dict
-            The dictionary of currency pair ask quotes dict[str, double].
+            The dictionary of currency pair ask quotes dict[str, decimal.Decimal].
 
         Returns
         -------
-        double
+        decimal.Decimal
 
         Raises
         ------
@@ -82,7 +83,7 @@ cdef class ExchangeRateCalculator:
         Condition.true(price_type != PriceType.UNDEFINED and price_type != PriceType.LAST, "price_type not UNDEFINED or LAST")
 
         if from_currency == to_currency:
-            return 1.  # No conversion necessary
+            return decimal.Decimal(1)  # No conversion necessary
 
         if price_type == PriceType.BID:
             calculation_quotes = bid_quotes
@@ -90,14 +91,13 @@ cdef class ExchangeRateCalculator:
             calculation_quotes = ask_quotes
         elif price_type == PriceType.MID:
             calculation_quotes = {
-                s: (bid_quotes[s] + ask_quotes[s]) / 2.0 for s in bid_quotes
-            }  # type: {str, float}
+                s: (bid_quotes[s] + ask_quotes[s]) / decimal.Decimal(2) for s in bid_quotes
+            }  # type: {str, decimal.Decimal}
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type "
                              f"{PriceTypeParser.to_string(price_type)}")
 
         cdef str symbol
-        cdef double quote
         cdef tuple pieces
         cdef str code_lhs
         cdef str code_rhs
@@ -106,6 +106,8 @@ cdef class ExchangeRateCalculator:
 
         # Build quote table
         for symbol, quote in calculation_quotes.items():
+            assert isinstance(quote, decimal.Decimal), f"quote must be type decimal.Decimal, was {type(quote)}"
+
             # Get symbol codes
             pieces = symbol.partition('/')
             code_lhs = pieces[0]
@@ -119,8 +121,8 @@ cdef class ExchangeRateCalculator:
             if code_rhs not in exchange_rates:
                 exchange_rates[code_rhs] = {}
             # Add currency rates
-            exchange_rates[code_lhs][code_lhs] = 1.
-            exchange_rates[code_rhs][code_rhs] = 1.
+            exchange_rates[code_lhs][code_lhs] = decimal.Decimal(1)
+            exchange_rates[code_rhs][code_rhs] = decimal.Decimal(1)
             exchange_rates[code_lhs][code_rhs] = quote
 
         # Generate possible currency pairs from all symbols
@@ -137,23 +139,20 @@ cdef class ExchangeRateCalculator:
             if perm[0] not in exchange_rates_perm1:
                 # Search for inverse
                 if perm[1] in exchange_rates_perm0:
-                    exchange_rates_perm1[perm[0]] = 1. / exchange_rates_perm0[perm[1]]
+                    exchange_rates_perm1[perm[0]] = decimal.Decimal(1) / exchange_rates_perm0[perm[1]]
             if perm[1] not in exchange_rates_perm0:
                 # Search for inverse
                 if perm[0] in exchange_rates_perm1:
-                    exchange_rates_perm0[perm[1]] = 1. / exchange_rates_perm1[perm[0]]
+                    exchange_rates_perm0[perm[1]] = decimal.Decimal(1) / exchange_rates_perm1[perm[0]]
 
-        cdef double xrate
         cdef dict quotes = exchange_rates.get(from_currency.code)
         if quotes is not None:
-            xrate = quotes.get(to_currency.code, 0)
-            if xrate > 0:
+            xrate = quotes.get(to_currency.code)
+            if xrate is not None:
                 return xrate
 
         # Exchange rate not yet calculated
         # Continue to calculate remaining exchange rates
-        cdef double common_rate1
-        cdef double common_rate2
         cdef dict exchange_rates_code
         for perm in code_perms:
             if perm[0] in exchange_rates[perm[1]]:
@@ -183,9 +182,9 @@ cdef class ExchangeRateCalculator:
         quotes = exchange_rates.get(from_currency.code)
         if quotes is None:
             # Not enough data
-            return 0
+            return decimal.Decimal()
 
-        return quotes.get(to_currency.code, 0)
+        return quotes.get(to_currency.code, decimal.Decimal())
 
 
 cdef class RolloverInterestCalculator:
@@ -242,7 +241,7 @@ cdef class RolloverInterestCalculator:
         """
         return self._rate_data
 
-    cpdef double calc_overnight_rate(self, Symbol symbol, date date) except *:
+    cpdef object calc_overnight_rate(self, Symbol symbol, date date):
         """
         Return the rollover interest rate between the given base currency and quote currency.
 
@@ -255,7 +254,7 @@ cdef class RolloverInterestCalculator:
 
         Returns
         -------
-        double
+        decimal.Decimal
 
         Raises
         ------
@@ -287,7 +286,4 @@ cdef class RolloverInterestCalculator:
         if base_data.empty and quote_data.empty:
             raise RuntimeError(f"Cannot find rollover interest rate for {symbol} on {date}.")
 
-        cdef double base_interest = base_data['Value']
-        cdef double quote_interest = quote_data['Value']
-
-        return ((base_interest - quote_interest) / 365) / 100
+        return decimal.Decimal(((<double>base_data['Value'] - <double>quote_data['Value']) / 365) / 100)

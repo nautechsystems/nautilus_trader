@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import unittest
 
 from parameterized import parameterized
@@ -20,7 +21,6 @@ from parameterized import parameterized
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
@@ -649,7 +649,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
         self.assertEqual(Price("1.00001"), order.avg_price)
-        self.assertEqual(Decimal("0.00001"), order.slippage)
+        self.assertEqual(decimal.Decimal("0.00001"), order.slippage)
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
@@ -699,6 +699,6 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Quantity(50000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
         self.assertEqual(Price("0.999999"), order.avg_price)
-        self.assertEqual(Decimal("-0.000001"), order.slippage)
+        self.assertEqual(decimal.Decimal("-0.000001"), order.slippage)
         self.assertFalse(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
