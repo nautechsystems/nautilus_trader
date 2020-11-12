@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
+import decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -49,7 +49,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
+        instrument = InstrumentLoader.xbtusd_bitmex(leverage=decimal.Decimal(100))
 
         # Act
         margin = instrument.calculate_order_margin(
@@ -85,7 +85,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
+        instrument = InstrumentLoader.xbtusd_bitmex(leverage=decimal.Decimal(100))
 
         last = QuoteTick(
             instrument.symbol,
@@ -159,7 +159,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(100000),
-            Price("11450.50"),
+            decimal.Decimal("11450.50"),
             LiquiditySide.MAKER,
         )
 
@@ -173,7 +173,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(1500000),
-            Price("0.80050"),
+            decimal.Decimal("0.80050"),
             LiquiditySide.TAKER,
         )
 
@@ -187,7 +187,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(100000),
-            Price("11450.50"),
+            decimal.Decimal("11450.50"),
             LiquiditySide.TAKER,
         )
 
@@ -201,7 +201,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(2200000),
-            Price("120.310"),
+            decimal.Decimal("120.310"),
             LiquiditySide.TAKER,
         )
 

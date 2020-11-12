@@ -412,7 +412,7 @@ class BaseDecimalTests(unittest.TestCase):
     def test_as_decimal_with_various_values_returns_expected_value(self, value, expected):
         # Arrange
         # Act
-        result = BaseDecimal(value).as_decimal()
+        result = BaseDecimal(value)
 
         # Assert
         self.assertEqual(expected, result)

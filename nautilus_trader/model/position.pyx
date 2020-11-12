@@ -376,7 +376,6 @@ cdef class Position:
         Condition.not_none(avg_close, "avg_close")
         Condition.not_none(quantity, "quantity")
         if self.cost_spec.is_quanto:
-            Condition.not_none(xrate, "xrate")
             Condition.type(xrate, decimal.Decimal, "xrate")
 
         if self.cost_spec.is_inverse:
