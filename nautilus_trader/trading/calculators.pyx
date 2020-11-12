@@ -195,39 +195,31 @@ cdef class RolloverInterestCalculator:
     interest rate data csv (data since 1956).
     """
 
-    def __init__(self, str short_term_interest_csv_path not None="default"):
+    def __init__(self, data not None: pd.DataFrame):
         """
         Initialize a new instance of the `RolloverInterestCalculator` class.
 
         Parameters
         ----------
-        short_term_interest_csv_path : str
-            The path to the short term interest rate data csv.
+        data : str
+            The short term interest rate data.
 
         """
-        if short_term_interest_csv_path == "default":
-            short_term_interest_csv_path = os.path.join(
-                PACKAGE_ROOT + "/_internal/rates/", "short-term-interest.csv"
-            )
-
-        self._exchange_calculator = ExchangeRateCalculator()
-
-        csv_rate_data = pd.read_csv(short_term_interest_csv_path)
         self._rate_data = {
-            'AUD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'AUS'],
-            'CAD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CAN'],
-            'CHF': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHE'],
-            'EUR': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'EA19'],
-            'USD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'USA'],
-            'JPY': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'JPN'],
-            'NZD': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NZL'],
-            'GBP': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'GBR'],
-            'RUB': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'RUS'],
-            'NOK': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'NOR'],
-            'CNY': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
-            'CNH': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'CHN'],
-            'MXN': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'MEX'],
-            'ZAR': csv_rate_data.loc[csv_rate_data['LOCATION'] == 'ZAF'],
+            'AUD': data.loc[data['LOCATION'] == 'AUS'],
+            'CAD': data.loc[data['LOCATION'] == 'CAN'],
+            'CHF': data.loc[data['LOCATION'] == 'CHE'],
+            'EUR': data.loc[data['LOCATION'] == 'EA19'],
+            'USD': data.loc[data['LOCATION'] == 'USA'],
+            'JPY': data.loc[data['LOCATION'] == 'JPN'],
+            'NZD': data.loc[data['LOCATION'] == 'NZL'],
+            'GBP': data.loc[data['LOCATION'] == 'GBR'],
+            'RUB': data.loc[data['LOCATION'] == 'RUS'],
+            'NOK': data.loc[data['LOCATION'] == 'NOR'],
+            'CNY': data.loc[data['LOCATION'] == 'CHN'],
+            'CNH': data.loc[data['LOCATION'] == 'CHN'],
+            'MXN': data.loc[data['LOCATION'] == 'MEX'],
+            'ZAR': data.loc[data['LOCATION'] == 'ZAF'],
         }
 
     cpdef object get_rate_data(self):

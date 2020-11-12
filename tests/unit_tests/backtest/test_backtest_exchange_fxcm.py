@@ -297,7 +297,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             random_seed=None,
         )
 
-        self.exchange.fill_model = fill_model
+        self.exchange.change_fill_model(fill_model)
         self.strategy.start()
 
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)

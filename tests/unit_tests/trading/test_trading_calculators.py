@@ -15,7 +15,10 @@
 
 import datetime
 import decimal
+import os
 import unittest
+
+import pandas as pd
 
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -24,6 +27,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.trading.calculators import ExchangeRateCalculator
 from nautilus_trader.trading.calculators import RolloverInterestCalculator
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -197,9 +201,13 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
 class RolloverInterestCalculatorTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        self.data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+
     def test_rate_dataframe_returns_correct_dataframe(self):
         # Arrange
-        calculator = RolloverInterestCalculator()
+        calculator = RolloverInterestCalculator(data=self.data)
 
         # Act
         rate_data = calculator.get_rate_data()
@@ -209,7 +217,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
     def test_calc_overnight_fx_rate_with_audusd_on_unix_epoch_returns_correct_rate(self):
         # Arrange
-        calculator = RolloverInterestCalculator()
+        calculator = RolloverInterestCalculator(data=self.data)
 
         # Act
         rate = calculator.calc_overnight_rate(AUDUSD_FXCM, UNIX_EPOCH)
@@ -219,7 +227,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
     def test_calc_overnight_fx_rate_with_audusd_on_later_date_returns_correct_rate(self):
         # Arrange
-        calculator = RolloverInterestCalculator()
+        calculator = RolloverInterestCalculator(data=self.data)
 
         # Act
         rate = calculator.calc_overnight_rate(AUDUSD_FXCM, datetime.date(2018, 2, 1))
@@ -229,7 +237,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
     def test_calc_overnight_fx_rate_with_audusd_on_impossible_dates_returns_zero(self):
         # Arrange
-        calculator = RolloverInterestCalculator()
+        calculator = RolloverInterestCalculator(data=self.data)
 
         # Act
         # Assert
