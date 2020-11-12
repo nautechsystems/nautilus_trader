@@ -23,7 +23,6 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -47,9 +46,9 @@ cdef class BarBuilder:
     cdef Price _high
     cdef Price _low
     cdef Price _close
-    cdef Decimal volume
+    cdef object volume
 
-    cpdef void update(self, Price price, Decimal size, datetime timestamp) except *
+    cpdef void update(self, Price price, Quantity size, datetime timestamp) except *
     cpdef void reset(self) except *
     cpdef Bar build(self, datetime close_time=*)
 
@@ -81,8 +80,8 @@ cdef class VolumeBarAggregator(BarAggregator):
 cdef class ValueBarAggregator(BarAggregator):
     cdef readonly int step
     """The aggregators value threshold.\n\n:returns: `int`"""
-    cdef readonly Decimal cum_value
-    """The aggregators current cumulative value.\n\n:returns: `Decimal`"""
+    cdef readonly object cum_value
+    """The aggregators current cumulative value.\n\n:returns: `decimal.Decimal`"""
 
 
 cdef class TimeBarAggregator(BarAggregator):

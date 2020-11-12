@@ -13,11 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport UNIX_EPOCH
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport BTC
@@ -306,7 +306,7 @@ cdef class InstrumentLoader:
             is_inverse=False,
             price_precision=price_precision,
             size_precision=0,
-            tick_size=Decimal(1 / (10 ** price_precision), price_precision),
+            tick_size=Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
             multiplier=Decimal("1"),
             leverage=Decimal("100"),
             lot_size=Quantity("1000"),

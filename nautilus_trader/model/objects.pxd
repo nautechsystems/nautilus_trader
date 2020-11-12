@@ -13,19 +13,39 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.currency cimport Currency
 
 
-cdef class Quantity(Decimal):
+cdef class BaseDecimal:
+    cdef readonly object _value
+
+    cdef inline object _make_decimal_with_rounding(self, value, int precision, str rounding)
+    cdef inline object _make_decimal(self, double value, int precision)
+
+    @staticmethod
+    cdef inline object _extract_value(object obj)
+
+    @staticmethod
+    cdef inline bint _compare(a, b, int op) except *
+
+    @staticmethod
+    cdef inline double _eval_double(double a, double b, int op) except *
+
+    cdef inline int precision_c(self) except *
+
+    cpdef object as_decimal(self)
+    cpdef double as_double(self) except *
+
+
+cdef class Quantity(BaseDecimal):
     cpdef str to_string(self)
 
 
-cdef class Price(Decimal):
+cdef class Price(BaseDecimal):
     pass
 
 
-cdef class Money(Decimal):
+cdef class Money(BaseDecimal):
     cdef readonly Currency currency
     """The currency of the money.\n\n:returns: `Currency`"""
 

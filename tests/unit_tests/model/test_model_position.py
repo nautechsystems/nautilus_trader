@@ -15,6 +15,7 @@
 
 from datetime import datetime
 from datetime import timedelta
+from decimal import Decimal
 import unittest
 
 from parameterized import parameterized
@@ -23,7 +24,6 @@ import pytz
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
@@ -614,7 +614,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill2)
         self.assertEqual(Quantity(29), position.quantity)
         self.assertEqual(Money(-2.88300000, USDT), position.realized_pnl)
-        self.assertEqual(99.41379310344827, position.avg_open.as_double())
+        self.assertEqual(Decimal("99.41379310344827586206896552"), position.avg_open)
 
         fill3 = TestStubs.event_order_filled(
             order3,
@@ -627,7 +627,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill3)
         self.assertEqual(Quantity(20), position.quantity)
         self.assertEqual(Money(10.48386207, USDT), position.realized_pnl)
-        self.assertEqual(99.41379310344827, position.avg_open.as_double())
+        self.assertEqual(Decimal("99.41379310344827586206896552"), position.avg_open)
 
         fill4 = TestStubs.event_order_filled(
             order4,
@@ -640,7 +640,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill4)
         self.assertEqual(Quantity(16), position.quantity)
         self.assertEqual(Money(32.40868966, USDT), position.realized_pnl)
-        self.assertEqual(99.41379310344827, position.avg_open.as_double())
+        self.assertEqual(Decimal("99.41379310344827586206896552"), position.avg_open)
 
         fill5 = TestStubs.event_order_filled(
             order5,
@@ -653,7 +653,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill5)
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(32.09968966, USDT), position.realized_pnl)
-        self.assertEqual(99.98003629764065, position.avg_open.as_double())
+        self.assertEqual(Decimal("99.98003629764065335753176042"), position.avg_open)
         self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)", repr(position))
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):
@@ -706,7 +706,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill2)
         self.assertEqual(Quantity("29.000000"), position.quantity)
         self.assertEqual(Money(-289.98300000, USDT), position.realized_pnl)
-        self.assertEqual(9999.413793103448275862068966, position.avg_open.as_double())
+        self.assertEqual(Decimal("9999.413793103448275862068966"), position.avg_open)
 
         fill3 = TestStubs.event_order_filled(
             order3,
@@ -719,7 +719,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill3)
         self.assertEqual(Quantity(20), position.quantity)
         self.assertEqual(Money(-365.71613793, USDT), position.realized_pnl)
-        self.assertEqual(9999.413793103448275862068966, position.avg_open.as_double())
+        self.assertEqual(Decimal("9999.413793103448275862068966"), position.avg_open)
 
         fill4 = TestStubs.event_order_filled(
             order4,
@@ -732,7 +732,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill4)
         self.assertEqual(Quantity(23), position.quantity)
         self.assertEqual(Money(-395.72513793, USDT), position.realized_pnl)
-        self.assertEqual(9999.88155922039, position.avg_open.as_double())
+        self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
 
         fill5 = TestStubs.event_order_filled(
             order5,
@@ -745,7 +745,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill5)
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(-415.27137481, USDT), position.realized_pnl)
-        self.assertEqual(9999.88155922039, position.avg_open.as_double())
+        self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
         self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
 
     def test_calculate_pnl_for_long_position_win(self):

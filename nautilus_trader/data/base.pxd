@@ -45,10 +45,10 @@ cdef class DataCacheFacade:
     cpdef bint has_trade_ticks(self, Symbol symbol) except *
     cpdef bint has_bars(self, BarType bar_type) except *
 
-    cpdef double get_xrate(
+    cpdef object get_xrate(
         self,
         Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=*,
-    ) except *
+    )

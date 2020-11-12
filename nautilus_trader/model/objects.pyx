@@ -13,14 +13,258 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""Define fundamental value objects in the trading domain."""
+"""
+The `BaseDecimal` class is intended to be used as the base class for fundamental
+domain model value types. The specification of precision is more straight
+forward than providing a decimal.Context. Also this type is able to be used as
+an operand for mathematical ops with `float` objects.
+
+The fundamental value objects for the trading domain are defined here.
+
+References
+----------
+https://docs.python.org/3.9/library/decimal.html
+
+"""
+
+import decimal
+
+from cpython.object cimport PyObject_RichCompareBool
+from cpython.object cimport Py_EQ
+from cpython.object cimport Py_GE
+from cpython.object cimport Py_GT
+from cpython.object cimport Py_LE
+from cpython.object cimport Py_LT
+from cpython.object cimport Py_NE
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.currency cimport Currency
 
+cdef int _MATH_ADD = 0
+cdef int _MATH_SUB = 1
+cdef int _MATH_MUL = 2
+cdef int _MATH_DIV = 3
+cdef int _MATH_TRUEDIV = 4
+cdef int _MATH_FLOORDIV = 5
+cdef int _MATH_MOD = 6
 
-cdef class Quantity(Decimal):
+
+cdef class BaseDecimal:
+    """
+    The base class for all domain objects representing a decimal number with a
+    specified precision.
+    """
+
+    def __init__(
+            self, value=0,
+            precision=None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
+        """
+        Initialize a new instance of the `BaseDecimal` class.
+
+        Parameters
+        ----------
+        value : integer, float, string, decimal.Decimal or BaseDecimal
+            The value of the decimal. If value is a float, then a precision must
+            be specified.
+        precision : int, optional
+            The precision for the decimal. If a precision is specified then the
+            value will be rounded to the precision. Else the precision will be
+            inferred from the given value.
+        rounding : str
+            The rounding rule to apply to the decimal. Must be a constant from
+            the decimal module. Only applicable if precision is specified.
+
+        Raises
+        ------
+        TypeError
+            If value is a float and precision is not specified.
+        ValueError
+            If precision is negative (< 0).
+
+        """
+        Condition.not_none(value, "value")
+
+        if precision is None:  # Infer precision
+            if isinstance(value, float):
+                raise TypeError("precision cannot be inferred from a float, "
+                                "please specify a precision when passing a float")
+            elif isinstance(value, BaseDecimal):
+                self._value = value._value
+            else:
+                self._value = decimal.Decimal(value)
+        else:
+            Condition.not_negative_int(precision, "precision")
+
+            if rounding != decimal.ROUND_HALF_EVEN:
+                self._value = self._make_decimal_with_rounding(value, precision, rounding)
+            else:
+                if not isinstance(value, float):
+                    value = float(value)
+                self._value = self._make_decimal(value, precision)
+
+    cdef inline object _make_decimal_with_rounding(self, value, int precision, str rounding):
+        exponent = decimal.Decimal(f"{1 / 10 ** precision:.{precision}f}")
+        return decimal.Decimal(value).quantize(exp=exponent, rounding=rounding)
+
+    cdef inline object _make_decimal(self, double value, int precision):
+        return decimal.Decimal(f'{value:.{precision}f}')
+
+    def __eq__(self, other) -> bool:
+        return BaseDecimal._compare(self, other, Py_EQ)
+
+    def __ne__(self, other) -> bool:
+        return BaseDecimal._compare(self, other, Py_NE)
+
+    def __lt__(self, other) -> bool:
+        return BaseDecimal._compare(self, other, Py_LT)
+
+    def __le__(self, other) -> bool:
+        return BaseDecimal._compare(self, other, Py_LE)
+
+    def __gt__(self, other) -> bool:
+        return BaseDecimal._compare(self, other, Py_GT)
+
+    def __ge__(self, other) -> bool:
+        return BaseDecimal._compare(self, other, Py_GE)
+
+    def __add__(self, other) -> decimal.Decimal or float:
+        if isinstance(self, float) or isinstance(other, float):
+            return BaseDecimal._eval_double(self, other, _MATH_ADD)
+        else:
+            return BaseDecimal._extract_value(self) + BaseDecimal._extract_value(other)
+
+    def __sub__(self, other) -> decimal.Decimal or float:
+        if isinstance(self, float) or isinstance(other, float):
+            return BaseDecimal._eval_double(self, other, _MATH_SUB)
+        else:
+            return BaseDecimal._extract_value(self) - BaseDecimal._extract_value(other)
+
+    def __mul__(self, other) -> decimal.Decimal or float:
+        if isinstance(self, float) or isinstance(other, float):
+            return BaseDecimal._eval_double(self, other, _MATH_MUL)
+        else:
+            return BaseDecimal._extract_value(self) * BaseDecimal._extract_value(other)
+
+    def __truediv__(self, other) -> decimal.Decimal or float:
+        if isinstance(self, float) or isinstance(other, float):
+            return BaseDecimal._eval_double(self, other, _MATH_TRUEDIV)
+        else:
+            return BaseDecimal._extract_value(self) / BaseDecimal._extract_value(other)
+
+    def __floordiv__(self, other) -> decimal.Decimal or float:
+        if isinstance(self, float) or isinstance(other, float):
+            return BaseDecimal._eval_double(self, other, _MATH_FLOORDIV)
+        else:
+            return BaseDecimal._extract_value(self) // BaseDecimal._extract_value(other)
+
+    def __mod__(self, other) -> decimal.Decimal:
+        if isinstance(self, float) or isinstance(other, float):
+            return BaseDecimal._eval_double(self, other, _MATH_MOD)
+        else:
+            return BaseDecimal._extract_value(self) % BaseDecimal._extract_value(other)
+
+    def __neg__(self) -> decimal.Decimal:
+        return self._value.__neg__()
+
+    def __pos__(self) -> decimal.Decimal:
+        return self._value.__pos__()
+
+    def __abs__(self) -> decimal.Decimal:
+        return abs(self._value)
+
+    def __round__(self, ndigits=None) -> decimal.Decimal:
+        return round(self._value, ndigits)
+
+    def __float__(self) -> float:
+        return float(self._value)
+
+    def __int__(self) -> int:
+        return int(self._value)
+
+    def __hash__(self) -> int:
+        return hash(self._value)
+
+    def __str__(self) -> str:
+        return str(self._value)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}('{self}')"
+
+    @staticmethod
+    cdef inline object _extract_value(object obj):
+        if isinstance(obj, BaseDecimal):
+            return obj._value
+        return obj
+
+    @staticmethod
+    cdef inline bint _compare(a, b, int op) except *:
+        if isinstance(a, BaseDecimal):
+            a = <BaseDecimal>a._value
+        if isinstance(b, BaseDecimal):
+            b = <BaseDecimal>b._value
+
+        return PyObject_RichCompareBool(a, b, op)
+
+    @staticmethod
+    cdef inline double _eval_double(double a, double b, int op) except *:
+        if op == _MATH_ADD:
+            return a + b
+        elif op == _MATH_SUB:
+            return a - b
+        elif op == _MATH_MUL:
+            return a * b
+        elif op == _MATH_DIV:
+            return a / b
+        elif op == _MATH_TRUEDIV:
+            return a / b
+        elif op == _MATH_FLOORDIV:
+            return a // b
+        elif op == _MATH_MOD:
+            return a % b
+        else:
+            return NotImplemented
+
+    @property
+    def precision(self):
+        """
+        The precision of the decimal.
+
+        Returns
+        -------
+        int
+
+        """
+        return self.precision_c()
+
+    cdef inline int precision_c(self) except *:
+        return abs(self._value.as_tuple().exponent)
+
+    cpdef object as_decimal(self):
+        """
+        Return the value as a built-in `decimal.Decimal`.
+
+        Returns
+        -------
+        decimal.Decimal
+
+        """
+        return self._value
+
+    cpdef double as_double(self) except *:
+        """
+        Return the value as a `double`.
+
+        Returns
+        -------
+        double
+
+        """
+        return float(self._value)
+
+
+cdef class Quantity(BaseDecimal):
     """
     Represents a quantity with a non-negative value.
 
@@ -35,19 +279,27 @@ cdef class Quantity(Decimal):
 
     """
 
-    def __init__(self, value=0, precision=None):
+    def __init__(
+            self,
+            value=0,
+            precision=None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
         """
         Initialize a new instance of the `Quantity` class.
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or Decimal
+        value : integer, float, string, decimal.Decimal or BaseDecimal
             The value of the quantity. If value is a float, then a precision must
             be specified.
         precision : int, optional
             The precision for the quantity. If a precision is specified then the
             value will be rounded to the precision. Else the precision will be
             inferred from the given value.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module. Only applicable if precision is specified.
 
         Raises
         ------
@@ -59,7 +311,7 @@ cdef class Quantity(Decimal):
             If precision is negative (< 0).
 
         """
-        super().__init__(value, precision)
+        super().__init__(value, precision, rounding)
 
         # Post-condition
         Condition.true(self._value >= 0, f"quantity not negative, was {self._value}")
@@ -76,7 +328,7 @@ cdef class Quantity(Decimal):
         return f"{self._value:,}"
 
 
-cdef class Price(Decimal):
+cdef class Price(BaseDecimal):
     """
     Represents a price in a financial market.
 
@@ -90,7 +342,12 @@ cdef class Price(Decimal):
 
     """
 
-    def __init__(self, value=0, precision=None):
+    def __init__(
+            self,
+            value=0,
+            precision=None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
         """
         Initialize a new instance of the `Price` class.
 
@@ -103,6 +360,9 @@ cdef class Price(Decimal):
             The precision for the price. If a precision is specified then the
             value will be rounded to the precision. Else the precision will be
             inferred from the given value.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module. Only applicable if precision is specified.
 
         Raises
         ------
@@ -113,7 +373,7 @@ cdef class Price(Decimal):
         super().__init__(value, precision)
 
 
-cdef class Money(Decimal):
+cdef class Money(BaseDecimal):
     """
     Represents an amount of money including currency type.
 
@@ -124,21 +384,29 @@ cdef class Money(Decimal):
 
     """
 
-    def __init__(self, value, Currency currency not None):
+    def __init__(
+            self,
+            value,
+            Currency currency not None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
         """
         Initialize a new instance of the `Money` class.
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or Decimal
+        value : integer, float, string, decimal.Decimal or BaseDecimal
             The value of the money.
         currency : Currency
             The currency of the money.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module.
 
         """
         if value is None:
             value = 0
-        super().__init__(value, currency.precision)
+        super().__init__(value, currency.precision, rounding)
 
         self.currency = currency
 

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import pytz
 
 from cpython.datetime cimport datetime
@@ -24,7 +25,6 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -38,7 +38,6 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -145,7 +144,7 @@ cdef class SimulatedExchange:
 
         self.xrate_calculator = ExchangeRateCalculator()
         self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
-        self.rollover_spread = 0.0  # Bank + Broker spread markup
+        self.rollover_spread = decimal.Decimal()  # Bank + Broker spread markup
         self.total_commissions = Money(0, self.account_currency)
         self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
@@ -488,7 +487,7 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline void _set_slippages(self) except *:
-        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
+        cdef dict slippage_index = {}  # type: {Symbol, decimal.Decimal}
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size
@@ -498,12 +497,12 @@ cdef class SimulatedExchange:
     cdef inline dict _build_current_bid_rates(self):
         cdef Symbol symbol
         cdef QuoteTick tick
-        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
+        return {symbol.code: tick.bid.as_decimal() for symbol, tick in self._market.items()}
 
     cdef inline dict _build_current_ask_rates(self):
         cdef Symbol symbol
         cdef QuoteTick tick
-        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
+        return {symbol.code: tick.ask.as_decimal() for symbol, tick in self._market.items()}
 
     cdef inline PositionId _generate_position_id(self, Symbol symbol):
         cdef int pos_count = self._symbol_pos_count.get(symbol, 0)
@@ -547,7 +546,7 @@ cdef class SimulatedExchange:
             pnl = position.calculate_pnl(
                 avg_open=position.avg_open,
                 avg_close=event.avg_price,
-                quantity=event.filled_qty,
+                quantity=event.fill_qty,
             )
 
         cdef double xrate
@@ -584,23 +583,19 @@ cdef class SimulatedExchange:
 
         cdef list open_positions = self.exec_cache.positions_open()
 
+        rollover_cumulative = decimal.Decimal()
+
         cdef Position position
         cdef Instrument instrument
-        cdef Currency base_currency
-        cdef double interest_rate
-        cdef double xrate
-        cdef double rollover
-        cdef double rollover_cumulative = 0.0
-        cdef double mid_price
         cdef dict mid_prices = {}
         cdef QuoteTick market
         for position in open_positions:
             instrument = self.instruments[position.symbol]
             if instrument.asset_class == AssetClass.FX:
-                mid_price = mid_prices.get(instrument.symbol, 0.0)
-                if mid_price == 0.0:
+                mid_price = mid_prices.get(instrument.symbol)
+                if mid_price is None:
                     market = self._market[instrument.symbol]
-                    mid_price = <double>((market.ask + market.bid) / 2.0)
+                    mid_price = (market.ask.as_decimal() + market.bid.as_decimal()) / 2
                     mid_prices[instrument.symbol] = mid_price
                 interest_rate = self.rollover_calculator.calc_overnight_rate(
                     position.symbol,
@@ -618,9 +613,9 @@ cdef class SimulatedExchange:
                 rollover_cumulative += rollover - (rollover * self.rollover_spread)
 
         if iso_week_day == 3:  # Book triple for Wednesdays
-            rollover_cumulative = rollover_cumulative * 3.0
+            rollover_cumulative = rollover_cumulative * 3
         elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
-            rollover_cumulative = rollover_cumulative * 3.0
+            rollover_cumulative = rollover_cumulative * 3
 
         cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
         self.total_rollover = Money(self.total_rollover + rollover_final, self.account_currency)
@@ -881,16 +876,16 @@ cdef class SimulatedExchange:
         if instrument is None:
             raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
 
-        cdef Decimal xrate = None
+        xrate = None
         if instrument.is_quanto:
             # Get exchange rate between base and settlement currencies
-            xrate = Decimal(self.xrate_calculator.get_rate(
+            xrate = self.xrate_calculator.get_rate(
                 from_currency=instrument.base_currency,
                 to_currency=instrument.settlement_currency,
                 price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
                 bid_quotes=self._build_current_bid_rates(),
                 ask_quotes=self._build_current_ask_rates(),
-            ))
+            )
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,

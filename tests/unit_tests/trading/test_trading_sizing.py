@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -76,7 +76,7 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("1.00000"),
             equity=equity,
             risk=Decimal("0.01"),  # 1%
-            unit_batch_size=1000,
+            unit_batch_size=Decimal(1000),
         )
 
         # Assert
@@ -93,8 +93,9 @@ class FixedRiskSizerTests(unittest.TestCase):
             equity=equity,
             risk=Decimal("0.01"),  # 1%
             hard_limit=Decimal(500000),
+            unit_batch_size=Decimal(1000),
             units=1,
-            unit_batch_size=1000,
+
         )
 
         # Assert
@@ -110,8 +111,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("1.00000"),
             equity=equity,
             risk=Decimal("0.001"),  # 0.1%
+            unit_batch_size=Decimal(1000),
             units=3,
-            unit_batch_size=1000,
         )
 
         # Assert
@@ -127,8 +128,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             stop_loss=Price("1.00000"),
             equity=equity,
             risk=Decimal("0.001"),  # 0.1%
+            unit_batch_size=Decimal(25000),
             units=4,
-            unit_batch_size=25000,
         )
 
         # Assert
@@ -147,8 +148,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             risk=Decimal("0.01"),  # 1%
             commission_rate=Decimal("0.0002"),
             exchange_rate=Decimal(str(1 / 107.403)),
+            unit_batch_size=Decimal(1000),
             units=1,
-            unit_batch_size=1000,
         )
 
         # Assert

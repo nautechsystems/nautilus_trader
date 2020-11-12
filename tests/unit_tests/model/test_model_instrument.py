@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD

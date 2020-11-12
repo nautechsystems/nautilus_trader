@@ -92,12 +92,12 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef double get_xrate(
+    cpdef object get_xrate(
         self,
         Venue venue,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=PriceType.MID,
-    ) except *:
+    ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

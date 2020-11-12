@@ -13,12 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import ROUND_HALF_EVEN
+import decimal
 
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
@@ -35,7 +34,11 @@ cdef class CostSpecification:
     calculation of PNLs.
     """
 
-    def __init__(self, Currency quote_currency, str rounding not None=ROUND_HALF_EVEN):
+    def __init__(
+            self,
+            Currency quote_currency,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
+    ):
         """
         Initialize a new instance of the `CostSpecification` class.
 
@@ -60,7 +63,7 @@ cdef class InverseCostSpecification(CostSpecification):
             self,
             Currency base_currency not None,
             Currency quote_currency not None,
-            str rounding not None=ROUND_HALF_EVEN,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
     ):
         """
         Initialize a new instance of the `InverseCostSpecification` class.
@@ -71,6 +74,9 @@ cdef class InverseCostSpecification(CostSpecification):
             The instruments base currency.
         quote_currency : Currency
             The instruments quote currency.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module.
 
         """
         super().__init__(quote_currency=quote_currency, rounding=rounding)
@@ -92,8 +98,8 @@ cdef class QuantoCostSpecification(CostSpecification):
             Currency quote_currency not None,
             Currency settlement_currency not None,
             bint is_inverse,
-            Decimal xrate not None,
-            str rounding not None=ROUND_HALF_EVEN,
+            object xrate not None,
+            str rounding not None=decimal.ROUND_HALF_EVEN,
     ):
         """
         Initialize a new instance of the `QuantoCostSpecification` class.
@@ -110,6 +116,9 @@ cdef class QuantoCostSpecification(CostSpecification):
             If the instrument is inverse.
         xrate : Decimal
             The current exchange rate between base and settlement currencies.
+        rounding : str
+            The rounding rule to apply. Must be a constant from the decimal
+            module.
 
         """
         super().__init__(quote_currency=quote_currency, rounding=rounding)
@@ -137,9 +146,9 @@ cdef class Instrument:
             bint is_inverse,
             int price_precision,
             int size_precision,
-            Decimal tick_size not None,
-            Decimal multiplier not None,
-            Decimal leverage not None,
+            object tick_size not None: decimal.Decimal,
+            object multiplier not None: decimal.Decimal,
+            object leverage not None: decimal.Decimal,
             Quantity lot_size not None,
             Quantity max_quantity,  # Can be None
             Quantity min_quantity,  # Can be None
@@ -147,12 +156,12 @@ cdef class Instrument:
             Money min_notional,     # Can be None
             Price max_price,        # Can be None
             Price min_price,        # Can be None
-            Decimal margin_initial not None,
-            Decimal margin_maintenance not None,
-            Decimal maker_fee not None,
-            Decimal taker_fee not None,
-            Decimal funding_rate_long not None,
-            Decimal funding_rate_short not None,
+            object margin_initial not None: decimal.Decimal,
+            object margin_maintenance not None: decimal.Decimal,
+            object maker_fee not None: decimal.Decimal,
+            object taker_fee not None: decimal.Decimal,
+            object funding_rate_long not None: decimal.Decimal,
+            object funding_rate_short not None: decimal.Decimal,
             datetime timestamp not None,
     ):
         """
@@ -323,13 +332,13 @@ cdef class Instrument:
 
         self.cost_spec.rounding = rounding
 
-    cpdef CostSpecification get_cost_spec(self, Decimal xrate=None):
+    cpdef CostSpecification get_cost_spec(self, object xrate=None):
         """
         Return the `CostSpecification` for the instrument.
 
         Parameters
         ----------
-        xrate : Decimal, optional
+        xrate : decimal.Decimal, optional
             Only applicable to quanto instruments, otherwise ignored.
 
         Raises
@@ -360,8 +369,8 @@ cdef class Instrument:
     cpdef Money calculate_notional(
             self,
             Quantity quantity,
-            Decimal close_price,
-            Decimal xrate=None,
+            object close_price,
+            object xrate=None,
     ):
         """
         Calculate the notional value from the given parameters.
@@ -370,9 +379,9 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The total quantity.
-        close_price : Decimal
+        close_price : decimal.Decimal
             The closing price.
-        xrate : Decimal, optional
+        xrate : decimal.Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -391,11 +400,12 @@ cdef class Instrument:
         Condition.not_none(close_price, "close_price")
         if self.is_quanto:
             Condition.not_none(xrate, "xrate")
+            Condition.type(xrate, decimal.Decimal, "xrate")
 
         if self.is_inverse:
             close_price = 1 / close_price
 
-        cdef Decimal notional = quantity * close_price * self.multiplier
+        notional = quantity * close_price * self.multiplier
 
         if self.is_quanto:
             notional *= xrate
@@ -406,7 +416,7 @@ cdef class Instrument:
             self,
             Quantity quantity,
             Price price,
-            Decimal xrate=None,
+            object xrate=None,
     ):
         """
         Calculate the order margin from the given parameters.
@@ -417,7 +427,7 @@ cdef class Instrument:
             The order quantity.
         price : Price
             The order price.
-        xrate : Decimal, optional
+        xrate : decimal.Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -439,8 +449,8 @@ cdef class Instrument:
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        cdef Decimal notional = self.calculate_notional(quantity, price, xrate)
-        cdef Decimal margin = notional / self.leverage * self.margin_initial
+        notional = self.calculate_notional(quantity, price, xrate)
+        margin = notional / self.leverage * self.margin_initial
         margin += notional * self.taker_fee * 2
 
         return Money(margin, self.settlement_currency)
@@ -450,7 +460,7 @@ cdef class Instrument:
             PositionSide side,
             Quantity quantity,
             QuoteTick last,
-            Decimal xrate=None,
+            object xrate=None,
     ):
         """
         Calculate the position margin from the given parameters.
@@ -462,7 +472,7 @@ cdef class Instrument:
             The currency position quantity.
         last : QuoteTick
             The last quote tick.
-        xrate : Decimal, optional
+        xrate : decimal.Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -488,9 +498,9 @@ cdef class Instrument:
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        cdef Price close_price = self._get_close_price(side, last)
-        cdef Decimal notional = self.calculate_notional(quantity, close_price, xrate)
-        cdef Decimal margin = notional / self.leverage * self.margin_maintenance
+        close_price = self._get_close_price(side, last)
+        notional = self.calculate_notional(quantity, close_price, xrate)
+        margin = notional / self.leverage * self.margin_maintenance
         margin += notional * self.taker_fee
 
         return Money(margin, self.settlement_currency)
@@ -500,7 +510,7 @@ cdef class Instrument:
             PositionSide side,
             Quantity quantity,
             QuoteTick last,
-            Decimal xrate=None,
+            object xrate=None,
     ):
         """
         Parameters
@@ -511,7 +521,7 @@ cdef class Instrument:
             The open quantity.
         last : QuoteTick
             The last quote tick.
-        xrate : Decimal, optional
+        xrate : decimal.Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -534,18 +544,19 @@ cdef class Instrument:
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
+        # xrate checked in calculate_notional
 
-        cdef Price close_price = self._get_close_price(side, last)
-        cdef Decimal notional = self.calculate_notional(quantity, close_price, xrate)
+        close_price = self._get_close_price(side, last)
+        notional = self.calculate_notional(quantity, close_price, xrate)
 
         return Money(notional, self.settlement_currency)
 
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        Decimal avg_price,
+        object avg_price,
         LiquiditySide liquidity_side,
-        Decimal xrate=None,
+        object xrate=None,
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -580,12 +591,10 @@ cdef class Instrument:
         Condition.not_none(quantity, "quantity")
         Condition.not_none(avg_price, "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-        if self.is_quanto:
-            Condition.not_none(xrate, "xrate")
+        # xrate checked in calculate_notional
 
-        cdef Decimal notional = self.calculate_notional(quantity, avg_price, xrate)
+        notional = self.calculate_notional(quantity, avg_price, xrate)
 
-        cdef Decimal commission
         if liquidity_side == LiquiditySide.MAKER:
             commission = notional * self.maker_fee
         elif liquidity_side == LiquiditySide.TAKER:
@@ -596,11 +605,11 @@ cdef class Instrument:
 
         return Money(commission, self.settlement_currency)
 
-    cdef inline Decimal _get_close_price(self, PositionSide side, QuoteTick last):
+    cdef inline object _get_close_price(self, PositionSide side, QuoteTick last):
         if side == PositionSide.LONG:
-            return last.bid
+            return last.bid.as_decimal()
         elif side == PositionSide.SHORT:
-            return last.ask
+            return last.ask.as_decimal()
         else:
             raise RuntimeError(f"invalid PositionSide, "
                                f"was {PositionSideParser.to_string(side)}")

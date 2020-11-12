@@ -16,7 +16,6 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport PositionClosed
@@ -42,7 +41,7 @@ cdef class PortfolioFacade:
     cpdef Money unrealized_pnl_for_venue(self, Venue venue)
     cpdef Money unrealized_pnl_for_symbol(self, Symbol symbol)
     cpdef Money open_value(self, Venue venue)
-    cpdef Decimal net_position(self, Symbol symbol)
+    cpdef object net_position(self, Symbol symbol)
     cpdef bint is_net_long(self, Symbol symbol) except *
     cpdef bint is_net_short(self, Symbol symbol) except *
     cpdef bint is_flat(self, Symbol symbol) except *
@@ -80,7 +79,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline Decimal _net_position(self, Symbol symbol)
+    cdef inline object _net_position(self, Symbol symbol)
     cdef inline set _symbols_open_for_venue(self, Venue venue)
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *

@@ -21,14 +21,14 @@ from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class ExchangeRateCalculator:
-    cpdef double get_rate(
+    cpdef object get_rate(
         self,
         Currency from_currency,
         Currency to_currency,
         PriceType price_type,
         dict bid_quotes,
         dict ask_quotes
-    ) except *
+    )
 
 
 cdef class RolloverInterestCalculator:
@@ -36,4 +36,4 @@ cdef class RolloverInterestCalculator:
     cdef dict _rate_data
 
     cpdef object get_rate_data(self)
-    cpdef double calc_overnight_rate(self, Symbol symbol, date timestamp) except *
+    cpdef object calc_overnight_rate(self, Symbol symbol, date timestamp)

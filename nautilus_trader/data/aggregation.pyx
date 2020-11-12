@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport datetime_year
@@ -70,7 +72,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self.volume = Decimal()
+        self.volume = decimal.Decimal()
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -81,7 +83,7 @@ cdef class BarBuilder:
                 f"{self._close},"
                 f"{self.volume})")
 
-    cpdef void update(self, Price price, Decimal size, datetime timestamp) except *:
+    cpdef void update(self, Price price, Quantity size, datetime timestamp) except *:
         """
         Update the bar builder.
 
@@ -89,7 +91,7 @@ cdef class BarBuilder:
         ----------
         price : Price
             The update price.
-        size : Decimal
+        size : decimal.Decimal
             The update size.
         timestamp : datetime
             The update timestamp.
@@ -133,7 +135,7 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self.volume = Decimal()
+        self.volume = decimal.Decimal()
         self.count = 0
 
     cpdef Bar build(self, datetime close_time=None):
@@ -330,15 +332,15 @@ cdef class VolumeBarAggregator(BarAggregator):
         self.step = bar_type.spec.step
 
     cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
-        cdef Decimal size_update = size
-        cdef Decimal size_diff
+        cdef int precision = size.precision_c()
+        size_update = size
 
         while size_update > 0:  # While there is size to apply
             if self._builder.volume + size_update < self.step:
                 # Update and break
                 self._builder.update(
                     price=price,
-                    size=size_update,
+                    size=Quantity(size_update, precision=precision),
                     timestamp=timestamp,
                 )
                 break
@@ -347,7 +349,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=size_diff,
+                size=Quantity(size_diff, precision=precision),
                 timestamp=timestamp,
             )
 
@@ -394,28 +396,26 @@ cdef class ValueBarAggregator(BarAggregator):
         )
 
         self.step = bar_type.spec.step
-        self.cum_value = Decimal()  # Cumulative value
+        self.cum_value = decimal.Decimal()  # Cumulative value
 
     cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
-        cdef Decimal size_update = size
-        cdef Decimal value_update
-        cdef Decimal value_diff
-        cdef Decimal size_diff
+        cdef int precision = size.precision_c()
+        size_update = size
 
         while size_update > 0:  # While there is value to apply
             value_update = price * size_update  # Calculated value in quote currency
             if self.cum_value + value_update < self.step:
                 # Update and break
-                self.cum_value = Decimal(self.cum_value + value_update, precision=price.precision_c())
+                self.cum_value = self.cum_value + value_update
                 self._builder.update(
                     price=price,
-                    size=size_update,
+                    size=Quantity(size_update, precision=precision),
                     timestamp=timestamp,
                 )
                 break
 
             value_diff = self.step - self.cum_value
-            size_diff = Decimal(size * (value_diff / value_update), precision=size.precision_c())
+            size_diff = Quantity(size * (value_diff / value_update), precision=precision)
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
@@ -425,7 +425,7 @@ cdef class ValueBarAggregator(BarAggregator):
 
             # Build a bar and reset builder and cum value
             self._build_and_send()
-            self.cum_value = Decimal()
+            self.cum_value = decimal.Decimal()
 
             # Decrement the update size
             size_update -= size_diff
