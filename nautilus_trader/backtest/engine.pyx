@@ -26,6 +26,7 @@ from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
@@ -242,6 +243,27 @@ cdef class BacktestEngine:
         self.time_to_initialize = self.clock.delta(self.created_time)
         self.log.info(f"Initialized in {self.time_to_initialize}.")
         self._backtest_memory()
+
+    cpdef void plug_simulation_module(self, Venue venue, SimulationModule module):
+        """
+        Plug the simulation module into the `SimulatedExchange` for the given
+        venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue to plug the module into.
+        module : SimulationModule
+            The module to plug in.
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(module, "module")
+
+        # TODO: Multiple exchanges
+        self.exchange.register_module(module)
+
+        self.log.info(f"Loaded {type(module).__name__}.")
 
     cpdef void run(
             self,
@@ -483,12 +505,13 @@ cdef class BacktestEngine:
         account_starting_length = len(account_balance_starting)
         account_balance_ending = pad_string(self.exchange.account_balance.to_string(), account_starting_length)
         commissions_total = pad_string(self.exchange.total_commissions.to_string(), account_starting_length)
-        rollover_interest = pad_string(self.exchange.total_rollover.to_string(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
         self.log.info(f"Account balance (ending):   {account_balance_ending}")
         self.log.info(f"Commissions (total):        {commissions_total}")
-        self.log.info(f"Rollover interest (total):  {rollover_interest}")
-        self.log.info("")
+
+        # Log output diagnostics for all simulation modules
+        for module in self.exchange.modules:
+            module.log_diagnostics(self.log)
 
         self.log.info("=================================================================")
         self.log.info(" PERFORMANCE STATISTICS")

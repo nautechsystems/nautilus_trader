@@ -32,7 +32,6 @@ cdef class ExchangeRateCalculator:
 
 
 cdef class RolloverInterestCalculator:
-    cdef ExchangeRateCalculator _exchange_calculator
     cdef dict _rate_data
 
     cpdef object get_rate_data(self)

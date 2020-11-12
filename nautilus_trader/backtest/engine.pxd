@@ -22,6 +22,7 @@ from nautilus_trader.backtest.data cimport BacktestDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -30,6 +31,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
 
@@ -56,6 +58,7 @@ cdef class BacktestEngine:
     cdef readonly timedelta time_to_initialize
     cdef readonly int iteration
 
+    cpdef void plug_simulation_module(self, Venue venue, SimulationModule module)
     cpdef void run(
         self,
         datetime start=*,

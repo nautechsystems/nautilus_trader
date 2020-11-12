@@ -13,18 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -48,7 +48,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
-from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
 cdef class SimulatedExchange:
@@ -56,31 +55,26 @@ cdef class SimulatedExchange:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
 
-    cdef readonly Account account
     cdef readonly Venue venue
     cdef readonly OMSType oms_type
     cdef readonly ExecutionCache exec_cache
     cdef readonly BacktestExecClient exec_client
-    cdef readonly dict instruments
-    cdef readonly dict data_ticks
-    cdef readonly int day_number
-    cdef readonly datetime rollover_time
-    cdef readonly bint rollover_applied
-    cdef readonly bint frozen_account
+    cdef readonly Account account
     cdef readonly Currency account_currency
     cdef readonly Money starting_capital
     cdef readonly Money account_balance
     cdef readonly Money account_balance_start_day
     cdef readonly Money account_balance_activity_day
-    cdef readonly ExchangeRateCalculator xrate_calculator
-    cdef readonly RolloverInterestCalculator rollover_calculator
-    cdef readonly object rollover_spread  # type: decimal.Decimal
     cdef readonly Money total_commissions
-    cdef readonly Money total_rollover
+    cdef readonly bint frozen_account
     cdef readonly bint generate_position_ids
 
-    cdef public FillModel fill_model
+    cdef readonly ExchangeRateCalculator xrate_calculator
+    cdef readonly FillModel fill_model
+    cdef readonly list modules
 
+    cdef readonly dict instruments
+    cdef readonly dict data_ticks
     cdef dict _market
     cdef dict _slippages
 
@@ -94,6 +88,7 @@ cdef class SimulatedExchange:
     cdef int _executions_count
 
     cpdef void register_client(self, BacktestExecClient client) except *
+    cpdef void register_module(self, SimulationModule module) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef datetime time_now(self)
@@ -105,17 +100,19 @@ cdef class SimulatedExchange:
     cpdef void handle_modify_order(self, ModifyOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
-
-    cdef inline void _set_slippages(self) except *
+    cdef inline QuoteTick get_last_quote(self, Symbol symbol)
+    cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
+
+# -- EVENT HANDLING --------------------------------------------------------------------------------
+
+    cdef inline object _get_tick_sizes(self)
     cdef inline PositionId _generate_position_id(self, Symbol symbol)
     cdef inline OrderId _generate_order_id(self, Symbol symbol)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
     cdef inline void _adjust_account(self, OrderFilled event, Position position) except *
-    cdef inline void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *
     cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
     cdef inline bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
     cdef inline bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *
