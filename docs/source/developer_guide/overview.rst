@@ -8,9 +8,8 @@ Unfortunately the Community edition will not interpret Cython syntax.
 
 To run code or tests from the source code, first compile the C extensions for the package.
 
-    $ python setup.py build_ext --inplace
+    $ poetry install
 
-All tests can be run via the `run_tests.sh` script, or through pytest.
 
 Packaging for PyPI
 ------------------
@@ -23,16 +22,16 @@ for historical reasons.
 ### Manually Packaging
 Ensure version has been bumped and not pre-release.
 
-Create the distribution package tar.gz
+Create the distribution package wheel and sdist tar.gz.
 
-    python setup.py sdist
+    poetry install && poetry build
 
 
 Ensure this is the only distribution in the /dist directory
 
 Push package to PyPI using twine;
 
-    twine upload --repository pypi dist/*
+    poetry publish
 
 Username is \__token__
 

@@ -1,15 +1,15 @@
 name: test
 
-# Test pushes on the develop branch
+# Test pushes on non-master branch
 
 on:
   push:
-    branches: [ develop ]
+    branches-ignore:
+      - "master"
+      - "dependabot/**"
 
 jobs:
-
   test:
-
     strategy:
       fail-fast: false
       matrix:
