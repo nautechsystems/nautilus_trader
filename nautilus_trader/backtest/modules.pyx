@@ -27,6 +27,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
@@ -137,30 +138,34 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
         cdef Position position
         cdef Instrument instrument
-        cdef dict mid_prices = {}
+        cdef dict mid_prices = {}  # type: {Symbol, decimal.Decimal}
         cdef QuoteTick market
         for position in open_positions:
             instrument = self._exchange.instruments[position.symbol]
-            if instrument.asset_class == AssetClass.FX:
-                mid_price = mid_prices.get(instrument.symbol)
-                if mid_price is None:
-                    market = self._exchange.get_last_quote(instrument.symbol)
-                    if market is None:
-                        raise RuntimeError("Cannot apply rollover interest, no quote tick")
-                    mid_price = (market.ask + market.bid) / 2
-                    mid_prices[instrument.symbol] = mid_price
-                interest_rate = self._calculator.calc_overnight_rate(
-                    position.symbol,
-                    timestamp,
-                )
-                xrate = self._exchange.get_xrate(
-                    from_currency=instrument.quote_currency,
-                    to_currency=self._exchange.account.currency,
-                    price_type=PriceType.MID,
-                )
-                rollover = mid_price * position.quantity * interest_rate * xrate
-                # Apply any bank and broker spread markup (basis points)
-                rollover_cumulative += rollover - (rollover * self._rollover_spread)
+            if instrument.asset_class != AssetClass.FX:
+                continue  # Only applicable to FX
+
+            mid_price = mid_prices.get(instrument.symbol)
+            if mid_price is None:
+                market = self._exchange.get_last_quote(instrument.symbol)
+                if market is None:
+                    raise RuntimeError("Cannot apply rollover interest, no quote tick")
+                mid_price = (market.ask + market.bid) / 2
+                mid_prices[instrument.symbol] = mid_price
+            interest_rate = self._calculator.calc_overnight_rate(
+                position.symbol,
+                timestamp,
+            )
+
+            xrate = self._exchange.get_xrate(
+                from_currency=instrument.quote_currency,
+                to_currency=self._exchange.account.currency,
+                price_type=PriceType.MID,
+            )
+
+            rollover = mid_price * position.quantity * interest_rate * xrate
+            # Apply any bank and broker spread markup (basis points)
+            rollover_cumulative += rollover - (rollover * self._rollover_spread)
 
         if iso_week_day == 3:  # Book triple for Wednesdays
             rollover_cumulative = rollover_cumulative * 3
