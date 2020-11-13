@@ -84,6 +84,8 @@ cdef class Instrument:
     """The funding rate for short positions.\n\n:returns: `decimal.Decimal`"""
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
+    cdef readonly str rounding_rule
+    """The instruments rounding rule.\n\n:returns: `str`"""
 
     cpdef void set_rounding(self, str rounding) except *
     cpdef CostSpecification get_cost_spec(self, object xrate=*)
@@ -126,8 +128,8 @@ cdef class CostSpecification:
     """If the instrument is inverse.\n\n:returns: `Currency`"""
     cdef readonly bint is_quanto
     """If the instrument is quanto.\n\n:returns: `Currency`"""
-    cdef readonly str rounding
-    """The rounding mode for costing (decimal module constant).\n\n:returns: `str`"""
+    cdef readonly str rounding_rule
+    """The rounding rule for costing.\n\n:returns: `str`"""
 
 
 cdef class InverseCostSpecification(CostSpecification):

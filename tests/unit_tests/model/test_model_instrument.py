@@ -16,6 +16,8 @@
 import decimal
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
@@ -31,8 +33,51 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import UNIX_EPOCH
 
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
+BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
+
 
 class InstrumentTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [AUDUSD_FXCM, AUDUSD_FXCM, True, False],
+        [AUDUSD_FXCM, USDJPY_FXCM, False, True],
+    ])
+    def test_equality(self, instrument1, instrument2, expected1, expected2):
+        # Arrange
+        # Act
+        result1 = instrument1 == instrument2
+        result2 = instrument1 != instrument2
+
+        # Assert
+        self.assertEqual(expected1, result1)
+        self.assertEqual(expected2, result2)
+
+    def test_str_repr_returns_expected(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual("Instrument('BTC/USDT.BINANCE')", str(BTCUSDT_BINANCE))
+        self.assertEqual("Instrument('BTC/USDT.BINANCE')", repr(BTCUSDT_BINANCE))
+
+    def test_hash(self):
+        # Arrange
+        # Act
+        result = hash(BTCUSDT_BINANCE)
+
+        # Assert
+        self.assertEqual(int, type(result))
+
+    def test_set_rounding(self):
+        # Arrange
+        instrument = BTCUSDT_BINANCE
+
+        # Act
+        instrument.set_rounding("TRUNCATE")
+
+        # Assert
+        self.assertEqual("TRUNCATE", instrument.rounding_rule)
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange

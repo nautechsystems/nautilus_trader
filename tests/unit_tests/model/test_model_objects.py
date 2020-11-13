@@ -525,6 +525,14 @@ class MoneyTests(unittest.TestCase):
         # Assert
         self.assertRaises(TypeError, Money, 1.0, None)
 
+    def test_instantiate_with_none_value_returns_money_with_zero_amount(self):
+        # Arrange
+        # Act
+        money_zero = Money(None, currency=USD)
+
+        # Assert
+        self.assertEqual(0, money_zero.as_decimal())
+
     @parameterized.expand([
         [0, Money(0, USD)],
         [1, Money("1", USD)],
@@ -550,17 +558,25 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected, money)
 
     @parameterized.expand([
-        ["0", -0, False],
-        ["-0", 0, False],
-        ["-1", -1, False],
+        ["0", -0, False, True],
+        ["-0", 0, False, True],
+        ["-1", -1, False, True],
     ])
-    def test_equality_with_different_currencies_returns_false(self, value1, value2, expected):
+    def test_equality_with_different_currencies_returns_false(
+            self,
+            value1,
+            value2,
+            expected1,
+            expected2,
+    ):
         # Arrange
         # Act
-        result = Money(value1, USD) == Money(value2, BTC)
+        result1 = Money(value1, USD) == Money(value2, BTC)
+        result2 = Money(value1, USD) != Money(value2, BTC)
 
         # Assert
-        self.assertEqual(expected, result)
+        self.assertEqual(expected1, result1)
+        self.assertEqual(expected2, result2)
 
     @parameterized.expand([
         [0, 0, False, False, False, False],
@@ -607,6 +623,16 @@ class MoneyTests(unittest.TestCase):
         # Assert
         self.assertEqual("1,000.33 USD", result1.to_string())
         self.assertEqual("5,005.56 USD", result2.to_string())
+
+    def test_hash(self):
+        # Arrange
+        money0 = Money(0, USD)
+
+        # Act
+        result = hash(money0)
+
+        # Assert
+        self.assertEqual(int, type(result))
 
     def test_str(self):
         # Arrange

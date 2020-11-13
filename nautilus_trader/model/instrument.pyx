@@ -212,6 +212,8 @@ cdef class Instrument:
         self.funding_rate_short = funding_rate_short
         self.timestamp = timestamp
 
+        self.rounding_rule = "DEFAULT"
+
     def __eq__(self, Instrument other) -> bool:
         return self.symbol.value == other.symbol.value
 
@@ -236,7 +238,7 @@ cdef class Instrument:
         """
         Condition.valid_string(rounding, "rounding")
 
-        self.cost_spec.rounding = rounding
+        self.rounding_rule = rounding
 
     cpdef CostSpecification get_cost_spec(self, object xrate=None):
         """
@@ -261,6 +263,7 @@ cdef class Instrument:
                 quote_currency=self.quote_currency,
                 settlement_currency=self.settlement_currency,
                 is_inverse=self.is_inverse,
+                rounding_rule=self.rounding_rule,
                 xrate=xrate,
             )
 
@@ -268,9 +271,13 @@ cdef class Instrument:
             return InverseCostSpecification(
                 base_currency=self.base_currency,
                 quote_currency=self.quote_currency,
+                rounding_rule=self.rounding_rule,
             )
 
-        return CostSpecification(self.quote_currency)
+        return CostSpecification(
+            quote_currency=self.quote_currency,
+            rounding_rule=self.rounding_rule,
+        )
 
     cpdef Money calculate_notional(
             self,
@@ -531,7 +538,7 @@ cdef class CostSpecification:
     def __init__(
             self,
             Currency quote_currency,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+            str rounding_rule not None="DEFAULT",
     ):
         """
         Initialize a new instance of the `CostSpecification` class.
@@ -540,11 +547,13 @@ cdef class CostSpecification:
         ----------
         quote_currency : Currency
             The instruments quote currency.
+        rounding_rule : str, optional
+            The instruments rounding rule ('DEFAULT', or 'TRUNCATE').
 
         """
         self.quote_currency = quote_currency
         self.settlement_currency = quote_currency
-        self.rounding = rounding
+        self.rounding_rule = rounding_rule
 
 
 cdef class InverseCostSpecification(CostSpecification):
@@ -557,7 +566,7 @@ cdef class InverseCostSpecification(CostSpecification):
             self,
             Currency base_currency not None,
             Currency quote_currency not None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+            str rounding_rule not None="DEFAULT",
     ):
         """
         Initialize a new instance of the `InverseCostSpecification` class.
@@ -568,12 +577,14 @@ cdef class InverseCostSpecification(CostSpecification):
             The instruments base currency.
         quote_currency : Currency
             The instruments quote currency.
-        rounding : str
-            The rounding mode to apply. Must be a constant from the decimal
-            module.
+        rounding_rule : str, optional
+            The instruments rounding rule ('DEFAULT', or 'TRUNCATE').
 
         """
-        super().__init__(quote_currency=quote_currency, rounding=rounding)
+        super().__init__(
+            quote_currency=quote_currency,
+            rounding_rule=rounding_rule,
+        )
 
         self.base_currency = base_currency
         self.settlement_currency = base_currency
@@ -593,7 +604,7 @@ cdef class QuantoCostSpecification(CostSpecification):
             Currency settlement_currency not None,
             bint is_inverse,
             object xrate not None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+            str rounding_rule not None="DEFAULT",
     ):
         """
         Initialize a new instance of the `QuantoCostSpecification` class.
@@ -610,12 +621,14 @@ cdef class QuantoCostSpecification(CostSpecification):
             If the instrument is inverse.
         xrate : Decimal
             The current exchange rate between base and settlement currencies.
-        rounding : str
-            The rounding mode to apply. Must be a constant from the decimal
-            module.
+        rounding_rule : str, optional
+            The instruments rounding rule ('DEFAULT', or 'TRUNCATE').
 
         """
-        super().__init__(quote_currency=quote_currency, rounding=rounding)
+        super().__init__(
+            quote_currency=quote_currency,
+            rounding_rule=rounding_rule,
+        )
 
         self.base_currency = base_currency
         self.settlement_currency = settlement_currency
