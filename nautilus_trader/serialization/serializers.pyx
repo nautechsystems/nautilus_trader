@@ -201,7 +201,7 @@ cdef class MsgPackCostSpecificationSerializer:
         cdef dict package = {
             "Type": type(cost_spec).__name__,
             QUOTE_CURRENCY: str(cost_spec.quote_currency),
-            "Rounding": cost_spec.rounding
+            "RoundingRule": cost_spec.rounding_rule
         }
 
         if isinstance(cost_spec, InverseCostSpecification):
@@ -234,19 +234,19 @@ cdef class MsgPackCostSpecificationSerializer:
 
         cdef str cost_spec_type = unpacked["Type"].decode(UTF8)
         cdef Currency quote_currency = Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8))
-        cdef str rounding = unpacked["Rounding"].decode(UTF8)
+        cdef str rounding_rule = unpacked["RoundingRule"].decode(UTF8)
 
         if cost_spec_type == "CostSpecification":
             return CostSpecification(
                 quote_currency=quote_currency,
-                rounding=rounding,
+                rounding_rule=rounding_rule,
             )
 
         if cost_spec_type == "InverseCostSpecification":
             return InverseCostSpecification(
                 base_currency=Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
                 quote_currency=quote_currency,
-                rounding=rounding,
+                rounding_rule=rounding_rule,
             )
 
         if cost_spec_type == "QuantoCostSpecification":
@@ -255,8 +255,8 @@ cdef class MsgPackCostSpecificationSerializer:
                 quote_currency=quote_currency,
                 settlement_currency=Currency.from_string_c(unpacked["SettlementCurrency"].decode(UTF8)),
                 is_inverse=unpacked["IsInverse"].decode(UTF8) == "True",
+                rounding_rule=rounding_rule,
                 xrate=decimal.Decimal(unpacked["XRate"].decode(UTF8)),
-                rounding=rounding,
             )
 
         else:
