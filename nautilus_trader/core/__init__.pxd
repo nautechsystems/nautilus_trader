@@ -16,5 +16,4 @@
 # The following imports are to allow external code to `cimport` from the package
 
 from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.fsm cimport FiniteStateMachine

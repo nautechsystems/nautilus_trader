@@ -14,14 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
+import os
 import unittest
 
-from pandas import Timestamp
+import pandas as pd
 import pytz
 
+from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.trading.filters import EconomicNewsEventFilter
 from nautilus_trader.trading.filters import ForexSession
 from nautilus_trader.trading.filters import ForexSessionFilter
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -124,16 +127,25 @@ class ForexSessionFilterTests(unittest.TestCase):
 
 class EconomicNewsEventFilterTests(unittest.TestCase):
 
+    def setUp(self):
+        # Fixture Setup
+        news_csv_path = os.path.join(PACKAGE_ROOT + "/data/", "news_events.csv")
+        self.news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
+
     def test_initialize_filter(self):
         # Arrange
         currencies = ["USD", "GBP"]
         impacts = ['HIGH', 'MEDIUM']
-        news_filter = EconomicNewsEventFilter(currencies=currencies, impacts=impacts)
+        news_filter = EconomicNewsEventFilter(
+            currencies=currencies,
+            impacts=impacts,
+            news_data=self.news_data,
+        )
 
         # Act
         # Assert
-        self.assertEqual(Timestamp("2008-01-01 10:00:00+0000", tz="UTC"), news_filter.unfiltered_data_start)
-        self.assertEqual(Timestamp("2020-12-31 23:00:00+0000", tz="UTC"), news_filter.unfiltered_data_end)
+        self.assertEqual(pd.Timestamp("2008-01-01 10:00:00+0000", tz="UTC"), news_filter.unfiltered_data_start)
+        self.assertEqual(pd.Timestamp("2020-12-31 23:00:00+0000", tz="UTC"), news_filter.unfiltered_data_end)
         self.assertEqual(currencies, news_filter.currencies)
         self.assertEqual(impacts, news_filter.impacts)
 
@@ -141,7 +153,11 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         # Arrange
         currencies = []
         impacts = []
-        news_filter = EconomicNewsEventFilter(currencies=currencies, impacts=impacts)
+        news_filter = EconomicNewsEventFilter(
+            currencies=currencies,
+            impacts=impacts,
+            news_data=self.news_data,
+        )
 
         # Act
         event_next = news_filter.next_event(datetime(2012, 3, 15, 12, 0, tzinfo=pytz.utc))
@@ -153,7 +169,11 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
     def test_next_event_given_time_now_before_data_raises_value_error(self):
         # Arrange
-        news_filter = EconomicNewsEventFilter(currencies=["USD"], impacts=['HIGH'])
+        news_filter = EconomicNewsEventFilter(
+            currencies=["USD"],
+            impacts=['HIGH'],
+            news_data=self.news_data,
+        )
 
         # Act
         # Assert
@@ -161,7 +181,11 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
     def test_next_event_given_time_now_after_data_raises_value_error(self):
         # Arrange
-        news_filter = EconomicNewsEventFilter(currencies=["USD"], impacts=['HIGH'])
+        news_filter = EconomicNewsEventFilter(
+            currencies=["USD"],
+            impacts=['HIGH'],
+            news_data=self.news_data,
+        )
 
         # Act
         # Assert
@@ -169,7 +193,11 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
     def test_prev_event_given_time_now_before_data_raises_value_error(self):
         # Arrange
-        news_filter = EconomicNewsEventFilter(currencies=["USD"], impacts=['HIGH'])
+        news_filter = EconomicNewsEventFilter(
+            currencies=["USD"],
+            impacts=['HIGH'],
+            news_data=self.news_data,
+        )
 
         # Act
         # Assert
@@ -177,7 +205,11 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
     def test_prev_event_given_time_now_after_data_raises_value_error(self):
         # Arrange
-        news_filter = EconomicNewsEventFilter(currencies=["USD"], impacts=['HIGH'])
+        news_filter = EconomicNewsEventFilter(
+            currencies=["USD"],
+            impacts=['HIGH'],
+            news_data=self.news_data,
+        )
 
         # Act
         # Assert
@@ -185,16 +217,24 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
     def test_next_event_given_valid_date_returns_expected_news_event(self):
         # Arrange
-        news_filter = EconomicNewsEventFilter(currencies=["USD"], impacts=['HIGH'])
+        news_filter = EconomicNewsEventFilter(
+            currencies=["USD"],
+            impacts=['HIGH'],
+            news_data=self.news_data,
+        )
 
         # Act
         event = news_filter.prev_event(datetime(2015, 5, 10, 12, 0, tzinfo=pytz.utc))
-        self.assertEqual(Timestamp("2015-05-08 12:30:00+0000", tz="UTC"), event.timestamp)
+        self.assertEqual(pd.Timestamp("2015-05-08 12:30:00+0000", tz="UTC"), event.timestamp)
 
     def test_prev_event_given_valid_date_returns_expected_news_event(self):
         # Arrange
-        news_filter = EconomicNewsEventFilter(currencies=["USD"], impacts=['HIGH'])
+        news_filter = EconomicNewsEventFilter(
+            currencies=["USD"],
+            impacts=['HIGH'],
+            news_data=self.news_data,
+        )
 
         # Act
         event = news_filter.prev_event(datetime(2017, 8, 10, 15, 0, tzinfo=pytz.utc))
-        self.assertEqual(Timestamp("2017-08-04 12:30:00+0000", tz="UTC"), event.timestamp)
+        self.assertEqual(pd.Timestamp("2017-08-04 12:30:00+0000", tz="UTC"), event.timestamp)

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
+import decimal
 import unittest
 
 from nautilus_trader.common.clock import TestClock
@@ -23,7 +24,6 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -626,7 +626,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Quantity(50000),
-            Price("1.00000"),
+            decimal.Decimal("1.00000"),
             Money(0, USD),
             LiquiditySide.MAKER,
             CostSpecification(USD),
@@ -656,7 +656,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             Quantity(100000),
             Quantity(),
-            Price("1.00000"),
+            decimal.Decimal("1.00000"),
             Money(0, USD),
             LiquiditySide.TAKER,
             CostSpecification(USD),

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import msgpack
 
 from cpython.datetime cimport datetime
@@ -62,7 +63,6 @@ from nautilus_trader.model.instrument cimport QuantoCostSpecification
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Decimal
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
@@ -201,7 +201,7 @@ cdef class MsgPackCostSpecificationSerializer:
         cdef dict package = {
             "Type": type(cost_spec).__name__,
             QUOTE_CURRENCY: str(cost_spec.quote_currency),
-            "Rounding": cost_spec.rounding
+            "RoundingRule": cost_spec.rounding_rule
         }
 
         if isinstance(cost_spec, InverseCostSpecification):
@@ -234,19 +234,19 @@ cdef class MsgPackCostSpecificationSerializer:
 
         cdef str cost_spec_type = unpacked["Type"].decode(UTF8)
         cdef Currency quote_currency = Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8))
-        cdef str rounding = unpacked["Rounding"].decode(UTF8)
+        cdef str rounding_rule = unpacked["RoundingRule"].decode(UTF8)
 
         if cost_spec_type == "CostSpecification":
             return CostSpecification(
                 quote_currency=quote_currency,
-                rounding=rounding,
+                rounding_rule=rounding_rule,
             )
 
         if cost_spec_type == "InverseCostSpecification":
             return InverseCostSpecification(
                 base_currency=Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
                 quote_currency=quote_currency,
-                rounding=rounding,
+                rounding_rule=rounding_rule,
             )
 
         if cost_spec_type == "QuantoCostSpecification":
@@ -255,8 +255,8 @@ cdef class MsgPackCostSpecificationSerializer:
                 quote_currency=quote_currency,
                 settlement_currency=Currency.from_string_c(unpacked["SettlementCurrency"].decode(UTF8)),
                 is_inverse=unpacked["IsInverse"].decode(UTF8) == "True",
-                xrate=Decimal(unpacked["XRate"].decode(UTF8)),
-                rounding=rounding,
+                rounding_rule=rounding_rule,
+                xrate=decimal.Decimal(unpacked["XRate"].decode(UTF8)),
             )
 
         else:
@@ -676,7 +676,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
-            package[FILLED_QUANTITY] = str(event.filled_qty)
+            package[FILLED_QUANTITY] = str(event.fill_qty)
             package[CUMULATIVE_QUANTITY] = str(event.cumulative_qty)
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
             package[AVERAGE_PRICE] = str(event.avg_price)
@@ -853,7 +853,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[CUMULATIVE_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
-                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                decimal.Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
                 LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
                 MsgPackCostSpecificationSerializer.deserialize(unpacked["CostSpec"]),

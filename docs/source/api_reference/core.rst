@@ -21,15 +21,6 @@ Datetime
    :members:
    :member-order: bysource
 
-Decimal
--------
-
-.. automodule:: nautilus_trader.core.decimal
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Finite-State Machine (FSM)
 --------------------------------
 

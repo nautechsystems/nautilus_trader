@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import unittest
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.decimal import Decimal
 
 
 class ConditionTests(unittest.TestCase):
@@ -325,7 +325,7 @@ class ConditionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, PyCondition.positive, Decimal("-1"), "param")
+        self.assertRaises(ValueError, PyCondition.positive, decimal.Decimal("-1"), "param")
         self.assertRaises(ValueError, PyCondition.positive, -float("inf"), "param")
         self.assertRaises(ValueError, PyCondition.positive, -0.0000000001, "param")
         self.assertRaises(ValueError, PyCondition.positive, 0, "param")
@@ -334,7 +334,7 @@ class ConditionTests(unittest.TestCase):
     def test_positive_when_args_positive_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.positive(Decimal("1"), "param")
+        PyCondition.positive(decimal.Decimal("1"), "param")
         PyCondition.positive(float("inf"), "param")
         PyCondition.positive(0.000000000000000000000000000000000001, "param")
         PyCondition.positive(1, "param")

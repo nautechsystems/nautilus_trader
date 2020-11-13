@@ -20,7 +20,6 @@ The `ExecutionCache` provides an interface for querying on orders and positions.
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
@@ -1333,16 +1332,3 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._index_position_strategy.get(position_id)
-
-    cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id):
-        cdef list positions = self.positions_open(symbol, strategy_id)
-        cdef Decimal net_quantity = Decimal()
-
-        cdef Position position
-        for position in positions:
-            if position.is_long_c():
-                net_quantity = Decimal(net_quantity + position.quantity)
-            elif position.is_short_c():
-                net_quantity = Decimal(net_quantity - position.quantity)
-
-        return net_quantity

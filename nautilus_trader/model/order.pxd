@@ -15,7 +15,6 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -81,10 +80,10 @@ cdef class Order:
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly datetime filled_timestamp
     """The order last filled timestamp.\n\n:returns: `datetime`"""
-    cdef readonly Decimal avg_price
-    """The order average fill price.\n\n:returns: `Decimal`"""
-    cdef readonly Decimal slippage
-    """The order total price slippage.\n\n:returns: `Decimal`"""
+    cdef readonly object avg_price
+    """The order average fill price.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly object slippage
+    """The order total price slippage.\n\n:returns: `decimal.Decimal`"""
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 

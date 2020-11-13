@@ -15,6 +15,7 @@
 
 from datetime import datetime
 from datetime import timedelta
+import decimal
 import unittest
 
 from parameterized import parameterized
@@ -23,7 +24,6 @@ import pytz
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
@@ -119,7 +119,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(PositionSide.LONG, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertIsNone(position.open_duration)
-        self.assertEqual(Decimal("1.00001"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
         self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
@@ -168,7 +168,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), position.peak_quantity)
         self.assertEqual(PositionSide.SHORT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal("1.00001"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
         self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
@@ -218,7 +218,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(50000), position.peak_quantity)
         self.assertEqual(PositionSide.LONG, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal("1.00001"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
@@ -275,7 +275,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(PositionSide.SHORT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal("1.000015"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.000015"), position.avg_open)
         self.assertEqual(2, position.event_count)
         self.assertFalse(position.is_long)
         self.assertTrue(position.is_short)
@@ -317,7 +317,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             order.quantity,
             Quantity(),
-            Price("1.00011"),
+            decimal.Decimal("1.00011"),
             Money(0, USD),
             LiquiditySide.TAKER,
             AUDUSD_FXCM.get_cost_spec(),
@@ -343,15 +343,15 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
         self.assertEqual(timedelta(minutes=1), position.open_duration)
-        self.assertEqual(Decimal("1.00001"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.00001"), position.avg_open)
         self.assertEqual(2, position.event_count)
         self.assertEqual(datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc), position.closed_time)
-        self.assertEqual(Decimal("1.00011"), position.avg_close)
+        self.assertEqual(decimal.Decimal("1.00011"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
-        self.assertEqual(Decimal("0.00010"), position.realized_points)
-        self.assertEqual(Decimal('0.00009999900000999990000099999000'), position.realized_return)
+        self.assertEqual(decimal.Decimal("0.00010"), position.realized_points)
+        self.assertEqual(decimal.Decimal('0.00009999900000999990000099999000'), position.realized_return)
         self.assertEqual(Money(12.00, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
         self.assertEqual(Money(12.00, USD), position.total_pnl(last))
@@ -412,11 +412,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal("1.0"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.0"), position.avg_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(Decimal("1.00002"), position.avg_close)
+        self.assertEqual(decimal.Decimal("1.00002"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
@@ -467,7 +467,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal("1.0"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.0"), position.avg_open)
         self.assertEqual(2, position.event_count)
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id], position.cl_ord_ids)
         self.assertEqual([
@@ -477,7 +477,7 @@ class PositionTests(unittest.TestCase):
             position.execution_ids,
         )
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(Decimal("1.0"), position.avg_close)
+        self.assertEqual(decimal.Decimal("1.0"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
@@ -549,11 +549,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
         self.assertEqual(UNIX_EPOCH, position.opened_time)
-        self.assertEqual(Decimal("1.000005"), position.avg_open)
+        self.assertEqual(decimal.Decimal("1.000005"), position.avg_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual([order1.cl_ord_id, order2.cl_ord_id, order3.cl_ord_id], position.cl_ord_ids)
         self.assertEqual(UNIX_EPOCH, position.closed_time)
-        self.assertEqual(Decimal("1.0001"), position.avg_close)
+        self.assertEqual(decimal.Decimal("1.0001"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
         self.assertTrue(position.is_closed)
@@ -614,7 +614,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill2)
         self.assertEqual(Quantity(29), position.quantity)
         self.assertEqual(Money(-2.88300000, USDT), position.realized_pnl)
-        self.assertEqual(99.41379310344827, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("99.41379310344827586206896552"), position.avg_open)
 
         fill3 = TestStubs.event_order_filled(
             order3,
@@ -627,7 +627,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill3)
         self.assertEqual(Quantity(20), position.quantity)
         self.assertEqual(Money(10.48386207, USDT), position.realized_pnl)
-        self.assertEqual(99.41379310344827, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("99.41379310344827586206896552"), position.avg_open)
 
         fill4 = TestStubs.event_order_filled(
             order4,
@@ -640,7 +640,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill4)
         self.assertEqual(Quantity(16), position.quantity)
         self.assertEqual(Money(32.40868966, USDT), position.realized_pnl)
-        self.assertEqual(99.41379310344827, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("99.41379310344827586206896552"), position.avg_open)
 
         fill5 = TestStubs.event_order_filled(
             order5,
@@ -653,7 +653,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill5)
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(32.09968966, USDT), position.realized_pnl)
-        self.assertEqual(99.98003629764065, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("99.98003629764065335753176042"), position.avg_open)
         self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)", repr(position))
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):
@@ -706,7 +706,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill2)
         self.assertEqual(Quantity("29.000000"), position.quantity)
         self.assertEqual(Money(-289.98300000, USDT), position.realized_pnl)
-        self.assertEqual(9999.413793103448275862068966, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("9999.413793103448275862068966"), position.avg_open)
 
         fill3 = TestStubs.event_order_filled(
             order3,
@@ -719,7 +719,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill3)
         self.assertEqual(Quantity(20), position.quantity)
         self.assertEqual(Money(-365.71613793, USDT), position.realized_pnl)
-        self.assertEqual(9999.413793103448275862068966, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("9999.413793103448275862068966"), position.avg_open)
 
         fill4 = TestStubs.event_order_filled(
             order4,
@@ -732,7 +732,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill4)
         self.assertEqual(Quantity(23), position.quantity)
         self.assertEqual(Money(-395.72513793, USDT), position.realized_pnl)
-        self.assertEqual(9999.88155922039, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("9999.881559220389805097451274"), position.avg_open)
 
         fill5 = TestStubs.event_order_filled(
             order5,
@@ -745,7 +745,7 @@ class PositionTests(unittest.TestCase):
         position.apply(fill5)
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(-415.27137481, USDT), position.realized_pnl)
-        self.assertEqual(9999.88155922039, position.avg_open.as_double())
+        self.assertEqual(decimal.Decimal("9999.881559220389805097451274"), position.avg_open)
         self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
 
     def test_calculate_pnl_for_long_position_win(self):
@@ -911,7 +911,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("375.95"),
-            xrate=Decimal("0.0294337")
+            xrate=decimal.Decimal("0.0294337")
         )
 
         position = Position(fill)
@@ -921,7 +921,7 @@ class PositionTests(unittest.TestCase):
             Price("375.95"),
             Price("365.50"),
             Quantity(100000),
-            xrate=Decimal("0.0294337")
+            xrate=decimal.Decimal("0.0294337")
         )
 
         # Assert

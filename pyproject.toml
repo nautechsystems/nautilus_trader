@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.90.10"
+version = "1.91.1"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -19,15 +19,15 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
 ]
 packages = [
-    { include = "docs", format = "sdist" },
     { include = "examples", format = "sdist" },
     { include = "nautilus_trader" },
-    { include = "scripts", format = "sdist" },
-    { include = "tests", format = "sdist" },
 ]
 include = [
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
+]
+exclude = [
+    "nautilus_trader/_internal",
 ]
 
 [tool.poetry.build]
