@@ -127,7 +127,7 @@ cdef class CostSpecification:
     cdef readonly bint is_quanto
     """If the instrument is quanto.\n\n:returns: `Currency`"""
     cdef readonly str rounding
-    """The rounding rule for costing (decimal module constant).\n\n:returns: `str`"""
+    """The rounding mode for costing (decimal module constant).\n\n:returns: `str`"""
 
 
 cdef class InverseCostSpecification(CostSpecification):

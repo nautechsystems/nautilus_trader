@@ -226,12 +226,12 @@ cdef class Instrument:
 
     cpdef void set_rounding(self, str rounding) except *:
         """
-        Set the rounding rule for the `CostSpecification`.
+        Set the rounding mode for the `CostSpecification`.
 
         Parameters
         ----------
         rounding : str
-            The rounding rule (constant from the decimal module).
+            The rounding mode (constant from the decimal module).
 
         """
         Condition.valid_string(rounding, "rounding")
@@ -569,7 +569,7 @@ cdef class InverseCostSpecification(CostSpecification):
         quote_currency : Currency
             The instruments quote currency.
         rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
+            The rounding mode to apply. Must be a constant from the decimal
             module.
 
         """
@@ -611,7 +611,7 @@ cdef class QuantoCostSpecification(CostSpecification):
         xrate : Decimal
             The current exchange rate between base and settlement currencies.
         rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
+            The rounding mode to apply. Must be a constant from the decimal
             module.
 
         """
