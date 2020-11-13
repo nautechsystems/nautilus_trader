@@ -24,10 +24,11 @@ The portfolio can satisfy queries for accounting information, margin balances,
 total risk exposures and total net positions.
 """
 
+import decimal
+
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
@@ -76,7 +77,7 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Decimal net_position(self, Symbol symbol):
+    cpdef object net_position(self, Symbol symbol):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -131,7 +132,7 @@ cdef class Portfolio(PortfolioFacade):
         self._orders_working = {}          # type: {Venue: {Order}}
         self._positions_open = {}          # type: {Venue: {Position}}
         self._positions_closed = {}        # type: {Venue: {Position}}
-        self._net_positions = {}           # type: {Symbol: Decimal}
+        self._net_positions = {}           # type: {Symbol: decimal.Decimal}
         self._unrealized_pnls_symbol = {}  # type: {Symbol: Money}
         self._unrealized_pnls_venue = {}   # type: {Venue: Money}
 
@@ -359,7 +360,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- QUERIES ---------------------------------------------------------------------------------
 
-    cpdef Decimal net_position(self, Symbol symbol):
+    cpdef object net_position(self, Symbol symbol):
         """
         Return the net relative position for the given symbol. If no positions
         for symbol then will return `Decimal('0')`.
@@ -371,7 +372,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Decimal
+        decimal.Decimal
 
         """
         return self._net_position(symbol)
@@ -446,7 +447,6 @@ cdef class Portfolio(PortfolioFacade):
             True if net flat across all symbols, else False.
 
         """
-        cdef Decimal net_position
         for net_position in self._net_positions.values():
             if net_position != 0:
                 return False
@@ -547,19 +547,19 @@ cdef class Portfolio(PortfolioFacade):
         if not symbols:
             return Money(0, account.currency)
 
-        cdef double cum_pnl = 0
+        cum_pnl = decimal.Decimal()
 
         cdef Symbol symbol
         cdef Money pnl
         for symbol in symbols:
             pnl = self._unrealized_pnls_symbol.get(symbol)
             if pnl is not None:
-                cum_pnl += pnl.as_double()
+                cum_pnl += pnl._value
                 continue
             pnl = self._calculate_unrealized_pnl(symbol)
             if pnl is None:
-                return None
-            cum_pnl += pnl.as_double()
+                return None  # TODO: Raise exception?
+            cum_pnl += pnl._value
 
         unrealized_pnl = Money(cum_pnl, account.currency)
         self._unrealized_pnls_venue[venue] = unrealized_pnl
@@ -627,8 +627,8 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return Money(0, account.currency)
 
-        cdef double xrate_settlement_account
-        cdef double open_value = 0
+        open_value = decimal.Decimal()
+
         cdef Position position
         cdef Instrument instrument
         cdef QuoteTick last
@@ -667,9 +667,8 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline Decimal _net_position(self, Symbol symbol):
-        cdef Decimal net_position = self._net_positions.get(symbol)
-        return net_position if net_position is not None else Decimal()
+    cdef inline object _net_position(self, Symbol symbol):
+        return self._net_positions.get(symbol, decimal.Decimal())
 
     cdef inline set _symbols_open_for_venue(self, Venue venue):
         cdef Position position
@@ -710,7 +709,7 @@ cdef class Portfolio(PortfolioFacade):
         self._update_net_position(event.position.symbol, positions_open)
 
     cdef inline void _update_net_position(self, Symbol symbol, set positions_open):
-        cdef Decimal net_position = Decimal()
+        net_position = decimal.Decimal()
         for position in positions_open:
             if position.symbol == symbol:
                 net_position += position.relative_quantity
@@ -729,9 +728,8 @@ cdef class Portfolio(PortfolioFacade):
         if working_orders is None:
             return  # Nothing to calculate
 
-        cdef Decimal xrate_quanto
-        cdef Decimal xrate_account
-        cdef double margin = 0
+        margin = decimal.Decimal()
+
         cdef Order order
         cdef Instrument instrument
         for order in working_orders:
@@ -779,9 +777,8 @@ cdef class Portfolio(PortfolioFacade):
         if open_positions is None:
             return  # Nothing to calculate
 
-        cdef Decimal xrate_quanto
-        cdef Decimal xrate_account
-        cdef double margin = 0
+        margin = decimal.Decimal()
+
         cdef Position position
         cdef Instrument instrument
         for position in open_positions:
@@ -848,9 +845,8 @@ cdef class Portfolio(PortfolioFacade):
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
 
-        cdef double pnl = 0
-        cdef Decimal xrate_quanto
-        cdef Decimal xrate_account
+        pnl = decimal.Decimal()
+
         cdef Position position
         for position in positions_open:
             if position.symbol != symbol:
@@ -872,22 +868,21 @@ cdef class Portfolio(PortfolioFacade):
         return Money(pnl, account.currency)
 
     cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side):
-        cdef Decimal xrate_quanto = None
-        cdef Currency price_currency
         if instrument.is_quanto:
-            price_currency = instrument.quote_currency if not instrument.is_inverse else instrument.base_currency
-            xrate_quanto = Decimal(str(self._data.get_xrate(
+            xrate_quanto = self._data.get_xrate(
             venue=instrument.symbol.venue,
-            from_currency=price_currency,
+            from_currency=instrument.quote_currency if not instrument.is_inverse else instrument.base_currency,
             to_currency=instrument.settlement_currency,
             price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-        )))
+        )
+        else:
+            xrate_quanto = None
 
-        cdef Decimal xrate_account = Decimal(str(self._data.get_xrate(
+        xrate_account = self._data.get_xrate(
             venue=instrument.symbol.venue,
             from_currency=instrument.settlement_currency,
             to_currency=account.currency,
             price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-        )))
+        )
 
         return xrate_quanto, xrate_account

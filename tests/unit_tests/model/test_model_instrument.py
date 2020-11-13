@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import unittest
 
+from parameterized import parameterized
+
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -31,8 +33,51 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import UNIX_EPOCH
 
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
+BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
+
 
 class InstrumentTests(unittest.TestCase):
+
+    @parameterized.expand([
+        [AUDUSD_FXCM, AUDUSD_FXCM, True, False],
+        [AUDUSD_FXCM, USDJPY_FXCM, False, True],
+    ])
+    def test_equality(self, instrument1, instrument2, expected1, expected2):
+        # Arrange
+        # Act
+        result1 = instrument1 == instrument2
+        result2 = instrument1 != instrument2
+
+        # Assert
+        self.assertEqual(expected1, result1)
+        self.assertEqual(expected2, result2)
+
+    def test_str_repr_returns_expected(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual("Instrument('BTC/USDT.BINANCE')", str(BTCUSDT_BINANCE))
+        self.assertEqual("Instrument('BTC/USDT.BINANCE')", repr(BTCUSDT_BINANCE))
+
+    def test_hash(self):
+        # Arrange
+        # Act
+        result = hash(BTCUSDT_BINANCE)
+
+        # Assert
+        self.assertEqual(int, type(result))
+
+    def test_set_rounding(self):
+        # Arrange
+        instrument = BTCUSDT_BINANCE
+
+        # Act
+        instrument.set_rounding("TRUNCATE")
+
+        # Assert
+        self.assertEqual("TRUNCATE", instrument.rounding_rule)
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange
@@ -49,7 +94,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
+        instrument = InstrumentLoader.xbtusd_bitmex(leverage=decimal.Decimal(100))
 
         # Act
         margin = instrument.calculate_order_margin(
@@ -85,7 +130,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
+        instrument = InstrumentLoader.xbtusd_bitmex(leverage=decimal.Decimal(100))
 
         last = QuoteTick(
             instrument.symbol,
@@ -159,7 +204,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(100000),
-            Price("11450.50"),
+            decimal.Decimal("11450.50"),
             LiquiditySide.MAKER,
         )
 
@@ -173,7 +218,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(1500000),
-            Price("0.80050"),
+            decimal.Decimal("0.80050"),
             LiquiditySide.TAKER,
         )
 
@@ -187,7 +232,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(100000),
-            Price("11450.50"),
+            decimal.Decimal("11450.50"),
             LiquiditySide.TAKER,
         )
 
@@ -201,7 +246,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(2200000),
-            Price("120.310"),
+            decimal.Decimal("120.310"),
             LiquiditySide.TAKER,
         )
 

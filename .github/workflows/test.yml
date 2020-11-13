@@ -1,20 +1,20 @@
 name: test
 
-# Test pushes on the develop branch
+# Test pushes on non-master branch
 
 on:
   push:
-    branches: [ develop ]
+    branches-ignore:
+      - "master"
+      - "dependabot/**"
 
 jobs:
-
   test:
-
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest ]
-        python-version: [ 3.6, 3.7, 3.8 ]
+        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
     name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 

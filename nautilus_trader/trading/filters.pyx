@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-
 import pandas as pd
 import pytz
 
@@ -27,10 +25,7 @@ from enum import Enum
 from enum import unique
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport is_datetime_utc
-
-from nautilus_trader import PACKAGE_ROOT
 
 
 @unique
@@ -372,7 +367,7 @@ cdef class EconomicNewsEventFilter:
             self,
             list currencies not None,
             list impacts not None,
-            str news_csv_path not None="default",
+            news_data not None: pd.DataFrame,
     ):
         """
         Initialize a new instance of the `EconomicNewsEventFilter` class.
@@ -383,17 +378,13 @@ cdef class EconomicNewsEventFilter:
             The list of three letter currency symbols to filter.
         impacts : list[str]
             The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
-        news_csv_path : str
-            The path to the news data csv.
+        news_data : pd.DataFrame
+            The economic news data .
 
         """
-        if news_csv_path == "default":
-            news_csv_path = os.path.join(PACKAGE_ROOT + "/_internal/news/", "news_events.csv")
-
         self._currencies = currencies
         self._impacts = impacts
 
-        news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
         self._unfiltered_data_start = news_data.index[0]
         self._unfiltered_data_end = news_data.index[-1]
 

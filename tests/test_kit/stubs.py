@@ -271,7 +271,7 @@ class TestStubs:
 
         commission = instrument.calculate_commission(
             quantity=order.quantity,
-            avg_price=fill_price,
+            avg_price=fill_price.as_decimal(),
             liquidity_side=liquidity_side,
             xrate=xrate,
         )
@@ -288,7 +288,7 @@ class TestStubs:
             filled_qty,
             Quantity(order.quantity - leaves_qty),
             leaves_qty,
-            order.price if fill_price is None else fill_price,
+            order.price.as_decimal() if fill_price is None else fill_price.as_decimal(),
             Money(-commission.as_decimal(), commission.currency),
             LiquiditySide.TAKER,
             instrument.get_cost_spec(xrate),

@@ -29,7 +29,7 @@ class TestClockTests:
     @staticmethod
     def advance_time():
         test_time = UNIX_EPOCH
-        for _i in range(1000000):
+        for _i in range(100000):
             test_time += timedelta(seconds=1)
         clock.advance_time(test_time)
 

@@ -18,13 +18,13 @@ Defines various order types to be used for trading.
 """
 
 from typing import Dict
+import decimal
 
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -130,7 +130,7 @@ cdef class Order:
         self.filled_qty = Quantity()
         self.filled_timestamp = None  # Can be None
         self.avg_price = None         # Can be None
-        self.slippage = Decimal()
+        self.slippage = decimal.Decimal()
         self.init_id = event.id
 
     def __eq__(self, Order other) -> bool:
@@ -534,7 +534,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
-        self.slippage = Decimal()
+        self.slippage = decimal.Decimal()
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
@@ -554,18 +554,16 @@ cdef class PassiveOrder(Order):
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
-        self.filled_qty = event.filled_qty
+        self.filled_qty = event.fill_qty
         self.filled_timestamp = event.timestamp
         self.avg_price = event.avg_price
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
-
-        cdef Decimal price
         if self.side == OrderSide.BUY:
-            self.slippage = Decimal(self.avg_price - self.price)
+            self.slippage = self.avg_price - self.price
         else:  # self.side == OrderSide.SELL:
-            self.slippage = Decimal(self.price - self.avg_price)
+            self.slippage = self.price - self.avg_price
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
@@ -687,7 +685,7 @@ cdef class MarketOrder(Order):
         self.strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
-        self.filled_qty = event.filled_qty
+        self.filled_qty = event.fill_qty
         self.filled_timestamp = event.timestamp
         self.avg_price = event.avg_price
 

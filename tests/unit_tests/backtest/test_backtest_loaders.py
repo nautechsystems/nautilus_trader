@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.core.decimal import Decimal
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import Symbol
@@ -35,7 +35,7 @@ class BacktestLoadersTests(unittest.TestCase):
         # Assert
         self.assertEqual(Symbol("AUD/USD", Venue('FXCM')), instrument.symbol)
         self.assertEqual(5, instrument.price_precision)
-        self.assertEqual(Decimal("0.00001"), instrument.tick_size)
+        self.assertEqual(decimal.Decimal("0.00001"), instrument.tick_size)
         self.assertEqual(Currency(code='USD', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)
 
     def test_default_fx_with_3_dp_returns_expected_instrument(self):
@@ -48,5 +48,5 @@ class BacktestLoadersTests(unittest.TestCase):
         # Assert
         self.assertEqual(Symbol("USD/JPY", Venue('FXCM')), instrument.symbol)
         self.assertEqual(3, instrument.price_precision)
-        self.assertEqual(Decimal("0.001"), instrument.tick_size)
+        self.assertEqual(decimal.Decimal("0.001"), instrument.tick_size)
         self.assertEqual(Currency(code='JPY', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)

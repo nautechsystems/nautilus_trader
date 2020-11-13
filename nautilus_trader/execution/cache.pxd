@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
@@ -87,4 +86,3 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef void _build_indexes_from_positions(self) except *
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
     cdef inline set _build_pos_query_filter_set(self, Symbol symbol, StrategyId strategy_id)
-    cdef inline Decimal _sum_net_position(self, Symbol symbol, StrategyId strategy_id)

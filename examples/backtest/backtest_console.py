@@ -15,6 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
+import os
 
 import pandas as pd
 
@@ -24,6 +25,7 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
@@ -33,13 +35,16 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data import TestDataProvider
 
 
 if __name__ == "__main__":
+    # Setup trading instruments
     symbol = Symbol('GBP/USD', Venue('SIM'))
     GBPUSD = InstrumentLoader.default_fx_ccy(symbol)
 
+    # Setup data container
     data = BacktestDataContainer()
     data.add_instrument(GBPUSD)
     data.add_bars(
@@ -55,7 +60,8 @@ if __name__ == "__main__":
         TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
 
-    strategies = [EMACross(
+    # Instantiate your strategy
+    strategy = EMACross(
         symbol=GBPUSD.symbol,
         bar_spec=BarSpecification(
             5,
@@ -64,8 +70,9 @@ if __name__ == "__main__":
         ),
         fast_ema=10,
         slow_ema=20,
-    )]
+    )
 
+    # Customize the backtest configuration (optional)
     config = BacktestConfig(
         exec_db_type="in-memory",
         exec_db_flush=False,
@@ -81,6 +88,7 @@ if __name__ == "__main__":
         log_to_file=False,
     )
 
+    # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_at_limit=0.2,
         prob_fill_at_stop=0.95,
@@ -88,9 +96,10 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
+    # Build the backtest engine
     engine = BacktestEngine(
         data=data,
-        strategies=strategies,
+        strategies=[strategy],  # List of `any` number of strategies
         venue=Venue("SIM"),
         oms_type=OMSType.HEDGING,
         generate_position_ids=False,
@@ -98,13 +107,23 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
+    # Optional plug in module to simulate rollover interest
+    # The data is coming from packaged test data
+    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+    fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+    engine.plug_simulation_module(Venue('SIM'), fx_rollover_interest)
+
     input("Press Enter to continue...")  # noqa (always Python 3)
 
+    # Set backtest start and stop times
     start = datetime(2008, 2, 1, 0, 0, 0, 0)
     stop = datetime(2008, 3, 1, 0, 0, 0, 0)
 
+    # Run the engine
     engine.run(start, stop)
 
+    # Optionally view reports
     with pd.option_context(
             "display.max_rows",
             100,
@@ -115,4 +134,11 @@ if __name__ == "__main__":
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 
+    # Uncomment the below to reset the engine
+    # Once reset an engine can be re-run for example with a different start/stop
+    # times, or with a different fill model. Many possibilities.
+
+    # engine.reset()
+
+    # Good practice to dispose of the object
     engine.dispose()

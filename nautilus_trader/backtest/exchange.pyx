@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytz
+import decimal
 
 from cpython.datetime cimport datetime
 
@@ -21,12 +21,11 @@ from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.decimal cimport Decimal
 from nautilus_trader.execution.cache cimport ExecutionCache
-from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -38,7 +37,6 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -67,9 +65,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
-from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
-
-_TZ_US_EAST = pytz.timezone("US/Eastern")
 
 
 cdef class SimulatedExchange:
@@ -133,25 +128,23 @@ cdef class SimulatedExchange:
         self.exec_client = None  # Initialized when execution client registered
         self.account = None      # Initialized when execution client registered
 
-        self.day_number = 0
-        self.rollover_time = None  # Initialized at first rollover
-        self.rollover_applied = False
-        self.frozen_account = config.frozen_account
         self.starting_capital = config.starting_capital
         self.account_currency = config.account_currency
         self.account_balance = config.starting_capital
         self.account_balance_start_day = config.starting_capital
         self.account_balance_activity_day = Money(0, self.account_currency)
+        self.total_commissions = Money(0, self.account_currency)
+        self.frozen_account = config.frozen_account
 
         self.xrate_calculator = ExchangeRateCalculator()
-        self.rollover_calculator = RolloverInterestCalculator(config.short_term_interest_csv_path)
-        self.rollover_spread = 0.0  # Bank + Broker spread markup
-        self.total_commissions = Money(0, self.account_currency)
-        self.total_rollover = Money(0, self.account_currency)
         self.fill_model = fill_model
+
+        self.modules = []
 
         self.instruments = instruments
         self._market = {}               # type: {Symbol, QuoteTick}
+        self._slippages = self._get_tick_sizes()
+
         self._working_orders = {}       # type: {ClientOrderId, Order}
         self._position_index = {}       # type: {ClientOrderId, PositionId}
         self._child_orders = {}         # type: {ClientOrderId, [Order]}
@@ -161,11 +154,9 @@ cdef class SimulatedExchange:
         self._symbol_ord_count = {}     # type: {Symbol, int}
         self._executions_count = 0
 
-        self._set_slippages()
-
     cpdef void register_client(self, BacktestExecClient client) except *:
         """
-        Register the given execution client with this market.
+        Register the given execution client with the exchange.
 
         Parameters
         ----------
@@ -180,6 +171,22 @@ cdef class SimulatedExchange:
         cdef AccountState initial_event = self._generate_account_event()
         self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
+
+    cpdef void register_module(self, SimulationModule module) except *:
+        """
+        Register the given simulation module with the exchange.
+
+        Parameters
+        ----------
+        module : SimulationModule
+            The module to register
+
+        """
+        Condition.not_none(module, "module")
+        Condition.not_in(module, self.modules, "module", "self._modules")
+
+        module.register_exchange(self)
+        self.modules.append(module)
 
     cpdef void check_residuals(self) except *:
         """
@@ -200,12 +207,14 @@ cdef class SimulatedExchange:
         """
         self._log.debug(f"Resetting...")
 
-        self.day_number = 0
+        for module in self.modules:
+            module.reset()
+
         self.account_balance = self.starting_capital
         self.account_balance_start_day = self.account_balance
         self.account_balance_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
-        self.total_rollover = Money(0, self.account_currency)
+
         self._generate_account_event()
 
         self._market.clear()
@@ -259,28 +268,12 @@ cdef class SimulatedExchange:
         self._clock.set_time(tick.timestamp)
         self._market[tick.symbol] = tick
 
-        cdef datetime time_now = self._clock.utc_now()
+        cdef datetime now = self._clock.utc_now()
 
-        cdef datetime rollover_local
-        if self.day_number != time_now.day:
-            # Set account statistics for new day
-            self.day_number = time_now.day
-            self.account_balance_start_day = self.account.balance()
-            self.account_balance_activity_day = Money(0, self.account_currency)
-            self.rollover_applied = False
-
-            rollover_local = time_now.astimezone(_TZ_US_EAST)
-            self.rollover_time = _TZ_US_EAST.localize(datetime(
-                rollover_local.year,
-                rollover_local.month,
-                rollover_local.day,
-                17),
-            ).astimezone(pytz.utc)
-
-        # Check for and apply any rollover interest
-        if not self.rollover_applied and time_now >= self.rollover_time:
-            self._apply_rollover_interest(time_now, self.rollover_time.isoweekday())
-            self.rollover_applied = True
+        # Iterate through plug in modules
+        cdef SimulationModule module
+        for module in self.modules:
+            module.process(tick, now)
 
         # Check for working orders
         if not self._working_orders:
@@ -353,7 +346,7 @@ cdef class SimulatedExchange:
                         continue  # Continue loop to next order
 
             # Check for order expiry
-            if order.expire_time and time_now >= order.expire_time:
+            if order.expire_time and now >= order.expire_time:
                 if order.cl_ord_id in self._working_orders:  # Order may have been removed since loop started
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
@@ -485,25 +478,39 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(modified)
 
-# -- EVENT HANDLING --------------------------------------------------------------------------------
+    cdef inline QuoteTick get_last_quote(self, Symbol symbol):
+        Condition.not_none(symbol, "symbol")
 
-    cdef inline void _set_slippages(self) except *:
-        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
+        return self._market.get(symbol)
 
-        for symbol, instrument in self.instruments.items():
-            slippage_index[symbol] = instrument.tick_size
-
-        self._slippages = slippage_index
+    cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type):
+        return self.xrate_calculator.get_rate(
+            from_currency=from_currency,
+            to_currency=to_currency,
+            price_type=price_type,
+            bid_quotes=self._build_current_bid_rates(),
+            ask_quotes=self._build_current_ask_rates(),
+        )
 
     cdef inline dict _build_current_bid_rates(self):
         cdef Symbol symbol
         cdef QuoteTick tick
-        return {symbol.code: tick.bid.as_double() for symbol, tick in self._market.items()}
+        return {symbol.code: tick.bid.as_decimal() for symbol, tick in self._market.items()}
 
     cdef inline dict _build_current_ask_rates(self):
         cdef Symbol symbol
         cdef QuoteTick tick
-        return {symbol.code: tick.ask.as_double() for symbol, tick in self._market.items()}
+        return {symbol.code: tick.ask.as_decimal() for symbol, tick in self._market.items()}
+
+# -- EVENT HANDLING --------------------------------------------------------------------------------
+
+    cdef inline object _get_tick_sizes(self):
+        cdef dict slippage_index = {}  # type: {Symbol, decimal.Decimal}
+
+        for symbol, instrument in self.instruments.items():
+            slippage_index[symbol] = instrument.tick_size
+
+        return slippage_index
 
     cdef inline PositionId _generate_position_id(self, Symbol symbol):
         cdef int pos_count = self._symbol_pos_count.get(symbol, 0)
@@ -547,18 +554,16 @@ cdef class SimulatedExchange:
             pnl = position.calculate_pnl(
                 avg_open=position.avg_open,
                 avg_close=event.avg_price,
-                quantity=event.filled_qty,
+                quantity=event.fill_qty,
             )
 
         cdef double xrate
         if event.commission.currency != self.account_currency:
             # Get exchange rate to account currency
-            xrate = self.xrate_calculator.get_rate(
+            xrate = self.get_xrate(
                 from_currency=event.commission.currency,
                 to_currency=self.account_currency,
                 price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-                bid_quotes=self._build_current_bid_rates(),
-                ask_quotes=self._build_current_ask_rates(),
             )
 
             # Convert to account currency
@@ -577,67 +582,6 @@ cdef class SimulatedExchange:
         account_state = self._generate_account_event()
         self.account.apply(account_state)
         self.exec_client.handle_event(account_state)
-
-    cdef inline void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        Condition.not_none(timestamp, "timestamp")
-        Condition.not_none(self.exec_client, "exec_client")
-
-        cdef list open_positions = self.exec_cache.positions_open()
-
-        cdef Position position
-        cdef Instrument instrument
-        cdef Currency base_currency
-        cdef double interest_rate
-        cdef double xrate
-        cdef double rollover
-        cdef double rollover_cumulative = 0.0
-        cdef double mid_price
-        cdef dict mid_prices = {}
-        cdef QuoteTick market
-        for position in open_positions:
-            instrument = self.instruments[position.symbol]
-            if instrument.asset_class == AssetClass.FX:
-                mid_price = mid_prices.get(instrument.symbol, 0.0)
-                if mid_price == 0.0:
-                    market = self._market[instrument.symbol]
-                    mid_price = <double>((market.ask + market.bid) / 2.0)
-                    mid_prices[instrument.symbol] = mid_price
-                interest_rate = self.rollover_calculator.calc_overnight_rate(
-                    position.symbol,
-                    timestamp,
-                )
-                xrate = self.xrate_calculator.get_rate(
-                    from_currency=instrument.quote_currency,
-                    to_currency=self.account.currency,
-                    price_type=PriceType.MID,
-                    bid_quotes=self._build_current_bid_rates(),
-                    ask_quotes=self._build_current_ask_rates(),
-                )
-                rollover = mid_price * position.quantity * interest_rate * xrate
-                # Apply any bank and broker spread markup (basis points)
-                rollover_cumulative += rollover - (rollover * self.rollover_spread)
-
-        if iso_week_day == 3:  # Book triple for Wednesdays
-            rollover_cumulative = rollover_cumulative * 3.0
-        elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
-            rollover_cumulative = rollover_cumulative * 3.0
-
-        cdef Money rollover_final = Money(rollover_cumulative, self.account_currency)
-        self.total_rollover = Money(self.total_rollover + rollover_final, self.account_currency)
-
-        if not self.frozen_account:
-            self.account_balance = Money(
-                self.account_balance + rollover_final,
-                self.account_currency,
-            )
-            self.account_balance_activity_day = Money(
-                self.account_balance_activity_day + rollover_final,
-                self.account_currency,
-            )
-
-            account_state = self._generate_account_event()
-            self.account.apply(account_state)
-            self.exec_client.handle_event(account_state)
 
     cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_stop_filled()
@@ -881,20 +825,18 @@ cdef class SimulatedExchange:
         if instrument is None:
             raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
 
-        cdef Decimal xrate = None
+        xrate = None
         if instrument.is_quanto:
             # Get exchange rate between base and settlement currencies
-            xrate = Decimal(self.xrate_calculator.get_rate(
+            xrate = self.get_xrate(
                 from_currency=instrument.base_currency,
                 to_currency=instrument.settlement_currency,
                 price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
-                bid_quotes=self._build_current_bid_rates(),
-                ask_quotes=self._build_current_ask_rates(),
-            ))
+            )
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
-            fill_price,
+            fill_price.as_decimal(),
             liquidity_side,
             xrate,
         )
@@ -912,7 +854,7 @@ cdef class SimulatedExchange:
             order.quantity,
             order.quantity,
             Quantity(),  # Not modeling partial fills yet
-            fill_price,
+            fill_price.as_decimal(),
             commission,
             liquidity_side,
             instrument.get_cost_spec(xrate),
