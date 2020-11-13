@@ -289,7 +289,7 @@ cdef class Condition:
         param2 : str
             The second objects parameter name.
         ex_type : Exception, optional
-            The optional custom exception type to be raised on a failed check.
+            The custom exception type to be raised on a failed check.
 
         Raises
         -------
@@ -1017,7 +1017,7 @@ class PyCondition:
         param2 : str
             The second objects parameter name.
         ex_type : Exception, optional
-            The optional custom exception type to be raised on a failed check.
+            The custom exception type to be raised on a failed check.
 
         Raises
         -------
