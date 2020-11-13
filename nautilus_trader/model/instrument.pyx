@@ -406,9 +406,7 @@ cdef class Instrument:
         # xrate checked in calculate_notional
 
         close_price = self._get_close_price(side, last)
-        notional = self.calculate_notional(quantity, close_price, xrate)
-
-        return Money(notional, self.settlement_currency)  # Currently not handling quanto settlement
+        return self.calculate_notional(quantity, close_price, xrate)
 
     cpdef Money calculate_commission(
         self,

@@ -292,7 +292,7 @@ class TestStubs:
             instrument.quote_currency,
             instrument.settlement_currency,
             instrument.is_inverse,
-            Money(-commission.as_decimal(), commission.currency),
+            Money(-commission, commission.currency),
             LiquiditySide.TAKER,
             UNIX_EPOCH,
             uuid4(),

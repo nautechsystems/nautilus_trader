@@ -31,7 +31,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -44,7 +43,6 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -63,8 +61,8 @@ cdef class SimulatedExchange:
     cdef readonly Currency account_currency
     cdef readonly Money starting_capital
     cdef readonly Money account_balance
-    cdef readonly Money account_balance_start_day
-    cdef readonly Money account_balance_activity_day
+    cdef readonly Money account_start_day
+    cdef readonly Money account_activity_day
     cdef readonly Money total_commissions
     cdef readonly bint frozen_account
     cdef readonly bint generate_position_ids
@@ -95,10 +93,16 @@ cdef class SimulatedExchange:
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, QuoteTick tick) except *
 
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
+
     cpdef void handle_submit_order(self, SubmitOrder command) except *
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void handle_modify_order(self, ModifyOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
+
+# --------------------------------------------------------------------------------------------------
+
+    cpdef void adjust_account(self, Money adjustment) except *
 
     cdef inline QuoteTick get_last_quote(self, Symbol symbol)
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
@@ -112,7 +116,6 @@ cdef class SimulatedExchange:
     cdef inline OrderId _generate_order_id(self, Symbol symbol)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
-    cdef inline void _adjust_account(self, OrderFilled event, Position position) except *
     cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
     cdef inline bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
     cdef inline bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *

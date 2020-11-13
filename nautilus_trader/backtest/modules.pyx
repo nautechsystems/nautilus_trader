@@ -113,8 +113,8 @@ cdef class FXRolloverInterestModule(SimulationModule):
         if self._day_number != now.day:
             # Set account statistics for new day
             self._day_number = now.day
-            self._exchange.account_balance_start_day = self._exchange.account.balance()
-            self._exchange.account_balance_activity_day = Money(0, self._exchange.account_currency)
+            self._exchange.account_start_day = self._exchange.account.balance()
+            self._exchange.account_activity_day = Money(0, self._exchange.account_currency)
             self._rollover_applied = False
 
             rollover_local = now.astimezone(_TZ_US_EAST)
@@ -131,9 +131,6 @@ cdef class FXRolloverInterestModule(SimulationModule):
             self._rollover_applied = True
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
-        Condition.not_none(timestamp, "timestamp")
-        Condition.not_none(self._exchange.exec_client, "exec_client")
-
         cdef list open_positions = self._exchange.exec_cache.positions_open()
 
         rollover_cumulative = decimal.Decimal()
@@ -176,21 +173,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         else:
             self._rollover_total = Money(self._rollover_total + rollover_final, self._exchange.account_currency)
 
-        # TODO: Refactor the below so as not to access the protected method
-        if not self._exchange.frozen_account:
-            self._exchange.account_balance = Money(
-                self._exchange.account_balance + rollover_final,
-                self._exchange.account_currency,
-                )
-            self._exchange.account_balance_activity_day = Money(
-                self._exchange.account_balance_activity_day + rollover_final,
-                self._exchange.account_currency,
-                )
-
-            # TODO: Refactor so not reaching into exchange to handle events
-            account_state = self._exchange._generate_account_event()
-            self._exchange.account.apply(account_state)
-            self._exchange.exec_client.handle_event(account_state)
+        self._exchange.adjust_account(rollover_final)
 
     cpdef void log_diagnostics(self, LoggerAdapter log) except *:
         """

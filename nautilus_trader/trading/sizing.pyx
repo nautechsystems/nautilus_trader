@@ -79,11 +79,11 @@ cdef class PositionSizer:
 
     cdef object _calculate_riskable_money(
             self,
-            Money equity,
+            object equity,
             object risk,
             object commission_rate,
     ):
-        if equity.as_decimal() <= 0:
+        if equity <= 0:
             return decimal.Decimal()
         risk_money = equity * risk
         commission = risk_money * commission_rate * 2  # (round turn)
@@ -183,7 +183,7 @@ cdef class FixedRiskSizer(PositionSizer):
             return Quantity(precision=self.instrument.size_precision)
 
         risk_points = self._calculate_risk_ticks(entry, stop_loss)
-        risk_money = self._calculate_riskable_money(equity, risk, commission_rate)
+        risk_money = self._calculate_riskable_money(equity.as_decimal(), risk, commission_rate)
 
         if risk_points <= 0:
             # Divide by zero protection
