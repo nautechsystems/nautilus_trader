@@ -12,27 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.common.cache cimport IdentifierCache
-from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.base cimport DictionarySerializer
-from nautilus_trader.serialization.base cimport EventSerializer
-from nautilus_trader.serialization.base cimport OrderSerializer
-
-
-cdef class MsgPackDictionarySerializer(DictionarySerializer):
-    pass
-
-
-cdef class MsgPackOrderSerializer(OrderSerializer):
-    cdef ObjectCache symbol_cache
-
-
-cdef class MsgPackCommandSerializer(CommandSerializer):
-    cdef IdentifierCache identifier_cache
-    cdef OrderSerializer order_serializer
-
-
-cdef class MsgPackEventSerializer(EventSerializer):
-    cdef IdentifierCache identifier_cache

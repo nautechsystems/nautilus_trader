@@ -35,15 +35,15 @@ cdef class Instrument:
     cdef readonly AssetType asset_type
     """The asset type of the instrument.\n\n:returns: `AssetType`"""
     cdef readonly Currency base_currency
-    """The base currency of the instrument.\n\n:returns: `Currency`"""
+    """The base currency of the instrument.\n\n:returns: `Currency` or `None`"""
     cdef readonly Currency quote_currency
     """The quote currency of the instrument.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
-    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
+    """The settlement currency of the instrument. Used for PNL.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
-    """If the instrument costing is inverse.\n\n:returns: `Currency`"""
+    """If the quantity is expressed in quote currency.\n\n:returns: `Currency`"""
     cdef readonly bint is_quanto
-    """If the instrument costing is quanto.\n\n:returns: `Currency`"""
+    """If settlement currency different to base or quote.\n\n:returns: `Currency`"""
     cdef readonly int price_precision
     """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -84,11 +84,6 @@ cdef class Instrument:
     """The funding rate for short positions.\n\n:returns: `decimal.Decimal`"""
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
-    cdef readonly str rounding_rule
-    """The instruments rounding rule.\n\n:returns: `str`"""
-
-    cpdef void set_rounding(self, str rounding) except *
-    cpdef CostSpecification get_cost_spec(self, object xrate=*)
 
     cpdef Money calculate_notional(self, Quantity quantity, object close_price, object xrate=*)
     cpdef Money calculate_order_margin(self, Quantity quantity, Price price, object xrate=*)
@@ -117,28 +112,3 @@ cdef class Instrument:
     )
 
     cdef inline object _get_close_price(self, PositionSide side, QuoteTick last)
-
-
-cdef class CostSpecification:
-    cdef readonly Currency quote_currency
-    """The quote currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly Currency settlement_currency
-    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly bint is_inverse
-    """If the instrument is inverse.\n\n:returns: `Currency`"""
-    cdef readonly bint is_quanto
-    """If the instrument is quanto.\n\n:returns: `Currency`"""
-    cdef readonly str rounding_rule
-    """The rounding rule for costing.\n\n:returns: `str`"""
-
-
-cdef class InverseCostSpecification(CostSpecification):
-    cdef readonly Currency base_currency
-    """The base currency of the instrument.\n\n:returns: `Currency`"""
-
-
-cdef class QuantoCostSpecification(CostSpecification):
-    cdef readonly Currency base_currency
-    """The base currency of the instrument.\n\n:returns: `Currency`"""
-    cdef readonly object xrate
-    """The exchange rate from cost currency to settlement currency.\n\n:returns: `decimal.Decimal`"""

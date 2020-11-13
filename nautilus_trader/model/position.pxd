@@ -26,7 +26,6 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport CostSpecification
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -46,8 +45,6 @@ cdef class Position:
     """The client order identifier for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the position.\n\n:returns: `StrategyId`"""
-    cdef readonly datetime timestamp
-    """The positions initialization timestamp.\n\n:returns: `datetime`"""
     cdef readonly Symbol symbol
     """The positions symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide entry
@@ -60,10 +57,14 @@ cdef class Position:
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_quantity
     """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
-    cdef readonly CostSpecification cost_spec
-    """The positions cost specification.\n\n:returns: `CostSpecification`"""
+    cdef readonly Currency quote_currency
+    """The positions quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
     """The positions settlement currency.\n\n:returns: `Currency`"""
+    cdef readonly bint is_inverse
+    """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
+    cdef readonly datetime timestamp
+    """The positions initialization timestamp.\n\n:returns: `datetime`"""
     cdef readonly datetime opened_time
     """The opened time.\n\n:returns: `datetime`"""
     cdef readonly datetime closed_time
@@ -106,10 +107,9 @@ cdef class Position:
         object avg_open,
         object avg_close,
         object quantity,
-        object xrate=*,
     )
-    cpdef Money unrealized_pnl(self, QuoteTick last, object xrate=*)
-    cpdef Money total_pnl(self, QuoteTick last, object xrate=*)
+    cpdef Money unrealized_pnl(self, QuoteTick last)
+    cpdef Money total_pnl(self, QuoteTick last)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *

@@ -210,7 +210,7 @@ cdef class DataCache(DataCacheFacade):
             self._quote_ticks[symbol] = cached_ticks
         elif len(cached_ticks) > 0:
             # Currently the simple solution for multiple consumers requesting
-            # ticks at system spool up is just to add only if the cache is empty.
+            # ticks at system spool up; is just to add only if the cache is empty.
             self._log.debug("Cache already contains ticks.")
             return
 
@@ -247,7 +247,7 @@ cdef class DataCache(DataCacheFacade):
             self._trade_ticks[symbol] = cached_ticks
         elif len(cached_ticks) > 0:
             # Currently the simple solution for multiple consumers requesting
-            # ticks at system spool up is just to add only if the cache is empty.
+            # ticks at system spool up; is just to add only if the cache is empty.
             self._log.debug("Cache already contains ticks.")
             return
 
@@ -285,7 +285,7 @@ cdef class DataCache(DataCacheFacade):
             self._trade_ticks[bar_type.symbol] = cached_bars
         elif len(cached_bars) > 0:
             # Currently the simple solution for multiple consumers requesting
-            # bars at system spool up is just to add only if the cache is empty.
+            # bars at system spool up; is just to add only if the cache is empty.
             self._log.debug("Cache already contains bars.")
             return
 

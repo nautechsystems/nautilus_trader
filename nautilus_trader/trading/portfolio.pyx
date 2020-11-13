@@ -31,7 +31,6 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -554,12 +553,12 @@ cdef class Portfolio(PortfolioFacade):
         for symbol in symbols:
             pnl = self._unrealized_pnls_symbol.get(symbol)
             if pnl is not None:
-                cum_pnl += pnl._value
+                cum_pnl += pnl.as_decimal()
                 continue
             pnl = self._calculate_unrealized_pnl(symbol)
             if pnl is None:
                 return None  # TODO: Raise exception?
-            cum_pnl += pnl._value
+            cum_pnl += pnl.as_decimal()
 
         unrealized_pnl = Money(cum_pnl, account.currency)
         self._unrealized_pnls_venue[venue] = unrealized_pnl
@@ -863,7 +862,7 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
-            pnl += position.unrealized_pnl(last, xrate_quanto) * xrate_account
+            pnl += position.unrealized_pnl(last) * xrate_account
 
         return Money(pnl, account.currency)
 
