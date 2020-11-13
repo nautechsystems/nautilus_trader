@@ -76,6 +76,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.WORKING): OrderState.WORKING,
     (OrderState.REJECTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.ACCEPTED, OrderState.REJECTED): OrderState.REJECTED,
     (OrderState.ACCEPTED, OrderState.CANCELLED): OrderState.CANCELLED,
     (OrderState.ACCEPTED, OrderState.WORKING): OrderState.WORKING,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,

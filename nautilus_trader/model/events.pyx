@@ -36,8 +36,6 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport CostSpecification
-from nautilus_trader.model.instrument cimport QuantoCostSpecification
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
@@ -808,9 +806,11 @@ cdef class OrderFilled(OrderEvent):
             Quantity cumulative_qty not None,
             Quantity leaves_qty not None,
             object avg_price not None,
+            Currency quote_currency not None,
+            Currency settlement_currency not None,
+            bint is_inverse,
             Money commission not None,
             LiquiditySide liquidity_side,
-            CostSpecification cost_spec not None,
             datetime execution_time not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -844,10 +844,16 @@ cdef class OrderFilled(OrderEvent):
             The quantity open for further execution.
         avg_price : decimal.Decimal
             The average price of the fill.
+        quote_currency : Currency
+            The instrument quote currency.
+        settlement_currency : Currency
+            The instrument settlement currency.
+        is_inverse : bool
+            If quantity is expressed in quote currency.
+        commission : Money
+            The fill commission.
         liquidity_side : LiquiditySide
             The execution liquidity side.
-        cost_spec : CostSpecification
-            The event instruments cost specification.
         execution_time : datetime
             The execution time.
         event_id : UUID
@@ -877,9 +883,11 @@ cdef class OrderFilled(OrderEvent):
         self.leaves_qty = leaves_qty
         self.is_partial_fill = leaves_qty > 0
         self.avg_price = avg_price
+        self.quote_currency = quote_currency
+        self.settlement_currency = settlement_currency
+        self.is_inverse = is_inverse
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.cost_spec = cost_spec
         self.execution_time = execution_time
         self.is_completion_trigger = leaves_qty == 0  # Completely filled
 
@@ -896,7 +904,7 @@ cdef class OrderFilled(OrderEvent):
                 f"fill_qty={self.fill_qty.to_string()}, "
                 f"cum_qty={self.cumulative_qty.to_string()}, "
                 f"leaves_qty={self.leaves_qty.to_string()}, "
-                f"avg_price={self.avg_price}, "
+                f"avg_price={self.avg_price} {self.quote_currency.code}, "
                 f"commission={self.commission.to_string()}, "
                 f"id={self.id})")
 

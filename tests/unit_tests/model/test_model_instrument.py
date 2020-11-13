@@ -33,6 +33,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
 AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
 USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
 BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
@@ -68,16 +69,6 @@ class InstrumentTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(int, type(result))
-
-    def test_set_rounding(self):
-        # Arrange
-        instrument = BTCUSDT_BINANCE
-
-        # Act
-        instrument.set_rounding("TRUNCATE")
-
-        # Assert
-        self.assertEqual("TRUNCATE", instrument.rounding_rule)
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange

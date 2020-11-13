@@ -73,8 +73,8 @@ cdef class Instrument:
             The asset class.
         asset_type : AssetType
             The asset type.
-        base_currency : Currency
-            The base currency.
+        base_currency : Currency, optional
+            The base currency. Not applicable for all asset classes.
         quote_currency : Currency
             The quote currency.
         settlement_currency : Currency
@@ -187,9 +187,10 @@ cdef class Instrument:
         self.symbol = symbol
         self.asset_class = asset_class
         self.asset_type = asset_type
-        self.base_currency = base_currency
+        self.base_currency = base_currency  # Can be None
         self.quote_currency = quote_currency
-        self.settlement_currency = settlement_currency
+        # Currently not handling quanto settlement
+        self.settlement_currency = quote_currency if not is_inverse else base_currency
         self.is_inverse = is_inverse
         self.is_quanto = settlement_currency not in (base_currency, quote_currency)
         self.price_precision = price_precision
@@ -212,8 +213,6 @@ cdef class Instrument:
         self.funding_rate_short = funding_rate_short
         self.timestamp = timestamp
 
-        self.rounding_rule = "DEFAULT"
-
     def __eq__(self, Instrument other) -> bool:
         return self.symbol.value == other.symbol.value
 
@@ -225,59 +224,6 @@ cdef class Instrument:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.symbol.value}')"
-
-    cpdef void set_rounding(self, str rounding) except *:
-        """
-        Set the rounding mode for the `CostSpecification`.
-
-        Parameters
-        ----------
-        rounding : str
-            The rounding mode (constant from the decimal module).
-
-        """
-        Condition.valid_string(rounding, "rounding")
-
-        self.rounding_rule = rounding
-
-    cpdef CostSpecification get_cost_spec(self, object xrate=None):
-        """
-        Return the `CostSpecification` for the instrument.
-
-        Parameters
-        ----------
-        xrate : decimal.Decimal, optional
-            Only applicable to quanto instruments, otherwise ignored.
-
-        Raises
-        ------
-        ValueError
-            If is_quanto and xrate is None.
-
-        """
-        if self.is_quanto:
-            Condition.type(xrate, decimal.Decimal, "xrate")
-
-            return QuantoCostSpecification(
-                base_currency=self.base_currency,
-                quote_currency=self.quote_currency,
-                settlement_currency=self.settlement_currency,
-                is_inverse=self.is_inverse,
-                rounding_rule=self.rounding_rule,
-                xrate=xrate,
-            )
-
-        if self.is_inverse:
-            return InverseCostSpecification(
-                base_currency=self.base_currency,
-                quote_currency=self.quote_currency,
-                rounding_rule=self.rounding_rule,
-            )
-
-        return CostSpecification(
-            quote_currency=self.quote_currency,
-            rounding_rule=self.rounding_rule,
-        )
 
     cpdef Money calculate_notional(
             self,
@@ -320,10 +266,10 @@ cdef class Instrument:
 
         notional = quantity * close_price * self.multiplier
 
-        if self.is_quanto:
-            notional *= xrate
+        # if self.is_quanto:
+        #     notional *= xrate
 
-        return Money(notional, self.settlement_currency)
+        return Money(notional, self.settlement_currency)  # Currently not handling quanto settlement
 
     cpdef Money calculate_order_margin(
             self,
@@ -366,7 +312,7 @@ cdef class Instrument:
         margin = notional / self.leverage * self.margin_initial
         margin += notional * self.taker_fee * 2
 
-        return Money(margin, self.settlement_currency)
+        return Money(margin, self.settlement_currency)  # Currently not handling quanto settlement
 
     cpdef Money calculate_position_margin(
             self,
@@ -416,7 +362,7 @@ cdef class Instrument:
         margin = notional / self.leverage * self.margin_maintenance
         margin += notional * self.taker_fee
 
-        return Money(margin, self.settlement_currency)
+        return Money(margin, self.settlement_currency)  # Currently not handling quanto settlement
 
     cpdef Money calculate_open_value(
             self,
@@ -462,7 +408,7 @@ cdef class Instrument:
         close_price = self._get_close_price(side, last)
         notional = self.calculate_notional(quantity, close_price, xrate)
 
-        return Money(notional, self.settlement_currency)
+        return Money(notional, self.settlement_currency)  # Currently not handling quanto settlement
 
     cpdef Money calculate_commission(
         self,
@@ -516,7 +462,7 @@ cdef class Instrument:
             raise RuntimeError(f"invalid LiquiditySide, "
                                f"was {LiquiditySideParser.to_string(liquidity_side)}")
 
-        return Money(commission, self.settlement_currency)
+        return Money(commission, self.settlement_currency)  # Currently not handling quanto settlement
 
     cdef inline object _get_close_price(self, PositionSide side, QuoteTick last):
         if side == PositionSide.LONG:
@@ -526,112 +472,3 @@ cdef class Instrument:
         else:
             raise RuntimeError(f"invalid PositionSide, "
                                f"was {PositionSideParser.to_string(side)}")
-
-
-
-cdef class CostSpecification:
-    """
-    Represents a standard instruments cost specification for accurate
-    calculation of PNLs.
-    """
-
-    def __init__(
-            self,
-            Currency quote_currency,
-            str rounding_rule not None="DEFAULT",
-    ):
-        """
-        Initialize a new instance of the `CostSpecification` class.
-
-        Parameters
-        ----------
-        quote_currency : Currency
-            The instruments quote currency.
-        rounding_rule : str, optional
-            The instruments rounding rule ('DEFAULT', or 'TRUNCATE').
-
-        """
-        self.quote_currency = quote_currency
-        self.settlement_currency = quote_currency
-        self.rounding_rule = rounding_rule
-
-
-cdef class InverseCostSpecification(CostSpecification):
-    """
-    Represents an inverse instruments cost specification for accurate
-    calculation of PNLs.
-    """
-
-    def __init__(
-            self,
-            Currency base_currency not None,
-            Currency quote_currency not None,
-            str rounding_rule not None="DEFAULT",
-    ):
-        """
-        Initialize a new instance of the `InverseCostSpecification` class.
-
-        Parameters
-        ----------
-        base_currency : Currency
-            The instruments base currency.
-        quote_currency : Currency
-            The instruments quote currency.
-        rounding_rule : str, optional
-            The instruments rounding rule ('DEFAULT', or 'TRUNCATE').
-
-        """
-        super().__init__(
-            quote_currency=quote_currency,
-            rounding_rule=rounding_rule,
-        )
-
-        self.base_currency = base_currency
-        self.settlement_currency = base_currency
-        self.is_inverse = True
-
-
-cdef class QuantoCostSpecification(CostSpecification):
-    """
-    Represents a quanto instruments cost specification for accurate
-    calculation of PNLs.
-    """
-
-    def __init__(
-            self,
-            Currency base_currency not None,
-            Currency quote_currency not None,
-            Currency settlement_currency not None,
-            bint is_inverse,
-            object xrate not None,
-            str rounding_rule not None="DEFAULT",
-    ):
-        """
-        Initialize a new instance of the `QuantoCostSpecification` class.
-
-        Parameters
-        ----------
-        base_currency : Currency
-            The instruments base currency.
-        quote_currency : Currency
-            The instruments quote currency.
-        settlement_currency : Currency
-            The instruments settlement currency.
-        is_inverse : bool
-            If the instrument is inverse.
-        xrate : Decimal
-            The current exchange rate between base and settlement currencies.
-        rounding_rule : str, optional
-            The instruments rounding rule ('DEFAULT', or 'TRUNCATE').
-
-        """
-        super().__init__(
-            quote_currency=quote_currency,
-            rounding_rule=rounding_rule,
-        )
-
-        self.base_currency = base_currency
-        self.settlement_currency = settlement_currency
-        self.is_inverse = is_inverse
-        self.is_quanto = True
-        self.xrate = xrate

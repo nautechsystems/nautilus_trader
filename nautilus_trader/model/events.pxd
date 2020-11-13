@@ -28,7 +28,6 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport CostSpecification
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -197,12 +196,16 @@ cdef class OrderFilled(OrderEvent):
     """If the event represents a partial fill of the order.\n\n:returns: `bool`"""
     cdef readonly object avg_price
     """The average fill price of the event.\n\n:returns: `decimal.Decimal`"""
+    cdef readonly Currency quote_currency
+    """The instrument quote currency.\n\n:returns: `Currency`"""
+    cdef readonly Currency settlement_currency
+    """The instrument settlement currency.\n\n:returns: `Currency`"""
+    cdef readonly bint is_inverse
+    """If quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly Money commission
     """The commission generated from the fill event.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
-    cdef readonly CostSpecification cost_spec
-    """The event instruments cost specification.\n\n:returns: `CostSpecification`"""
     cdef readonly datetime execution_time
     """The execution timestamp of the event.\n\n:returns: `datetime`"""
 

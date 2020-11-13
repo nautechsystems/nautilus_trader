@@ -35,7 +35,7 @@ from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
@@ -43,12 +43,10 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     @staticmethod
     def test_run_with_empty_strategy():
         # Arrange
-        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
-
         data = BacktestDataContainer()
-        data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_instrument(USDJPY_FXCM)
+        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EmptyStrategy("001")]
 
@@ -89,15 +87,13 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     @staticmethod
     def test_run_for_tick_processing():
         # Arrange
-        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
-
         data = BacktestDataContainer()
-        data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_instrument(USDJPY_FXCM)
+        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
-            symbol=usdjpy.symbol,
+            symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             fast_ema=10,
             slow_ema=20)]
@@ -128,15 +124,13 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     @staticmethod
     def test_run_with_ema_cross_strategy():
         # Arrange
-        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
-
         data = BacktestDataContainer()
-        data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_instrument(USDJPY_FXCM)
+        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [EMACross(
-            symbol=usdjpy.symbol,
+            symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             fast_ema=10,
             slow_ema=20)]
