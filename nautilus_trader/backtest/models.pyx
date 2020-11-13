@@ -49,8 +49,8 @@ cdef class FillModel:
             The probability of stop orders filling if the market rests on their price.
         prob_slippage : double
             The probability of order fill prices slipping by a tick.
-        random_seed :
-            The optional random seed (if None then no random seed).
+        random_seed : int, optional
+            The random seed (if None then no random seed).
 
         Raises
         ------

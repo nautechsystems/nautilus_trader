@@ -80,10 +80,10 @@ cdef class BacktestEngine:
             The data for the backtest engine.
         strategies : list[TradingStrategy]
             The initial strategies for the backtest engine.
-        config : BacktestConfig
-            The optional configuration for the backtest engine (if None will be default).
-        fill_model : FillModel
-            The optional initial fill model for the backtest engine,
+        config : BacktestConfig, optional
+            The configuration for the backtest engine (if None will be default).
+        fill_model : FillModel, optional
+            The custom fill model for the backtest engine,
             (if None then no probabilistic fills).
 
         Raises
@@ -276,19 +276,16 @@ cdef class BacktestEngine:
         """
         Run a backtest from the start datetime to the stop datetime.
 
-        If start datetime is None engine will run from the start of the data.
-        If stop datetime is None engine will run to the end of the data.
-
         Parameters
         ----------
-        start : datetime
-            The optional start datetime (UTC) for the backtest run.
-        stop : datetime
-            The optional stop datetime (UTC) for the backtest run.
-        fill_model : FillModel
-            The optional fill model change for the backtest run (if None will use previous).
-        strategies : list
-            The optional strategies change for the backtest run (if None will use previous).
+        start : datetime, optional
+            The start (UTC) for the backtest run. If None engine will run from the start of the data.
+        stop : datetime, optional
+            The stop (UTC) for the backtest run. If None engine will run to the end of the data.
+        fill_model : FillModel, optional
+            The fill model change for the backtest run (if None will use previous).
+        strategies : list, optional
+            The strategies for the backtest run (if None will use previous).
         print_log_store : bool
             If the log store should be printed at the end of the run.
 
