@@ -72,8 +72,8 @@ cdef class BaseDecimal:
             The precision for the decimal. If a precision is specified then the
             value will be rounded to the precision. Else the precision will be
             inferred from the given value.
-        rounding : str
-            The rounding rule to apply to the decimal. Must be a constant from
+        rounding : str, optional
+            The rounding mode to apply to the decimal. Must be a constant from
             the decimal module. Only applicable if precision is specified.
 
         Raises
@@ -82,6 +82,8 @@ cdef class BaseDecimal:
             If value is a float and precision is not specified.
         ValueError
             If precision is negative (< 0).
+        TypeError
+            If rounding is invalid.
 
         """
         Condition.not_none(value, "value")
@@ -229,7 +231,7 @@ cdef class BaseDecimal:
     @property
     def precision(self):
         """
-        The precision of the decimal.
+        The precision of the value.
 
         Returns
         -------
@@ -297,8 +299,8 @@ cdef class Quantity(BaseDecimal):
             The precision for the quantity. If a precision is specified then the
             value will be rounded to the precision. Else the precision will be
             inferred from the given value.
-        rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
+        rounding : str, optional
+            The rounding mode to apply. Must be a constant from the decimal
             module. Only applicable if precision is specified.
 
         Raises
@@ -309,6 +311,8 @@ cdef class Quantity(BaseDecimal):
             If value is negative (< 0).
         ValueError
             If precision is negative (< 0).
+        TypeError
+            If rounding is invalid.
 
         """
         super().__init__(value, precision, rounding)
@@ -360,17 +364,19 @@ cdef class Price(BaseDecimal):
             The precision for the price. If a precision is specified then the
             value will be rounded to the precision. Else the precision will be
             inferred from the given value.
-        rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
+        rounding : str, optional
+            The rounding mode to apply. Must be a constant from the decimal
             module. Only applicable if precision is specified.
 
         Raises
         ------
         ValueError
             If precision is negative (< 0).
+        TypeError
+            If rounding is invalid.
 
         """
-        super().__init__(value, precision)
+        super().__init__(value, precision, rounding)
 
 
 cdef class Money(BaseDecimal):
@@ -399,9 +405,14 @@ cdef class Money(BaseDecimal):
             The value of the money.
         currency : Currency
             The currency of the money.
-        rounding : str
-            The rounding rule to apply. Must be a constant from the decimal
+        rounding : str, optional
+            The rounding mode to apply. Must be a constant from the decimal
             module.
+
+        Raises
+        ------
+        TypeError
+            If rounding is invalid.
 
         """
         if value is None:
