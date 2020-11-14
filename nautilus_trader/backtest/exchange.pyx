@@ -119,7 +119,7 @@ cdef class SimulatedExchange:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
 
         self.venue = venue
         self.oms_type = oms_type
@@ -131,8 +131,8 @@ cdef class SimulatedExchange:
         self.starting_capital = config.starting_capital
         self.account_currency = config.account_currency
         self.account_balance = config.starting_capital
-        self.account_balance_start_day = config.starting_capital
-        self.account_balance_activity_day = Money(0, self.account_currency)
+        self.account_start_day = config.starting_capital
+        self.account_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
         self.frozen_account = config.frozen_account
 
@@ -154,9 +154,12 @@ cdef class SimulatedExchange:
         self._symbol_ord_count = {}     # type: {Symbol, int}
         self._executions_count = 0
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.venue})"
+
     cpdef void register_client(self, BacktestExecClient client) except *:
         """
-        Register the given execution client with the exchange.
+        Register the given execution client with the simulated exchange.
 
         Parameters
         ----------
@@ -172,9 +175,11 @@ cdef class SimulatedExchange:
         self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
 
-    cpdef void register_module(self, SimulationModule module) except *:
+        self._log.info(f"Registered {client}.")
+
+    cpdef void load_module(self, SimulationModule module) except *:
         """
-        Register the given simulation module with the exchange.
+        Load the given simulation module into the simulated exchange.
 
         Parameters
         ----------
@@ -187,6 +192,8 @@ cdef class SimulatedExchange:
 
         module.register_exchange(self)
         self.modules.append(module)
+
+        self._log.info(f"Loaded {module}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -211,8 +218,8 @@ cdef class SimulatedExchange:
             module.reset()
 
         self.account_balance = self.starting_capital
-        self.account_balance_start_day = self.account_balance
-        self.account_balance_activity_day = Money(0, self.account_currency)
+        self.account_start_day = self.account_balance
+        self.account_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
 
         self._generate_account_event()
@@ -274,10 +281,6 @@ cdef class SimulatedExchange:
         cdef SimulationModule module
         for module in self.modules:
             module.process(tick, now)
-
-        # Check for working orders
-        if not self._working_orders:
-            return
 
         # Simulate market
         cdef ClientOrderId order_id
@@ -351,7 +354,7 @@ cdef class SimulatedExchange:
                     del self._working_orders[order.cl_ord_id]
                     self._expire_order(order)
 
-# -- COMMAND EXECUTION -----------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
@@ -478,12 +481,32 @@ cdef class SimulatedExchange:
 
         self.exec_client.handle_event(modified)
 
+# --------------------------------------------------------------------------------------------------
+
+    cpdef void adjust_account(self, Money adjustment) except *:
+        Condition.not_none(adjustment, "adjustment")
+
+        if self.frozen_account:
+            return  # Nothing to adjust
+
+        self.account_balance = Money(self.account_balance + adjustment, self.account_currency)
+        self.account_activity_day = Money(self.account_activity_day + adjustment, self.account_currency)
+
+        # Generate and send event
+        cdef AccountState event = self._generate_account_event()
+        self.account.apply(event)
+        self.exec_client.handle_event(event)
+
     cdef inline QuoteTick get_last_quote(self, Symbol symbol):
         Condition.not_none(symbol, "symbol")
 
         return self._market.get(symbol)
 
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type):
+        Condition.not_none(from_currency, "from_currency")
+        Condition.not_none(to_currency, "to_currency")
+        Condition.not_equal(price_type, PriceType.UNDEFINED, "price_type", "UNDEFINED")
+
         return self.xrate_calculator.get_rate(
             from_currency=from_currency,
             to_currency=to_currency,
@@ -538,50 +561,6 @@ cdef class SimulatedExchange:
             event_id=self._uuid_factory.generate(),
             event_timestamp=self._clock.utc_now(),
         )
-
-    cdef inline void _adjust_account(self, OrderFilled event, Position position) except *:
-        # position could be None here
-
-        if self.frozen_account:
-            return  # Nothing to adjust
-
-        # Initialize commission and PNL
-        cdef Money commission = event.commission
-        cdef Money pnl = Money(0, event.commission.currency)
-
-        if position is not None and position.entry != event.order_side:
-            # Calculate PNL
-            pnl = position.calculate_pnl(
-                avg_open=position.avg_open,
-                avg_close=event.avg_price,
-                quantity=event.fill_qty,
-            )
-
-        cdef double xrate
-        if event.commission.currency != self.account_currency:
-            # Get exchange rate to account currency
-            xrate = self.get_xrate(
-                from_currency=event.commission.currency,
-                to_currency=self.account_currency,
-                price_type=PriceType.BID if event.order_side is OrderSide.SELL else PriceType.ASK,
-            )
-
-            # Convert to account currency
-            commission = Money(event.commission * xrate, self.account_currency)
-            pnl = Money(pnl * xrate, self.account_currency)
-
-        # Final PNL
-        pnl = Money(pnl - commission, self.account_currency)
-
-        # Apply PNL
-        self.total_commissions = Money(self.total_commissions + commission, self.account_currency)
-        self.account_balance = Money(self.account_balance + pnl, self.account_currency)
-        self.account_balance_activity_day = Money(self.account_balance_activity_day + pnl, self.account_currency)
-
-        # Generate and send event
-        account_state = self._generate_account_event()
-        self.account.apply(account_state)
-        self.exec_client.handle_event(account_state)
 
     cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *:
         return current_market.ask == order_price and self.fill_model.is_stop_filled()
@@ -825,20 +804,20 @@ cdef class SimulatedExchange:
         if instrument is None:
             raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
 
-        xrate = None
-        if instrument.is_quanto:
-            # Get exchange rate between base and settlement currencies
-            xrate = self.get_xrate(
-                from_currency=instrument.base_currency,
-                to_currency=instrument.settlement_currency,
-                price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
-            )
+        # xrate = None
+        # if instrument.is_quanto:
+        #     # Get exchange rate between base and settlement currencies
+        #     xrate = self.get_xrate(
+        #         from_currency=instrument.quote_currency if not instrument.is_inverse else instrument.base_currency,
+        #         to_currency=instrument.settlement_currency,
+        #         price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
+        #     )
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
             fill_price.as_decimal(),
             liquidity_side,
-            xrate,
+            xrate=decimal.Decimal(1),  # Currently not handling quanto settlement
         )
 
         # Generate event
@@ -855,16 +834,45 @@ cdef class SimulatedExchange:
             order.quantity,
             Quantity(),  # Not modeling partial fills yet
             fill_price.as_decimal(),
-            commission,
+            instrument.quote_currency,
+            instrument.settlement_currency,
+            instrument.is_inverse,
+            commission,  # In instrument settlement currency
             liquidity_side,
-            instrument.get_cost_spec(xrate),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
 
-        self._adjust_account(filled, position)
+        # Calculate potential PNL
+        cdef Money pnl = None
+        if position is not None and position.entry != order.side:
+            # Calculate PNL
+            pnl = position.calculate_pnl(
+                avg_open=position.avg_open,
+                avg_close=fill_price,
+                quantity=order.quantity,
+            )
 
+        if pnl is None:
+            pnl = Money(0, self.account_currency)
+
+        if commission.currency != self.account_currency:
+            # Calculate exchange rate to account currency
+            xrate = self.get_xrate(
+                from_currency=commission.currency,
+                to_currency=self.account_currency,
+                price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
+            )
+
+            # Convert to account currency
+            commission = Money(commission * xrate, self.account_currency)
+            pnl = Money(pnl * xrate, self.account_currency)
+
+        self.total_commissions = Money(self.total_commissions + commission, self.account_currency)
+
+        # Final PNL
+        pnl = Money(pnl - commission, self.account_currency)
         self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)
 
@@ -882,6 +890,9 @@ cdef class SimulatedExchange:
                     if order.is_working_c():
                         self._cancel_order(order)
                 del self._position_oco_orders[position.id]
+
+        # Finally adjust account
+        self.adjust_account(pnl)
 
     cdef inline void _clean_up_child_orders(self, ClientOrderId order_id) except *:
         # Clean up any residual child orders from the completed order associated

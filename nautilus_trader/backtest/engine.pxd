@@ -58,7 +58,7 @@ cdef class BacktestEngine:
     cdef readonly timedelta time_to_initialize
     cdef readonly int iteration
 
-    cpdef void plug_simulation_module(self, Venue venue, SimulationModule module)
+    cpdef void load_module(self, Venue venue, SimulationModule module)
     cpdef void run(
         self,
         datetime start=*,

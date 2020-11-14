@@ -57,14 +57,15 @@ cdef class Position:
         self.relative_quantity = decimal.Decimal()
         self.quantity = Quantity()
         self.peak_quantity = Quantity()
-        self.cost_spec = event.cost_spec
-        self.settlement_currency = event.cost_spec.settlement_currency
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
         self.closed_time = None    # Can be None
         self.open_duration = None  # Can be None
         self.avg_open = event.avg_price
         self.avg_close = decimal.Decimal()
+        self.quote_currency = event.quote_currency
+        self.settlement_currency = event.settlement_currency
+        self.is_inverse = event.is_inverse
         self.realized_points = decimal.Decimal()
         self.realized_return = decimal.Decimal()
         self.realized_pnl = Money(0, self.settlement_currency)
@@ -315,8 +316,10 @@ cdef class Position:
 
         self._events.append(event)
 
-        assert self.commissions.currency == event.commission.currency
-        self.commissions = Money(self.commissions + event.commission, self.commissions.currency)
+        # Check currencies match
+        assert event.commission.currency == self.commissions.currency
+        assert event.commission.currency == self.settlement_currency
+        self.commissions = Money(self.commissions + event.commission, event.commission.currency)
 
         # Calculate avg prices, points, return, PNL
         if event.order_side == OrderSide.BUY:
@@ -344,7 +347,6 @@ cdef class Position:
             object avg_open,
             object avg_close,
             object quantity,
-            object xrate=None,
     ):
         """
         Return the calculated PNL from the given parameters.
@@ -357,38 +359,25 @@ cdef class Position:
             The average close price.
         quantity : decimal.Decimal
             The quantity for the calculation.
-        xrate : decimal.Decimal, optional
-            The exchange rate for the calculation (only applicable for quanto
-            instruments).
 
         Returns
         -------
         Money
             In the settlement currency.
 
-        Raises
-        ------
-        ValueError
-            If is_quanto and xrate is None.
-
         """
         Condition.not_none(avg_open, "avg_open")
         Condition.not_none(avg_close, "avg_close")
         Condition.not_none(quantity, "quantity")
-        if self.cost_spec.is_quanto:
-            Condition.type(xrate, decimal.Decimal, "xrate")
 
-        if self.cost_spec.is_inverse:
+        if self.is_inverse:
             points = self._calculate_points_inverse(avg_open, avg_close)
         else:
             points = self._calculate_points(avg_open, avg_close)
 
-        if self.cost_spec.is_quanto:
-            points *= xrate
-
         return Money(points * quantity, self.settlement_currency)
 
-    cpdef Money unrealized_pnl(self, QuoteTick last, object xrate=None):
+    cpdef Money unrealized_pnl(self, QuoteTick last):
         """
         Return the unrealized PNL from the given last quote tick.
 
@@ -396,9 +385,6 @@ cdef class Position:
         ----------
         last : QuoteTick
             The last tick for the calculation.
-        xrate : decimal.Decimal, optional
-            The exchange rate for the calculation (only applicable for quanto
-            instruments).
 
         Returns
         -------
@@ -409,8 +395,6 @@ cdef class Position:
         ------
         ValueError
             If last.symbol != self.symbol
-        ValueError
-            If is_quanto and xrate is None.
 
         """
         Condition.not_none(last, "last")
@@ -423,10 +407,9 @@ cdef class Position:
             avg_open=self.avg_open,
             avg_close=self._get_close_price(last),
             quantity=self.quantity,
-            xrate=xrate,
         )
 
-    cpdef Money total_pnl(self, QuoteTick last, object xrate=None):
+    cpdef Money total_pnl(self, QuoteTick last):
         """
         Return the total PNL from the given last quote tick.
 
@@ -434,26 +417,22 @@ cdef class Position:
         ----------
         last : QuoteTick
             The last tick for the calculation.
-        xrate : Decimal, optional
-            The exchange rate for the calculation (only applicable for quanto
-            instruments).
 
         Returns
         -------
         Money
+            In the settlement currency.
 
         Raises
         ------
         ValueError
             If last.symbol != self.symbol
-        ValueError
-            If is_quanto and xrate is None.
 
         """
         Condition.not_none(last, "last")
         Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
-        return Money(self.realized_pnl + self.unrealized_pnl(last, xrate), self.settlement_currency)
+        return Money(self.realized_pnl + self.unrealized_pnl(last), self.settlement_currency)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
         realized_pnl = event.commission.as_decimal()

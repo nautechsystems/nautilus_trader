@@ -678,9 +678,11 @@ cdef class ExecutionEngine:
             position.quantity,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
+            fill.quote_currency,
+            fill.settlement_currency,
+            fill.is_inverse,
             Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
-            fill.cost_spec,
             fill.execution_time,
             fill.id,
             fill.timestamp,
@@ -713,9 +715,11 @@ cdef class ExecutionEngine:
             difference,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.avg_price,
+            fill.quote_currency,
+            fill.settlement_currency,
+            fill.is_inverse,
             Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,
-            fill.cost_spec,
             fill.execution_time,
             self._uuid_factory.generate(),  # New event identifier
             fill.timestamp,

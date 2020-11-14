@@ -47,8 +47,8 @@ cdef class TickDataWrangler:
         ----------
         instrument : Instrument
             The instrument for the data wrangler.
-        data_ticks : pd.DataFrame
-            The optional pd.DataFrame containing the tick data.
+        data_ticks : pd.DataFrame, optional
+            The pd.DataFrame containing the tick data.
         data_bars_bid : dict[BarAggregation, pd.DataFrame], optional
             The bars bid data.
         data_bars_ask : dict[BarAggregation, pd.DataFrame], optional

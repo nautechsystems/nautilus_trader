@@ -57,9 +57,6 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport CostSpecification
-from nautilus_trader.model.instrument cimport InverseCostSpecification
-from nautilus_trader.model.instrument cimport QuantoCostSpecification
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.objects cimport Price
@@ -174,94 +171,6 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         Condition.not_none(dictionary_bytes, "dictionary_bytes")
 
         return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
-
-
-cdef class MsgPackCostSpecificationSerializer:
-    """
-    Provides a `CostSpecification` serializer for the `MessagePack` specification.
-    """
-
-    @staticmethod
-    cdef bytes serialize(CostSpecification cost_spec):
-        """
-        Serialize the given dictionary with string keys and values to bytes.
-
-        Parameters
-        ----------
-        cost_spec : dict
-            The cost_spec dictionary to serialize.
-
-        Returns
-        -------
-        bytes
-
-        """
-        Condition.not_none(cost_spec, "cost_spec")
-
-        cdef dict package = {
-            "Type": type(cost_spec).__name__,
-            QUOTE_CURRENCY: str(cost_spec.quote_currency),
-            "RoundingRule": cost_spec.rounding_rule
-        }
-
-        if isinstance(cost_spec, InverseCostSpecification):
-            package[BASE_CURRENCY] = str(cost_spec.base_currency)
-        if isinstance(cost_spec, QuantoCostSpecification):
-            package["SettlementCurrency"] = str(cost_spec.settlement_currency)
-            package["IsInverse"] = str(cost_spec.is_inverse)
-            package["XRate"] = str(cost_spec.xrate)
-
-        return MsgPackSerializer.serialize(package)
-
-    @staticmethod
-    cdef CostSpecification deserialize(bytes cost_spec_bytes):
-        """
-        Deserialize the given bytes to a dictionary with string keys and values.
-
-        Parameters
-        ----------
-        cost_spec_bytes : bytes
-            The cost specification bytes to deserialize.
-
-        Returns
-        -------
-        dict
-
-        """
-        Condition.not_none(cost_spec_bytes, "cost_spec_bytes")
-
-        cdef dict unpacked = MsgPackSerializer.deserialize(cost_spec_bytes)
-
-        cdef str cost_spec_type = unpacked["Type"].decode(UTF8)
-        cdef Currency quote_currency = Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8))
-        cdef str rounding_rule = unpacked["RoundingRule"].decode(UTF8)
-
-        if cost_spec_type == "CostSpecification":
-            return CostSpecification(
-                quote_currency=quote_currency,
-                rounding_rule=rounding_rule,
-            )
-
-        if cost_spec_type == "InverseCostSpecification":
-            return InverseCostSpecification(
-                base_currency=Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
-                quote_currency=quote_currency,
-                rounding_rule=rounding_rule,
-            )
-
-        if cost_spec_type == "QuantoCostSpecification":
-            return QuantoCostSpecification(
-                base_currency=Currency.from_string_c(unpacked[BASE_CURRENCY].decode(UTF8)),
-                quote_currency=quote_currency,
-                settlement_currency=Currency.from_string_c(unpacked["SettlementCurrency"].decode(UTF8)),
-                is_inverse=unpacked["IsInverse"].decode(UTF8) == "True",
-                rounding_rule=rounding_rule,
-                xrate=decimal.Decimal(unpacked["XRate"].decode(UTF8)),
-            )
-
-        else:
-            raise RuntimeError()
-
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -680,10 +589,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CUMULATIVE_QUANTITY] = str(event.cumulative_qty)
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
             package[AVERAGE_PRICE] = str(event.avg_price)
+            package[QUOTE_CURRENCY] = event.quote_currency.code
+            package[SETTLEMENT_CURRENCY] = event.settlement_currency.code
+            package[IS_INVERSE] = str(event.is_inverse)
             package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_string(event.liquidity_side)
-            package["CostSpec"] = MsgPackCostSpecificationSerializer.serialize(event.cost_spec)
             package[EXECUTION_TIME] = ObjectParser.datetime_to_string(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
@@ -854,9 +765,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity(unpacked[CUMULATIVE_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 decimal.Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
+                Currency.from_string_c(unpacked[SETTLEMENT_CURRENCY].decode(UTF8)),
+                unpacked[IS_INVERSE].decode(UTF8) == str(True),
                 Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
                 LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
-                MsgPackCostSpecificationSerializer.deserialize(unpacked["CostSpec"]),
                 ObjectParser.string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,

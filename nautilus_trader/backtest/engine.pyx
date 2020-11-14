@@ -47,6 +47,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -80,10 +81,10 @@ cdef class BacktestEngine:
             The data for the backtest engine.
         strategies : list[TradingStrategy]
             The initial strategies for the backtest engine.
-        config : BacktestConfig
-            The optional configuration for the backtest engine (if None will be default).
-        fill_model : FillModel
-            The optional initial fill model for the backtest engine,
+        config : BacktestConfig, optional
+            The configuration for the backtest engine (if None will be default).
+        fill_model : FillModel, optional
+            The custom fill model for the backtest engine,
             (if None then no probabilistic fills).
 
         Raises
@@ -244,9 +245,9 @@ cdef class BacktestEngine:
         self.log.info(f"Initialized in {self.time_to_initialize}.")
         self._backtest_memory()
 
-    cpdef void plug_simulation_module(self, Venue venue, SimulationModule module):
+    cpdef void load_module(self, Venue venue, SimulationModule module):
         """
-        Plug the simulation module into the `SimulatedExchange` for the given
+        Load the simulation module into the `SimulatedExchange` for the given
         venue.
 
         Parameters
@@ -261,9 +262,7 @@ cdef class BacktestEngine:
         Condition.not_none(module, "module")
 
         # TODO: Multiple exchanges
-        self.exchange.register_module(module)
-
-        self.log.info(f"Loaded {type(module).__name__}.")
+        self.exchange.load_module(module)
 
     cpdef void run(
             self,
@@ -276,19 +275,16 @@ cdef class BacktestEngine:
         """
         Run a backtest from the start datetime to the stop datetime.
 
-        If start datetime is None engine will run from the start of the data.
-        If stop datetime is None engine will run to the end of the data.
-
         Parameters
         ----------
-        start : datetime
-            The optional start datetime (UTC) for the backtest run.
-        stop : datetime
-            The optional stop datetime (UTC) for the backtest run.
-        fill_model : FillModel
-            The optional fill model change for the backtest run (if None will use previous).
-        strategies : list
-            The optional strategies change for the backtest run (if None will use previous).
+        start : datetime, optional
+            The start (UTC) for the backtest run. If None engine will run from the start of the data.
+        stop : datetime, optional
+            The stop (UTC) for the backtest run. If None engine will run to the end of the data.
+        fill_model : FillModel, optional
+            The fill model change for the backtest run (if None will use previous).
+        strategies : list, optional
+            The strategies for the backtest run (if None will use previous).
         print_log_store : bool
             If the log store should be printed at the end of the run.
 
@@ -355,6 +351,10 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start)
 
+        # Temporary fix to initialize account
+        self.exchange.adjust_account(Money(0, self.exchange.account_currency))
+
+        # Start trader which starts strategies
         self.trader.start()
 
         cdef QuoteTick tick
