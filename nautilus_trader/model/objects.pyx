@@ -48,6 +48,8 @@ cdef int _MATH_TRUEDIV = 4
 cdef int _MATH_FLOORDIV = 5
 cdef int _MATH_MOD = 6
 
+cdef str ROUND_HALF_EVEN = decimal.ROUND_HALF_EVEN
+
 
 cdef class BaseDecimal:
     """
@@ -99,7 +101,7 @@ cdef class BaseDecimal:
         else:
             Condition.not_negative_int(precision, "precision")
 
-            if rounding != decimal.ROUND_HALF_EVEN:
+            if rounding != ROUND_HALF_EVEN:
                 self._value = self._make_decimal_with_rounding(value, precision, rounding)
             else:
                 if not isinstance(value, float):
