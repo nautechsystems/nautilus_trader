@@ -13,13 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
 from cpython.datetime cimport datetime
 
 cdef datetime UNIX_EPOCH
 
 
-cpdef date datetime_date(datetime timestamp)
 cpdef long to_posix_ms(datetime timestamp) except *
 cpdef datetime from_posix_ms(long posix)
 cpdef bint is_datetime_utc(datetime timestamp) except *

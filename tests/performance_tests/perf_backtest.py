@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import cProfile
+from datetime import datetime
 import os
-import pandas as pd
 import pstats
 import unittest
 
+import pandas as pd
 import pytz
 
 from nautilus_trader.backtest.config import BacktestConfig
@@ -28,7 +28,6 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -143,7 +142,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         config = BacktestConfig(
             exec_db_type="in-memory",
             bypass_logging=True,
-            # level_console=LogLevel.DEBUG,
             console_prints=False,
         )
 

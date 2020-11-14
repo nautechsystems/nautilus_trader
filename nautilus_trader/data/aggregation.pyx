@@ -17,13 +17,6 @@ import decimal
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from cpython.datetime cimport datetime_year
-from cpython.datetime cimport datetime_month
-from cpython.datetime cimport datetime_day
-from cpython.datetime cimport datetime_hour
-from cpython.datetime cimport datetime_minute
-from cpython.datetime cimport datetime_second
-from cpython.datetime cimport datetime_tzinfo
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -486,36 +479,36 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef datetime now = self._clock.utc_now()
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return datetime(
-                year=datetime_year(now),
-                month=datetime_month(now),
-                day=datetime_day(now),
-                hour=datetime_hour(now),
-                minute=datetime_minute(now),
-                second=datetime_second(now),
-                tzinfo=datetime_tzinfo(now),
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                hour=now.hour,
+                minute=now.minute,
+                second=now.second,
+                tzinfo=now.tzinfo,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             return datetime(
-                year=datetime_year(now),
-                month=datetime_month(now),
-                day=datetime_day(now),
-                hour=datetime_hour(now),
-                minute=datetime_minute(now),
-                tzinfo=datetime_tzinfo(now),
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                hour=now.hour,
+                minute=now.minute,
+                tzinfo=now.tzinfo,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             return datetime(
-                year=datetime_year(now),
-                month=datetime_month(now),
-                day=datetime_day(now),
-                hour=datetime_hour(now),
-                tzinfo=datetime_tzinfo(now),
+                year=now.year,
+                month=now.month,
+                day=now.day,
+                hour=now.hour,
+                tzinfo=now.tzinfo,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return datetime(
-                year=datetime_year(now),
-                month=datetime_month(now),
-                day=datetime_day(now),
+                year=now.year,
+                month=now.month,
+                day=now.day,
             )
         else:
             # Design time error
