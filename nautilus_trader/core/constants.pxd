@@ -59,11 +59,11 @@ cdef str QUANTITY
 cdef str AVERAGE_PRICE
 cdef str COMMISSION
 cdef str PRICE
+cdef str CURRENCY
 cdef str TIME_IN_FORCE
 cdef str LIQUIDITY_SIDE
 cdef str BROKERAGE
 cdef str ACCOUNT_NUMBER
-cdef str CURRENCY
 cdef str BALANCE
 cdef str MARGIN_BALANCE
 cdef str MARGIN_AVAILABLE
@@ -73,6 +73,7 @@ cdef str BAR_TYPE
 cdef str INSTRUMENT
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
+cdef str SETTLEMENT_CURRENCY
 cdef str IS_QUANTO
 cdef str IS_INVERSE
 cdef str COMMISSION_CURRENCY

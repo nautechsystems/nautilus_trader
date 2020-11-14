@@ -228,7 +228,7 @@ cdef class Clock:
         start_time : datetime, optional
             The start time for the timer (if None then starts immediately).
         stop_time : datetime, optional
-            The optional stop time for the timer (if None then repeats indefinitely).
+            The stop time for the timer (if None then repeats indefinitely).
         handler : callable, optional
             The handler to receive time events.
 

@@ -107,12 +107,12 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
-    # Optional plug in module to simulate rollover interest
-    # The data is coming from packaged test data
+    # Optional plug in module to simulate rollover interest,
+    # the data is coming from packaged test data.
     interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    engine.plug_simulation_module(Venue('SIM'), fx_rollover_interest)
+    engine.load_module(Venue('SIM'), fx_rollover_interest)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
@@ -133,12 +133,6 @@ if __name__ == "__main__":
         print(engine.trader.generate_account_report(AccountId.from_string("SIM-000-SIMULATED")))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
-
-    # Uncomment the below to reset the engine
-    # Once reset an engine can be re-run for example with a different start/stop
-    # times, or with a different fill model. Many possibilities.
-
-    # engine.reset()
 
     # Good practice to dispose of the object
     engine.dispose()

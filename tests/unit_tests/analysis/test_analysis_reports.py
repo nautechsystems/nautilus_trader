@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
 import unittest
 
 from nautilus_trader.analysis.reports import ReportProvider

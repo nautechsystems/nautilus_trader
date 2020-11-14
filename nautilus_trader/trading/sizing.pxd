@@ -40,7 +40,7 @@ cdef class PositionSizer:
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss)
     cdef object _calculate_riskable_money(
         self,
-        Money equity,
+        object equity,
         object risk,
         object commission_rate,
     )

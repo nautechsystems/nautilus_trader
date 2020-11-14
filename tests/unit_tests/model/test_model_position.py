@@ -26,6 +26,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import LiquiditySide
@@ -318,9 +319,11 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Quantity(),
             decimal.Decimal("1.00011"),
+            AUDUSD_FXCM.quote_currency,
+            AUDUSD_FXCM.settlement_currency,
+            AUDUSD_FXCM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,
-            AUDUSD_FXCM.get_cost_spec(),
             UNIX_EPOCH + timedelta(minutes=1),
             uuid4(),
             UNIX_EPOCH,
@@ -439,7 +442,7 @@ class PositionTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1,  instrument=AUDUSD_FXCM)
+        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_FXCM)
 
         position = Position(fill1)
 
@@ -921,13 +924,13 @@ class PositionTests(unittest.TestCase):
             Price("375.95"),
             Price("365.50"),
             Quantity(100000),
-            xrate=decimal.Decimal("0.0294337")
+            # xrate=decimal.Decimal("0.0294337")  # Currently not handling quanto settlement
         )
 
         # Assert
-        self.assertEqual(Money(0.22384308, BTC), pnl)
-        self.assertEqual(Money(-0.00587186, BTC), position.realized_pnl)
-        self.assertEqual(Money(-0.00587186, BTC), position.commissions)
+        self.assertEqual(Money(7.60499302, ETH), pnl)
+        self.assertEqual(Money(-0.19949461, ETH), position.realized_pnl)
+        self.assertEqual(Money(-0.19949461, ETH), position.commissions)
 
     def test_calculate_unrealized_pnl_for_long(self):
         # Arrange
