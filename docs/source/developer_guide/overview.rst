@@ -6,55 +6,29 @@ Unfortunately the Community edition will not interpret Cython syntax.
 
 > https://www.jetbrains.com/pycharm/
 
-To run code or tests from the source code, first compile the C extensions for the package.
+To run code from source, first compile the C extensions for the package::
 
-    $ poetry install
-
-
-Packaging for PyPI
-------------------
-
-### CI Pipeline
-The CI pipeline will now automatically package passing builds and upload
-to PyPI via twine. The below manual packaging instructions are being kept
-for historical reasons.
-
-### Manually Packaging
-Ensure version has been bumped and not pre-release.
-
-Create the distribution package wheel and sdist tar.gz.
-
-    poetry install && poetry build
+    python build.py
 
 
-Ensure this is the only distribution in the /dist directory
-
-Push package to PyPI using twine;
-
-    poetry publish
-
-Username is \__token__
-
-Use the pypi token
-
-
-Internal Data
+Packaged Data
 -------------
+Various data is contained internally in the `tests/test_kit/data` folder.
 
-Various data is contained internally in the `_data` folder. If file names are
-changed ensure the `MANIFEST.in` is updated.
-
-### Libor Rates
+Libor Rates
+-----------
 The libor rates for 1 month USD can be updated by downloading the CSV data
 from https://fred.stlouisfed.org/series/USD1MTD156N
 
 Ensure you select `Max` for the time window.
 
-### Short Term Interest Rates
+Short Term Interest Rates
+-------------------------
 The interbank short term interest rates can be updated by downloading the CSV
 data at https://data.oecd.org/interest/short-term-interest-rates.htm
 
-### Economic Events
+Economic Events
+---------------
 The economic events can be updated from downloading the CSV data from fxstreet
 https://www.fxstreet.com/economic-calendar
 
