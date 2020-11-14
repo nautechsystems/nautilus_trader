@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import decimal
 import unittest
 
 from nautilus_trader.model.currencies import ETH
@@ -27,15 +28,15 @@ class ExchangeRateOperations:
     @staticmethod
     def get_xrate():
         bid_quotes = {
-            'BTC/USD': 11291.38,
-            'ETH/USDT': 371.90,
-            'XBT/USD': 11285.50,
+            'BTC/USD': decimal.Decimal("11291.38"),
+            'ETH/USDT': decimal.Decimal("371.90"),
+            'XBT/USD': decimal.Decimal("11285.50"),
         }
 
         ask_quotes = {
-            'BTC/USD': 11292.58,
-            'ETH/USDT': 372.11,
-            'XBT/USD': 11286.00,
+            'BTC/USD': decimal.Decimal("11292.58"),
+            'ETH/USDT': decimal.Decimal("372.11"),
+            'XBT/USD': decimal.Decimal("11286.00"),
         }
 
         ExchangeRateCalculator().get_rate(
@@ -52,4 +53,4 @@ class ExchangeRateCalculatorPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_get_xrate():
         PerformanceHarness.profile_function(ExchangeRateOperations.get_xrate, 3, 10000)
-        # ~50ms (50225μs) minimum of 3 runs @ 10,000 iterations each run.
+        # ~81ms (81022μs) minimum of 3 runs @ 10,000 iterations each run.

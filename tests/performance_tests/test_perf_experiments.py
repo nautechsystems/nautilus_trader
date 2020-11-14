@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.common.commands import KillSwitch
+from nautilus_trader.common.messages import KillSwitch
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.uuid import uuid4
