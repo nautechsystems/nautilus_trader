@@ -86,7 +86,7 @@ cdef class SimulatedExchange:
     cdef int _executions_count
 
     cpdef void register_client(self, BacktestExecClient client) except *
-    cpdef void register_module(self, SimulationModule module) except *
+    cpdef void load_module(self, SimulationModule module) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef datetime time_now(self)

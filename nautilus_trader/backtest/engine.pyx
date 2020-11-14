@@ -47,6 +47,7 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -244,9 +245,9 @@ cdef class BacktestEngine:
         self.log.info(f"Initialized in {self.time_to_initialize}.")
         self._backtest_memory()
 
-    cpdef void plug_simulation_module(self, Venue venue, SimulationModule module):
+    cpdef void load_module(self, Venue venue, SimulationModule module):
         """
-        Plug the simulation module into the `SimulatedExchange` for the given
+        Load the simulation module into the `SimulatedExchange` for the given
         venue.
 
         Parameters
@@ -261,9 +262,7 @@ cdef class BacktestEngine:
         Condition.not_none(module, "module")
 
         # TODO: Multiple exchanges
-        self.exchange.register_module(module)
-
-        self.log.info(f"Loaded {type(module).__name__}.")
+        self.exchange.load_module(module)
 
     cpdef void run(
             self,
@@ -352,6 +351,10 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start)
 
+        # Temporary fix to initialize account
+        self.exchange.adjust_account(Money(0, self.exchange.account_currency))
+
+        # Start trader which starts strategies
         self.trader.start()
 
         cdef QuoteTick tick
