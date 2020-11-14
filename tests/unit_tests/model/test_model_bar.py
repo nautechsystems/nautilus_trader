@@ -20,6 +20,7 @@ from parameterized import parameterized
 import pytz
 
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
@@ -90,7 +91,7 @@ class BarSpecificationTests(unittest.TestCase):
         [BarSpecification(1000, BarAggregation.TICK, PriceType.MID), False, True, False],
         [BarSpecification(10000, BarAggregation.VALUE_RUNS, PriceType.MID), False, False, True],
     ])
-    def test_aggregation_methods(
+    def test_aggregation_queries(
             self,
             bar_spec,
             is_time_aggregated,
@@ -267,7 +268,22 @@ class BarTests(unittest.TestCase):
         # Assert
         self.assertEqual("1.00001,1.00004,1.00002,1.00003,100000,0", serializable)
 
-    def test_from_serializable_string(self):
+    def test_from_serializable_string_given_malformed_string_raises_value_error(self):
+        # Arrange
+        bar = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, bar.from_serializable_string, "NOT_A_BAR")
+
+    def test_from_serializable_string_given_valid_string_returns_expected_bar(self):
         # Arrange
         bar = TestStubs.bar_5decimal()
 
@@ -276,3 +292,27 @@ class BarTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(bar, result)
+
+
+class BarDataTests(unittest.TestCase):
+
+    def test_str_repr(self):
+        # Arrange
+        symbol = Symbol("GBP/USD", Venue('FXCM'))
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+        bar_type = BarType(symbol, bar_spec)
+        bar = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        )
+
+        bar_data = BarData(bar_type, bar)
+
+        # Act
+        # Assert
+        self.assertEqual("BarData(bar_type=GBP/USD.FXCM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", str(bar_data))   # noqa
+        self.assertEqual("BarData(bar_type=GBP/USD.FXCM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", repr(bar_data))  # noqa

@@ -442,7 +442,7 @@ class PositionTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1,  instrument=AUDUSD_FXCM)
+        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_FXCM)
 
         position = Position(fill1)
 

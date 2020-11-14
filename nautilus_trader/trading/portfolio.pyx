@@ -869,11 +869,11 @@ cdef class Portfolio(PortfolioFacade):
     cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side):
         if instrument.is_quanto:
             xrate_quanto = self._data.get_xrate(
-            venue=instrument.symbol.venue,
-            from_currency=instrument.quote_currency if not instrument.is_inverse else instrument.base_currency,
-            to_currency=instrument.settlement_currency,
-            price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-        )
+                venue=instrument.symbol.venue,
+                from_currency=instrument.quote_currency if not instrument.is_inverse else instrument.base_currency,
+                to_currency=instrument.settlement_currency,
+                price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
+            )
         else:
             xrate_quanto = None
 
