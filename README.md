@@ -65,7 +65,7 @@ The documentation for the latest version of the package is available at _readthe
 ## Installation
 
 The latest version can be installed via PyPI and is tested against
-Python 3.6.x - 3.8.x on _Linux_ and _MacOS_.
+Python 3.6 - 3.9 on _Linux_ and _MacOS_.
 
     $ pip install nautilus_trader
 
