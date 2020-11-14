@@ -1,13 +1,11 @@
 Installation
 ============
 
-The package is tested against Python versions 3.6.x - 3.8.x on both `Linux` and
+The package is tested against Python versions 3.6 - 3.9 on both `Linux` and
 `MacOS`. `Windows` support is on the roadmap after a few teething issues are
 addressed.
 
-The latest version is available for download via `PyPI`.
-
-.. code-block::
+The latest version is available for download via `PyPI`, just run::
 
    pip install nautilus_trader
 
