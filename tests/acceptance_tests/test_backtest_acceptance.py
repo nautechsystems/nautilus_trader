@@ -78,7 +78,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.plug_simulation_module(Venue('FXCM'), fx_rollover_interest)
+        self.engine.load_module(Venue('FXCM'), fx_rollover_interest)
 
     def tearDown(self):
         self.engine.dispose()

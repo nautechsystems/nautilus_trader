@@ -43,6 +43,9 @@ cdef class SimulationModule:
         """
         self._exchange = None  # Must be registered
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}"
+
     cpdef void register_exchange(self, SimulatedExchange exchange) except *:
         """
         Register the given simulated exchange with the module.

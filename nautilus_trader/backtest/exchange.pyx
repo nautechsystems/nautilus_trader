@@ -119,7 +119,7 @@ cdef class SimulatedExchange:
 
         self._clock = clock
         self._uuid_factory = uuid_factory
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
 
         self.venue = venue
         self.oms_type = oms_type
@@ -154,9 +154,12 @@ cdef class SimulatedExchange:
         self._symbol_ord_count = {}     # type: {Symbol, int}
         self._executions_count = 0
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.venue})"
+
     cpdef void register_client(self, BacktestExecClient client) except *:
         """
-        Register the given execution client with the exchange.
+        Register the given execution client with the simulated exchange.
 
         Parameters
         ----------
@@ -172,9 +175,11 @@ cdef class SimulatedExchange:
         self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
 
-    cpdef void register_module(self, SimulationModule module) except *:
+        self._log.info(f"Registered {client}.")
+
+    cpdef void load_module(self, SimulationModule module) except *:
         """
-        Register the given simulation module with the exchange.
+        Load the given simulation module into the simulated exchange.
 
         Parameters
         ----------
@@ -187,6 +192,8 @@ cdef class SimulatedExchange:
 
         module.register_exchange(self)
         self.modules.append(module)
+
+        self._log.info(f"Loaded {module}.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -486,9 +493,9 @@ cdef class SimulatedExchange:
         self.account_activity_day = Money(self.account_activity_day + adjustment, self.account_currency)
 
         # Generate and send event
-        account_state = self._generate_account_event()
-        self.account.apply(account_state)
-        self.exec_client.handle_event(account_state)
+        cdef AccountState event = self._generate_account_event()
+        self.account.apply(event)
+        self.exec_client.handle_event(event)
 
     cdef inline QuoteTick get_last_quote(self, Symbol symbol):
         Condition.not_none(symbol, "symbol")

@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cProfile
 from datetime import datetime
+import cProfile
+import os
+import pandas as pd
 import pstats
 import unittest
 
@@ -25,10 +27,13 @@ from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
@@ -138,7 +143,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         config = BacktestConfig(
             exec_db_type="in-memory",
             bypass_logging=True,
-            console_prints=False)
+            # level_console=LogLevel.DEBUG,
+            console_prints=False,
+        )
 
         engine = BacktestEngine(
             data=data,
@@ -149,6 +156,11 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             config=config,
             fill_model=None,
         )
+
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        engine.load_module(Venue('FXCM'), fx_rollover_interest)
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
