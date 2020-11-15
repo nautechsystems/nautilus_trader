@@ -43,10 +43,10 @@ cdef class Identifier:
         self.value = value
 
     def __eq__(self, Identifier other) -> bool:
-        return type(self) == type(other) and self.value == other.value
+        return self._is_subclass(type(other)) and self.value == other.value
 
     def __ne__(self, Identifier other) -> bool:
-        return type(self) != type(other) or self.value != other.value
+        return not self == other
 
     def __lt__(self, Identifier other) -> bool:
         return self.value < other.value
@@ -68,6 +68,10 @@ cdef class Identifier:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
+
+    cdef inline bint _is_subclass(self, type other) except *:
+        cdef type type_self = type(self)
+        return issubclass(other, type_self) or issubclass(type_self, other)
 
 
 cdef class Symbol(Identifier):

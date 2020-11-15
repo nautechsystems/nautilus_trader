@@ -569,8 +569,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[MODIFIED_TIME] = ObjectParser.datetime_to_string(event.modified_time)
-            package[MODIFIED_QUANTITY] = str(event.modified_quantity)
-            package[MODIFIED_PRICE] = str(event.modified_price)
+            package[QUANTITY] = str(event.quantity)
+            package[PRICE] = str(event.price)
         elif isinstance(event, OrderExpired):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -586,7 +586,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
             package[FILLED_QUANTITY] = str(event.fill_qty)
-            package[CUMULATIVE_QUANTITY] = str(event.cumulative_qty)
+            package[CUM_QUANTITY] = str(event.cum_qty)
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
             package[AVERAGE_PRICE] = str(event.avg_price)
             package[QUOTE_CURRENCY] = event.quote_currency.code
@@ -735,8 +735,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
                 OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                Quantity(unpacked[MODIFIED_QUANTITY].decode(UTF8)),
-                Price(unpacked[MODIFIED_PRICE].decode(UTF8)),
+                Quantity(unpacked[QUANTITY].decode(UTF8)),
+                Price(unpacked[PRICE].decode(UTF8)),
                 ObjectParser.string_to_datetime(unpacked[MODIFIED_TIME].decode(UTF8)),
                 event_id,
                 event_timestamp,
@@ -762,7 +762,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
-                Quantity(unpacked[CUMULATIVE_QUANTITY].decode(UTF8)),
+                Quantity(unpacked[CUM_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
                 decimal.Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),

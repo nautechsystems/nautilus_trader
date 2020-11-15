@@ -69,6 +69,7 @@ class InstrumentTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(int, type(result))
+        self.assertEqual(hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE))
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange

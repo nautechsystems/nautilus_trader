@@ -545,8 +545,8 @@ cdef class PassiveOrder(Order):
 
     cdef void _modified(self, OrderModified event) except *:
         self.id = event.order_id
-        self.quantity = event.modified_quantity
-        self.price = event.modified_price
+        self.quantity = event.quantity
+        self.price = event.price
 
     cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id

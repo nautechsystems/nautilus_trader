@@ -179,17 +179,19 @@ cdef class TickDataWrangler:
         df_ticks_h = df_ticks_h[(df_ticks_h[["bid_size"]] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[["bid_size"]] > 0).all(axis=1)]
         df_ticks_c = df_ticks_c[(df_ticks_c[["bid_size"]] > 0).all(axis=1)]
+
         df_ticks_o = df_ticks_o[(df_ticks_o[["ask_size"]] > 0).all(axis=1)]
         df_ticks_h = df_ticks_h[(df_ticks_h[["ask_size"]] > 0).all(axis=1)]
         df_ticks_l = df_ticks_l[(df_ticks_l[["ask_size"]] > 0).all(axis=1)]
         df_ticks_c = df_ticks_c[(df_ticks_c[["ask_size"]] > 0).all(axis=1)]
 
-        # Set high low tick volumes to zero
+        # Set open, high, low tick volumes to zero
         df_ticks_o["bid_size"] = 0
-        df_ticks_o["ask_size"] = 0
         df_ticks_h["bid_size"] = 0
-        df_ticks_h["ask_size"] = 0
         df_ticks_l["bid_size"] = 0
+
+        df_ticks_o["ask_size"] = 0
+        df_ticks_h["ask_size"] = 0
         df_ticks_l["ask_size"] = 0
 
         # Merge tick data
