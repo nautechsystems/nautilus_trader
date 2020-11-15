@@ -88,7 +88,8 @@ cdef class AccountState(Event):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balance={self.balance.to_string()})")
+                f"balance={self.balance.to_string()}, "
+                f"id={self.id})")
 
 
 cdef class OrderEvent(Event):
@@ -118,9 +119,6 @@ cdef class OrderEvent(Event):
         super().__init__(event_id, event_timestamp)
 
         self.cl_ord_id = cl_ord_id
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -196,6 +194,9 @@ cdef class OrderInitialized(OrderEvent):
         self.options = options
         self.is_completion_trigger = False
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
+
 
 cdef class OrderInvalid(OrderEvent):
     """
@@ -243,7 +244,7 @@ cdef class OrderInvalid(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason}, "
+                f"reason='{self.reason}', "
                 f"id={self.id})")
 
 
@@ -292,7 +293,7 @@ cdef class OrderDenied(OrderEvent):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason}, "
+                f"reason='{self.reason}', "
                 f"id={self.id})")
 
 
@@ -398,7 +399,7 @@ cdef class OrderRejected(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"reason={self.reason}, "
+                f"reason='{self.reason}', "
                 f"id={self.id})")
 
 
@@ -615,7 +616,7 @@ cdef class OrderCancelReject(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"response_to={self.response_to}, "
-                f"reason={self.reason}, "
+                f"reason='{self.reason}', "
                 f"id={self.id})")
 
 
@@ -683,8 +684,8 @@ cdef class OrderModified(OrderEvent):
             AccountId account_id not None,
             ClientOrderId cl_ord_id not None,
             OrderId order_id not None,
-            Quantity modified_quantity not None,
-            Price modified_price not None,
+            Quantity quantity not None,
+            Price price not None,
             datetime modified_time not None,
             UUID event_id not None,
             datetime event_timestamp not None,
@@ -700,10 +701,10 @@ cdef class OrderModified(OrderEvent):
             The client order identifier.
         order_id : OrderId
             The exchange/broker order identifier.
-        modified_quantity : Quantity
-            The modified quantity.
-        modified_price : Price
-            The modified price.
+        quantity : Quantity
+            The orders current quantity.
+        price : Price
+            The orders current price.
         modified_time : datetime
             The modified time.
         event_id : UUID
@@ -720,8 +721,8 @@ cdef class OrderModified(OrderEvent):
 
         self.account_id = account_id
         self.order_id = order_id
-        self.modified_quantity = modified_quantity
-        self.modified_price = modified_price
+        self.quantity = quantity
+        self.price = price
         self.modified_time = modified_time
         self.is_completion_trigger = False
 
@@ -730,8 +731,8 @@ cdef class OrderModified(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"qty={self.modified_quantity.to_string()}, "
-                f"price={self.modified_price}, "
+                f"qty={self.quantity.to_string()}, "
+                f"price={self.price}, "
                 f"id={self.id})")
 
 
@@ -803,7 +804,7 @@ cdef class OrderFilled(OrderEvent):
             Symbol symbol not None,
             OrderSide order_side,
             Quantity fill_qty not None,
-            Quantity cumulative_qty not None,
+            Quantity cum_qty not None,
             Quantity leaves_qty not None,
             object avg_price not None,
             Currency quote_currency not None,
@@ -838,8 +839,8 @@ cdef class OrderFilled(OrderEvent):
             The execution order side.
         fill_qty : Quantity
             The filled quantity for this execution.
-        cumulative_qty : Quantity
-            The total filled quantity for the order.
+        cum_qty : Quantity
+            The cumulative filled quantity for the order.
         leaves_qty : Quantity
             The quantity open for further execution.
         avg_price : decimal.Decimal
@@ -879,7 +880,7 @@ cdef class OrderFilled(OrderEvent):
         self.symbol = symbol
         self.order_side = order_side
         self.fill_qty = fill_qty
-        self.cumulative_qty = cumulative_qty
+        self.cum_qty = cum_qty
         self.leaves_qty = leaves_qty
         self.is_partial_fill = leaves_qty > 0
         self.avg_price = avg_price
@@ -902,7 +903,7 @@ cdef class OrderFilled(OrderEvent):
                 f"side={OrderSideParser.to_string(self.order_side)}"
                 f"-{LiquiditySideParser.to_string(self.liquidity_side)}, "
                 f"fill_qty={self.fill_qty.to_string()}, "
-                f"cum_qty={self.cumulative_qty.to_string()}, "
+                f"cum_qty={self.cum_qty.to_string()}, "
                 f"leaves_qty={self.leaves_qty.to_string()}, "
                 f"avg_price={self.avg_price} {self.quote_currency.code}, "
                 f"commission={self.commission.to_string()}, "

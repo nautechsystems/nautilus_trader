@@ -40,11 +40,11 @@ cdef class AccountState(Event):
     cdef readonly Currency currency
     """The currency of the event.\n\n:returns: `Currency`"""
     cdef readonly Money balance
-    """The account balance of the event.\n\n:returns: `Money`"""
+    """The current account balance.\n\n:returns: `Money`"""
     cdef readonly Money margin_balance
-    """The margin balance of the event.\n\n:returns: `Money`"""
+    """The current margin balance.\n\n:returns: `Money`"""
     cdef readonly Money margin_available
-    """The margin available of the event.\n\n:returns: `Money`"""
+    """The current margin available.\n\n:returns: `Money`"""
 
 
 cdef class OrderEvent(Event):
@@ -58,22 +58,22 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly Symbol symbol
-    """The order symbol of the event.\n\n:returns: `Symbol`"""
+    """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
-    """The order side of the event.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
-    """The order type of the event.\n\n:returns: `OrderType`"""
+    """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
-    """The order quantity of the event.\n\n:returns: `Quantity`"""
+    """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force of the event.\n\n:returns: `TimeInForce`"""
+    """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly dict options
-    """The order initialization options of the event.\n\n:returns: `dict`"""
+    """The order initialization options.\n\n:returns: `dict`"""
 
 
 cdef class OrderInvalid(OrderEvent):
     cdef readonly str reason
-    """The reason the order was considered invalid.\n\n:returns: `str`"""
+    """The reason the order was invalid.\n\n:returns: `str`"""
 
 
 cdef class OrderDenied(OrderEvent):
@@ -85,14 +85,14 @@ cdef class OrderSubmitted(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly datetime submitted_time
-    """The order submitted time of the event.\n\n:returns: `datetime`"""
+    """The order submitted time.\n\n:returns: `datetime`"""
 
 
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly datetime rejected_time
-    """The order rejected time of the event.\n\n:returns: `datetime`"""
+    """The order rejected time.\n\n:returns: `datetime`"""
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
 
@@ -103,7 +103,7 @@ cdef class OrderAccepted(OrderEvent):
     cdef readonly OrderId order_id
     """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly datetime accepted_time
-    """The order accepted time of the event.\n\n:returns: `datetime`"""
+    """The order accepted time.\n\n:returns: `datetime`"""
 
 
 cdef class OrderWorking(OrderEvent):
@@ -112,21 +112,21 @@ cdef class OrderWorking(OrderEvent):
     cdef readonly OrderId order_id
     """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly Symbol symbol
-    """The order symbol of the event.\n\n:returns: `Symbol`"""
+    """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
-    """The order symbol of the event.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
-    """The order type of the event.\n\n:returns: `OrderType`"""
+    """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
-    """The order quantity of the event.\n\n:returns: `Quantity`"""
+    """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
-    """The order price of the event.\n\n:returns: `Price`"""
+    """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force of the event.\n\n:returns: `TimeInForce`"""
+    """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly datetime expire_time
-    """The order expire time of the event.\n\n:returns: `datetime`"""
+    """The order expire time.\n\n:returns: `datetime` or `None`"""
     cdef readonly datetime working_time
-    """The order working time of the event.\n\n:returns: `datetime`"""
+    """The order working.\n\n:returns: `datetime`"""
 
 
 cdef class OrderCancelReject(OrderEvent):
@@ -146,7 +146,7 @@ cdef class OrderCancelled(OrderEvent):
     cdef readonly OrderId order_id
     """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly datetime cancelled_time
-    """The order cancelled time of the event.\n\n:returns: `datetime`"""
+    """The order cancelled time.\n\n:returns: `datetime`"""
 
 
 cdef class OrderModified(OrderEvent):
@@ -154,12 +154,12 @@ cdef class OrderModified(OrderEvent):
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly OrderId order_id
     """The order identifier associated with the event.\n\n:returns: `OrderId`"""
-    cdef readonly Quantity modified_quantity
-    """The order quantity of the event.\n\n:returns: `Quantity`"""
-    cdef readonly Price modified_price
-    """The order price of the event.\n\n:returns: `Price`"""
+    cdef readonly Quantity quantity
+    """The orders current quantity.\n\n:returns: `Quantity`"""
+    cdef readonly Price price
+    """The orders current price.\n\n:returns: `Price`"""
     cdef readonly datetime modified_time
-    """The order modified time of the event.\n\n:returns: `datetime`"""
+    """The order modified time.\n\n:returns: `datetime`"""
 
 
 cdef class OrderExpired(OrderEvent):
@@ -168,7 +168,7 @@ cdef class OrderExpired(OrderEvent):
     cdef readonly OrderId order_id
     """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly datetime expired_time
-    """The order expired time of the event.\n\n:returns: `datetime`"""
+    """The order expired time.\n\n:returns: `datetime`"""
 
 
 cdef class OrderFilled(OrderEvent):
@@ -183,19 +183,19 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly Symbol symbol
-    """The order symbol of the event.\n\n:returns: `Symbol`"""
+    """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
-    """The order side of the event.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly Quantity fill_qty
-    """The fill quantity of the event.\n\n:returns: `Quantity`"""
-    cdef readonly Quantity cumulative_qty
+    """The fill quantity.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity cum_qty
     """The order cumulative filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order quantity remaining to be filled.\n\n:returns: `Quantity`"""
     cdef readonly bint is_partial_fill
-    """If the event represents a partial fill of the order.\n\n:returns: `bool`"""
+    """If the fill is partial (leaves_qty > 0).\n\n:returns: `bool`"""
     cdef readonly object avg_price
-    """The average fill price of the event.\n\n:returns: `decimal.Decimal`"""
+    """The average fill price.\n\n:returns: `decimal.Decimal`"""
     cdef readonly Currency quote_currency
     """The instrument quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
@@ -203,18 +203,18 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly bint is_inverse
     """If quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly Money commission
-    """The commission generated from the fill event.\n\n:returns: `Money`"""
+    """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
     cdef readonly datetime execution_time
-    """The execution timestamp of the event.\n\n:returns: `datetime`"""
+    """The execution timestamp.\n\n:returns: `datetime`"""
 
 
 cdef class PositionEvent(Event):
     cdef readonly Position position
     """The position associated with the event.\n\n:returns: `Position`"""
     cdef readonly OrderFilled order_fill
-    """The order fill of the event.\n\n:returns: `OrderFilled`"""
+    """The order fill associated with the position.\n\n:returns: `OrderFilled`"""
 
 
 cdef class PositionOpened(PositionEvent):

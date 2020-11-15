@@ -19,7 +19,9 @@ from parameterized import parameterized
 
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Brokerage
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import Issuer
 from nautilus_trader.model.identifiers import PositionId
@@ -46,16 +48,33 @@ class IdentifierTests(unittest.TestCase):
 
     def test_equality(self):
         # Arrange
-        string1 = Identifier("abc123")
-        string2 = Identifier("abc123")
-        string3 = Identifier("def456")
+        id1 = Identifier("abc123")
+        id2 = Identifier("abc123")
+        id3 = Identifier("def456")
 
         # Act
         # Assert
-        self.assertTrue("abc123", string1.value)
-        self.assertTrue(string1 == string1)
-        self.assertTrue(string1 == string2)
-        self.assertTrue(string1 != string3)
+        self.assertTrue("abc123", id1.value)
+        self.assertTrue(id1 == id1)
+        self.assertTrue(id1 == id2)
+        self.assertTrue(id1 != id3)
+
+    def test_equality_of_subclass(self):
+        # Arrange
+        id1 = Venue("BINANCE")
+        id2 = Exchange("BINANCE")
+        id3 = Symbol("BINANCE", Venue("BINANCE"))  # Invalid
+        id4 = Brokerage("BINANCE")
+
+        # Act
+        # Assert
+        self.assertTrue(id1 == id1)
+        self.assertTrue(id2 == id2)
+        self.assertTrue(id1 == id2)
+        self.assertTrue(id2 == id1)
+        self.assertTrue(id1 != id3)
+        self.assertTrue(id2 != id3)
+        self.assertTrue(id2 != id4)
 
     def test_comparison(self):
         # Arrange

@@ -633,6 +633,7 @@ class MoneyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(int, type(result))
+        self.assertEqual(hash(money0), hash(money0))
 
     def test_str(self):
         # Arrange

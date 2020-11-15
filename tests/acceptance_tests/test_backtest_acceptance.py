@@ -14,23 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-import os
 import unittest
-
-import pandas as pd
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy

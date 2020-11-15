@@ -49,7 +49,6 @@ cdef class EMACross(TradingStrategy):
             BarSpecification bar_spec,
             int fast_ema=10,
             int slow_ema=20,
-            extra_id_tag='',
     ):
         """
         Initialize a new instance of the `EMACross` class.
@@ -64,11 +63,11 @@ cdef class EMACross(TradingStrategy):
             The fast EMA period.
         slow_ema : int
             The slow EMA period.
-        extra_id_tag : str, optional
-            An additional order identifier tag.
 
         """
-        super().__init__(order_id_tag=symbol.code.replace('/', '') + extra_id_tag)
+        # The order_id_tag should be unique at the 'trader level', here we are
+        # just using the traded instruments symbol as the strategy order id tag.
+        super().__init__(order_id_tag=symbol.code.replace('/', ''))
 
         # Custom strategy variables
         self.symbol = symbol
