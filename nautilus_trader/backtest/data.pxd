@@ -26,12 +26,14 @@ from nautilus_trader.model.tick cimport QuoteTick
 cdef class BacktestDataContainer:
     cdef readonly set symbols
     cdef readonly dict instruments
-    cdef readonly dict ticks
+    cdef readonly dict quote_ticks
+    cdef readonly dict trade_ticks
     cdef readonly dict bars_bid
     cdef readonly dict bars_ask
 
     cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void add_quote_ticks(self, Symbol symbol, data) except *
+    cpdef void add_trade_ticks(self, Symbol symbol, data) except *
     cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data) except *
     cpdef void check_integrity(self) except *
     cpdef long total_data_size(self)

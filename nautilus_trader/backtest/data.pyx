@@ -63,7 +63,8 @@ cdef class BacktestDataContainer:
         """
         self.symbols = set()   # type: {Instrument}
         self.instruments = {}  # type: {Symbol, Instrument}
-        self.ticks = {}        # type: {Symbol, pd.DataFrame}
+        self.quote_ticks = {}  # type: {Symbol, pd.DataFrame}
+        self.trade_ticks = {}  # type: {Symbol, pd.DataFrame}
         self.bars_bid = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
         self.bars_ask = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
 
@@ -84,14 +85,19 @@ cdef class BacktestDataContainer:
 
     cpdef void add_quote_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
         """
-        Add the tick data to the container.
+        Add the quote tick data to the container.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'bid', 'ask' data columns.
 
         Parameters
         ----------
         symbol : Symbol
-            The symbol for the tick data.
+            The symbol for the quote tick data.
         data : pd.DataFrame
-            The tick data to add.
+            The quote tick data to add.
 
         """
         Condition.not_none(symbol, "symbol")
@@ -99,8 +105,37 @@ cdef class BacktestDataContainer:
         Condition.type(data, pd.DataFrame, "data")
 
         self.symbols.add(symbol)
-        self.ticks[symbol] = data
-        self.ticks = dict(sorted(self.ticks.items()))
+        self.quote_ticks[symbol] = data
+        self.quote_ticks = dict(sorted(self.quote_ticks.items()))
+
+    cpdef void add_trade_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
+        """
+        Add the trade tick data to the container.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'trade_id', 'price', 'quantity',
+        'buyer_maker' data columns.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the trade tick data.
+        data : pd.DataFrame
+            The trade tick data to add.
+
+        Returns
+        -------
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(data, "data")
+        Condition.type(data, pd.DataFrame, "data")
+
+        self.symbols.add(symbol)
+        self.trade_ticks[symbol] = data
+        self.trade_ticks = dict(sorted(self.trade_ticks.items()))
 
     cpdef void add_bars(
             self,
@@ -151,7 +186,7 @@ cdef class BacktestDataContainer:
         Raises
         ------
         AssertionFailed
-            If the any integrity check fails.
+            If any integrity check fails.
 
         """
         # Check there is the needed instrument for each data symbol
@@ -176,7 +211,8 @@ cdef class BacktestDataContainer:
 
     cpdef long total_data_size(self):
         cdef long size = 0
-        size += get_size_of(self.ticks)
+        size += get_size_of(self.quote_ticks)
+        size += get_size_of(self.trade_ticks)
         size += get_size_of(self.bars_bid)
         size += get_size_of(self.bars_ask)
         return size
@@ -249,7 +285,7 @@ cdef class BacktestDataClient(DataClient):
             # Build data wrangler
             wrangler = TickDataWrangler(
                 instrument=instrument,
-                data_ticks=None if symbol not in self._data.ticks else self._data.ticks[symbol],
+                data_ticks=None if symbol not in self._data.quote_ticks else self._data.quote_ticks[symbol],
                 data_bars_bid=None if symbol not in self._data.bars_bid else self._data.bars_bid[symbol],
                 data_bars_ask=None if symbol not in self._data.bars_ask else self._data.bars_ask[symbol],
             )
