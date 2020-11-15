@@ -211,10 +211,10 @@ cdef class TickDataWrangler:
         """
         return list(map(self._build_tick_from_values,
                         self.tick_data.values,
-                        pd.to_datetime(self.tick_data.index)))
+                        self.tick_data.index))
 
     cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
-        # Build a tick from the given values. The function expects the values to
+        # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
             self.instrument.symbol,
