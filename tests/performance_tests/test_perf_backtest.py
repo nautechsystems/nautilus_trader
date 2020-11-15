@@ -155,7 +155,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             fill_model=None,
         )
 
-        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv.zip"))
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         engine.load_module(Venue('FXCM'), fx_rollover_interest)
@@ -191,3 +191,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 07/11/20  4345844 function calls (4320541 primitive calls) in 6.051 seconds (performance check)
         # 08/11/20  4345844 function calls (4320541 primitive calls) in 5.960 seconds (centralize exchange rate calculations)
         # 12/11/20  4346944 function calls (4321640 primitive calls) in 5.809 seconds (change value object API)
+        # 15/11/20  4378755 function calls (4353255 primitive calls) in 5.927 seconds (performance check)

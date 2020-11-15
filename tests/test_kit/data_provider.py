@@ -23,30 +23,29 @@ from tests.test_kit import PACKAGE_ROOT
 class TestDataProvider:
 
     @staticmethod
+    def ethusdt_trades() -> DataFrame:
+        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/binance-ethusdt-trades.csv")
+
+    @staticmethod
     def audusd_ticks() -> DataFrame:
-        print("Extracting truefx-audusd-ticks-2020-01.csv.zip...")
-        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/truefx-audusd-ticks-2020-01.csv.zip")
+        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/truefx-audusd-ticks.csv")
 
     @staticmethod
     def usdjpy_ticks() -> DataFrame:
-        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/truefx-usdjpy-ticks.csv.zip")
+        return CSVTickDataLoader.load(PACKAGE_ROOT + "/data/truefx-usdjpy-ticks.csv")
 
     @staticmethod
     def gbpusd_1min_bid() -> DataFrame:
-        print("Extracting fxcm-gbpusd-m1-bid-2012.csv.zip...")
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-gbpusd-m1-bid-2012.csv.zip")
+        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-gbpusd-m1-bid-2012.csv")
 
     @staticmethod
     def gbpusd_1min_ask() -> DataFrame:
-        print("Extracting fxcm-gbpusd-m1-ask-2012.csv.zip...")
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-gbpusd-m1-ask-2012.csv.zip")
+        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-gbpusd-m1-ask-2012.csv")
 
     @staticmethod
     def usdjpy_1min_bid() -> DataFrame:
-        print("Extracting fxcm-usdjpy-m1-bid-2013.csv.zip...")
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-bid-2013.csv.zip")
+        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-bid-2013.csv")
 
     @staticmethod
     def usdjpy_1min_ask() -> DataFrame:
-        print("Extracting fxcm-usdjpy-m1-ask-2013.csv.zip...")
-        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-ask-2013.csv.zip")
+        return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-ask-2013.csv")

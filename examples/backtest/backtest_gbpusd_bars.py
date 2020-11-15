@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv.zip"))
+    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     engine.load_module(Venue('SIM'), fx_rollover_interest)

@@ -58,7 +58,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
             starting_capital=1000000,
             account_currency=USD,
             short_term_interest_csv_path='default',
-            bypass_logging=False,
+            bypass_logging=True,
             level_console=LogLevel.DEBUG,
             level_file=LogLevel.DEBUG,
             level_store=LogLevel.WARNING,
@@ -75,11 +75,6 @@ class BacktestAcceptanceTests(unittest.TestCase):
             config=config,
         )
 
-        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv.zip"))
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
-
-        self.engine.load_module(Venue('FXCM'), fx_rollover_interest)
-
     def tearDown(self):
         self.engine.dispose()
 
@@ -90,15 +85,15 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                fast_ema=10,
                                slow_ema=20)]
 
-        start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
+        start = datetime(2013, 2, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
         # Act
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert - Should return expected PNL
-        self.assertEqual(1194, strategies[0].fast_ema.count)
-        self.assertEqual(-13087.7, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(4043, strategies[0].fast_ema.count)
+        self.assertEqual(12585.49, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -107,14 +102,14 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                fast_ema=10,
                                slow_ema=20)]
 
-        start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
+        start = datetime(2013, 2, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
         self.engine.run(start, stop, strategies=strategies)
         result1 = self.engine.analyzer.get_performance_stats()
 
         # Act
-        self.engine.run(start, stop)
+        self.engine.run()
         result2 = self.engine.analyzer.get_performance_stats()
 
         # Assert
@@ -133,12 +128,12 @@ class BacktestAcceptanceTests(unittest.TestCase):
                                slow_ema=20,
                                extra_id_tag='002')]
 
-        start = datetime(2013, 1, 2, 0, 0, 0, 0)
-        stop = datetime(2013, 1, 3, 0, 0, 0, 0)
+        start = datetime(2013, 2, 1, 0, 0, 0, 0)
+        stop = datetime(2013, 3, 1, 0, 0, 0, 0)
 
         # Act
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert
-        self.assertEqual(1194, strategies[0].fast_ema.count)
-        self.assertEqual(1194, strategies[1].fast_ema.count)
+        self.assertEqual(4043, strategies[0].fast_ema.count)
+        self.assertEqual(4043, strategies[1].fast_ema.count)
