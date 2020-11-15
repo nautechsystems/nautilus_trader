@@ -135,6 +135,12 @@ cdef class TickDataWrangler:
         bars_bid = as_utc_index(bars_bid)
         bars_ask = as_utc_index(bars_ask)
 
+        if "volume" not in bars_bid:
+            bars_bid["volume"] = 1
+
+        if "volume" not in bars_ask:
+            bars_ask["volume"] = 1
+
         cdef dict data_open = {
             "bid": bars_bid["open"].values,
             "ask": bars_ask["open"].values,
@@ -203,11 +209,11 @@ cdef class TickDataWrangler:
         list[QuoteTick]
 
         """
-        return list(map(self._build_tick_from_values_with_sizes,
+        return list(map(self._build_tick_from_values,
                         self.tick_data.values,
                         pd.to_datetime(self.tick_data.index)))
 
-    cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
+    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
         # Build a tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
@@ -216,18 +222,6 @@ cdef class TickDataWrangler:
             Price(values[1], self.instrument.price_precision),
             Quantity(values[2], self.instrument.size_precision),
             Quantity(values[3], self.instrument.size_precision),
-            timestamp,
-        )
-
-    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
-        # Build a tick from the given values. The function expects the values to
-        # be an ndarray with 2 elements [bid, ask] of type double.
-        return QuoteTick(
-            self.instrument.symbol,
-            Price(values[0], self.instrument.price_precision),
-            Price(values[1], self.instrument.price_precision),
-            Quantity(1),
-            Quantity(1),
             timestamp,
         )
 
@@ -240,8 +234,8 @@ cdef class BarDataWrangler:
 
     def __init__(
             self,
-            int precision,
-            int volume_multiple=1,
+            int price_precision,
+            int size_precision,
             data: pd.DataFrame=None,
     ):
         """
@@ -249,31 +243,33 @@ cdef class BarDataWrangler:
 
         Parameters
         ----------
-        precision : int
+        price_precision : int
             The decimal precision for bar prices (>= 0).
-        volume_multiple : int
-            The volume multiple for the builder (> 0). This can be used to
-            transform decimalized volumes to integers.
+        size_precision : int
+            The decimal precision for bar volumes (>= 0).
         data : pd.DataFrame
             The the bars market data.
 
         Raises
         ------
         ValueError
-            If decimal_precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If volume_multiple is not positive (> 0).
+            If size_precision is negative (< 0).
         ValueError
             If data not type DataFrame.
 
         """
-        Condition.not_negative_int(precision, "precision")
-        Condition.positive_int(volume_multiple, "volume_multiple")
+        Condition.not_negative_int(price_precision, "price_precision")
+        Condition.not_negative_int(size_precision, "size_precision")
         Condition.type(data, pd.DataFrame, "data")
 
-        self._precision = precision
-        self._volume_multiple = volume_multiple
+        self._price_precision = price_precision
+        self._size_precision = size_precision
         self._data = as_utc_index(data)
+
+        if "volume" not in self._data:
+            self._data["volume"] = 1
 
     cpdef list build_bars_all(self):
         """
@@ -322,10 +318,10 @@ cdef class BarDataWrangler:
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
-            Price(values[0], self._precision),
-            Price(values[1], self._precision),
-            Price(values[2], self._precision),
-            Price(values[3], self._precision),
-            Quantity(values[4] * self._volume_multiple, 0),
+            Price(values[0], self._price_precision),
+            Price(values[1], self._price_precision),
+            Price(values[2], self._price_precision),
+            Price(values[3], self._price_precision),
+            Quantity(values[4], self._size_precision),
             timestamp,
         )

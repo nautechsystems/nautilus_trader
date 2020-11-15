@@ -31,7 +31,7 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
@@ -75,7 +75,7 @@ class BacktestAcceptanceTests(unittest.TestCase):
             config=config,
         )
 
-        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv.zip"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         self.engine.load_module(Venue('FXCM'), fx_rollover_interest)
@@ -97,8 +97,8 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert - Should return expected PNL
-        self.assertEqual(559, strategies[0].fast_ema.count)
-        self.assertEqual(-1872.51, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
+        self.assertEqual(1194, strategies[0].fast_ema.count)
+        self.assertEqual(-13087.7, self.engine.analyzer.get_performance_stats()['PNL'])  # Money represented as double here
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -140,5 +140,5 @@ class BacktestAcceptanceTests(unittest.TestCase):
         self.engine.run(start, stop, strategies=strategies)
 
         # Assert
-        self.assertEqual(559, strategies[0].fast_ema.count)
-        self.assertEqual(559, strategies[1].fast_ema.count)
+        self.assertEqual(1194, strategies[0].fast_ema.count)
+        self.assertEqual(1194, strategies[1].fast_ema.count)

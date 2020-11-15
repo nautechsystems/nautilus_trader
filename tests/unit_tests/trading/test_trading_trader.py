@@ -39,7 +39,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.trader import Trader
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 

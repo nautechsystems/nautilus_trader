@@ -408,7 +408,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 break
 
             value_diff = self.step - self.cum_value
-            size_diff = Quantity(size * (value_diff / value_update), precision=precision)
+            size_diff = Quantity(size_update * (value_diff / value_update), precision=precision)
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
@@ -416,7 +416,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 timestamp=timestamp,
             )
 
-            # Build a bar and reset builder and cum value
+            # Build a bar and reset builder and cumulative value
             self._build_and_send()
             self.cum_value = decimal.Decimal()
 

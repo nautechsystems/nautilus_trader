@@ -57,9 +57,7 @@ cdef class CSVTickDataLoader:
 
         return pd.read_csv(
             file_path,
-            usecols=[1, 2, 3],
-            index_col=0,
-            header=None,
+            index_col="timestamp",
             parse_dates=True,
         )
 
@@ -88,7 +86,7 @@ cdef class CSVBarDataLoader:
 
         return pd.read_csv(
             file_path,
-            index_col="Time (UTC)",
+            index_col="timestamp",
             parse_dates=True,
         )
 
@@ -271,7 +269,7 @@ cdef class InstrumentLoader:
     @staticmethod
     def default_fx_ccy(Symbol symbol) -> Instrument:
         """
-        Return a default FX currency pair instrument from the given arguments.
+        Return a default FX currency pair instrument from the given symbol.
 
         Parameters
         ----------

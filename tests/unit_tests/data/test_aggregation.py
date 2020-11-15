@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -779,7 +779,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
 
     def test_given_list_of_ticks_aggregates_tick_bars(self):
         # Arrange
-        tick_data = TestDataProvider.usdjpy_test_ticks()
+        tick_data = TestDataProvider.usdjpy_ticks()
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.wrangler = TickDataWrangler(
