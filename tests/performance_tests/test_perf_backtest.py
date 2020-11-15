@@ -33,7 +33,7 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
@@ -155,7 +155,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             fill_model=None,
         )
 
-        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv.zip"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         engine.load_module(Venue('FXCM'), fx_rollover_interest)
