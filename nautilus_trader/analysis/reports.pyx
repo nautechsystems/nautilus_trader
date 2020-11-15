@@ -56,9 +56,7 @@ cdef class ReportProvider:
 
         cdef list orders_all = [self._order_to_dict(o) for o in orders]
 
-        report = pd.DataFrame(data=orders_all).set_index("cl_ord_id")
-        report.sort_values("timestamp", inplace=True)
-        return report
+        return pd.DataFrame(data=orders_all).set_index("cl_ord_id").sort_index()
 
     cpdef object generate_order_fills_report(self, list orders):
         """
@@ -86,9 +84,7 @@ cdef class ReportProvider:
         if not filled_orders:
             return pd.DataFrame()
 
-        report = pd.DataFrame(data=filled_orders).set_index("cl_ord_id")
-        report.sort_values("timestamp", inplace=True)
-        return report
+        return pd.DataFrame(data=filled_orders).set_index("cl_ord_id").sort_index()
 
     cpdef object generate_positions_report(self, list positions):
         """
@@ -113,9 +109,8 @@ cdef class ReportProvider:
         if not trades:
             return pd.DataFrame()
 
-        report = pd.DataFrame(data=trades).set_index("position_id")
-        report.sort_values("opened_time", inplace=True)
-        return report
+        return pd.DataFrame(data=trades).set_index("position_id").sort_values(
+            ['opened_time', 'closed_time', 'position_id'])
 
     cpdef object generate_account_report(self, Account account):
         """
@@ -143,9 +138,7 @@ cdef class ReportProvider:
         if not account_events:
             return pd.DataFrame()
 
-        report = pd.DataFrame(data=account_events).set_index("timestamp")
-        report.sort_index(inplace=True)
-        return report
+        return pd.DataFrame(data=account_events).set_index("timestamp").sort_index()
 
     cdef dict _order_to_dict(self, Order order):
         return {
