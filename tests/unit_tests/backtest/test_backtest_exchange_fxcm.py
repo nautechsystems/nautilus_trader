@@ -110,7 +110,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.exchange,
+            exchange=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,

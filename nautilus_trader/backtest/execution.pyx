@@ -34,7 +34,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
     def __init__(
             self,
-            SimulatedExchange market not None,
+            SimulatedExchange exchange not None,
             AccountId account_id not None,
             ExecutionEngine engine not None,
             TestClock clock not None,
@@ -46,8 +46,8 @@ cdef class BacktestExecClient(ExecutionClient):
 
         Parameters
         ----------
-        market : SimulatedExchange
-            The simulated market for the backtest.
+        exchange : SimulatedExchange
+            The simulated exchange for the backtest.
         account_id : AccountId
             The account identifier for the client.
         engine : ExecutionEngine
@@ -57,7 +57,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         """
         super().__init__(
-            market.venue,
+            exchange.venue,
             account_id,
             engine,
             clock,
@@ -65,7 +65,7 @@ cdef class BacktestExecClient(ExecutionClient):
             logger,
         )
 
-        self._market = market
+        self._exchange = exchange
 
     cpdef void connect(self) except *:
         """
@@ -102,16 +102,16 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND EXECUTION -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        self._market.handle_submit_order(command)
+        self._exchange.handle_submit_order(command)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
-        self._market.handle_submit_bracket_order(command)
+        self._exchange.handle_submit_bracket_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
-        self._market.handle_cancel_order(command)
+        self._exchange.handle_cancel_order(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
-        self._market.handle_modify_order(command)
+        self._exchange.handle_modify_order(command)
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 

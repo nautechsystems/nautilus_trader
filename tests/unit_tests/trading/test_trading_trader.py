@@ -93,7 +93,7 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.market = SimulatedExchange(
+        self.exchange = SimulatedExchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -118,7 +118,7 @@ class TraderTests(unittest.TestCase):
         self.data_engine.register_client(self.data_client)
 
         self.exec_client = BacktestExecClient(
-            market=self.market,
+            exchange=self.exchange,
             account_id=account_id,
             engine=self.exec_engine,
             clock=clock,
