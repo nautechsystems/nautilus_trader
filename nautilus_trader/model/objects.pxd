@@ -17,7 +17,7 @@ from nautilus_trader.model.currency cimport Currency
 
 
 cdef class BaseDecimal:
-    cdef readonly object _value
+    cdef object _value
 
     cdef inline object _make_decimal_with_rounding(self, value, int precision, str rounding)
     cdef inline object _make_decimal(self, double value, int precision)
@@ -27,9 +27,6 @@ cdef class BaseDecimal:
 
     @staticmethod
     cdef inline bint _compare(a, b, int op) except *
-
-    @staticmethod
-    cdef inline double _eval_double(double a, double b, int op) except *
 
     cdef inline int precision_c(self) except *
 
