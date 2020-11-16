@@ -38,10 +38,12 @@ cdef class BacktestDataContainer:
     cpdef void add_trade_ticks(self, Symbol symbol, data) except *
     cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data) except *
     cpdef void check_integrity(self) except *
+    cpdef bint has_quote_data(self, Symbol symbol) except *
+    cpdef bint has_trade_data(self, Symbol symbol) except *
     cpdef long total_data_size(self)
 
 
-cdef class BacktestDataClient(DataClient):
+cdef class BacktestDataProducer(DataClient):
     cdef BacktestDataContainer _data
     cdef object _quote_tick_data
     cdef object _trade_tick_data
@@ -49,22 +51,20 @@ cdef class BacktestDataClient(DataClient):
     cdef dict _symbol_index
 
     cdef unsigned short[:] _quote_symbols
-    cdef list _quote_bids
-    cdef list _quote_asks
-    cdef list _quote_bid_sizes
-    cdef list _quote_ask_sizes
+    cdef str[:] _quote_bids
+    cdef str[:] _quote_asks
+    cdef str[:] _quote_bid_sizes
+    cdef str[:] _quote_ask_sizes
     cdef datetime[:] _quote_timestamps
-    cdef dict _quote_symbol_index
     cdef int _quote_index
     cdef int _quote_index_last
 
     cdef unsigned short[:] _trade_symbols
-    cdef list _trade_prices
-    cdef list _trade_sizes
-    cdef list _trade_match_ids
-    cdef list _trade_makers
+    cdef str[:] _trade_prices
+    cdef str[:] _trade_sizes
+    cdef str[:] _trade_match_ids
+    cdef unsigned short[:] _trade_makers
     cdef datetime[:] _trade_timestamps
-    cdef dict _trade_symbol_index
     cdef int _trade_index
     cdef int _trade_index_last
 

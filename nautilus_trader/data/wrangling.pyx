@@ -185,9 +185,9 @@ cdef class QuoteTickDataWrangler:
         df_ticks_c = pd.DataFrame(data=data_close)
 
         # TODO: Pending refactoring
-        # df_ticks_o.index = bars_bid.index.shift(periods=-100, freq="ms")
-        # df_ticks_h.index = bars_bid.index.shift(periods=-100, freq="ms")
-        # df_ticks_l.index = bars_bid.index.shift(periods=-100, freq="ms")
+        df_ticks_o.index = bars_bid.index.shift(periods=-300, freq="ms")
+        df_ticks_h.index = bars_bid.index.shift(periods=-200, freq="ms")
+        df_ticks_l.index = bars_bid.index.shift(periods=-100, freq="ms")
 
         # Pre-process prices into formatted strings
         price_cols = ["bid", "ask"]

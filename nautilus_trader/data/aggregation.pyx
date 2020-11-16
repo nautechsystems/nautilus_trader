@@ -107,7 +107,7 @@ cdef class BarBuilder:
             self._low = min(self._low, price)
 
         self._close = price
-        self.volume = self.volume + size
+        self.volume += size
         self.count += 1
         self.last_timestamp = timestamp
 
@@ -542,7 +542,7 @@ cdef class TimeBarAggregator(BarAggregator):
             handler=self._build_event,
         )
 
-        self._log.info(f"Started timer {timer_name}.")
+        self._log.debug(f"Started timer {timer_name}.")
 
     cdef void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
         if self._clock.is_test_clock:

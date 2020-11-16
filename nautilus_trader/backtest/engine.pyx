@@ -20,7 +20,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BacktestDataClient
+from nautilus_trader.backtest.data cimport BacktestDataProducer
 from nautilus_trader.backtest.data cimport BacktestDataContainer
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -204,7 +204,7 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.data_client = BacktestDataClient(
+        self.data_client = BacktestDataProducer(
             data=data,
             venue=venue,
             engine=self.data_engine,
@@ -351,7 +351,7 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start)
 
-        # Temporary fix to initialize account
+        # TODO: Temporary fix to initialize account
         self.exchange.adjust_account(Money(0, self.exchange.account_currency))
 
         # Start trader which starts strategies
