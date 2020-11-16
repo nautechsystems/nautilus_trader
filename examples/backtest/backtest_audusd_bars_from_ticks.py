@@ -54,11 +54,7 @@ if __name__ == "__main__":
     # Instantiate your strategy
     strategy = EMACross(
         symbol=AUDUSD.symbol,
-        bar_spec=BarSpecification(
-            1,
-            BarAggregation.MINUTE,
-            PriceType.MID,
-        ),
+        bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
         fast_ema=10,
         slow_ema=20,
     )
