@@ -29,21 +29,16 @@ cdef class PositionSizer:
         Price entry,
         Price stop_loss,
         Money equity,
-        object risk,
-        object commission_rate=*,
-        object exchange_rate=*,
-        object hard_limit=*,
-        object unit_batch_size=*,
+        risk,
+        commission_rate=*,
+        exchange_rate=*,
+        hard_limit=*,
+        unit_batch_size=*,
         int units=*,
     )
 
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss)
-    cdef object _calculate_riskable_money(
-        self,
-        object equity,
-        object risk,
-        object commission_rate,
-    )
+    cdef object _calculate_riskable_money(self, equity, risk, commission_rate)
 
 
 cdef class FixedRiskSizer(PositionSizer):
