@@ -20,7 +20,9 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BacktestDataContainer:
@@ -41,15 +43,33 @@ cdef class BacktestDataContainer:
 
 cdef class BacktestDataClient(DataClient):
     cdef BacktestDataContainer _data
-    cdef object _tick_data
-    cdef unsigned short[:] _symbols
-    cdef double[:, :] _price_volume
-    cdef datetime[:] _timestamps
+    cdef object _quote_tick_data
+    cdef object _trade_tick_data
+
     cdef dict _symbol_index
-    cdef dict _price_precisions
-    cdef dict _size_precisions
-    cdef int _index
-    cdef int _index_last
+
+    cdef unsigned short[:] _quote_symbols
+    cdef list _quote_bids
+    cdef list _quote_asks
+    cdef list _quote_bid_sizes
+    cdef list _quote_ask_sizes
+    cdef datetime[:] _quote_timestamps
+    cdef dict _quote_symbol_index
+    cdef int _quote_index
+    cdef int _quote_index_last
+
+    cdef unsigned short[:] _trade_symbols
+    cdef list _trade_prices
+    cdef list _trade_sizes
+    cdef list _trade_match_ids
+    cdef list _trade_makers
+    cdef datetime[:] _trade_timestamps
+    cdef dict _trade_symbol_index
+    cdef int _trade_index
+    cdef int _trade_index_last
+
+    cdef TradeTick _next_trade_tick
+    cdef QuoteTick _next_quote_tick
 
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
@@ -57,6 +77,10 @@ cdef class BacktestDataClient(DataClient):
     cdef readonly bint has_data
 
     cpdef void setup(self, datetime start, datetime stop) except *
-    cdef QuoteTick generate_tick(self)
-
     cpdef void reset(self) except *
+    cdef Tick next_tick(self)
+
+    cdef inline QuoteTick _generate_quote_tick(self, int index)
+    cdef inline TradeTick _generate_trade_tick(self, int index)
+    cdef inline void _iterate_quote_ticks(self) except *
+    cdef inline void _iterate_trade_ticks(self) except *

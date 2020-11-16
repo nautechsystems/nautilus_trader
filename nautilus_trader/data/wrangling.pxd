@@ -19,20 +19,30 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class TickDataWrangler:
+cdef class QuoteTickDataWrangler:
     cdef object _data_ticks
     cdef dict _data_bars_ask
     cdef dict _data_bars_bid
 
     cdef readonly Instrument instrument
-    cdef readonly tick_data
+    cdef readonly processed_data
     cdef readonly BarAggregation resolution
 
-    cpdef void pre_process(self, int symbol_indexer) except *
     cpdef list build_ticks(self)
-    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp)
+    cpdef QuoteTick _build_tick_from_values(self, str[:] values, datetime timestamp)
+
+
+cdef class TradeTickDataWrangler:
+    cdef object _data_ticks
+
+    cdef readonly Instrument instrument
+    cdef readonly processed_data
+
+    cpdef list build_ticks(self)
+    cpdef TradeTick _build_tick_from_values(self, str[:] values, datetime timestamp)
 
 
 cdef class BarDataWrangler:

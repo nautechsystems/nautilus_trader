@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import unittest
 
 from nautilus_trader.backtest.config import BacktestConfig
@@ -60,10 +59,8 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_reset_engine(self):
         # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
 
-        self.engine.run(start, stop)
+        self.engine.run()
 
         # Act
         self.engine.reset()
@@ -73,14 +70,11 @@ class BacktestEngineTests(unittest.TestCase):
 
     def test_run_empty_strategy(self):
         # Arrange
-        start = datetime(2013, 1, 1, 0, 0, 0, 0)
-        stop = datetime(2013, 2, 1, 0, 0, 0, 0)
-
         # Act
-        self.engine.run(start, stop)
+        self.engine.run()
 
         # Assert
-        self.assertEqual(4, self.engine.iteration)
+        self.assertEqual(8000, self.engine.iteration)
 
     # TODO: New test
     # def test_timer_and_alert_sequencing_with_bar_execution(self):
