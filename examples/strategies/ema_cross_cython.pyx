@@ -87,6 +87,7 @@ cdef class EMACross(TradingStrategy):
         self.request_bars(self.bar_type)
 
         # Subscribe to live data
+        self.subscribe_quote_ticks(self.symbol)  # For debugging
         self.subscribe_bars(self.bar_type)
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
@@ -111,6 +112,7 @@ cdef class EMACross(TradingStrategy):
             The tick received.
 
         """
+        # self.log.info(f"Received {tick}")  # For debugging
         pass
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:

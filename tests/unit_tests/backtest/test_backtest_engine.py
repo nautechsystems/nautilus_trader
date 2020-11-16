@@ -74,7 +74,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.run()
 
         # Assert
-        self.assertEqual(8000, self.engine.iteration)
+        self.assertEqual(7999, self.engine.iteration)
 
     # TODO: New test
     # def test_timer_and_alert_sequencing_with_bar_execution(self):

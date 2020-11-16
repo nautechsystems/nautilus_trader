@@ -81,9 +81,9 @@ class TickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarAggregation.MINUTE, self.tick_builder.resolution)
         self.assertEqual(115044, len(tick_data))
-        self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[0].name)
-        self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[1].name)
-        self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[2].name)
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), tick_data.iloc[0].name)
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC"), tick_data.iloc[1].name)
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"), tick_data.iloc[2].name)
         self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name)
         self.assertEqual(0, tick_data.iloc[0]["symbol"])
         self.assertEqual("1", tick_data.iloc[0]["bid_size"])
