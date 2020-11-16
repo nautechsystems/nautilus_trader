@@ -14,7 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import os
 
 import pandas as pd
@@ -63,11 +62,7 @@ if __name__ == "__main__":
     # Instantiate your strategy
     strategy = EMACross(
         symbol=GBPUSD.symbol,
-        bar_spec=BarSpecification(
-            5,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-        ),
+        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
         fast_ema=10,
         slow_ema=20,
     )
@@ -116,12 +111,8 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
-    # Set backtest start and stop times
-    start = datetime(2012, 2, 1, 0, 0, 0, 0)
-    stop = datetime(2012, 3, 1, 0, 0, 0, 0)
-
-    # Run the engine
-    engine.run(start, stop)
+    # Run the engine from start to end of data
+    engine.run()
 
     # Optionally view reports
     with pd.option_context(
