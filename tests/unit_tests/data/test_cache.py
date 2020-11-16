@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-import decimal
+from decimal import Decimal
 import unittest
 
 import pytz
@@ -388,7 +388,7 @@ class DataCacheTests(unittest.TestCase):
         result = self.cache.get_xrate(FXCM, JPY, USD)
 
         # Assert
-        self.assertEqual(decimal.Decimal("0.009025266685348968705339031887"), result)
+        self.assertEqual(Decimal("0.009025266685348968705339031887"), result)
 
     def test_get_xrate_with_no_conversion_returns_one(self):
         # Arrange
@@ -396,7 +396,7 @@ class DataCacheTests(unittest.TestCase):
         result = self.cache.get_xrate(FXCM, AUD, AUD)
 
         # Assert
-        self.assertEqual(decimal.Decimal("1"), result)
+        self.assertEqual(Decimal("1"), result)
 
     def test_get_xrate_with_conversion(self):
         # Arrange
@@ -417,4 +417,4 @@ class DataCacheTests(unittest.TestCase):
         result = self.cache.get_xrate(FXCM, AUD, USD)
 
         # Assert
-        self.assertEqual(decimal.Decimal("0.80005"), result)
+        self.assertEqual(Decimal("0.80005"), result)

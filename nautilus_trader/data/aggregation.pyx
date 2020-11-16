@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from decimal import Decimal
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -65,7 +64,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self.volume = decimal.Decimal()
+        self.volume = Decimal()
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -84,7 +83,7 @@ cdef class BarBuilder:
         ----------
         price : Price
             The update price.
-        size : decimal.Decimal
+        size : Decimal
             The update size.
         timestamp : datetime
             The update timestamp.
@@ -128,7 +127,7 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self.volume = decimal.Decimal()
+        self.volume = Decimal()
         self.count = 0
 
     cpdef Bar build(self, datetime close_time=None):
@@ -389,7 +388,7 @@ cdef class ValueBarAggregator(BarAggregator):
         )
 
         self.step = bar_type.spec.step
-        self.cum_value = decimal.Decimal()  # Cumulative value
+        self.cum_value = Decimal()  # Cumulative value
 
     cdef inline void _apply_update(self, Price price, Quantity size, datetime timestamp) except *:
         cdef int precision = size.precision_c()
@@ -418,7 +417,7 @@ cdef class ValueBarAggregator(BarAggregator):
 
             # Build a bar and reset builder and cumulative value
             self._build_and_send()
-            self.cum_value = decimal.Decimal()
+            self.cum_value = Decimal()
 
             # Decrement the update size
             size_update -= size_diff

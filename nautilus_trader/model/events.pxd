@@ -195,7 +195,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly bint is_partial_fill
     """If the fill is partial (leaves_qty > 0).\n\n:returns: `bool`"""
     cdef readonly object avg_price
-    """The average fill price.\n\n:returns: `decimal.Decimal`"""
+    """The average fill price.\n\n:returns: `Decimal`"""
     cdef readonly Currency quote_currency
     """The instrument quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency

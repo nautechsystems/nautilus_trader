@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
@@ -111,9 +111,9 @@ cdef class InstrumentLoader:
             is_inverse=False,
             price_precision=2,
             size_precision=6,
-            tick_size=decimal.Decimal("0.01"),
-            multiplier=decimal.Decimal("1"),
-            leverage=decimal.Decimal("1"),
+            tick_size=Decimal("0.01"),
+            multiplier=Decimal("1"),
+            leverage=Decimal("1"),
             lot_size=Quantity("1"),
             max_quantity=Quantity("9000.0"),
             min_quantity=Quantity("1e-06"),
@@ -121,12 +121,12 @@ cdef class InstrumentLoader:
             min_notional=Money(10.00, USDT),
             max_price=Price("1000000.0"),
             min_price=Price("0.01"),
-            margin_initial=decimal.Decimal(),
-            margin_maintenance=decimal.Decimal(),
-            maker_fee=decimal.Decimal("0.001"),
-            taker_fee=decimal.Decimal("0.001"),
-            funding_rate_long=decimal.Decimal(),
-            funding_rate_short=decimal.Decimal(),
+            margin_initial=Decimal(),
+            margin_maintenance=Decimal(),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal(),
             timestamp=UNIX_EPOCH,
         )
 
@@ -145,9 +145,9 @@ cdef class InstrumentLoader:
             is_inverse=False,
             price_precision=2,
             size_precision=5,
-            tick_size=decimal.Decimal("0.01"),
-            multiplier=decimal.Decimal("1"),
-            leverage=decimal.Decimal("1"),
+            tick_size=Decimal("0.01"),
+            multiplier=Decimal("1"),
+            leverage=Decimal("1"),
             lot_size=Quantity("1"),
             max_quantity=Quantity("9000"),
             min_quantity=Quantity("1e-05"),
@@ -155,17 +155,17 @@ cdef class InstrumentLoader:
             min_notional=Money(10.00, USDT),
             max_price=Price("1000000.0"),
             min_price=Price("0.01"),
-            margin_initial=decimal.Decimal("1.00"),
-            margin_maintenance=decimal.Decimal("0.35"),
-            maker_fee=decimal.Decimal("0.001"),
-            taker_fee=decimal.Decimal("0.001"),
-            funding_rate_long=decimal.Decimal("0"),
-            funding_rate_short=decimal.Decimal("0"),
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("0.001"),
+            taker_fee=Decimal("0.001"),
+            funding_rate_long=Decimal("0"),
+            funding_rate_short=Decimal("0"),
             timestamp=UNIX_EPOCH,
         )
 
     @staticmethod
-    def xbtusd_bitmex(leverage: decimal.Decimal=decimal.Decimal("1.0")) -> Instrument:
+    def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
         """
@@ -179,8 +179,8 @@ cdef class InstrumentLoader:
             is_inverse=True,
             price_precision=1,
             size_precision=0,
-            tick_size=decimal.Decimal("0.5"),
-            multiplier=decimal.Decimal("1"),
+            tick_size=Decimal("0.5"),
+            multiplier=Decimal("1"),
             leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=None,
@@ -189,17 +189,17 @@ cdef class InstrumentLoader:
             min_notional=Money("1.0", USD),
             max_price=Price("1000000.0"),
             min_price=Price("0.5"),
-            margin_initial=decimal.Decimal("0.01"),
-            margin_maintenance=decimal.Decimal("0.0035"),
-            maker_fee=decimal.Decimal("-0.00025"),
-            taker_fee=decimal.Decimal("0.00075"),
-            funding_rate_long=decimal.Decimal(),
-            funding_rate_short=decimal.Decimal("0.003321"),
+            margin_initial=Decimal("0.01"),
+            margin_maintenance=Decimal("0.0035"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal("0.003321"),
             timestamp=UNIX_EPOCH,
         )
 
     @staticmethod
-    def ethusd_bitmex(leverage: decimal.Decimal=decimal.Decimal("1.0")) -> Instrument:
+    def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
         Return the BitMEX ETH/USD perpetual contract for backtesting.
         """
@@ -213,8 +213,8 @@ cdef class InstrumentLoader:
             is_inverse=True,
             price_precision=2,
             size_precision=0,
-            tick_size=decimal.Decimal("0.05"),
-            multiplier=decimal.Decimal("1"),
+            tick_size=Decimal("0.05"),
+            multiplier=Decimal("1"),
             leverage=leverage,
             lot_size=Quantity(1),
             max_quantity=Quantity("10000000.0"),
@@ -223,17 +223,17 @@ cdef class InstrumentLoader:
             min_notional=None,
             max_price=Price("1000000.00"),
             min_price=Price("0.05"),
-            margin_initial=decimal.Decimal("0.02"),
-            margin_maintenance=decimal.Decimal("0.007"),
-            maker_fee=decimal.Decimal("-0.00025"),
-            taker_fee=decimal.Decimal("0.00075"),
-            funding_rate_long=decimal.Decimal(),
-            funding_rate_short=decimal.Decimal("0.000897"),
+            margin_initial=Decimal("0.02"),
+            margin_maintenance=Decimal("0.007"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal("0.000897"),
             timestamp=UNIX_EPOCH,
         )
 
     @staticmethod
-    def ethxbt_bitmex(leverage: decimal.Decimal=decimal.Decimal("1.0")) -> Instrument:
+    def ethxbt_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
         Return the BitMEX ETH/XBT perpetual contract for backtesting.
         """
@@ -247,8 +247,8 @@ cdef class InstrumentLoader:
             is_inverse=True,
             price_precision=5,
             size_precision=3,
-            tick_size=decimal.Decimal("0.00001"),
-            multiplier=decimal.Decimal("0.00001"),
+            tick_size=Decimal("0.00001"),
+            multiplier=Decimal("0.00001"),
             leverage=leverage,
             lot_size=Quantity("1"),
             max_quantity=Quantity(""),
@@ -257,12 +257,12 @@ cdef class InstrumentLoader:
             min_notional=Money(1.00, USD),
             max_price=Price("10.00"),
             min_price=Price("0.05"),
-            margin_initial=decimal.Decimal("1.00"),
-            margin_maintenance=decimal.Decimal("0.35"),
-            maker_fee=decimal.Decimal("-0.00025"),
-            taker_fee=decimal.Decimal("0.00075"),
-            funding_rate_long=decimal.Decimal(),
-            funding_rate_short=decimal.Decimal(),
+            margin_initial=Decimal("1.00"),
+            margin_maintenance=Decimal("0.35"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            funding_rate_long=Decimal(),
+            funding_rate_short=Decimal(),
             timestamp=UNIX_EPOCH,
         )
 
@@ -304,9 +304,9 @@ cdef class InstrumentLoader:
             is_inverse=False,
             price_precision=price_precision,
             size_precision=0,
-            tick_size=decimal.Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
-            multiplier=decimal.Decimal("1"),
-            leverage=decimal.Decimal("100"),
+            tick_size=Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
+            multiplier=Decimal("1"),
+            leverage=Decimal("100"),
             lot_size=Quantity("1000"),
             max_quantity=Quantity("1e7"),
             min_quantity=Quantity("1000"),
@@ -314,11 +314,11 @@ cdef class InstrumentLoader:
             min_price=None,
             max_notional=Money(50000000.00, USD),
             min_notional=Money(1000.00, USD),
-            margin_initial=decimal.Decimal("0.5"),
-            margin_maintenance=decimal.Decimal("0.1"),
-            maker_fee=decimal.Decimal("0.00002"),
-            taker_fee=decimal.Decimal("0.00002"),
-            funding_rate_long=decimal.Decimal("0.0000"),
-            funding_rate_short=decimal.Decimal("0.0000"),
+            margin_initial=Decimal("0.5"),
+            margin_maintenance=Decimal("0.1"),
+            maker_fee=Decimal("0.00002"),
+            taker_fee=Decimal("0.00002"),
+            funding_rate_long=Decimal("0.0000"),
+            funding_rate_short=Decimal("0.0000"),
             timestamp=UNIX_EPOCH,
         )

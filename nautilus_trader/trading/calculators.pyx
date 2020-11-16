@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from itertools import permutations
-import os
-import decimal
 
 import pandas as pd
-
-from nautilus_trader import PACKAGE_ROOT
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -56,13 +53,13 @@ cdef class ExchangeRateCalculator:
         price_type : PriceType
             The price type for conversion.
         bid_quotes : dict
-            The dictionary of currency pair bid quotes dict[str, decimal.Decimal].
+            The dictionary of currency pair bid quotes dict[str, Decimal].
         ask_quotes : dict
-            The dictionary of currency pair ask quotes dict[str, decimal.Decimal].
+            The dictionary of currency pair ask quotes dict[str, Decimal].
 
         Returns
         -------
-        decimal.Decimal
+        Decimal
 
         Raises
         ------
@@ -83,7 +80,7 @@ cdef class ExchangeRateCalculator:
         Condition.true(price_type != PriceType.UNDEFINED and price_type != PriceType.LAST, "price_type not UNDEFINED or LAST")
 
         if from_currency == to_currency:
-            return decimal.Decimal(1)  # No conversion necessary
+            return Decimal(1)  # No conversion necessary
 
         if price_type == PriceType.BID:
             calculation_quotes = bid_quotes
@@ -91,8 +88,8 @@ cdef class ExchangeRateCalculator:
             calculation_quotes = ask_quotes
         elif price_type == PriceType.MID:
             calculation_quotes = {
-                s: (bid_quotes[s] + ask_quotes[s]) / decimal.Decimal(2) for s in bid_quotes
-            }  # type: {str, decimal.Decimal}
+                s: (bid_quotes[s] + ask_quotes[s]) / Decimal(2) for s in bid_quotes
+            }  # type: {str, Decimal}
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type "
                              f"{PriceTypeParser.to_string(price_type)}")
@@ -106,7 +103,7 @@ cdef class ExchangeRateCalculator:
 
         # Build quote table
         for symbol, quote in calculation_quotes.items():
-            assert isinstance(quote, decimal.Decimal), f"quote must be type decimal.Decimal, was {type(quote)}"
+            assert isinstance(quote, Decimal), f"quote must be type Decimal, was {type(quote)}"
 
             # Get symbol codes
             pieces = symbol.partition('/')
@@ -121,8 +118,8 @@ cdef class ExchangeRateCalculator:
             if code_rhs not in exchange_rates:
                 exchange_rates[code_rhs] = {}
             # Add currency rates
-            exchange_rates[code_lhs][code_lhs] = decimal.Decimal(1)
-            exchange_rates[code_rhs][code_rhs] = decimal.Decimal(1)
+            exchange_rates[code_lhs][code_lhs] = Decimal(1)
+            exchange_rates[code_rhs][code_rhs] = Decimal(1)
             exchange_rates[code_lhs][code_rhs] = quote
 
         # Generate possible currency pairs from all symbols
@@ -139,11 +136,11 @@ cdef class ExchangeRateCalculator:
             if perm[0] not in exchange_rates_perm1:
                 # Search for inverse
                 if perm[1] in exchange_rates_perm0:
-                    exchange_rates_perm1[perm[0]] = decimal.Decimal(1) / exchange_rates_perm0[perm[1]]
+                    exchange_rates_perm1[perm[0]] = Decimal(1) / exchange_rates_perm0[perm[1]]
             if perm[1] not in exchange_rates_perm0:
                 # Search for inverse
                 if perm[0] in exchange_rates_perm1:
-                    exchange_rates_perm0[perm[1]] = decimal.Decimal(1) / exchange_rates_perm1[perm[0]]
+                    exchange_rates_perm0[perm[1]] = Decimal(1) / exchange_rates_perm1[perm[0]]
 
         cdef dict quotes = exchange_rates.get(from_currency.code)
         if quotes is not None:
@@ -182,9 +179,9 @@ cdef class ExchangeRateCalculator:
         quotes = exchange_rates.get(from_currency.code)
         if quotes is None:
             # Not enough data
-            return decimal.Decimal()
+            return Decimal()
 
-        return quotes.get(to_currency.code, decimal.Decimal())
+        return quotes.get(to_currency.code, Decimal())
 
 
 cdef class RolloverInterestCalculator:
@@ -246,7 +243,7 @@ cdef class RolloverInterestCalculator:
 
         Returns
         -------
-        decimal.Decimal
+        Decimal
 
         Raises
         ------
@@ -278,4 +275,4 @@ cdef class RolloverInterestCalculator:
         if base_data.empty and quote_data.empty:
             raise RuntimeError(f"Cannot find rollover interest rate for {symbol} on {date}.")
 
-        return decimal.Decimal(((<double>base_data['Value'] - <double>quote_data['Value']) / 365) / 100)
+        return Decimal(((<double>base_data['Value'] - <double>quote_data['Value']) / 365) / 100)

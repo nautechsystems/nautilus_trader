@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 import msgpack
 
 from cpython.datetime cimport datetime
@@ -764,7 +764,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[CUM_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
-                decimal.Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
                 Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
                 Currency.from_string_c(unpacked[SETTLEMENT_CURRENCY].decode(UTF8)),
                 unpacked[IS_INVERSE].decode(UTF8) == str(True),

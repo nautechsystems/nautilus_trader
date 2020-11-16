@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -304,7 +304,7 @@ class EventTests(unittest.TestCase):
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),
             leaves_qty=Quantity(0),
-            avg_price=decimal.Decimal("15600.12445"),
+            avg_price=Decimal("15600.12445"),
             quote_currency=USDT,
             settlement_currency=USDT,
             is_inverse=False,

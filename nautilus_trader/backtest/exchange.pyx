@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-
 from cpython.datetime cimport datetime
+from decimal import Decimal
 
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -489,7 +488,7 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline object _get_tick_sizes(self):
-        cdef dict slippage_index = {}  # type: {Symbol, decimal.Decimal}
+        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size
@@ -832,7 +831,7 @@ cdef class SimulatedExchange:
             order.quantity,
             fill_price.as_decimal(),
             liquidity_side,
-            xrate=decimal.Decimal(1),  # Currently not handling quanto settlement
+            xrate=Decimal(1),  # Currently not handling quanto settlement
         )
 
         # Generate event

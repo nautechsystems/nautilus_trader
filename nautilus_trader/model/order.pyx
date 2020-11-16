@@ -17,10 +17,9 @@
 Defines various order types to be used for trading.
 """
 
-from typing import Dict
-import decimal
-
+from decimal import Decimal
 from cpython.datetime cimport datetime
+from typing import Dict
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -131,7 +130,7 @@ cdef class Order:
         self.filled_qty = Quantity()
         self.filled_timestamp = None  # Can be None
         self.avg_price = None         # Can be None
-        self.slippage = decimal.Decimal()
+        self.slippage = Decimal()
         self.init_id = event.id
 
     def __eq__(self, Order other) -> bool:
@@ -535,7 +534,7 @@ cdef class PassiveOrder(Order):
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
-        self.slippage = decimal.Decimal()
+        self.slippage = Decimal()
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -43,8 +43,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("1.00100"),
             stop_loss=Price("1.00000"),
             equity=equity,
-            risk=decimal.Decimal("0.001"),  # 0.1%
-            unit_batch_size=decimal.Decimal(1000),
+            risk=Decimal("0.001"),  # 0.1%
+            unit_batch_size=Decimal(1000),
         )
 
         # Assert
@@ -59,8 +59,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("110.010"),
             stop_loss=Price("110.000"),
             equity=equity,
-            risk=decimal.Decimal("0.001"),  # 1%
-            exchange_rate=decimal.Decimal(str(1 / 110)),
+            risk=Decimal("0.001"),  # 1%
+            exchange_rate=Decimal(str(1 / 110)),
         )
 
         # Assert
@@ -75,8 +75,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("3.00000"),
             stop_loss=Price("1.00000"),
             equity=equity,
-            risk=decimal.Decimal("0.01"),  # 1%
-            unit_batch_size=decimal.Decimal(1000),
+            risk=Decimal("0.01"),  # 1%
+            unit_batch_size=Decimal(1000),
         )
 
         # Assert
@@ -91,9 +91,9 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("1.00010"),
             stop_loss=Price("1.00000"),
             equity=equity,
-            risk=decimal.Decimal("0.01"),  # 1%
-            hard_limit=decimal.Decimal(500000),
-            unit_batch_size=decimal.Decimal(1000),
+            risk=Decimal("0.01"),  # 1%
+            hard_limit=Decimal(500000),
+            unit_batch_size=Decimal(1000),
             units=1,
 
         )
@@ -110,8 +110,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("1.00010"),
             stop_loss=Price("1.00000"),
             equity=equity,
-            risk=decimal.Decimal("0.001"),  # 0.1%
-            unit_batch_size=decimal.Decimal(1000),
+            risk=Decimal("0.001"),  # 0.1%
+            unit_batch_size=Decimal(1000),
             units=3,
         )
 
@@ -127,8 +127,8 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("1.00087"),
             stop_loss=Price("1.00000"),
             equity=equity,
-            risk=decimal.Decimal("0.001"),  # 0.1%
-            unit_batch_size=decimal.Decimal(25000),
+            risk=Decimal("0.001"),  # 0.1%
+            unit_batch_size=Decimal(25000),
             units=4,
         )
 
@@ -145,10 +145,10 @@ class FixedRiskSizerTests(unittest.TestCase):
             entry=Price("107.703"),
             stop_loss=Price("107.403"),
             equity=equity,
-            risk=decimal.Decimal("0.01"),  # 1%
-            commission_rate=decimal.Decimal("0.0002"),
-            exchange_rate=decimal.Decimal(str(1 / 107.403)),
-            unit_batch_size=decimal.Decimal(1000),
+            risk=Decimal("0.01"),  # 1%
+            commission_rate=Decimal("0.0002"),
+            exchange_rate=Decimal(str(1 / 107.403)),
+            unit_batch_size=Decimal(1000),
             units=1,
         )
 

@@ -59,7 +59,7 @@ cdef class BaseDecimal:
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or BaseDecimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the decimal. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -232,11 +232,11 @@ cdef class BaseDecimal:
 
     cpdef object as_decimal(self):
         """
-        Return the value as a built-in `decimal.Decimal`.
+        Return the value as a built-in `Decimal`.
 
         Returns
         -------
-        decimal.Decimal
+        Decimal
 
         """
         return self._value
@@ -279,7 +279,7 @@ cdef class Quantity(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or BaseDecimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the quantity. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -344,7 +344,7 @@ cdef class Price(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or Decimal
+        value : integer, float, string, Decimal or Decimal
             The value of the price. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -388,7 +388,7 @@ cdef class Money(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or BaseDecimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the money.
         currency : Currency
             The currency of the money.
