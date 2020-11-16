@@ -27,9 +27,6 @@ include = [
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
 ]
-exclude = [
-    "nautilus_trader/_internal",
-]
 
 [tool.poetry.build]
 script = "build.py"
