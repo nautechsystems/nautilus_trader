@@ -165,7 +165,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         quote2 = QuoteTick(
             XBTUSD_BITMEX.symbol,
             Price("11493.60"),
-            Price("11493.65"),
+            Price("11493.64"),
             Quantity(1500000),
             Quantity(1500000),
             UNIX_EPOCH,
