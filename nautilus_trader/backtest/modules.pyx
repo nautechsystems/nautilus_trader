@@ -26,6 +26,7 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
@@ -141,20 +142,22 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
         cdef Position position
         cdef Instrument instrument
+        cdef Price bid
+        cdef Price ask
         cdef dict mid_prices = {}  # type: {Symbol, decimal.Decimal}
-        cdef QuoteTick market
         for position in open_positions:
             instrument = self._exchange.instruments[position.symbol]
             if instrument.asset_class != AssetClass.FX:
                 continue  # Only applicable to FX
 
-            mid_price = mid_prices.get(instrument.symbol)
-            if mid_price is None:
-                market = self._exchange.get_last_quote(instrument.symbol)
-                if market is None:
-                    raise RuntimeError("Cannot apply rollover interest, no quote tick")
-                mid_price = (market.ask + market.bid) / 2
-                mid_prices[instrument.symbol] = mid_price
+            mid: decimal.Decimal = mid_prices.get(instrument.symbol)
+            if mid is None:
+                bid = self._exchange.get_current_bid(instrument.symbol)
+                ask = self._exchange.get_current_ask(instrument.symbol)
+                if bid is None or ask is None:
+                    raise RuntimeError("Cannot apply rollover interest, no market prices")
+                mid: decimal.Decimal = (bid + ask) / 2
+                mid_prices[instrument.symbol] = mid
             interest_rate = self._calculator.calc_overnight_rate(
                 position.symbol,
                 timestamp,
@@ -166,7 +169,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
                 price_type=PriceType.MID,
             )
 
-            rollover = mid_price * position.quantity * interest_rate * xrate
+            rollover = mid * position.quantity * interest_rate * xrate
             # Apply any bank and broker spread markup (basis points)
             rollover_cumulative += rollover - (rollover * self._rollover_spread)
 
