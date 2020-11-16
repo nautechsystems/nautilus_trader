@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.instrument cimport Instrument
@@ -65,10 +65,10 @@ cdef class PositionSizer:
             Price stop_loss,
             Money equity,
             risk,
-            commission_rate=decimal.Decimal(),
-            exchange_rate=decimal.Decimal(1),
+            commission_rate=Decimal(),
+            exchange_rate=Decimal(1),
             hard_limit=None,
-            unit_batch_size=decimal.Decimal(1),
+            unit_batch_size=Decimal(1),
             int units=1,
     ):
         """Abstract method (implement in subclass)."""
@@ -79,9 +79,9 @@ cdef class PositionSizer:
 
     cdef object _calculate_riskable_money(self, equity, risk, commission_rate):
         if equity <= 0:
-            return decimal.Decimal()
-        risk_money: decimal.Decimal = equity * risk
-        commission: decimal.Decimal = risk_money * commission_rate * 2  # (round turn)
+            return Decimal()
+        risk_money: Decimal = equity * risk
+        commission: Decimal = risk_money * commission_rate * 2  # (round turn)
 
         return risk_money - commission
 
@@ -109,10 +109,10 @@ cdef class FixedRiskSizer(PositionSizer):
             Price stop_loss,
             Money equity,
             risk,
-            commission_rate=decimal.Decimal(),
-            exchange_rate=decimal.Decimal(1),
+            commission_rate=Decimal(),
+            exchange_rate=Decimal(1),
             hard_limit=None,
-            unit_batch_size=decimal.Decimal(1),
+            unit_batch_size=Decimal(1),
             int units=1,
     ):
         """
@@ -126,15 +126,15 @@ cdef class FixedRiskSizer(PositionSizer):
             The stop loss price.
         equity : Money
             The account equity.
-        risk : decimal.Decimal
+        risk : Decimal
             The risk percentage.
-        exchange_rate : decimal.Decimal
+        exchange_rate : Decimal
             The exchange rate for the instrument quote currency vs account currency.
-        commission_rate : decimal.Decimal
+        commission_rate : Decimal
             The commission rate (>= 0).
-        hard_limit : decimal.Decimal, optional
+        hard_limit : Decimal, optional
             The hard limit for the total quantity (>= 0).
-        unit_batch_size : decimal.Decimal
+        unit_batch_size : Decimal
             The unit batch size (> 0).
         units : int
             The number of units to batch the position into (> 0).
@@ -162,43 +162,43 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_none(equity, "equity")
         Condition.not_none(entry, "price_entry")
         Condition.not_none(stop_loss, "price_stop_loss")
-        Condition.type(risk, decimal.Decimal, "risk")
+        Condition.type(risk, Decimal, "risk")
         Condition.positive(risk, "risk")
-        Condition.type(exchange_rate, decimal.Decimal, "exchange_rate")
+        Condition.type(exchange_rate, Decimal, "exchange_rate")
         Condition.not_negative(exchange_rate, "xrate")
-        Condition.type(commission_rate, decimal.Decimal, "commission_rate")
+        Condition.type(commission_rate, Decimal, "commission_rate")
         Condition.not_negative(commission_rate, "commission_rate")
         if hard_limit is not None:
             Condition.positive(hard_limit, "hard_limit")
-        Condition.type(unit_batch_size, decimal.Decimal, "unit_batch_size")
+        Condition.type(unit_batch_size, Decimal, "unit_batch_size")
         Condition.not_negative(unit_batch_size, "unit_batch_size")
         Condition.positive_int(units, "units")
 
         if exchange_rate == 0:
             return Quantity(precision=self.instrument.size_precision)
 
-        risk_points: decimal.Decimal = self._calculate_risk_ticks(entry, stop_loss)
-        risk_money: decimal.Decimal = self._calculate_riskable_money(equity.as_decimal(), risk, commission_rate)
+        risk_points: Decimal = self._calculate_risk_ticks(entry, stop_loss)
+        risk_money: Decimal = self._calculate_riskable_money(equity.as_decimal(), risk, commission_rate)
 
         if risk_points <= 0:
             # Divide by zero protection
             return Quantity(precision=self.instrument.size_precision)
 
         # Calculate position size
-        position_size: decimal.Decimal = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size
+        position_size: Decimal = ((risk_money / exchange_rate) / risk_points) / self.instrument.tick_size
 
         # Limit size on hard limit
         if hard_limit is not None:
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        position_size_batched: decimal.Decimal = max(decimal.Decimal(), position_size / units)
+        position_size_batched: Decimal = max(Decimal(), position_size / units)
 
         if unit_batch_size > 0:
             # Round position size to nearest unit batch size
             position_size_batched = (position_size_batched // unit_batch_size) * unit_batch_size
 
         # Limit size on max trade size
-        final_size: decimal.Decimal = min(position_size_batched, self.instrument.max_quantity)
+        final_size: Decimal = min(position_size_batched, self.instrument.max_quantity)
 
         return Quantity(final_size, precision=self.instrument.size_precision)

@@ -15,7 +15,7 @@
 
 from datetime import datetime
 from datetime import timedelta
-import decimal
+from decimal import Decimal
 import unittest
 
 import pytz
@@ -586,7 +586,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(bar_store.get_store()))
-        self.assertEqual(decimal.Decimal("3000.03000"), aggregator.cum_value)
+        self.assertEqual(Decimal("3000.03000"), aggregator.cum_value)
 
     def test_handle_trade_tick_when_value_below_threshold_updates(self):
         # Arrange
@@ -611,7 +611,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(bar_store.get_store()))
-        self.assertEqual(decimal.Decimal("52500.000"), aggregator.cum_value)
+        self.assertEqual(Decimal("52500.000"), aggregator.cum_value)
 
     def test_handle_quote_tick_when_value_beyond_threshold_sends_bar_to_handler(self):
         # Arrange
@@ -661,7 +661,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
         self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity("99999"), bar_store.get_store()[0].bar.volume)
-        self.assertEqual(decimal.Decimal("10501.00000"), aggregator.cum_value)
+        self.assertEqual(Decimal("10501.00000"), aggregator.cum_value)
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -716,7 +716,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("20.00000"), bar_store.get_store()[1].bar.low)
         self.assertEqual(Price('20.00000'), bar_store.get_store()[1].bar.close)
         self.assertEqual(Quantity("5000.00"), bar_store.get_store()[1].bar.volume)
-        self.assertEqual(decimal.Decimal("40000.00000"), aggregator.cum_value)
+        self.assertEqual(Decimal("40000.00000"), aggregator.cum_value)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):

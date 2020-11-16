@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-
 from cpython.datetime cimport datetime
+from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -843,7 +842,7 @@ cdef class OrderFilled(OrderEvent):
             The cumulative filled quantity for the order.
         leaves_qty : Quantity
             The quantity open for further execution.
-        avg_price : decimal.Decimal
+        avg_price : Decimal
             The average price of the fill.
         quote_currency : Currency
             The instrument quote currency.
@@ -864,7 +863,7 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.type(avg_price, decimal.Decimal, "avg_price")
+        Condition.type(avg_price, Decimal, "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         super().__init__(
             cl_ord_id,

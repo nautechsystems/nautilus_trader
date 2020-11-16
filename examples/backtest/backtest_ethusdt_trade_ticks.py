@@ -29,8 +29,8 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Exchange
+from nautilus_trader.model.identifiers import Symbol
 from tests.test_kit.data_provider import TestDataProvider
 
 

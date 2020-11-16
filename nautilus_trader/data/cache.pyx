@@ -17,9 +17,8 @@
 The `DataCache` provides an interface for consuming cached market data.
 """
 
-import decimal
-
 from collections import deque
+from decimal import Decimal
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -621,7 +620,7 @@ cdef class DataCache(DataCacheFacade):
 
         Returns
         -------
-        decimal.Decimal
+        Decimal
 
         Raises
         ------
@@ -633,7 +632,7 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(to_currency, "to_currency")
 
         if from_currency == to_currency:
-            return decimal.Decimal(1)  # No conversion necessary
+            return Decimal(1)  # No conversion necessary
 
         cdef tuple quotes = self._build_quote_table(venue)
 

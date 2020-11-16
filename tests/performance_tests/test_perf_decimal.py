@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import decimal
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.model.objects import BaseDecimal
@@ -22,8 +23,8 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 _PRECISION_5_CONTEXT = decimal.Context(prec=5)
-_BUILTIN_DECIMAL1 = decimal.Decimal("1.00000")
-_BUILTIN_DECIMAL2 = decimal.Decimal("1.00001")
+_BUILTIN_DECIMAL1 = Decimal("1.00000")
+_BUILTIN_DECIMAL2 = Decimal("1.00001")
 
 _DECIMAL1 = BaseDecimal("1")
 _DECIMAL2 = BaseDecimal("1.00001")
@@ -33,7 +34,7 @@ class DecimalTesting:
 
     @staticmethod
     def make_builtin_decimal():
-        decimal.Decimal("1.23456")
+        Decimal("1.23456")
 
     @staticmethod
     def make_decimal():
@@ -93,8 +94,8 @@ class DecimalPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_builtin_decimal_size():
-        PerformanceHarness.object_size(decimal.Decimal("1.00000"))
-        # Object size test: <class 'nautilus_trader.base.decimal.Decimal'> is 104 bytes
+        PerformanceHarness.object_size(Decimal("1.00000"))
+        # Object size test: <class 'nautilus_trader.base.Decimal'> is 104 bytes
 
     @staticmethod
     def test_decimal_size():

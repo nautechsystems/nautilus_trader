@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -41,8 +41,8 @@ cdef class Position:
 
         """
         self._events = []  # type: [OrderFilled]
-        self._buy_quantity = decimal.Decimal()
-        self._sell_quantity = decimal.Decimal()
+        self._buy_quantity = Decimal()
+        self._sell_quantity = Decimal()
 
         # Identifiers
         self.id = event.position_id
@@ -54,7 +54,7 @@ cdef class Position:
         self.symbol = event.symbol
         self.entry = event.order_side
         self.side = PositionSide.UNDEFINED
-        self.relative_quantity = decimal.Decimal()
+        self.relative_quantity = Decimal()
         self.quantity = Quantity()
         self.peak_quantity = Quantity()
         self.timestamp = event.execution_time
@@ -62,12 +62,12 @@ cdef class Position:
         self.closed_time = None    # Can be None
         self.open_duration = None  # Can be None
         self.avg_open = event.avg_price
-        self.avg_close = decimal.Decimal()
+        self.avg_close = Decimal()
         self.quote_currency = event.quote_currency
         self.settlement_currency = event.settlement_currency
         self.is_inverse = event.is_inverse
-        self.realized_points = decimal.Decimal()
-        self.realized_return = decimal.Decimal()
+        self.realized_points = Decimal()
+        self.realized_return = Decimal()
         self.realized_pnl = Money(0, self.settlement_currency)
         self.commissions = Money(0, self.settlement_currency)
 
@@ -353,11 +353,11 @@ cdef class Position:
 
         Parameters
         ----------
-        avg_open : decimal.Decimal
+        avg_open : Decimal
             The average open price.
-        avg_close : decimal.Decimal
+        avg_close : Decimal
             The average close price.
-        quantity : decimal.Decimal
+        quantity : Decimal
             The quantity for the calculation.
 
         Returns
@@ -503,7 +503,7 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return avg_open - avg_close
         else:
-            return decimal.Decimal()  # FLAT
+            return Decimal()  # FLAT
 
     cdef inline object _calculate_points_inverse(self, avg_open, avg_close):
         if self.side == PositionSide.LONG:
@@ -511,11 +511,11 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return (1 / avg_close) - (1 / avg_open)
         else:
-            return decimal.Decimal()  # FLAT
+            return Decimal()  # FLAT
 
     cdef inline object _calculate_return(self, avg_open, avg_close):
         if self.side == PositionSide.FLAT:
-            return decimal.Decimal()
+            return Decimal()
 
         return self._calculate_points(avg_open, avg_close) / avg_open
 

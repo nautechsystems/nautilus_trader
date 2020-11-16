@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-import decimal
+from decimal import Decimal
 
 import pandas as pd
 import pytz
@@ -93,7 +93,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         """
         super().__init__()
         self._calculator = RolloverInterestCalculator(data=rate_data)
-        self._rollover_spread = decimal.Decimal()  # Bank + Broker spread markup
+        self._rollover_spread = Decimal()  # Bank + Broker spread markup
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
         self._rollover_total = None
@@ -138,25 +138,25 @@ cdef class FXRolloverInterestModule(SimulationModule):
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         cdef list open_positions = self._exchange.exec_cache.positions_open()
 
-        rollover_cumulative = decimal.Decimal()
+        rollover_cumulative = Decimal()
 
         cdef Position position
         cdef Instrument instrument
         cdef Price bid
         cdef Price ask
-        cdef dict mid_prices = {}  # type: {Symbol, decimal.Decimal}
+        cdef dict mid_prices = {}  # type: {Symbol, Decimal}
         for position in open_positions:
             instrument = self._exchange.instruments[position.symbol]
             if instrument.asset_class != AssetClass.FX:
                 continue  # Only applicable to FX
 
-            mid: decimal.Decimal = mid_prices.get(instrument.symbol)
+            mid: Decimal = mid_prices.get(instrument.symbol)
             if mid is None:
                 bid = self._exchange.get_current_bid(instrument.symbol)
                 ask = self._exchange.get_current_ask(instrument.symbol)
                 if bid is None or ask is None:
                     raise RuntimeError("Cannot apply rollover interest, no market prices")
-                mid: decimal.Decimal = (bid + ask) / 2
+                mid: Decimal = (bid + ask) / 2
                 mid_prices[instrument.symbol] = mid
             interest_rate = self._calculator.calc_overnight_rate(
                 position.symbol,
@@ -203,7 +203,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         log.info(f"Rollover interest (total):  {rollover_interest}")
 
     cpdef void reset(self) except *:
-        self._rollover_spread = decimal.Decimal()  # Bank + Broker spread markup
+        self._rollover_spread = Decimal()  # Bank + Broker spread markup
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
         self._rollover_total = None

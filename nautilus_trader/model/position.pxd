@@ -52,7 +52,7 @@ cdef class Position:
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
     cdef readonly object relative_quantity
-    """The relative quantity (positive for LONG, negative for SHORT).\n\n:returns: `decimal.Decimal`"""
+    """The relative quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_quantity
@@ -72,13 +72,13 @@ cdef class Position:
     cdef readonly timedelta open_duration
     """The total open duration.\n\n:returns: `timedelta` or `None`"""
     cdef readonly object avg_open
-    """The average open price.\n\n:returns: `decimal.Decimal`"""
+    """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_close
-    """The average closing price.\n\n:returns: `decimal.Decimal` or `None`"""
+    """The average closing price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object realized_points
-    """The realized points of the position.\n\n:returns: `decimal.Decimal`"""
+    """The realized points of the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
-    """The realized return of the position.\n\n:returns: `decimal.Decimal`"""
+    """The realized return of the position.\n\n:returns: `Decimal`"""
     cdef readonly Money realized_pnl
     """The realized PNL of the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly Money commissions
