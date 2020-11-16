@@ -87,17 +87,17 @@ To run code or tests from the source code, first compile the C extensions for th
 
     python build.py
 
-Please refer to the _Developer Guide_ in the documentation for further details.
+Please refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further details.
 
 ## Contributing
 
-Involvement from the developer community is a goal for this project. All
-are welcome to open issues/discussions on GitHub for proposed enhancements, feature
-requests, and bug reports.
+Involvement from the developer community is a goal for this project, all help is welcome!
+Please open an issue on GitHub to discuss proposed enhancements, make feature
+requests, and report bugs.
 
-Please refer to the below.
+Please make all pull requests to the `develop` branch.
 
-[CONTRIBUTING.md](CONTRIBUTING.md)
+Refer to [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for more details.
 
 ---
 
