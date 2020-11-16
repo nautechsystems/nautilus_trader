@@ -26,7 +26,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef inline double fast_mean(list values):
+cpdef inline double fast_mean(list values) except *:
     """
     Return the average value of the iterable.
 
@@ -64,7 +64,7 @@ cpdef inline double fast_mean_iterated(
         double current_value,
         int expected_length,
         bint drop_left=True,
-):
+) except *:
     """
     Return the calculated average from the given inputs.
 
@@ -100,7 +100,7 @@ cpdef inline double fast_mean_iterated(
     return current_value + ((next_value - value_to_drop) / length)
 
 
-cpdef inline double fast_std(list values):
+cpdef inline double fast_std(list values) except *:
     """
     Return the standard deviation from the given values.
 
@@ -123,7 +123,7 @@ cpdef inline double fast_std(list values):
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef inline double fast_std_with_mean(list values, double mean):
+cpdef inline double fast_std_with_mean(list values, double mean) except *:
     """
     Return the standard deviation from the given values and mean.
 
@@ -155,7 +155,7 @@ cpdef inline double fast_std_with_mean(list values, double mean):
     return sqrt(std_dev / length)
 
 
-cpdef inline double basis_points_as_percentage(double basis_points):
+cpdef inline double basis_points_as_percentage(double basis_points) except *:
     """
     Return the given basis points expressed as a percentage where 100% = 1.0.
 
@@ -177,7 +177,7 @@ cpdef inline double basis_points_as_percentage(double basis_points):
 
 
 # Closures in cpdef functions not yet supported (10/02/20)
-cdef long get_size_of(obj):
+cdef long get_size_of(obj) except *:
     Condition.not_none(obj, "obj")
 
     cdef set marked = {id(obj)}

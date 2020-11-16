@@ -24,12 +24,12 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.objects import Money
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
@@ -89,7 +89,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         # Assert - Should return expected PNL
         self.assertEqual(2688, strategy.fast_ema.count)
         self.assertEqual(115044, self.engine.iteration)
-        self.assertEqual(Money(1005961.63, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(1004717.35, USD), self.engine.portfolio.account(self.venue).balance())
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -136,7 +136,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2688, strategy1.fast_ema.count)
         self.assertEqual(2688, strategy2.fast_ema.count)
         self.assertEqual(115044, self.engine.iteration)
-        self.assertEqual(Money(959831.42, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(959665.18, USD), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):

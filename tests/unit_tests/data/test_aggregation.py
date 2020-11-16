@@ -29,7 +29,7 @@ from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
 from nautilus_trader.data.aggregation import VolumeBarAggregator
-from nautilus_trader.data.wrangling import TickDataWrangler
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
@@ -782,7 +782,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         tick_data = TestDataProvider.usdjpy_ticks()
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
-        self.wrangler = TickDataWrangler(
+        self.wrangler = QuoteTickDataWrangler(
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},

@@ -48,7 +48,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
@@ -357,10 +357,10 @@ cdef class BacktestEngine:
         # Start trader which starts strategies
         self.trader.start()
 
-        cdef QuoteTick tick
+        cdef Tick tick
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self.data_client.has_data:
-            tick = self.data_client.generate_tick()
+            tick = self.data_client.next_tick()
             self._advance_time(tick.timestamp)
             self.exchange.process_tick(tick)
             self.data_engine.process(tick)
