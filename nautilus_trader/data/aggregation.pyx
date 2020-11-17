@@ -476,6 +476,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef datetime get_start_time(self):
         cdef datetime now = self._clock.utc_now()
+        cdef int step = self.bar_type.spec.step
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return datetime(
                 year=now.year,
@@ -483,7 +484,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 day=now.day,
                 hour=now.hour,
                 minute=now.minute,
-                second=now.second,
+                second=now.second - (now.second % step),
                 tzinfo=now.tzinfo,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
@@ -492,7 +493,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 month=now.month,
                 day=now.day,
                 hour=now.hour,
-                minute=now.minute,
+                minute=now.minute - (now.minute % step),
                 tzinfo=now.tzinfo,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
@@ -500,14 +501,14 @@ cdef class TimeBarAggregator(BarAggregator):
                 year=now.year,
                 month=now.month,
                 day=now.day,
-                hour=now.hour,
+                hour=now.hour - (now.hour % step),
                 tzinfo=now.tzinfo,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
             return datetime(
                 year=now.year,
                 month=now.month,
-                day=now.day,
+                day=now.day - (now.day % step),
             )
         else:
             # Design time error

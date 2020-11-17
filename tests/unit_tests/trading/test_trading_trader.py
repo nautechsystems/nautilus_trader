@@ -17,8 +17,8 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataProducer
 from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data import BacktestDataProducer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader

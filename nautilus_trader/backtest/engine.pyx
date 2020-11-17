@@ -359,7 +359,7 @@ cdef class BacktestEngine:
 
         cdef Tick tick
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while self.data_client.has_data:
+        while self.data_client.has_tick_data:
             tick = self.data_client.next_tick()
             self._advance_time(tick.timestamp)
             self.exchange.process_tick(tick)

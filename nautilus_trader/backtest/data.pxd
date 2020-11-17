@@ -58,6 +58,7 @@ cdef class BacktestDataProducer(DataClient):
     cdef datetime[:] _quote_timestamps
     cdef int _quote_index
     cdef int _quote_index_last
+    cdef QuoteTick _next_quote_tick
 
     cdef unsigned short[:] _trade_symbols
     cdef str[:] _trade_prices
@@ -67,14 +68,12 @@ cdef class BacktestDataProducer(DataClient):
     cdef datetime[:] _trade_timestamps
     cdef int _trade_index
     cdef int _trade_index_last
-
     cdef TradeTick _next_trade_tick
-    cdef QuoteTick _next_quote_tick
 
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
     cdef readonly datetime max_timestamp
-    cdef readonly bint has_data
+    cdef readonly bint has_tick_data
 
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *

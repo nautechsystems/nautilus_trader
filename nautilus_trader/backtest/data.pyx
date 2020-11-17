@@ -417,6 +417,7 @@ cdef class BacktestDataProducer(DataClient):
         self._quote_timestamps = None
         self._quote_index = 0
         self._quote_index_last = 0
+        self._next_quote_tick = None
 
         self._trade_symbols = None
         self._trade_prices = None
@@ -426,8 +427,9 @@ cdef class BacktestDataProducer(DataClient):
         self._trade_timestamps = None
         self._trade_index = 0
         self._trade_index_last = 0
+        self._next_trade_tick = None
 
-        self.has_data = False
+        self.has_tick_data = False
 
         self._log.info(f"Prepared {len(self._quote_tick_data):,} total tick rows in "
                        f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
@@ -511,11 +513,11 @@ cdef class BacktestDataProducer(DataClient):
             # Prepare initial tick
             self._iterate_trade_ticks()
 
-        self.has_data = True
+        self.has_tick_data = True
 
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
-    cdef Tick next_tick(self):  # TODO: Refactor
+    cdef Tick next_tick(self):
         cdef Tick next_tick
         # Quote ticks only
         if self._next_trade_tick is None:
@@ -565,7 +567,7 @@ cdef class BacktestDataProducer(DataClient):
         else:
             self._next_quote_tick = None
             if self._next_trade_tick is None:
-                self.has_data = False
+                self.has_tick_data = False
 
     cdef inline void _iterate_trade_ticks(self) except *:
         if self._trade_index <= self._trade_index_last:
@@ -574,7 +576,7 @@ cdef class BacktestDataProducer(DataClient):
         else:
             self._next_trade_tick = None
             if self._next_quote_tick is None:
-                self.has_data = False
+                self.has_tick_data = False
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -610,7 +612,7 @@ cdef class BacktestDataProducer(DataClient):
         self._trade_index = 0
         self._trade_index_last = len(self._quote_tick_data) - 1
 
-        self.has_data = False
+        self.has_tick_data = False
 
         self._log.info("Reset.")
 
