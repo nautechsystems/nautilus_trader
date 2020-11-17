@@ -113,6 +113,7 @@ class PositionTests(unittest.TestCase):
         position = Position(fill)
 
         # Assert
+        self.assertFalse(position != position)  # Equality operator test
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), position.from_order)
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
@@ -123,9 +124,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual([OrderId('1')], position.order_ids)
         self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
         self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
         self.assertEqual(PositionId("P-123456"), position.id)
+        self.assertEqual(1, len(position.events))
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
         self.assertFalse(position.is_closed)
@@ -750,6 +753,29 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-415.27137481, USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
         self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
+
+    def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity(12),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("10500.00"),
+        )
+        position = Position(fill)
+
+        # Act
+        result = position.calculate_pnl(Decimal("0"), Decimal("0"), PositionSide.FLAT)
+
+        # Assert
+        self.assertEqual(Money(0, USDT), result)
 
     def test_calculate_pnl_for_long_position_win(self):
         # Arrange

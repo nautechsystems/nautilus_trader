@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 """
+Defines domain value objects.
+
 The `BaseDecimal` class is intended to be used as the base class for fundamental
 domain model value types. The specification of precision is more straight
 forward than providing a decimal.Context. Also this type is able to be used as
