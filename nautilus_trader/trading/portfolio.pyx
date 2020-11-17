@@ -24,7 +24,7 @@ The portfolio can satisfy queries for accounting information, margin balances,
 total risk exposures and total net positions.
 """
 
-import decimal
+from decimal import Decimal
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -131,7 +131,7 @@ cdef class Portfolio(PortfolioFacade):
         self._orders_working = {}          # type: {Venue: {Order}}
         self._positions_open = {}          # type: {Venue: {Position}}
         self._positions_closed = {}        # type: {Venue: {Position}}
-        self._net_positions = {}           # type: {Symbol: decimal.Decimal}
+        self._net_positions = {}           # type: {Symbol: Decimal}
         self._unrealized_pnls_symbol = {}  # type: {Symbol: Money}
         self._unrealized_pnls_venue = {}   # type: {Venue: Money}
 
@@ -371,7 +371,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        decimal.Decimal
+        Decimal
 
         """
         return self._net_position(symbol)
@@ -546,7 +546,7 @@ cdef class Portfolio(PortfolioFacade):
         if not symbols:
             return Money(0, account.currency)
 
-        cum_pnl = decimal.Decimal()
+        cum_pnl = Decimal()
 
         cdef Symbol symbol
         cdef Money pnl
@@ -626,7 +626,7 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return Money(0, account.currency)
 
-        open_value = decimal.Decimal()
+        open_value = Decimal()
 
         cdef Position position
         cdef Instrument instrument
@@ -667,7 +667,7 @@ cdef class Portfolio(PortfolioFacade):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline object _net_position(self, Symbol symbol):
-        return self._net_positions.get(symbol, decimal.Decimal())
+        return self._net_positions.get(symbol, Decimal())
 
     cdef inline set _symbols_open_for_venue(self, Venue venue):
         cdef Position position
@@ -708,7 +708,7 @@ cdef class Portfolio(PortfolioFacade):
         self._update_net_position(event.position.symbol, positions_open)
 
     cdef inline void _update_net_position(self, Symbol symbol, set positions_open):
-        net_position = decimal.Decimal()
+        net_position = Decimal()
         for position in positions_open:
             if position.symbol == symbol:
                 net_position += position.relative_quantity
@@ -727,7 +727,7 @@ cdef class Portfolio(PortfolioFacade):
         if working_orders is None:
             return  # Nothing to calculate
 
-        margin = decimal.Decimal()
+        margin = Decimal()
 
         cdef Order order
         cdef Instrument instrument
@@ -776,7 +776,7 @@ cdef class Portfolio(PortfolioFacade):
         if open_positions is None:
             return  # Nothing to calculate
 
-        margin = decimal.Decimal()
+        margin = Decimal()
 
         cdef Position position
         cdef Instrument instrument
@@ -844,7 +844,7 @@ cdef class Portfolio(PortfolioFacade):
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
 
-        pnl = decimal.Decimal()
+        pnl = Decimal()
 
         cdef Position position
         for position in positions_open:

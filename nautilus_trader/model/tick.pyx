@@ -29,7 +29,50 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class QuoteTick:
+cdef class Tick:
+    """
+    The base class for all ticks.
+    """
+
+    def __init__(
+            self,
+            Symbol symbol not None,
+            datetime timestamp not None,
+    ):
+        """
+        Initialize a new instance of the `QuoteTick` class.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The ticker symbol.
+        timestamp : datetime
+            The tick timestamp (UTC).
+
+        """
+        self.symbol = symbol
+        self.timestamp = timestamp
+
+    def __eq__(self, Tick other) -> bool:
+        return self.timestamp == other.timestamp
+
+    def __ne__(self, Tick other) -> bool:
+        return self.timestamp != other.timestamp
+
+    def __lt__(self, Tick other) -> bool:
+        return self.timestamp < other.timestamp
+
+    def __le__(self, Tick other) -> bool:
+        return self.timestamp <= other.timestamp
+
+    def __gt__(self, Tick other) -> bool:
+        return self.timestamp > other.timestamp
+
+    def __ge__(self, Tick other) -> bool:
+        return self.timestamp >= other.timestamp
+
+
+cdef class QuoteTick(Tick):
     """
     Represents a single quote tick in a financial market.
     """
@@ -62,30 +105,12 @@ cdef class QuoteTick:
             The tick timestamp (UTC).
 
         """
-        self.symbol = symbol
+        super().__init__(symbol, timestamp)
+
         self.bid = bid
         self.ask = ask
         self.bid_size = bid_size
         self.ask_size = ask_size
-        self.timestamp = timestamp
-
-    def __eq__(self, QuoteTick other) -> bool:
-        return self.timestamp == other.timestamp
-
-    def __ne__(self, QuoteTick other) -> bool:
-        return self.timestamp != other.timestamp
-
-    def __lt__(self, QuoteTick other) -> bool:
-        return self.timestamp < other.timestamp
-
-    def __le__(self, QuoteTick other) -> bool:
-        return self.timestamp <= other.timestamp
-
-    def __gt__(self, QuoteTick other) -> bool:
-        return self.timestamp > other.timestamp
-
-    def __ge__(self, QuoteTick other) -> bool:
-        return self.timestamp >= other.timestamp
 
     def __str__(self) -> str:
         return (f"{self.symbol},"
@@ -199,7 +224,7 @@ cdef class QuoteTick:
         return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{to_posix_ms(self.timestamp)}"
 
 
-cdef class TradeTick:
+cdef class TradeTick(Tick):
     """
     Represents a single trade tick in a financial market.
     """
@@ -238,31 +263,12 @@ cdef class TradeTick:
 
         """
         Condition.not_equal(maker, Maker.UNDEFINED, "maker", "UNDEFINED")
+        super().__init__(symbol, timestamp)
 
-        self.symbol = symbol
         self.price = price
         self.size = size
         self.maker = maker
         self.match_id = match_id
-        self.timestamp = timestamp
-
-    def __eq__(self, TradeTick other) -> bool:
-        return self.timestamp == other.timestamp
-
-    def __ne__(self, TradeTick other) -> bool:
-        return self.timestamp != other.timestamp
-
-    def __lt__(self, TradeTick other) -> bool:
-        return self.timestamp < other.timestamp
-
-    def __le__(self, TradeTick other) -> bool:
-        return self.timestamp <= other.timestamp
-
-    def __gt__(self, TradeTick other) -> bool:
-        return self.timestamp > other.timestamp
-
-    def __ge__(self, TradeTick other) -> bool:
-        return self.timestamp >= other.timestamp
 
     def __str__(self) -> str:
         return (f"{self.symbol},"

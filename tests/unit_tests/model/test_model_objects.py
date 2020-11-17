@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import decimal
+from decimal import Decimal
 import unittest
 
 from parameterized import parameterized
@@ -54,11 +55,11 @@ class BaseDecimalTests(unittest.TestCase):
 
     @parameterized.expand([
         [1.15, 1, decimal.ROUND_HALF_EVEN, BaseDecimal("1.1")],
-        [decimal.Decimal("2.14"), 1, decimal.ROUND_UP, BaseDecimal("2.2")],
-        [decimal.Decimal("2.16"), 1, decimal.ROUND_DOWN, BaseDecimal("2.1")],
-        [decimal.Decimal("2.15"), 1, decimal.ROUND_HALF_UP, BaseDecimal("2.2")],
-        [decimal.Decimal("2.15"), 1, decimal.ROUND_HALF_DOWN, BaseDecimal("2.1")],
-        [decimal.Decimal("2.15"), 1, decimal.ROUND_HALF_EVEN, BaseDecimal("2.1")],
+        [Decimal("2.14"), 1, decimal.ROUND_UP, BaseDecimal("2.2")],
+        [Decimal("2.16"), 1, decimal.ROUND_DOWN, BaseDecimal("2.1")],
+        [Decimal("2.15"), 1, decimal.ROUND_HALF_UP, BaseDecimal("2.2")],
+        [Decimal("2.15"), 1, decimal.ROUND_HALF_DOWN, BaseDecimal("2.1")],
+        [Decimal("2.15"), 1, decimal.ROUND_HALF_EVEN, BaseDecimal("2.1")],
     ])
     def test_rounding_behaviour_with_various_values_returns_expected_decimal(
             self,
@@ -83,9 +84,9 @@ class BaseDecimalTests(unittest.TestCase):
         ["-0.0", BaseDecimal()],
         ["1.0", BaseDecimal("1")],
         ["-1.0", BaseDecimal("-1")],
-        [decimal.Decimal(), BaseDecimal()],
-        [decimal.Decimal("1.1"), BaseDecimal("1.1")],
-        [decimal.Decimal("-1.1"), BaseDecimal("-1.1")],
+        [Decimal(), BaseDecimal()],
+        [Decimal("1.1"), BaseDecimal("1.1")],
+        [Decimal("-1.1"), BaseDecimal("-1.1")],
         [BaseDecimal(), BaseDecimal()],
         [BaseDecimal("1.1"), BaseDecimal("1.1")],
         [BaseDecimal("-1.1"), BaseDecimal("-1.1")],
@@ -158,9 +159,9 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertEqual(expected, result2)
 
     @parameterized.expand([
-        [BaseDecimal(), decimal.Decimal(), True],
-        [BaseDecimal("0"), decimal.Decimal(-0), True],
-        [BaseDecimal("1"), decimal.Decimal(), False],
+        [BaseDecimal(), Decimal(), True],
+        [BaseDecimal("0"), Decimal(-0), True],
+        [BaseDecimal("1"), Decimal(), False],
     ])
     def test_equality_with_various_decimals_returns_expected_result(self, value1, value2, expected):
         # Arrange
@@ -174,9 +175,9 @@ class BaseDecimalTests(unittest.TestCase):
         [0, 0, False, True, True, False],
         [1, 0, True, True, False, False],
         [-1, 0, False, False, True, True],
-        [BaseDecimal(0), decimal.Decimal(0), False, True, True, False],
-        [BaseDecimal(1), decimal.Decimal(0), True, True, False, False],
-        [BaseDecimal(-1), decimal.Decimal(0), False, False, True, True],
+        [BaseDecimal(0), Decimal(0), False, True, True, False],
+        [BaseDecimal(1), Decimal(0), True, True, False, False],
+        [BaseDecimal(-1), Decimal(0), False, False, True, True],
     ])
     def test_comparisons_with_various_values_returns_expected_result(
             self,
@@ -201,18 +202,18 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertEqual(expected4, result4)
 
     @parameterized.expand([
-        [BaseDecimal(), BaseDecimal(), decimal.Decimal, 0],
-        [BaseDecimal(), BaseDecimal("1.1"), decimal.Decimal, decimal.Decimal("1.1")],
-        [BaseDecimal(), 0, decimal.Decimal, 0],
-        [BaseDecimal(), 1, decimal.Decimal, 1],
-        [0, BaseDecimal(), decimal.Decimal, 0],
-        [1, BaseDecimal(), decimal.Decimal, 1],
+        [BaseDecimal(), BaseDecimal(), Decimal, 0],
+        [BaseDecimal(), BaseDecimal("1.1"), Decimal, Decimal("1.1")],
+        [BaseDecimal(), 0, Decimal, 0],
+        [BaseDecimal(), 1, Decimal, 1],
+        [0, BaseDecimal(), Decimal, 0],
+        [1, BaseDecimal(), Decimal, 1],
         [BaseDecimal(), 0.0, float, 0],
         [BaseDecimal(), 1.0, float, 1.0],
         [-1.1, BaseDecimal(), float, -1.1],
         [1.1, BaseDecimal(), float, 1.1],
-        [BaseDecimal("1"), BaseDecimal("1.1"), decimal.Decimal, decimal.Decimal("2.1")],
-        [BaseDecimal("1"), decimal.Decimal("1.1"), decimal.Decimal, decimal.Decimal("2.1")],
+        [BaseDecimal("1"), BaseDecimal("1.1"), Decimal, Decimal("2.1")],
+        [BaseDecimal("1"), Decimal("1.1"), Decimal, Decimal("2.1")],
     ])
     def test_addition_with_various_types_returns_expected_result(
             self,
@@ -229,18 +230,18 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [BaseDecimal(), BaseDecimal(), decimal.Decimal, 0],
-        [BaseDecimal(), BaseDecimal("1.1"), decimal.Decimal, decimal.Decimal("-1.1")],
-        [BaseDecimal(), 0, decimal.Decimal, 0],
-        [BaseDecimal(), 1, decimal.Decimal, -1],
-        [0, BaseDecimal(), decimal.Decimal, 0],
-        [1, BaseDecimal("1"), decimal.Decimal, 0],
+        [BaseDecimal(), BaseDecimal(), Decimal, 0],
+        [BaseDecimal(), BaseDecimal("1.1"), Decimal, Decimal("-1.1")],
+        [BaseDecimal(), 0, Decimal, 0],
+        [BaseDecimal(), 1, Decimal, -1],
+        [0, BaseDecimal(), Decimal, 0],
+        [1, BaseDecimal("1"), Decimal, 0],
         [BaseDecimal(), 0.0, float, 0],
         [BaseDecimal(), 1.0, float, -1.0],
         [0.1, BaseDecimal("1"), float, -0.9],
         [1.1, BaseDecimal("1"), float, 0.10000000000000009],
-        [BaseDecimal("1"), BaseDecimal("1.1"), decimal.Decimal, decimal.Decimal("-0.1")],
-        [BaseDecimal("1"), decimal.Decimal("1.1"), decimal.Decimal, decimal.Decimal("-0.1")],
+        [BaseDecimal("1"), BaseDecimal("1.1"), Decimal, Decimal("-0.1")],
+        [BaseDecimal("1"), Decimal("1.1"), Decimal, Decimal("-0.1")],
     ])
     def test_subtraction_with_various_types_returns_expected_result(
             self,
@@ -257,14 +258,14 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [BaseDecimal(), 0, decimal.Decimal, 0],
-        [BaseDecimal(1), 1, decimal.Decimal, 1],
+        [BaseDecimal(), 0, Decimal, 0],
+        [BaseDecimal(1), 1, Decimal, 1],
         [BaseDecimal(2), 1.0, float, 2],
-        [1, BaseDecimal(1), decimal.Decimal, 1],
-        [2, BaseDecimal(3), decimal.Decimal, 6],
+        [1, BaseDecimal(1), Decimal, 1],
+        [2, BaseDecimal(3), Decimal, 6],
         [1.1, BaseDecimal(2), float, 2.2],
-        [BaseDecimal("1.1"), BaseDecimal("1.1"), decimal.Decimal, decimal.Decimal("1.21")],
-        [BaseDecimal("1.1"), decimal.Decimal("1.1"), decimal.Decimal, decimal.Decimal("1.21")],
+        [BaseDecimal("1.1"), BaseDecimal("1.1"), Decimal, Decimal("1.21")],
+        [BaseDecimal("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
     ])
     def test_multiplication_with_various_types_returns_expected_result(
             self,
@@ -281,15 +282,15 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertEqual(expected_value, result)
 
     @parameterized.expand([
-        [1, BaseDecimal(1), decimal.Decimal, 1],
+        [1, BaseDecimal(1), Decimal, 1],
         [1.1, BaseDecimal("1.1"), float, 1],
-        [BaseDecimal(), 1, decimal.Decimal, 0],
-        [BaseDecimal(1), 2, decimal.Decimal, decimal.Decimal("0.5")],
+        [BaseDecimal(), 1, Decimal, 0],
+        [BaseDecimal(1), 2, Decimal, Decimal("0.5")],
         [BaseDecimal(2), 1.1, float, 1.8181818181818181],
-        [2, BaseDecimal(1), decimal.Decimal, decimal.Decimal("2.0")],
+        [2, BaseDecimal(1), Decimal, Decimal("2.0")],
         [1.1, BaseDecimal(2), float, 1.1 / 2],
-        [BaseDecimal("1.1"), BaseDecimal("1.2"), decimal.Decimal, decimal.Decimal("0.9166666666666666")],
-        [BaseDecimal("1.1"), decimal.Decimal("1.2"), decimal.Decimal, decimal.Decimal("0.9166666666666666")],
+        [BaseDecimal("1.1"), BaseDecimal("1.2"), Decimal, Decimal("0.9166666666666666")],
+        [BaseDecimal("1.1"), Decimal("1.2"), Decimal, Decimal("0.9166666666666666")],
     ])
     def test_division_with_various_types_returns_expected_result(
             self,
@@ -306,14 +307,14 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertAlmostEqual(expected_value, result)
 
     @parameterized.expand([
-        [1, BaseDecimal(1), decimal.Decimal, 1],
-        [BaseDecimal(), 1, decimal.Decimal, 0],
-        [BaseDecimal(1), 2, decimal.Decimal, decimal.Decimal(0)],
-        [2, BaseDecimal(1), decimal.Decimal, decimal.Decimal(2)],
+        [1, BaseDecimal(1), Decimal, 1],
+        [BaseDecimal(), 1, Decimal, 0],
+        [BaseDecimal(1), 2, Decimal, Decimal(0)],
+        [2, BaseDecimal(1), Decimal, Decimal(2)],
         [2.1, BaseDecimal("1.1"), float, 1],
         [4.4, BaseDecimal("1.1"), float, 4],
-        [BaseDecimal("1.1"), BaseDecimal("1.2"), decimal.Decimal, decimal.Decimal(0)],
-        [BaseDecimal("1.1"), decimal.Decimal("1.2"), decimal.Decimal, decimal.Decimal(0)],
+        [BaseDecimal("1.1"), BaseDecimal("1.2"), Decimal, Decimal(0)],
+        [BaseDecimal("1.1"), Decimal("1.2"), Decimal, Decimal(0)],
     ])
     def test_floor_division_with_various_types_returns_expected_result(
             self,
@@ -330,14 +331,14 @@ class BaseDecimalTests(unittest.TestCase):
         self.assertAlmostEqual(expected_value, result)
 
     @parameterized.expand([
-        [1, BaseDecimal(1), decimal.Decimal, 0],
-        [BaseDecimal(100), 10, decimal.Decimal, 0],
-        [BaseDecimal(23), 2, decimal.Decimal, 1],
-        [2, BaseDecimal(1), decimal.Decimal, 0],
+        [1, BaseDecimal(1), Decimal, 0],
+        [BaseDecimal(100), 10, Decimal, 0],
+        [BaseDecimal(23), 2, Decimal, 1],
+        [2, BaseDecimal(1), Decimal, 0],
         [2.1, BaseDecimal("1.1"), float, 1.0],
         [1.1, BaseDecimal("2.1"), float, 1.1],
-        [BaseDecimal("1.1"), BaseDecimal("0.2"), decimal.Decimal, decimal.Decimal("0.1")],
-        [BaseDecimal("1.1"), decimal.Decimal("0.2"), decimal.Decimal, decimal.Decimal("0.1")],
+        [BaseDecimal("1.1"), BaseDecimal("0.2"), Decimal, Decimal("0.1")],
+        [BaseDecimal("1.1"), Decimal("0.2"), Decimal, Decimal("0.1")],
     ])
     def test_mod_with_various_types_returns_expected_result(
             self,
@@ -356,7 +357,7 @@ class BaseDecimalTests(unittest.TestCase):
     @parameterized.expand([
         [BaseDecimal(1), BaseDecimal(2), BaseDecimal(2)],
         [BaseDecimal(1), 2, 2],
-        [BaseDecimal(1), decimal.Decimal(2), decimal.Decimal(2)],
+        [BaseDecimal(1), Decimal(2), Decimal(2)],
     ])
     def test_max_with_various_types_returns_expected_result(
             self,
@@ -374,7 +375,7 @@ class BaseDecimalTests(unittest.TestCase):
     @parameterized.expand([
         [BaseDecimal(1), BaseDecimal(2), BaseDecimal(1)],
         [BaseDecimal(1), 2, BaseDecimal(1)],
-        [BaseDecimal(2), decimal.Decimal(1), decimal.Decimal(1)],
+        [BaseDecimal(2), Decimal(1), Decimal(1)],
     ])
     def test_min_with_various_types_returns_expected_result(
             self,
@@ -542,9 +543,9 @@ class MoneyTests(unittest.TestCase):
         ["-0.0", Money(0, USD)],
         ["1.0", Money("1", USD)],
         ["-1.0", Money("-1", USD)],
-        [decimal.Decimal(), Money(0, USD)],
-        [decimal.Decimal("1.1"), Money("1.1", USD)],
-        [decimal.Decimal("-1.1"), Money("-1.1", USD)],
+        [Decimal(), Money(0, USD)],
+        [Decimal("1.1"), Money("1.1", USD)],
+        [Decimal("-1.1"), Money("-1.1", USD)],
         [BaseDecimal(), Money(0, USD)],
         [BaseDecimal("1.1"), Money("1.1", USD)],
         [BaseDecimal("-1.1"), Money("-1.1", USD)],
@@ -633,6 +634,7 @@ class MoneyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(int, type(result))
+        self.assertEqual(hash(money0), hash(money0))
 
     def test_str(self):
         # Arrange

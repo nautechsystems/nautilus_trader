@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import decimal
+from decimal import Decimal
 import os
 import unittest
 
@@ -42,8 +42,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
     def test_get_rate_when_no_currency_rate_returns_zero(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"AUD/USD": decimal.Decimal("0.80000")}
-        ask_rates = {"AUD/USD": decimal.Decimal("0.80010")}
+        bid_rates = {"AUD/USD": Decimal("0.80000")}
+        ask_rates = {"AUD/USD": Decimal("0.80010")}
 
         # Act
         result = converter.get_rate(
@@ -60,8 +60,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
     def test_get_rate(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"AUD/USD": decimal.Decimal("0.80000")}
-        ask_rates = {"AUD/USD": decimal.Decimal("0.80010")}
+        bid_rates = {"AUD/USD": Decimal("0.80000")}
+        ask_rates = {"AUD/USD": Decimal("0.80010")}
 
         # Act
         result = converter.get_rate(
@@ -73,13 +73,13 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(decimal.Decimal("0.80000"), result)
+        self.assertEqual(Decimal("0.80000"), result)
 
     def test_get_rate_when_symbol_has_slash(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"AUD/USD": decimal.Decimal("0.80000")}
-        ask_rates = {"AUD/USD": decimal.Decimal("0.80010")}
+        bid_rates = {"AUD/USD": Decimal("0.80000")}
+        ask_rates = {"AUD/USD": Decimal("0.80010")}
 
         # Act
         result = converter.get_rate(
@@ -91,13 +91,13 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(decimal.Decimal("0.80000"), result)
+        self.assertEqual(Decimal("0.80000"), result)
 
     def test_get_rate_for_inverse1(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"BTC/USD": decimal.Decimal("10501.5")}
-        ask_rates = {"BTC/USD": decimal.Decimal("10500.0")}
+        bid_rates = {"BTC/USD": Decimal("10501.5")}
+        ask_rates = {"BTC/USD": Decimal("10500.0")}
 
         # Act
         result = converter.get_rate(
@@ -109,13 +109,13 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(decimal.Decimal("0.00009522449173927534161786411465"), result)
+        self.assertEqual(Decimal("0.00009522449173927534161786411465"), result)
 
     def test_get_rate_for_inverse2(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"USD/JPY": decimal.Decimal("110.100")}
-        ask_rates = {"USD/JPY": decimal.Decimal("110.130")}
+        bid_rates = {"USD/JPY": Decimal("110.100")}
+        ask_rates = {"USD/JPY": Decimal("110.130")}
 
         # Act
         result = converter.get_rate(
@@ -127,18 +127,18 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertAlmostEqual(decimal.Decimal("0.009082652"), result)
+        self.assertAlmostEqual(Decimal("0.009082652"), result)
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
         converter = ExchangeRateCalculator()
         bid_rates = {
-            "USD/JPY": decimal.Decimal("110.100"),
-            "AUD/USD": decimal.Decimal("0.80000"),
+            "USD/JPY": Decimal("110.100"),
+            "AUD/USD": Decimal("0.80000"),
         }
         ask_rates = {
-            "USD/JPY": decimal.Decimal("110.130"),
-            "AUD/USD": decimal.Decimal("0.80010"),
+            "USD/JPY": Decimal("110.130"),
+            "AUD/USD": Decimal("0.80010"),
         }
 
         # Act
@@ -159,14 +159,14 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertAlmostEqual(decimal.Decimal("0.01135331516802906448683015441"), result1)  # JPYAUD
-        self.assertAlmostEqual(decimal.Decimal("88.11501299999999999999999997"), result2)  # AUDJPY
+        self.assertAlmostEqual(Decimal("0.01135331516802906448683015441"), result1)  # JPYAUD
+        self.assertAlmostEqual(Decimal("88.11501299999999999999999997"), result2)  # AUDJPY
 
     def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"USD/JPY": decimal.Decimal("110.100")}
-        ask_rates = {"USD/JPY": decimal.Decimal("110.130")}
+        bid_rates = {"USD/JPY": Decimal("110.100")}
+        ask_rates = {"USD/JPY": Decimal("110.130")}
 
         # Act
         result = converter.get_rate(
@@ -178,13 +178,13 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(decimal.Decimal("0.009081414884438995595513781047"), result)
+        self.assertEqual(Decimal("0.009081414884438995595513781047"), result)
 
     def test_calculate_exchange_rate_for_mid_price_type2(self):
         # Arrange
         converter = ExchangeRateCalculator()
-        bid_rates = {"USD/JPY": decimal.Decimal("110.100")}
-        ask_rates = {"USD/JPY": decimal.Decimal("110.130")}
+        bid_rates = {"USD/JPY": Decimal("110.100")}
+        ask_rates = {"USD/JPY": Decimal("110.130")}
 
         # Act
         result = converter.get_rate(
@@ -196,7 +196,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(decimal.Decimal("110.115"), result)
+        self.assertEqual(Decimal("110.115"), result)
 
 
 class RolloverInterestCalculatorTests(unittest.TestCase):

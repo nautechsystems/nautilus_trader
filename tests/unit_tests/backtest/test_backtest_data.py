@@ -20,7 +20,7 @@ from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 

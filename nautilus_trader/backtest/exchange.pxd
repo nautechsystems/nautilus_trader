@@ -73,7 +73,8 @@ cdef class SimulatedExchange:
 
     cdef readonly dict instruments
     cdef readonly dict data_ticks
-    cdef dict _market
+    cdef dict _market_bids
+    cdef dict _market_asks
     cdef dict _slippages
 
     cdef dict _working_orders
@@ -104,7 +105,8 @@ cdef class SimulatedExchange:
 
     cpdef void adjust_account(self, Money adjustment) except *
 
-    cdef inline QuoteTick get_last_quote(self, Symbol symbol)
+    cdef inline Price get_current_bid(self, Symbol symbol)
+    cdef inline Price get_current_ask(self, Symbol symbol)
     cdef inline object get_xrate(self, Currency from_currency, Currency to_currency, PriceType price_type)
     cdef inline dict _build_current_bid_rates(self)
     cdef inline dict _build_current_ask_rates(self)
@@ -116,20 +118,24 @@ cdef class SimulatedExchange:
     cdef inline OrderId _generate_order_id(self, Symbol symbol)
     cdef inline ExecutionId _generate_execution_id(self)
     cdef inline AccountState _generate_account_event(self)
-    cdef inline bint _is_marginal_buy_stop_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef inline bint _is_marginal_buy_limit_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef inline bint _is_marginal_sell_stop_fill(self, Price order_price, QuoteTick current_market) except *
-    cdef inline bint _is_marginal_sell_limit_fill(self, Price order_price, QuoteTick current_market) except *
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
     cdef inline void _cancel_reject_order(self, ClientOrderId order_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _process_order(self, Order order) except *
-    cdef inline void _process_market_order(self, MarketOrder order, QuoteTick current_market) except *
-    cdef inline void _process_limit_order(self, LimitOrder order, QuoteTick current_market) except *
-    cdef inline void _process_passive_order(self, PassiveOrder order, QuoteTick current_market) except *
+    cdef inline void _process_market_order(self, MarketOrder order, Price market_bid, Price market_ask) except *
+    cdef inline void _process_limit_order(self, LimitOrder order, Price market_bid, Price market_ask) except *
+    cdef inline void _process_passive_order(self, PassiveOrder order, Price market_bid, Price market_ask) except *
     cdef inline void _work_order(self, Order order) except *
+    cdef inline void _auction_buy_order(self, PassiveOrder order, Price market) except *
+    cdef inline void _auction_buy_stop_order(self, PassiveOrder order, Price market) except *
+    cdef inline void _auction_buy_limit_order(self, PassiveOrder order, Price market) except *
+    cdef inline void _auction_sell_order(self, PassiveOrder order, Price market) except *
+    cdef inline void _auction_sell_stop_order(self, PassiveOrder order, Price market) except *
+    cdef inline void _auction_sell_limit_order(self, PassiveOrder order, Price market) except *
+    cdef inline bint _is_marginal_limit_fill(self, Price order_price, Price market) except *
+    cdef inline bint _is_marginal_stop_fill(self, Price order_price, Price market) except *
     cdef inline void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
     cdef inline void _clean_up_child_orders(self, ClientOrderId order_id) except *
     cdef inline void _check_oco_order(self, ClientOrderId order_id) except *

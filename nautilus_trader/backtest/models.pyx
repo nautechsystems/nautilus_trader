@@ -21,9 +21,6 @@ cdef extern from "stdlib.h":
     double drand48()  # Returns a double in range [0,1)
     void srand48(long int seedval)
 
-cdef extern from "time.h":
-    long int time(int)
-
 
 cdef class FillModel:
     """
@@ -44,11 +41,11 @@ cdef class FillModel:
         Parameters
         ----------
         prob_fill_at_limit : double
-            The probability of limit order filling if the market rests on their price.
+            The probability of limit order filling if the market rests on its price.
         prob_fill_at_stop : double
-            The probability of stop orders filling if the market rests on their price.
+            The probability of stop orders filling if the market rests on its price.
         prob_slippage : double
-            The probability of order fill prices slipping by a tick.
+            The probability of order fill prices slipping by one tick.
         random_seed : int, optional
             The random seed (if None then no random seed).
 
@@ -65,13 +62,11 @@ cdef class FillModel:
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
         if random_seed:
             Condition.type(random_seed, int, "random_seed")
-        else:
-            random_seed = 42
+            srand48(random_seed)
 
         self.prob_fill_at_limit = prob_fill_at_limit
         self.prob_fill_at_stop = prob_fill_at_stop
         self.prob_slippage = prob_slippage
-        srand48(random_seed)
 
     cpdef bint is_limit_filled(self) except *:
         """
@@ -82,7 +77,7 @@ cdef class FillModel:
         bool
 
         """
-        return self._did_event_occur(self.prob_fill_at_limit)
+        return self._event_success(self.prob_fill_at_limit)
 
     cpdef bint is_stop_filled(self) except *:
         """
@@ -93,7 +88,7 @@ cdef class FillModel:
         bool
 
         """
-        return self._did_event_occur(self.prob_fill_at_stop)
+        return self._event_success(self.prob_fill_at_stop)
 
     cpdef bint is_slipped(self) except *:
         """
@@ -104,16 +99,16 @@ cdef class FillModel:
         bool
 
         """
-        return self._did_event_occur(self.prob_slippage)
+        return self._event_success(self.prob_slippage)
 
-    cdef bint _did_event_occur(self, double probability) except *:
+    cdef inline bint _event_success(self, double probability) except *:
         # Return a result indicating whether an event occurred based on the
         # given probability.
 
         # probability is the probability of the event occurring [0, 1].
-        if probability == 0.0:
+        if probability == 0:
             return False
-        elif probability == 1.0:
+        elif probability == 1.:
             return True
         else:
             return probability >= drand48()

@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
 from pandas import DatetimeIndex
 
@@ -39,13 +40,16 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.data.wrangling cimport TickDataWrangler
+from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
+from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -63,7 +67,8 @@ cdef class BacktestDataContainer:
         """
         self.symbols = set()   # type: {Instrument}
         self.instruments = {}  # type: {Symbol, Instrument}
-        self.ticks = {}        # type: {Symbol, pd.DataFrame}
+        self.quote_ticks = {}  # type: {Symbol, pd.DataFrame}
+        self.trade_ticks = {}  # type: {Symbol, pd.DataFrame}
         self.bars_bid = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
         self.bars_ask = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
 
@@ -84,14 +89,19 @@ cdef class BacktestDataContainer:
 
     cpdef void add_quote_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
         """
-        Add the tick data to the container.
+        Add the quote tick data to the container.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'bid', 'ask' data columns.
 
         Parameters
         ----------
         symbol : Symbol
-            The symbol for the tick data.
+            The symbol for the quote tick data.
         data : pd.DataFrame
-            The tick data to add.
+            The quote tick data to add.
 
         """
         Condition.not_none(symbol, "symbol")
@@ -99,8 +109,37 @@ cdef class BacktestDataContainer:
         Condition.type(data, pd.DataFrame, "data")
 
         self.symbols.add(symbol)
-        self.ticks[symbol] = data
-        self.ticks = dict(sorted(self.ticks.items()))
+        self.quote_ticks[symbol] = data
+        self.quote_ticks = dict(sorted(self.quote_ticks.items()))
+
+    cpdef void add_trade_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
+        """
+        Add the trade tick data to the container.
+
+        The format of the dataframe is expected to be a DateTimeIndex (times are
+        assumed to be UTC, and are converted to tz-aware in pre-processing).
+
+        With index column named 'timestamp', and 'trade_id', 'price', 'quantity',
+        'buyer_maker' data columns.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the trade tick data.
+        data : pd.DataFrame
+            The trade tick data to add.
+
+        Returns
+        -------
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(data, "data")
+        Condition.type(data, pd.DataFrame, "data")
+
+        self.symbols.add(symbol)
+        self.trade_ticks[symbol] = data
+        self.trade_ticks = dict(sorted(self.trade_ticks.items()))
 
     cpdef void add_bars(
             self,
@@ -150,13 +189,13 @@ cdef class BacktestDataContainer:
 
         Raises
         ------
-        AssertionFailed
-            If the any integrity check fails.
+        ValueError
+            If any integrity check fails.
 
         """
         # Check there is the needed instrument for each data symbol
         for symbol in self.symbols:
-            assert(symbol in self.instruments, f"The needed instrument {symbol} was not provided.")
+            Condition.true(symbol in self.instruments, f"symbol in self.instruments")
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
         cdef dict shapes = {}  # type: {BarAggregation, tuple}
@@ -167,24 +206,72 @@ cdef class BacktestDataContainer:
                     shapes[aggregation] = dataframe.shape
                 if aggregation not in indexs:
                     indexs[aggregation] = dataframe.index
-                assert(dataframe.shape == shapes[aggregation], f"{dataframe} shape is not equal.")
-                assert(dataframe.index == indexs[aggregation], f"{dataframe} index is not equal.")
+                if dataframe.shape != shapes[aggregation]:
+                    raise RuntimeError(f"{dataframe} bid ask shape is not equal.")
+                if not all(dataframe.index == indexs[aggregation]):
+                    raise RuntimeError(f"{dataframe} bid ask index is not equal.")
         for symbol, data in self.bars_ask.items():
             for aggregation, dataframe in data.items():
-                assert(dataframe.shape == shapes[aggregation], f"{dataframe} shape is not equal.")
-                assert(dataframe.index == indexs[aggregation], f"{dataframe} index is not equal.")
+                if dataframe.shape != shapes[aggregation]:
+                    raise RuntimeError(f"{dataframe} bid ask shape is not equal.")
+                if not all(dataframe.index == indexs[aggregation]):
+                    raise RuntimeError(f"{dataframe} bid ask index is not equal.")
+
+    cpdef bint has_quote_data(self, Symbol symbol) except *:
+        """
+        If the container has quote data for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The query symbol.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(symbol, "symbol")
+        return symbol in self.quote_ticks or symbol in self.bars_bid
+
+    cpdef bint has_trade_data(self, Symbol symbol) except *:
+        """
+        If the container has trade data for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The query symbol.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(symbol, "symbol")
+        return symbol in self.trade_ticks
 
     cpdef long total_data_size(self):
+        """
+        Return the total memory size of the data in the container.
+
+        Returns
+        -------
+        long
+            The total bytes.
+
+        """
         cdef long size = 0
-        size += get_size_of(self.ticks)
+        size += get_size_of(self.quote_ticks)
+        size += get_size_of(self.trade_ticks)
         size += get_size_of(self.bars_bid)
         size += get_size_of(self.bars_ask)
         return size
 
 
-cdef class BacktestDataClient(DataClient):
+cdef class BacktestDataProducer(DataClient):
     """
-    Provides a data client for backtesting.
+    Provides an implementation of `DataClient` which produces data for backtesting.
     """
 
     def __init__(
@@ -197,12 +284,12 @@ cdef class BacktestDataClient(DataClient):
             Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BacktestDataClient` class.
+        Initialize a new instance of the `BacktestDataProducer` class.
 
         venue : Venue
-            The venue the client can provide data for.
+            The venue the producer provides data for.
         engine : DataEngine
-            The data engine to connect to the client.
+            The data engine to connect to the producer.
         clock : Clock
             The clock for the component.
         uuid_factory : UUIDFactory
@@ -223,69 +310,131 @@ cdef class BacktestDataClient(DataClient):
         data.check_integrity()
         self._data = data
 
-        cdef int counter = 0
+        cdef int symbol_counter = 0
         self._symbol_index = {}
-        self._price_precisions = {}
-        self._size_precisions = {}
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
             self._engine.process(instrument)
 
         # Prepare data
-        cdef list tick_frames = []
+        self._quote_tick_data = pd.DataFrame()
+        self._trade_tick_data = pd.DataFrame()
+        cdef list quote_tick_frames = []
+        cdef list trade_tick_frames = []
         self.execution_resolutions = []
 
         timing_start_total = datetime.utcnow()
         for instrument in data.instruments.values():
             symbol = instrument.symbol
             self._log.info(f"Preparing {symbol} data...")
-            timing_start = datetime.utcnow()
 
-            self._symbol_index[counter] = symbol
-            self._price_precisions[counter] = instrument.price_precision
-            self._size_precisions[counter] = instrument.size_precision
+            self._symbol_index[symbol_counter] = symbol
 
-            # Build data wrangler
-            wrangler = TickDataWrangler(
-                instrument=instrument,
-                data_ticks=None if symbol not in self._data.ticks else self._data.ticks[symbol],
-                data_bars_bid=None if symbol not in self._data.bars_bid else self._data.bars_bid[symbol],
-                data_bars_ask=None if symbol not in self._data.bars_ask else self._data.bars_ask[symbol],
-            )
+            execution_resolution = None
 
-            # Build data
-            wrangler.pre_process(counter)
-            tick_frames.append(wrangler.tick_data)
-            counter += 1
+            # Process quote tick data
+            # -----------------------
+            if data.has_quote_data(symbol):
+                timing_start = datetime.utcnow()  # Time data processing
+                quote_wrangler = QuoteTickDataWrangler(
+                    instrument=instrument,
+                    data_ticks=self._data.quote_ticks.get(symbol),
+                    data_bars_bid=self._data.bars_bid.get(symbol),
+                    data_bars_ask=self._data.bars_ask.get(symbol),
+                )
 
-            self.execution_resolutions.append(f"{symbol}={BarAggregationParser.to_string(wrangler.resolution)}")
-            self._log.info(f"Prepared {len(wrangler.tick_data):,} {symbol} ticks in "
-                           f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
+                # noinspection PyUnresolvedReferences
+                quote_wrangler.pre_process(symbol_counter)
+                quote_tick_frames.append(quote_wrangler.processed_data)
 
-            # Dump data artifacts
-            del wrangler
+                execution_resolution = BarAggregationParser.to_string(quote_wrangler.resolution)
+                self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {symbol} quote tick rows in "
+                               f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
+                del quote_wrangler  # Dump processing artifact
+
+            # Process trade tick data
+            # -----------------------
+            if data.has_trade_data(symbol):
+                timing_start = datetime.utcnow()  # Time data processing
+                trade_wrangler = TradeTickDataWrangler(
+                    instrument=instrument,
+                    data=self._data.trade_ticks.get(symbol),
+                )
+
+                # noinspection PyUnresolvedReferences
+                trade_wrangler.pre_process(symbol_counter)
+                trade_tick_frames.append(trade_wrangler.processed_data)
+
+                execution_resolution = BarAggregationParser.to_string(BarAggregation.TICK)
+                self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {symbol} trade tick rows in "
+                               f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
+                del trade_wrangler  # Dump processing artifact
+
+            if execution_resolution is None:
+                self._log.warning(f"No execution level data for {symbol}.")
+
+            # Increment counter for indexing the next symbol
+            symbol_counter += 1
+
+            self.execution_resolutions.append(f"{symbol}={execution_resolution}")
 
         # Merge and sort all ticks
-        self._log.info(f"Merging tick data stream...")
-        self._tick_data = pd.concat(tick_frames)
-        self._tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
+        self._log.info(f"Merging tick data streams...")
+        if quote_tick_frames:
+            self._quote_tick_data = pd.concat(quote_tick_frames)
+            self._quote_tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
+
+        if trade_tick_frames:
+            self._trade_tick_data = pd.concat(trade_tick_frames)
+            self._trade_tick_data.sort_index(axis=0, kind="mergesort", inplace=True)
 
         # Set min and max timestamps
-        self.min_timestamp = self._tick_data.index.min()
-        self.max_timestamp = self._tick_data.index.max()
+        self.min_timestamp = None
+        self.max_timestamp = None
 
-        self._symbols = None
-        self._price_volume = None
-        self._timestamps = None
-        self._index = 0
-        self._index_last = len(self._tick_data) - 1
-        self.has_data = False
+        if not self._quote_tick_data.empty:
+            self.min_timestamp = self._quote_tick_data.index.min()
+            self.max_timestamp = self._quote_tick_data.index.max()
 
-        self._log.info(f"Prepared {len(self._tick_data):,} ticks total in "
+        if not self._trade_tick_data.empty:
+            if self.min_timestamp is None:
+                self.min_timestamp = self._trade_tick_data.index.min()
+            else:
+                self.min_timestamp = max(self._quote_tick_data.index, self._trade_tick_data.index)
+
+            if self.max_timestamp is None:
+                self.max_timestamp = self._trade_tick_data.index.max()
+            else:
+                self.max_timestamp = min(self._quote_tick_data.index, self._trade_tick_data.index)
+
+        # Initialize backing fields
+        self._quote_symbols = None
+        self._quote_bids = None
+        self._quote_asks = None
+        self._quote_bid_sizes = None
+        self._quote_ask_sizes = None
+        self._quote_timestamps = None
+        self._quote_index = 0
+        self._quote_index_last = 0
+        self._next_quote_tick = None
+
+        self._trade_symbols = None
+        self._trade_prices = None
+        self._trade_sizes = None
+        self._trade_match_ids = None
+        self._trade_makers = None
+        self._trade_timestamps = None
+        self._trade_index = 0
+        self._trade_index_last = 0
+        self._next_trade_tick = None
+
+        self.has_tick_data = False
+
+        self._log.info(f"Prepared {len(self._quote_tick_data):,} total tick rows in "
                        f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
 
-        gc.collect()  # Garbage collection
+        gc.collect()  # Garbage collection to remove redundant processing artifacts
 
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
@@ -306,50 +455,128 @@ cdef class BacktestDataClient(DataClient):
         for instrument in self._data.instruments.values():
             self._engine.process(instrument)
 
-        # Build tick data stream
-        data_slice = slice_dataframe(self._tick_data, start, stop)  # See function comments on why [:] isn't used
-        self._symbols = data_slice["symbol"].to_numpy(dtype=np.ushort)
-        self._price_volume = data_slice[["bid", "ask", "bid_size", "ask_size"]].to_numpy(dtype=np.double)
-        self._timestamps = np.asarray([<datetime>dt for dt in data_slice.index])
-
-        self._index = 0
-        self._index_last = len(data_slice) - 1
-        self.has_data = True
-
+        # Calculate data size
         cdef long total_size = 0
-        total_size += get_size_of(self._symbols)
-        total_size += get_size_of(self._price_volume)
-        total_size += get_size_of(self._timestamps)
+
+        # Build quote tick data stream
+        if not self._quote_tick_data.empty:
+            time_buffer = timedelta(milliseconds=1)  # To ensure we don't pickup an `unwanted` generated tick
+            # See slice_dataframe function comments on why [:] isn't used
+            quote_ticks_slice = slice_dataframe(self._quote_tick_data, start + time_buffer, stop)
+
+            self._quote_symbols = quote_ticks_slice["symbol"].to_numpy(dtype=np.ushort)
+            self._quote_bids = quote_ticks_slice["bid"].values
+            self._quote_asks = quote_ticks_slice["ask"].values
+            self._quote_bid_sizes = quote_ticks_slice["bid_size"].values
+            self._quote_ask_sizes = quote_ticks_slice["ask_size"].values
+            self._quote_timestamps = np.asarray([<datetime>dt for dt in quote_ticks_slice.index])
+
+            # Calculate cumulative data size
+            total_size += get_size_of(self._quote_symbols)
+            total_size += get_size_of(self._quote_bids)
+            total_size += get_size_of(self._quote_asks)
+            total_size += get_size_of(self._quote_bid_sizes)
+            total_size += get_size_of(self._quote_ask_sizes)
+            total_size += get_size_of(self._quote_timestamps)
+
+            # Set indexing
+            self._quote_index = 0
+            self._quote_index_last = len(quote_ticks_slice) - 1
+
+            # Prepare initial tick
+            self._iterate_quote_ticks()
+
+        # Build trade tick data stream
+        if not self._trade_tick_data.empty:
+            # See slice_dataframe function comments on why [:] isn't used
+            trade_ticks_slice = slice_dataframe(self._trade_tick_data, start, stop)
+
+            self._trade_symbols = trade_ticks_slice["symbol"].to_numpy(dtype=np.ushort)
+            self._trade_prices = trade_ticks_slice["price"].values
+            self._trade_sizes = trade_ticks_slice["quantity"].values
+            self._trade_match_ids = trade_ticks_slice["match_id"].values
+            self._trade_makers = trade_ticks_slice["buyer_maker"].to_numpy(dtype=np.ushort)
+            self._trade_timestamps = np.asarray([<datetime>dt for dt in trade_ticks_slice.index])
+
+            # Calculate cumulative data size
+            total_size += get_size_of(self._trade_symbols)
+            total_size += get_size_of(self._trade_prices)
+            total_size += get_size_of(self._trade_sizes)
+            total_size += get_size_of(self._trade_match_ids)
+            total_size += get_size_of(self._trade_makers)
+            total_size += get_size_of(self._trade_timestamps)
+
+            # Set indexing
+            self._trade_index = 0
+            self._trade_index_last = len(trade_ticks_slice) - 1
+
+            # Prepare initial tick
+            self._iterate_trade_ticks()
+
+        self.has_tick_data = True
+
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
-    cdef QuoteTick generate_tick(self):
-        """
-        Generate the next tick in the ordered data sequence.
+    cdef Tick next_tick(self):
+        cdef Tick next_tick
+        # Quote ticks only
+        if self._next_trade_tick is None:
+            next_tick = self._next_quote_tick
+            self._iterate_quote_ticks()
+            return next_tick
+        # Trade ticks only
+        if self._next_quote_tick is None:
+            next_tick = self._next_trade_tick
+            self._iterate_trade_ticks()
+            return next_tick
 
-        Returns
-        -------
-        QuoteTick
+        # Mixture of quote and trade ticks
+        if self._next_quote_tick.timestamp <= self._next_trade_tick.timestamp:
+            next_tick = self._next_quote_tick
+            self._iterate_quote_ticks()
+            return next_tick
+        else:
+            next_tick = self._next_trade_tick
+            self._iterate_trade_ticks()
+            return next_tick
 
-        """
-        cdef int symbol_indexer = self._symbols[self._index]
-        cdef int price_precision = self._price_precisions[symbol_indexer]
-        cdef int size_precision = self._size_precisions[symbol_indexer]
-        cdef double[:] values = self._price_volume[self._index]
-
-        cdef QuoteTick tick = QuoteTick(
-            self._symbol_index[symbol_indexer],
-            Price(values[0], price_precision),
-            Price(values[1], price_precision),
-            Quantity(values[2], size_precision),
-            Quantity(values[3], size_precision),
-            self._timestamps[self._index],
+    cdef inline QuoteTick _generate_quote_tick(self, int index):
+        return QuoteTick(
+            self._symbol_index[self._quote_symbols[index]],
+            Price(self._quote_bids[index]),
+            Price(self._quote_asks[index]),
+            Quantity(self._quote_bid_sizes[index]),
+            Quantity(self._quote_ask_sizes[index]),
+            self._quote_timestamps[index],
         )
 
-        self._index += 1
-        if self._index > self._index_last:
-            self.has_data = False
+    cdef inline TradeTick _generate_trade_tick(self, int index):
+        return TradeTick(
+            self._symbol_index[self._trade_symbols[index]],
+            Price(self._trade_prices[index]),
+            Quantity(self._trade_sizes[index]),
+            <Maker>self._trade_makers[index],
+            TradeMatchId(self._trade_match_ids[index]),
+            self._trade_timestamps[index],
+        )
 
-        return tick
+    cdef inline void _iterate_quote_ticks(self) except *:
+        if self._quote_index <= self._quote_index_last:
+            self._next_quote_tick = self._generate_quote_tick(self._quote_index)
+            self._quote_index += 1
+        else:
+            self._next_quote_tick = None
+            if self._next_trade_tick is None:
+                self.has_tick_data = False
+
+    cdef inline void _iterate_trade_ticks(self) except *:
+        if self._trade_index <= self._trade_index_last:
+            self._next_trade_tick = self._generate_trade_tick(self._trade_index)
+            self._trade_index += 1
+        else:
+            self._next_trade_tick = None
+            if self._next_quote_tick is None:
+                self.has_tick_data = False
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -367,12 +594,25 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.debug(f"Resetting...")
 
-        self._symbols = None
-        self._price_volume = None
-        self._timestamps = None
-        self._index = 0
-        self._index_last = len(self._tick_data) - 1
-        self.has_data = False
+        self._quote_symbols = None
+        self._quote_bids = None
+        self._quote_asks = None
+        self._quote_bid_sizes = None
+        self._quote_ask_sizes = None
+        self._quote_timestamps = None
+        self._quote_index = 0
+        self._quote_index_last = len(self._quote_tick_data) - 1
+
+        self._trade_symbols = None
+        self._trade_prices = None
+        self._trade_sizes = None
+        self._trade_match_ids = None
+        self._trade_makers = None
+        self._trade_timestamps = None
+        self._trade_index = 0
+        self._trade_index_last = len(self._quote_tick_data) - 1
+
+        self.has_tick_data = False
 
         self._log.info("Reset.")
 

@@ -20,9 +20,9 @@ from pandas import Timestamp
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.wrangling import BarDataWrangler
-from nautilus_trader.data.wrangling import TickDataWrangler
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.enums import BarAggregation
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -37,17 +37,17 @@ class TickDataWranglerTests(unittest.TestCase):
     def test_tick_data(self):
         # Arrange
         # Act
-        ticks = TestDataProvider.usdjpy_test_ticks()
+        ticks = TestDataProvider.usdjpy_ticks()
 
         # Assert
         self.assertEqual(1000, len(ticks))
 
     def test_build_with_tick_data(self):
         # Arrange
-        tick_data = TestDataProvider.usdjpy_test_ticks()
+        tick_data = TestDataProvider.usdjpy_ticks()
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
-        self.tick_builder = TickDataWrangler(
+        self.tick_builder = QuoteTickDataWrangler(
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
@@ -56,7 +56,7 @@ class TickDataWranglerTests(unittest.TestCase):
 
         # Act
         self.tick_builder.pre_process(0)
-        ticks = self.tick_builder.tick_data
+        ticks = self.tick_builder.processed_data
 
         # Assert
         self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
@@ -67,7 +67,7 @@ class TickDataWranglerTests(unittest.TestCase):
         # Arrange
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
-        self.tick_builder = TickDataWrangler(
+        self.tick_builder = QuoteTickDataWrangler(
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
@@ -76,24 +76,24 @@ class TickDataWranglerTests(unittest.TestCase):
 
         # Act
         self.tick_builder.pre_process(0)
-        tick_data = self.tick_builder.tick_data
+        tick_data = self.tick_builder.processed_data
 
         # Assert
         self.assertEqual(BarAggregation.MINUTE, self.tick_builder.resolution)
-        self.assertEqual(1491252, len(tick_data))
-        self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[0].name)
-        self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[1].name)
-        self.assertEqual(Timestamp("2013-01-01T21:59:59.900000+00:00", tz="UTC"), tick_data.iloc[2].name)
-        self.assertEqual(Timestamp("2013-01-01T22:00:00.000000+00:00", tz="UTC"), tick_data.iloc[3].name)
+        self.assertEqual(115044, len(tick_data))
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), tick_data.iloc[0].name)
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC"), tick_data.iloc[1].name)
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"), tick_data.iloc[2].name)
+        self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name)
         self.assertEqual(0, tick_data.iloc[0]["symbol"])
-        self.assertEqual(0, tick_data.iloc[0]["bid_size"])
-        self.assertEqual(0, tick_data.iloc[0]["ask_size"])
-        self.assertEqual(0, tick_data.iloc[1]["bid_size"])
-        self.assertEqual(0, tick_data.iloc[1]["ask_size"])
-        self.assertEqual(0, tick_data.iloc[2]["bid_size"])
-        self.assertEqual(0, tick_data.iloc[2]["ask_size"])
-        self.assertEqual(1.5, tick_data.iloc[3]["bid_size"])
-        self.assertEqual(2.25, tick_data.iloc[3]["ask_size"])
+        self.assertEqual("1", tick_data.iloc[0]["bid_size"])
+        self.assertEqual("1", tick_data.iloc[0]["ask_size"])
+        self.assertEqual("1", tick_data.iloc[1]["bid_size"])
+        self.assertEqual("1", tick_data.iloc[1]["ask_size"])
+        self.assertEqual("1", tick_data.iloc[2]["bid_size"])
+        self.assertEqual("1", tick_data.iloc[2]["ask_size"])
+        self.assertEqual("1", tick_data.iloc[3]["bid_size"])
+        self.assertEqual("1", tick_data.iloc[3]["ask_size"])
 
 
 class BarDataWranglerTests(unittest.TestCase):

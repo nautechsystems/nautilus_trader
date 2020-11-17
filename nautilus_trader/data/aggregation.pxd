@@ -81,7 +81,7 @@ cdef class ValueBarAggregator(BarAggregator):
     cdef readonly int step
     """The aggregators value threshold.\n\n:returns: `int`"""
     cdef readonly object cum_value
-    """The aggregators current cumulative value.\n\n:returns: `decimal.Decimal`"""
+    """The aggregators current cumulative value.\n\n:returns: `Decimal`"""
 
 
 cdef class TimeBarAggregator(BarAggregator):

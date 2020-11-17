@@ -20,7 +20,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BacktestDataClient
+from nautilus_trader.backtest.data cimport BacktestDataProducer
 from nautilus_trader.backtest.data cimport BacktestDataContainer
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -48,7 +48,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
@@ -204,7 +204,7 @@ cdef class BacktestEngine:
             logger=self.test_logger,
         )
 
-        self.data_client = BacktestDataClient(
+        self.data_client = BacktestDataProducer(
             data=data,
             venue=venue,
             engine=self.data_engine,
@@ -214,7 +214,7 @@ cdef class BacktestEngine:
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.exchange,
+            exchange=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.test_clock,
@@ -351,16 +351,16 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start)
 
-        # Temporary fix to initialize account
+        # TODO: Temporary fix to initialize account
         self.exchange.adjust_account(Money(0, self.exchange.account_currency))
 
         # Start trader which starts strategies
         self.trader.start()
 
-        cdef QuoteTick tick
+        cdef Tick tick
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        while self.data_client.has_data:
-            tick = self.data_client.generate_tick()
+        while self.data_client.has_tick_data:
+            tick = self.data_client.next_tick()
             self._advance_time(tick.timestamp)
             self.exchange.process_tick(tick)
             self.data_engine.process(tick)

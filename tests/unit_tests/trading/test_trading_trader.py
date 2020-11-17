@@ -17,8 +17,8 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataClient
 from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data import BacktestDataProducer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -39,7 +39,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.trader import Trader
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 
@@ -93,7 +93,7 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.market = SimulatedExchange(
+        self.exchange = SimulatedExchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -106,7 +106,7 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.data_client = BacktestDataClient(
+        self.data_client = BacktestDataProducer(
             data=data,
             venue=Venue("FXCM"),
             engine=self.data_engine,
@@ -118,7 +118,7 @@ class TraderTests(unittest.TestCase):
         self.data_engine.register_client(self.data_client)
 
         self.exec_client = BacktestExecClient(
-            market=self.market,
+            exchange=self.exchange,
             account_id=account_id,
             engine=self.exec_engine,
             clock=clock,

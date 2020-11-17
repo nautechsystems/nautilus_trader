@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
-import decimal
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -626,7 +626,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Quantity(50000),
-            decimal.Decimal("1.00000"),
+            Decimal("1.00000"),
             AUDUSD_FXCM.quote_currency,
             AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
@@ -658,7 +658,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(100000),
             Quantity(100000),
             Quantity(),
-            decimal.Decimal("1.00000"),
+            Decimal("1.00000"),
             AUDUSD_FXCM.quote_currency,
             AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,

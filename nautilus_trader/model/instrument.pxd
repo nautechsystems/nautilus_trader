@@ -51,11 +51,11 @@ cdef class Instrument:
     cdef readonly int cost_precision
     """The cost precision of the instrument.\n\n:returns: `int`"""
     cdef readonly object tick_size
-    """The tick size of the instrument.\n\n:returns: `decimal.Decimal`"""
+    """The tick size of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object multiplier
-    """The multiplier of the instrument.\n\n:returns: `decimal.Decimal`"""
+    """The multiplier of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object leverage
-    """The leverage of the instrument.\n\n:returns: `decimal.Decimal`"""
+    """The leverage of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly Quantity lot_size
     """The lot size of the instrument.\n\n:returns: `Quantity`"""
     cdef readonly Quantity max_quantity
@@ -71,17 +71,17 @@ cdef class Instrument:
     cdef readonly Price min_price
     """The minimum printable price for the instrument.\n\n:returns: `Price`"""
     cdef readonly object margin_initial
-    """The initial margin rate of the instrument.\n\n:returns: `decimal.Decimal`"""
+    """The initial margin rate of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object margin_maintenance
     """The maintenance margin rate of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object maker_fee
-    """The maker fee rate of the instrument.\n\n:returns: `decimal.Decimal`"""
+    """The maker fee rate of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
-    """The taker fee rate of the instrument.\n\n:returns: `decimal.Decimal`"""
+    """The taker fee rate of the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object funding_rate_long
-    """The funding rate for long positions.\n\n:returns: `decimal.Decimal`"""
+    """The funding rate for long positions.\n\n:returns: `Decimal`"""
     cdef readonly object funding_rate_short
-    """The funding rate for short positions.\n\n:returns: `decimal.Decimal`"""
+    """The funding rate for short positions.\n\n:returns: `Decimal`"""
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 

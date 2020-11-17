@@ -1,12 +1,12 @@
 Testing
 =======
 
-To run tests:
+To run tests::
 
     nox -s tests
 
 
-If you have `redis-server` up you can run integration tests:
+If you have `redis-server` up you can run integration tests::
 
     nox -s integration_tests
 

@@ -37,8 +37,6 @@ cdef str RESPONSE_TO
 cdef str REASON
 cdef str WORKING_TIME
 cdef str CANCELLED_TIME
-cdef str MODIFIED_QUANTITY
-cdef str MODIFIED_PRICE
 cdef str MODIFIED_TIME
 cdef str EXPIRE_TIME
 cdef str EXPIRED_TIME
@@ -53,7 +51,7 @@ cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT
 cdef str FILLED_QUANTITY
-cdef str CUMULATIVE_QUANTITY
+cdef str CUM_QUANTITY
 cdef str LEAVES_QUANTITY
 cdef str QUANTITY
 cdef str AVERAGE_PRICE

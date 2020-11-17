@@ -15,7 +15,7 @@
 
 from datetime import datetime
 from datetime import timedelta
-import decimal
+from decimal import Decimal
 import unittest
 
 import pytz
@@ -29,7 +29,7 @@ from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
 from nautilus_trader.data.aggregation import VolumeBarAggregator
-from nautilus_trader.data.wrangling import TickDataWrangler
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
-from tests.test_kit.data import TestDataProvider
+from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -586,7 +586,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(bar_store.get_store()))
-        self.assertEqual(decimal.Decimal("3000.03000"), aggregator.cum_value)
+        self.assertEqual(Decimal("3000.03000"), aggregator.cum_value)
 
     def test_handle_trade_tick_when_value_below_threshold_updates(self):
         # Arrange
@@ -611,7 +611,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(bar_store.get_store()))
-        self.assertEqual(decimal.Decimal("52500.000"), aggregator.cum_value)
+        self.assertEqual(Decimal("52500.000"), aggregator.cum_value)
 
     def test_handle_quote_tick_when_value_beyond_threshold_sends_bar_to_handler(self):
         # Arrange
@@ -661,7 +661,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("1.00000"), bar_store.get_store()[0].bar.low)
         self.assertEqual(Price('1.00000'), bar_store.get_store()[0].bar.close)
         self.assertEqual(Quantity("99999"), bar_store.get_store()[0].bar.volume)
-        self.assertEqual(decimal.Decimal("10501.00000"), aggregator.cum_value)
+        self.assertEqual(Decimal("10501.00000"), aggregator.cum_value)
 
     def test_handle_trade_tick_when_volume_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -716,7 +716,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         self.assertEqual(Price("20.00000"), bar_store.get_store()[1].bar.low)
         self.assertEqual(Price('20.00000'), bar_store.get_store()[1].bar.close)
         self.assertEqual(Quantity("5000.00"), bar_store.get_store()[1].bar.volume)
-        self.assertEqual(decimal.Decimal("40000.00000"), aggregator.cum_value)
+        self.assertEqual(Decimal("40000.00000"), aggregator.cum_value)
 
 
 class TimeBarAggregatorTests(unittest.TestCase):
@@ -779,10 +779,10 @@ class BulkTickBarBuilderTests(unittest.TestCase):
 
     def test_given_list_of_ticks_aggregates_tick_bars(self):
         # Arrange
-        tick_data = TestDataProvider.usdjpy_test_ticks()
+        tick_data = TestDataProvider.usdjpy_ticks()
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
-        self.wrangler = TickDataWrangler(
+        self.wrangler = QuoteTickDataWrangler(
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_ticks=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},

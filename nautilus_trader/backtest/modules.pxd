@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-import decimal
+from decimal import Decimal
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -34,7 +34,7 @@ cdef class SimulationModule:
 
 cdef class FXRolloverInterestModule(SimulationModule):
     cdef RolloverInterestCalculator _calculator
-    cdef object _rollover_spread  # type: decimal.Decimal
+    cdef object _rollover_spread  # type: Decimal
     cdef datetime _rollover_time
     cdef bint _rollover_applied
     cdef Money _rollover_total

@@ -353,7 +353,7 @@ cdef class ExecutionEngine:
             self._handle_connect(command)
         elif isinstance(command, Disconnect):
             self._handle_disconnect(command)
-        if isinstance(command, SubmitOrder):
+        elif isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(command)
