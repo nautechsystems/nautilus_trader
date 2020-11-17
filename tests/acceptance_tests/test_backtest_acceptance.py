@@ -87,9 +87,9 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert - Should return expected PNL
-        self.assertEqual(2688, strategy.fast_ema.count)
+        self.assertEqual(2689, strategy.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(Money(1005961.63, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(997688.53, USD), self.engine.portfolio.account(self.venue).balance())
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -133,10 +133,10 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.engine.run(strategies=[strategy1, strategy2])
 
         # Assert
-        self.assertEqual(2688, strategy1.fast_ema.count)
-        self.assertEqual(2688, strategy2.fast_ema.count)
+        self.assertEqual(2689, strategy1.fast_ema.count)
+        self.assertEqual(2689, strategy2.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(Money(959831.42, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(948357.20, USD), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
@@ -191,9 +191,9 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert
-        self.assertEqual(8352, strategy.fast_ema.count)
+        self.assertEqual(8353, strategy.fast_ema.count)
         self.assertEqual(120467, self.engine.iteration)
-        self.assertEqual(Money(945548.59, GBP), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(947965.44, GBP), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
+
 import pandas as pd
 
 from cpython.datetime cimport datetime
@@ -72,7 +74,7 @@ cdef class QuoteTickDataWrangler:
         Condition.type_or_none(data_bars_bid, dict, "bid_data")
         Condition.type_or_none(data_bars_ask, dict, "ask_data")
 
-        if data_ticks is not None and len(data_ticks) > 0:
+        if data_ticks is not None and not data_ticks.empty:
             self._data_ticks = as_utc_index(data_ticks)
         else:
             Condition.not_none(data_bars_bid, "data_bars_bid")
@@ -85,7 +87,7 @@ cdef class QuoteTickDataWrangler:
         self.processed_data = []
         self.resolution = BarAggregation.UNDEFINED
 
-    def pre_process(self, int symbol_indexer):
+    def pre_process(self, int symbol_indexer, random_seed=None):
         """
         Pre-process the tick data in preparation for building ticks.
 
@@ -93,9 +95,15 @@ cdef class QuoteTickDataWrangler:
         ----------
         symbol_indexer : int
             The symbol indexer for the built ticks.
+        random_seed : int, optional
+            The random seed for shuffling order of high and low ticks from bar
+            data. If random_seed is None then won't shuffle.
 
         """
-        if self._data_ticks is not None and len(self._data_ticks) > 0:
+        if random_seed is not None:
+            Condition.type(random_seed, int, "random_seed")
+
+        if self._data_ticks is not None and not self._data_ticks.empty:
             # Build ticks from data
             self.processed_data = self._data_ticks
             self.processed_data["symbol"] = symbol_indexer
@@ -137,11 +145,12 @@ cdef class QuoteTickDataWrangler:
 
         Condition.not_none(bars_bid, "bars_bid")
         Condition.not_none(bars_ask, "bars_ask")
-        Condition.true(len(bars_bid) > 0, "len(bars_bid) > 0")
-        Condition.true(len(bars_ask) > 0, "len(bars_ask) > 0")
+        Condition.false(bars_bid.empty, "bars_bid.empty")
+        Condition.false(bars_ask.empty, "bars_ask.empty")
         Condition.true(all(bars_bid.index) == all(bars_ask.index), "bars_bid.index == bars_ask.index")
         Condition.true(bars_bid.shape == bars_ask.shape, "bars_bid.shape == bars_ask.shape")
 
+        # Ensure index is tz-aware UTC
         bars_bid = as_utc_index(bars_bid)
         bars_ask = as_utc_index(bars_ask)
 
@@ -184,11 +193,6 @@ cdef class QuoteTickDataWrangler:
         df_ticks_l = pd.DataFrame(data=data_low)
         df_ticks_c = pd.DataFrame(data=data_close)
 
-        # TODO: Pending refactoring
-        df_ticks_o.index = bars_bid.index.shift(periods=-300, freq="ms")
-        df_ticks_h.index = bars_bid.index.shift(periods=-200, freq="ms")
-        df_ticks_l.index = bars_bid.index.shift(periods=-100, freq="ms")
-
         # Pre-process prices into formatted strings
         price_cols = ["bid", "ask"]
         df_ticks_o[price_cols] = df_ticks_o[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
@@ -203,9 +207,24 @@ cdef class QuoteTickDataWrangler:
         df_ticks_l[size_cols] = df_ticks_l[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
         df_ticks_c[size_cols] = df_ticks_c[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
 
+        df_ticks_o.index = df_ticks_o.index.shift(periods=-300, freq="ms")
+        df_ticks_h.index = df_ticks_h.index.shift(periods=-200, freq="ms")
+        df_ticks_l.index = df_ticks_l.index.shift(periods=-100, freq="ms")
+
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
         df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
+
+        cdef int i
+        # Randomly shift high low prices
+        if random_seed is not None:
+            random.seed(random_seed)
+            for i in range(0, len(df_ticks_o)):
+                if random.getrandbits(1):
+                    high = df_ticks_h.iloc[i]
+                    low = df_ticks_l.iloc[i]
+                    df_ticks_final.iloc[i + 1] = low
+                    df_ticks_final.iloc[i + 2] = high
 
         # Build ticks from data
         self.processed_data = df_ticks_final
