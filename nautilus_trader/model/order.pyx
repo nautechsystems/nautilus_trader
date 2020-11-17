@@ -440,6 +440,13 @@ cdef class Order:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
+    cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity):
+        if self.avg_price is None:
+            return fill_price
+
+        total_quantity: Decimal = self.filled_qty + fill_quantity
+        return ((self.avg_price * self.filled_qty) + (fill_price * fill_quantity)) / total_quantity
+
 
 cdef class PassiveOrder(Order):
     """
@@ -556,7 +563,7 @@ cdef class PassiveOrder(Order):
         self.liquidity_side = event.liquidity_side
         self.filled_qty = event.fill_qty
         self.filled_timestamp = event.timestamp
-        self.avg_price = event.avg_price
+        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
@@ -693,7 +700,7 @@ cdef class MarketOrder(Order):
         self.execution_id = event.execution_id
         self.filled_qty = event.fill_qty
         self.filled_timestamp = event.timestamp
-        self.avg_price = event.avg_price
+        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
 
 
 cdef class LimitOrder(PassiveOrder):

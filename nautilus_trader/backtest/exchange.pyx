@@ -829,7 +829,7 @@ cdef class SimulatedExchange:
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
-            fill_price.as_decimal(),
+            fill_price,
             liquidity_side,
             xrate=Decimal(1),  # Currently not handling quanto settlement
         )
@@ -847,7 +847,7 @@ cdef class SimulatedExchange:
             order.quantity,
             order.quantity,
             Quantity(),  # Not modeling partial fills yet
-            fill_price.as_decimal(),
+            fill_price,
             instrument.quote_currency,
             instrument.settlement_currency,
             instrument.is_inverse,

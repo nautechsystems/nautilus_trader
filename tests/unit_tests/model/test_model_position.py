@@ -321,7 +321,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             order.quantity,
             Quantity(),
-            Decimal("1.00011"),
+            Price("1.00011"),
             AUDUSD_FXCM.quote_currency,
             AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
@@ -772,7 +772,7 @@ class PositionTests(unittest.TestCase):
         position = Position(fill)
 
         # Act
-        result = position.calculate_pnl(Decimal("0"), Decimal("0"), PositionSide.FLAT)
+        result = position.calculate_pnl(Decimal("1"), Decimal("1"), Quantity(100000))
 
         # Assert
         self.assertEqual(Money(0, USDT), result)

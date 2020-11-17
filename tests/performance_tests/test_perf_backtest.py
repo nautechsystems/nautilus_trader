@@ -192,3 +192,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 08/11/20  4345844 function calls (4320541 primitive calls) in 5.960 seconds (centralize exchange rate calculations)
         # 12/11/20  4346944 function calls (4321640 primitive calls) in 5.809 seconds (change value object API)
         # 15/11/20  4378755 function calls (4353255 primitive calls) in 5.927 seconds (performance check)
+        # 18/11/20  4377984 function calls (4352279 primitive calls) in 5.908 seconds (performance check)
