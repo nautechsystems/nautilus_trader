@@ -514,9 +514,6 @@ cdef class Position:
             return Decimal()  # FLAT
 
     cdef inline object _calculate_return(self, avg_open, avg_close):
-        if self.side == PositionSide.FLAT:
-            return Decimal()
-
         return self._calculate_points(avg_open, avg_close) / avg_open
 
     cdef inline object _get_close_price(self, QuoteTick last):

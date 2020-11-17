@@ -266,6 +266,10 @@ cdef class TraderId(Identifier):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
+
+        if len(pieces) != 3:
+            raise ValueError(f"The TraderId string value was malformed, was {value}")
+
         return TraderId(name=pieces[0], tag=pieces[2])
 
     @staticmethod
@@ -343,6 +347,10 @@ cdef class StrategyId(Identifier):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
+
+        if len(pieces) != 3:
+            raise ValueError(f"The StrategyId string value was malformed, was {value}")
+
         return StrategyId(name=pieces[0], tag=pieces[2])
 
     @staticmethod

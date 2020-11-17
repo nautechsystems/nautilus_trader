@@ -29,8 +29,10 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -243,6 +245,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(1, order.event_count)
         self.assertTrue(isinstance(order.last_event, OrderInitialized))
+        self.assertEqual(1, len(order.events))
         self.assertFalse(order.is_working)
         self.assertFalse(order.is_completed)
         self.assertFalse(order.is_buy)
@@ -314,6 +317,28 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed)
+
+    def test_bracket_order_equality(self):
+        # Arrange
+        entry1 = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        entry2 = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        bracket_order1 = self.order_factory.bracket(entry1, Price("1.00000"))
+        bracket_order2 = self.order_factory.bracket(entry2, Price("1.00000"))
+
+        # Act
+        # Assert
+        self.assertTrue(bracket_order1 == bracket_order1)
+        self.assertTrue(bracket_order1 != bracket_order2)
 
     def test_initialize_bracket_order_market_with_no_take_profit(self):
         # Arrange
@@ -396,7 +421,55 @@ class OrderTests(unittest.TestCase):
         self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
         self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
 
-    def test_apply_order_submitted_event_to_order(self):
+    def test_apply_order_invalid_event(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        invalid = OrderInvalid(
+            order.cl_ord_id,
+            "SOME_REASON",
+            uuid4(),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        order.apply(invalid)
+
+        # Assert
+        self.assertEqual(OrderState.INVALID, order.state)
+        self.assertEqual(2, order.event_count)
+        self.assertEqual(invalid, order.last_event)
+        self.assertTrue(order.is_completed)
+
+    def test_apply_order_denied_event(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        denied = OrderDenied(
+            order.cl_ord_id,
+            "SOME_REASON",
+            uuid4(),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        order.apply(denied)
+
+        # Assert
+        self.assertEqual(OrderState.DENIED, order.state)
+        self.assertEqual(2, order.event_count)
+        self.assertEqual(denied, order.last_event)
+        self.assertTrue(order.is_completed)
+
+    def test_apply_order_submitted_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM.symbol,
@@ -415,7 +488,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(submitted, order.last_event)
         self.assertFalse(order.is_completed)
 
-    def test_apply_order_accepted_event_to_order(self):
+    def test_apply_order_accepted_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM.symbol,
@@ -435,7 +508,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.ACCEPTED, order.state)
         self.assertFalse(order.is_completed)
 
-    def test_apply_order_rejected_event_to_order(self):
+    def test_apply_order_rejected_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM.symbol,
@@ -455,7 +528,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.REJECTED, order.state)
         self.assertTrue(order.is_completed)
 
-    def test_apply_order_working_event_to_stop_order(self):
+    def test_apply_order_working_event(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_FXCM.symbol,
@@ -482,7 +555,7 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertEqual(None, order.filled_timestamp)
 
-    def test_apply_order_expired_event_to_stop_order(self):
+    def test_apply_order_expired_event(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_FXCM.symbol,
@@ -509,7 +582,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.EXPIRED, order.state)
         self.assertTrue(order.is_completed)
 
-    def test_apply_order_cancelled_event_to_order(self):
+    def test_apply_order_cancelled_event(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_FXCM.symbol,
@@ -600,6 +673,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price("1.00001"), order.avg_price)
+        self.assertEqual(1, len(order.execution_ids))
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
