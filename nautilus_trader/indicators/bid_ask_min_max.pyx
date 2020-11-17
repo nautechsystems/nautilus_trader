@@ -150,7 +150,7 @@ cdef class WindowedMinMaxPrices:
 
     cdef inline void _expire_stale_prices_by_cutoff(
         self,
-        object ts_prices,
+        ts_prices,
         datetime cutoff
     ) except *:
         """Drop items that are older than the cutoff"""

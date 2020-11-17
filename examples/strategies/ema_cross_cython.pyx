@@ -185,7 +185,7 @@ cdef class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    cpdef void on_data(self, object data) except *:
+    cpdef void on_data(self, data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 

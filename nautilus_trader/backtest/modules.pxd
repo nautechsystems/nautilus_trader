@@ -34,7 +34,7 @@ cdef class SimulationModule:
 
 cdef class FXRolloverInterestModule(SimulationModule):
     cdef RolloverInterestCalculator _calculator
-    cdef object _rollover_spread  # type: Decimal
+    cdef object _rollover_spread
     cdef datetime _rollover_time
     cdef bint _rollover_applied
     cdef Money _rollover_total

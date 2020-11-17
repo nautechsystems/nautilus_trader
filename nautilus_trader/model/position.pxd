@@ -102,12 +102,7 @@ cdef class Position:
 
     cpdef void apply(self, OrderFilled event) except *
 
-    cpdef Money calculate_pnl(
-        self,
-        object avg_open,
-        object avg_close,
-        object quantity,
-    )
+    cpdef Money calculate_pnl(self, avg_open, avg_close, quantity)
     cpdef Money unrealized_pnl(self, QuoteTick last)
     cpdef Money total_pnl(self, QuoteTick last)
 

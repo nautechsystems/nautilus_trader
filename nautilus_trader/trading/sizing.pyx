@@ -64,11 +64,11 @@ cdef class PositionSizer:
             Price entry,
             Price stop_loss,
             Money equity,
-            risk,
-            commission_rate=Decimal(),
-            exchange_rate=Decimal(1),
-            hard_limit=None,
-            unit_batch_size=Decimal(1),
+            risk: Decimal,
+            commission_rate: Decimal=Decimal(),
+            exchange_rate: Decimal=Decimal(1),
+            hard_limit: Decimal=None,
+            unit_batch_size: Decimal=Decimal(1),
             int units=1,
     ):
         """Abstract method (implement in subclass)."""
@@ -77,7 +77,12 @@ cdef class PositionSizer:
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss):
         return abs(entry - stop_loss) / self.instrument.tick_size
 
-    cdef object _calculate_riskable_money(self, equity, risk, commission_rate):
+    cdef object _calculate_riskable_money(
+            self,
+            equity: Decimal,
+            risk: Decimal,
+            commission_rate: Decimal,
+    ):
         if equity <= 0:
             return Decimal()
         risk_money: Decimal = equity * risk
@@ -108,11 +113,11 @@ cdef class FixedRiskSizer(PositionSizer):
             Price entry,
             Price stop_loss,
             Money equity,
-            risk,
-            commission_rate=Decimal(),
-            exchange_rate=Decimal(1),
-            hard_limit=None,
-            unit_batch_size=Decimal(1),
+            risk: Decimal,
+            commission_rate: Decimal=Decimal(),
+            exchange_rate: Decimal=Decimal(1),
+            hard_limit: Decimal=None,
+            unit_batch_size: Decimal=Decimal(1),
             int units=1,
     ):
         """
