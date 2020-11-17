@@ -237,7 +237,7 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The total quantity.
-        close_price : Decimal
+        close_price : Decimal or Price
             The closing price.
         xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
@@ -255,7 +255,7 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(close_price, Decimal, "close_price")
+        Condition.type(close_price, (Decimal, Price), "close_price")
         Condition.not_none(close_price, "close_price")
         if self.is_quanto:
             Condition.type(xrate, Decimal, "xrate")
@@ -307,7 +307,7 @@ cdef class Instrument:
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        notional = self.calculate_notional(quantity, price.as_decimal(), xrate)
+        notional = self.calculate_notional(quantity, price, xrate)
         margin = notional / self.leverage * self.margin_initial
         margin += notional * self.taker_fee * 2
 
@@ -422,7 +422,7 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The quantity for the transaction.
-        avg_price : Decimal
+        avg_price : Decimal or Price
             The average transaction price.
         liquidity_side : LiquiditySide
             The liquidity side for the transaction.
@@ -444,8 +444,7 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(avg_price, Decimal, "avg_price")
-        Condition.not_none(avg_price, "avg_price")
+        Condition.type(avg_price, (Decimal, Price), "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         # xrate checked in calculate_notional
 
@@ -463,9 +462,9 @@ cdef class Instrument:
 
     cdef inline object _get_close_price(self, PositionSide side, QuoteTick last):
         if side == PositionSide.LONG:
-            return last.bid.as_decimal()
+            return last.bid
         elif side == PositionSide.SHORT:
-            return last.ask.as_decimal()
+            return last.ask
         else:
             raise RuntimeError(f"invalid PositionSide, "
                                f"was {PositionSideParser.to_string(side)}")

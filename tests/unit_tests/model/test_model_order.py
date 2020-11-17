@@ -672,7 +672,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
-        self.assertEqual(Price("1.00001"), order.avg_price)
+        self.assertEqual(Decimal("1.00001"), order.avg_price)
         self.assertEqual(1, len(order.execution_ids))
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
@@ -702,7 +702,7 @@ class OrderTests(unittest.TestCase):
             order.quantity,
             order.quantity,
             Quantity(),
-            Decimal("1.00001"),
+            Price("1.00001"),
             AUDUSD_FXCM.quote_currency,
             AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
@@ -724,7 +724,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
-        self.assertEqual(Price("1.00001"), order.avg_price)
+        self.assertEqual(Decimal("1.00001"), order.avg_price)
         self.assertEqual(Decimal("0.00001"), order.slippage)
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
@@ -754,7 +754,7 @@ class OrderTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Quantity(50000),
-            Decimal("0.999999"),
+            Price("0.999999"),
             AUDUSD_FXCM.quote_currency,
             AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
@@ -776,7 +776,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.PARTIALLY_FILLED, order.state)
         self.assertEqual(Quantity(50000), order.filled_qty)
         self.assertEqual(Price("1.00000"), order.price)
-        self.assertEqual(Price("0.999999"), order.avg_price)
+        self.assertEqual(Decimal("0.999999"), order.avg_price)
         self.assertEqual(Decimal("-0.000001"), order.slippage)
         self.assertFalse(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)

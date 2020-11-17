@@ -304,7 +304,7 @@ class EventTests(unittest.TestCase):
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),
             leaves_qty=Quantity(0),
-            avg_price=Decimal("15600.12445"),
+            fill_price=Price("15600.12445"),
             quote_currency=USDT,
             settlement_currency=USDT,
             is_inverse=False,
@@ -319,10 +319,10 @@ class EventTests(unittest.TestCase):
         self.assertEqual(f"OrderFilled(account_id=SIM-000-SIMULATED, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
                          f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
-                         f"cum_qty=0.561000, leaves_qty=0, avg_price=15600.12445 USDT, "
+                         f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                          f"commission=12.20000000 USDT, id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderFilled(account_id=SIM-000-SIMULATED, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
                          f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
-                         f"cum_qty=0.561000, leaves_qty=0, avg_price=15600.12445 USDT, "
+                         f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                          f"commission=12.20000000 USDT, id={uuid})", repr(event))  # noqa

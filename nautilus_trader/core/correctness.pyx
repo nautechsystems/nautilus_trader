@@ -159,7 +159,7 @@ cdef class Condition:
         ----------
         argument : object
             The object to check.
-        expected : object
+        expected : object or tuple of objects
             The expected class type.
         param : str
             The arguments parameter name.

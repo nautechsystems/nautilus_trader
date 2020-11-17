@@ -50,11 +50,11 @@ cdef str HIDDEN
 cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT
-cdef str FILLED_QUANTITY
+cdef str FILL_QUANTITY
+cdef str FILL_PRICE
 cdef str CUM_QUANTITY
 cdef str LEAVES_QUANTITY
 cdef str QUANTITY
-cdef str AVERAGE_PRICE
 cdef str COMMISSION
 cdef str PRICE
 cdef str CURRENCY

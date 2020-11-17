@@ -117,6 +117,7 @@ cdef class Order:
     cdef void _expired(self, OrderExpired event) except *
     cdef void _modified(self, OrderModified event) except *
     cdef void _filled(self, OrderFilled event) except *
+    cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity)
 
 
 cdef class PassiveOrder(Order):

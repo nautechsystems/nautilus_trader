@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -149,7 +150,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, self.strategy.object_storer.count)
         self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual(Price("90.003"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
+        self.assertEqual(Decimal("90.003"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
 
     def test_submit_limit_order(self):
         # Arrange
@@ -317,7 +318,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         # Assert
         self.assertEqual(5, self.strategy.object_storer.count)
         self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderFilled))
-        self.assertEqual("90.004", str(self.exec_engine.cache.order(order.cl_ord_id).avg_price))
+        self.assertEqual(Decimal("90.004"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
 
     def test_submit_order_with_no_market_rejects_order(self):
         # Arrange

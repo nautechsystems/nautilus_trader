@@ -805,7 +805,7 @@ cdef class OrderFilled(OrderEvent):
             Quantity fill_qty not None,
             Quantity cum_qty not None,
             Quantity leaves_qty not None,
-            object avg_price not None,
+            Price fill_price not None,
             Currency quote_currency not None,
             Currency settlement_currency not None,
             bint is_inverse,
@@ -842,8 +842,8 @@ cdef class OrderFilled(OrderEvent):
             The cumulative filled quantity for the order.
         leaves_qty : Quantity
             The quantity open for further execution.
-        avg_price : Decimal
-            The average price of the fill.
+        fill_price : Price
+            The fill price for this execution (not average).
         quote_currency : Currency
             The instrument quote currency.
         settlement_currency : Currency
@@ -863,7 +863,6 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
-        Condition.type(avg_price, Decimal, "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         super().__init__(
             cl_ord_id,
@@ -879,10 +878,10 @@ cdef class OrderFilled(OrderEvent):
         self.symbol = symbol
         self.order_side = order_side
         self.fill_qty = fill_qty
+        self.fill_price = fill_price
         self.cum_qty = cum_qty
         self.leaves_qty = leaves_qty
         self.is_partial_fill = leaves_qty > 0
-        self.avg_price = avg_price
         self.quote_currency = quote_currency
         self.settlement_currency = settlement_currency
         self.is_inverse = is_inverse
@@ -902,9 +901,9 @@ cdef class OrderFilled(OrderEvent):
                 f"side={OrderSideParser.to_string(self.order_side)}"
                 f"-{LiquiditySideParser.to_string(self.liquidity_side)}, "
                 f"fill_qty={self.fill_qty.to_string()}, "
+                f"fill_price={self.fill_price} {self.quote_currency.code}, "
                 f"cum_qty={self.cum_qty.to_string()}, "
                 f"leaves_qty={self.leaves_qty.to_string()}, "
-                f"avg_price={self.avg_price} {self.quote_currency.code}, "
                 f"commission={self.commission.to_string()}, "
                 f"id={self.id})")
 
