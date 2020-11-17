@@ -35,7 +35,6 @@ from scipy.stats import kurtosis
 from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport datetime_date
 from nautilus_trader.core.functions cimport fast_mean
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport PositionId
@@ -135,7 +134,7 @@ cdef class PerformanceAnalyzer:
         """
         Condition.not_none(timestamp, "time")
 
-        cdef date index_date = datetime_date(timestamp)
+        cdef date index_date = timestamp.date()
         if index_date not in self._daily_returns:
             self._daily_returns.loc[index_date] = 0
 

@@ -107,7 +107,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.exchange,
+            exchange=self.exchange,
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -165,7 +165,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         quote2 = QuoteTick(
             XBTUSD_BITMEX.symbol,
             Price("11493.60"),
-            Price("11493.65"),
+            Price("11493.64"),
             Quantity(1500000),
             Quantity(1500000),
             UNIX_EPOCH,

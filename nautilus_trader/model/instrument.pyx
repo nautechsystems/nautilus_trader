@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
-
 from cpython.datetime cimport datetime
+from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
@@ -44,9 +43,9 @@ cdef class Instrument:
             bint is_inverse,
             int price_precision,
             int size_precision,
-            object tick_size not None: decimal.Decimal,
-            object multiplier not None: decimal.Decimal,
-            object leverage not None: decimal.Decimal,
+            object tick_size not None: Decimal,
+            object multiplier not None: Decimal,
+            object leverage not None: Decimal,
             Quantity lot_size not None,
             Quantity max_quantity,  # Can be None
             Quantity min_quantity,  # Can be None
@@ -54,12 +53,12 @@ cdef class Instrument:
             Money min_notional,     # Can be None
             Price max_price,        # Can be None
             Price min_price,        # Can be None
-            object margin_initial not None: decimal.Decimal,
-            object margin_maintenance not None: decimal.Decimal,
-            object maker_fee not None: decimal.Decimal,
-            object taker_fee not None: decimal.Decimal,
-            object funding_rate_long not None: decimal.Decimal,
-            object funding_rate_short not None: decimal.Decimal,
+            object margin_initial not None: Decimal,
+            object margin_maintenance not None: Decimal,
+            object maker_fee not None: Decimal,
+            object taker_fee not None: Decimal,
+            object funding_rate_long not None: Decimal,
+            object funding_rate_short not None: Decimal,
             datetime timestamp not None,
     ):
         """
@@ -156,11 +155,11 @@ cdef class Instrument:
         Condition.not_equal(asset_type, AssetType.UNDEFINED, 'asset_type', 'UNDEFINED')
         Condition.not_negative_int(price_precision, 'price_precision')
         Condition.not_negative_int(size_precision, 'volume_precision')
-        Condition.type(tick_size, decimal.Decimal, "tick_size")
+        Condition.type(tick_size, Decimal, "tick_size")
         Condition.positive(tick_size, "tick_size")
-        Condition.type(multiplier, decimal.Decimal, "multiplier")
+        Condition.type(multiplier, Decimal, "multiplier")
         Condition.positive(multiplier, "multiplier")
-        Condition.type(leverage, decimal.Decimal, "leverage")
+        Condition.type(leverage, Decimal, "leverage")
         Condition.positive(leverage, "leverage")
         Condition.positive(lot_size, "lot_size")
         if max_quantity:
@@ -175,14 +174,14 @@ cdef class Instrument:
             Condition.positive(max_price, "max_price")
         if min_price:
             Condition.not_negative(min_price, "min_price")
-        Condition.type(margin_initial, decimal.Decimal, "margin_initial")
+        Condition.type(margin_initial, Decimal, "margin_initial")
         Condition.not_negative(margin_initial, "margin_initial")
-        Condition.type(margin_maintenance, decimal.Decimal, "margin_maintenance")
+        Condition.type(margin_maintenance, Decimal, "margin_maintenance")
         Condition.not_negative(margin_maintenance, "margin_maintenance")
-        Condition.type(maker_fee, decimal.Decimal, "maker_fee")
-        Condition.type(taker_fee, decimal.Decimal, "taker_fee")
-        Condition.type(funding_rate_long, decimal.Decimal, "funding_rate_long")
-        Condition.type(funding_rate_short, decimal.Decimal, "funding_rate_short")
+        Condition.type(maker_fee, Decimal, "maker_fee")
+        Condition.type(taker_fee, Decimal, "taker_fee")
+        Condition.type(funding_rate_long, Decimal, "funding_rate_long")
+        Condition.type(funding_rate_short, Decimal, "funding_rate_short")
 
         self.symbol = symbol
         self.asset_class = asset_class
@@ -238,9 +237,9 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The total quantity.
-        close_price : decimal.Decimal
+        close_price : Decimal
             The closing price.
-        xrate : decimal.Decimal, optional
+        xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -256,10 +255,10 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(close_price, decimal.Decimal, "close_price")
+        Condition.type(close_price, Decimal, "close_price")
         Condition.not_none(close_price, "close_price")
         if self.is_quanto:
-            Condition.type(xrate, decimal.Decimal, "xrate")
+            Condition.type(xrate, Decimal, "xrate")
 
         if self.is_inverse:
             close_price = 1 / close_price
@@ -286,7 +285,7 @@ cdef class Instrument:
             The order quantity.
         price : Price
             The order price.
-        xrate : decimal.Decimal, optional
+        xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -331,7 +330,7 @@ cdef class Instrument:
             The currency position quantity.
         last : QuoteTick
             The last quote tick.
-        xrate : decimal.Decimal, optional
+        xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -380,7 +379,7 @@ cdef class Instrument:
             The open quantity.
         last : QuoteTick
             The last quote tick.
-        xrate : decimal.Decimal, optional
+        xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
 
@@ -423,7 +422,7 @@ cdef class Instrument:
         ----------
         quantity : Quantity
             The quantity for the transaction.
-        avg_price : decimal.Decimal
+        avg_price : Decimal
             The average transaction price.
         liquidity_side : LiquiditySide
             The liquidity side for the transaction.
@@ -445,7 +444,7 @@ cdef class Instrument:
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(avg_price, decimal.Decimal, "avg_price")
+        Condition.type(avg_price, Decimal, "avg_price")
         Condition.not_none(avg_price, "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         # xrate checked in calculate_notional

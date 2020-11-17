@@ -81,9 +81,9 @@ cdef class Order:
     cdef readonly datetime filled_timestamp
     """The order last filled timestamp.\n\n:returns: `datetime`"""
     cdef readonly object avg_price
-    """The order average fill price.\n\n:returns: `decimal.Decimal`"""
+    """The order average fill price.\n\n:returns: `Decimal`"""
     cdef readonly object slippage
-    """The order total price slippage.\n\n:returns: `decimal.Decimal`"""
+    """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import random
+
 import pandas as pd
 
 from cpython.datetime cimport datetime
@@ -21,13 +23,15 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class TickDataWrangler:
+cdef class QuoteTickDataWrangler:
     """
     Provides a means of building lists of ticks from the given Pandas DataFrames
     of bid and ask data. Provided data can either be tick data or bar data.
@@ -41,7 +45,7 @@ cdef class TickDataWrangler:
             dict data_bars_ask=None,
     ):
         """
-        Initialize a new instance of the `TickDataWrangler` class.
+        Initialize a new instance of the `QuoteTickDataWrangler` class.
 
         Parameters
         ----------
@@ -57,20 +61,20 @@ cdef class TickDataWrangler:
         Raises
         ------
         ValueError
-            If tick_data not type None or DataFrame.
+            If data_ticks not type None or DataFrame.
         ValueError
             If bid_data not type None or dict.
         ValueError
             If ask_data not type None or dict.
         ValueError
-            If tick_data is None and the bars data is None.
+            If data_ticks is None and the bars data is None.
 
         """
-        Condition.type_or_none(data_ticks, pd.DataFrame, "tick_data")
+        Condition.type_or_none(data_ticks, pd.DataFrame, "data_ticks")
         Condition.type_or_none(data_bars_bid, dict, "bid_data")
         Condition.type_or_none(data_bars_ask, dict, "ask_data")
 
-        if data_ticks is not None and len(data_ticks) > 0:
+        if data_ticks is not None and not data_ticks.empty:
             self._data_ticks = as_utc_index(data_ticks)
         else:
             Condition.not_none(data_bars_bid, "data_bars_bid")
@@ -80,10 +84,10 @@ cdef class TickDataWrangler:
 
         self.instrument = instrument
 
-        self.tick_data = []
+        self.processed_data = []
         self.resolution = BarAggregation.UNDEFINED
 
-    cpdef void pre_process(self, int symbol_indexer) except *:
+    def pre_process(self, int symbol_indexer, random_seed=None):
         """
         Pre-process the tick data in preparation for building ticks.
 
@@ -91,18 +95,32 @@ cdef class TickDataWrangler:
         ----------
         symbol_indexer : int
             The symbol indexer for the built ticks.
+        random_seed : int, optional
+            The random seed for shuffling order of high and low ticks from bar
+            data. If random_seed is None then won't shuffle.
 
         """
-        if self._data_ticks is not None and len(self._data_ticks) > 0:
+        if random_seed is not None:
+            Condition.type(random_seed, int, "random_seed")
+
+        if self._data_ticks is not None and not self._data_ticks.empty:
             # Build ticks from data
-            self.tick_data = self._data_ticks
-            self.tick_data["symbol"] = symbol_indexer
+            self.processed_data = self._data_ticks
+            self.processed_data["symbol"] = symbol_indexer
 
-            if "bid_size" not in self.tick_data.columns:
-                self.tick_data["bid_size"] = 1.0
+            if "bid_size" not in self.processed_data.columns:
+                self.processed_data["bid_size"] = 1
 
-            if "ask_size" not in self.tick_data.columns:
-                self.tick_data["ask_size"] = 1.0
+            if "ask_size" not in self.processed_data.columns:
+                self.processed_data["ask_size"] = 1
+
+            # Pre-process prices into formatted strings
+            price_cols = ["bid", "ask"]
+            self._data_ticks[price_cols] = self._data_ticks[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
+
+            # Pre-process sizes into formatted strings
+            size_cols = ["bid_size", "ask_size"]
+            self._data_ticks[size_cols] = self._data_ticks[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
 
             self.resolution = BarAggregation.TICK
             return
@@ -127,72 +145,90 @@ cdef class TickDataWrangler:
 
         Condition.not_none(bars_bid, "bars_bid")
         Condition.not_none(bars_ask, "bars_ask")
-        Condition.true(len(bars_bid) > 0, "len(bars_bid) > 0")
-        Condition.true(len(bars_ask) > 0, "len(bars_ask) > 0")
+        Condition.false(bars_bid.empty, "bars_bid.empty")
+        Condition.false(bars_ask.empty, "bars_ask.empty")
         Condition.true(all(bars_bid.index) == all(bars_ask.index), "bars_bid.index == bars_ask.index")
         Condition.true(bars_bid.shape == bars_ask.shape, "bars_bid.shape == bars_ask.shape")
 
+        # Ensure index is tz-aware UTC
         bars_bid = as_utc_index(bars_bid)
         bars_ask = as_utc_index(bars_ask)
 
+        if "volume" not in bars_bid:
+            bars_bid["volume"] = 4
+
+        if "volume" not in bars_ask:
+            bars_ask["volume"] = 4
+
         cdef dict data_open = {
-            "bid": bars_bid["open"].values,
-            "ask": bars_ask["open"].values,
-            "bid_size": bars_bid["volume"].values,
-            "ask_size": bars_ask["volume"].values
+            "bid": bars_bid["open"],
+            "ask": bars_ask["open"],
+            "bid_size": bars_bid["volume"] / 4,
+            "ask_size": bars_ask["volume"] / 4,
         }
 
         cdef dict data_high = {
-            "bid": bars_bid["high"].values,
-            "ask": bars_ask["high"].values,
-            "bid_size": bars_bid["volume"].values,
-            "ask_size": bars_ask["volume"].values
+            "bid": bars_bid["high"],
+            "ask": bars_ask["high"],
+            "bid_size": bars_bid["volume"] / 4,
+            "ask_size": bars_ask["volume"] / 4,
         }
 
         cdef dict data_low = {
-            "bid": bars_bid["low"].values,
-            "ask": bars_ask["low"].values,
-            "bid_size": bars_bid["volume"].values,
-            "ask_size": bars_ask["volume"].values
+            "bid": bars_bid["low"],
+            "ask": bars_ask["low"],
+            "bid_size": bars_bid["volume"] / 4,
+            "ask_size": bars_ask["volume"] / 4,
         }
 
         cdef dict data_close = {
             "bid": bars_bid["close"],
             "ask": bars_ask["close"],
-            "bid_size": bars_bid["volume"],
-            "ask_size": bars_ask["volume"]
+            "bid_size": bars_bid["volume"] / 4,
+            "ask_size": bars_ask["volume"] / 4,
         }
 
-        df_ticks_o = pd.DataFrame(data=data_open, index=bars_bid.index.shift(periods=-100, freq="ms"))
-        df_ticks_h = pd.DataFrame(data=data_high, index=bars_bid.index.shift(periods=-100, freq="ms"))
-        df_ticks_l = pd.DataFrame(data=data_low, index=bars_bid.index.shift(periods=-100, freq="ms"))
+        df_ticks_o = pd.DataFrame(data=data_open)
+        df_ticks_h = pd.DataFrame(data=data_high)
+        df_ticks_l = pd.DataFrame(data=data_low)
         df_ticks_c = pd.DataFrame(data=data_close)
 
-        # Drop rows with no volume
-        df_ticks_o = df_ticks_o[(df_ticks_o[["bid_size"]] > 0).all(axis=1)]
-        df_ticks_h = df_ticks_h[(df_ticks_h[["bid_size"]] > 0).all(axis=1)]
-        df_ticks_l = df_ticks_l[(df_ticks_l[["bid_size"]] > 0).all(axis=1)]
-        df_ticks_c = df_ticks_c[(df_ticks_c[["bid_size"]] > 0).all(axis=1)]
-        df_ticks_o = df_ticks_o[(df_ticks_o[["ask_size"]] > 0).all(axis=1)]
-        df_ticks_h = df_ticks_h[(df_ticks_h[["ask_size"]] > 0).all(axis=1)]
-        df_ticks_l = df_ticks_l[(df_ticks_l[["ask_size"]] > 0).all(axis=1)]
-        df_ticks_c = df_ticks_c[(df_ticks_c[["ask_size"]] > 0).all(axis=1)]
+        # Pre-process prices into formatted strings
+        price_cols = ["bid", "ask"]
+        df_ticks_o[price_cols] = df_ticks_o[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
+        df_ticks_h[price_cols] = df_ticks_h[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
+        df_ticks_l[price_cols] = df_ticks_l[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
+        df_ticks_c[price_cols] = df_ticks_c[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
 
-        # Set high low tick volumes to zero
-        df_ticks_o["bid_size"] = 0
-        df_ticks_o["ask_size"] = 0
-        df_ticks_h["bid_size"] = 0
-        df_ticks_h["ask_size"] = 0
-        df_ticks_l["bid_size"] = 0
-        df_ticks_l["ask_size"] = 0
+        # Pre-process sizes into formatted strings
+        size_cols = ["bid_size", "ask_size"]
+        df_ticks_o[size_cols] = df_ticks_o[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
+        df_ticks_h[size_cols] = df_ticks_h[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
+        df_ticks_l[size_cols] = df_ticks_l[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
+        df_ticks_c[size_cols] = df_ticks_c[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
+
+        df_ticks_o.index = df_ticks_o.index.shift(periods=-300, freq="ms")
+        df_ticks_h.index = df_ticks_h.index.shift(periods=-200, freq="ms")
+        df_ticks_l.index = df_ticks_l.index.shift(periods=-100, freq="ms")
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
         df_ticks_final.sort_index(axis=0, kind="mergesort", inplace=True)
 
+        cdef int i
+        # Randomly shift high low prices
+        if random_seed is not None:
+            random.seed(random_seed)
+            for i in range(0, len(df_ticks_o)):
+                if random.getrandbits(1):
+                    high = df_ticks_h.iloc[i]
+                    low = df_ticks_l.iloc[i]
+                    df_ticks_final.iloc[i + 1] = low
+                    df_ticks_final.iloc[i + 2] = high
+
         # Build ticks from data
-        self.tick_data = df_ticks_final
-        self.tick_data["symbol"] = symbol_indexer
+        self.processed_data = df_ticks_final
+        self.processed_data["symbol"] = symbol_indexer
 
     cpdef list build_ticks(self):
         """
@@ -203,32 +239,89 @@ cdef class TickDataWrangler:
         list[QuoteTick]
 
         """
-        return list(map(self._build_tick_from_values_with_sizes,
-                        self.tick_data.values,
-                        pd.to_datetime(self.tick_data.index)))
+        return list(map(self._build_tick_from_values,
+                        self.processed_data.values,
+                        self.processed_data.index))
 
-    cpdef QuoteTick _build_tick_from_values_with_sizes(self, double[:] values, datetime timestamp):
-        # Build a tick from the given values. The function expects the values to
+    cpdef QuoteTick _build_tick_from_values(self, str[:] values, datetime timestamp):
+        # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
-            self.instrument.symbol,
-            Price(values[0], self.instrument.price_precision),
-            Price(values[1], self.instrument.price_precision),
-            Quantity(values[2], self.instrument.size_precision),
-            Quantity(values[3], self.instrument.size_precision),
-            timestamp,
+            symbol=self.instrument.symbol,
+            bid=Price(values[0], self.instrument.price_precision),
+            ask=Price(values[1], self.instrument.price_precision),
+            bid_size=Quantity(values[2], self.instrument.size_precision),
+            ask_size=Quantity(values[3], self.instrument.size_precision),
+            timestamp=timestamp,
         )
 
-    cpdef QuoteTick _build_tick_from_values(self, double[:] values, datetime timestamp):
-        # Build a tick from the given values. The function expects the values to
-        # be an ndarray with 2 elements [bid, ask] of type double.
-        return QuoteTick(
-            self.instrument.symbol,
-            Price(values[0], self.instrument.price_precision),
-            Price(values[1], self.instrument.price_precision),
-            Quantity(1),
-            Quantity(1),
-            timestamp,
+
+cdef class TradeTickDataWrangler:
+    """
+    Provides a means of building lists of trade ticks from the given DataFrame
+    of data.
+    """
+
+    def __init__(self, Instrument instrument not None, data not None: pd.DataFrame):
+        """
+        Initialize a new instance of the `TradeTickDataWrangler` class.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the data wrangler.
+        data : pd.DataFrame
+            The pd.DataFrame containing the tick data.
+
+        Raises
+        ------
+        ValueError
+            If processed_data not type None or DataFrame.
+
+        """
+        Condition.not_none(data, "data")
+        Condition.type_or_none(data, pd.DataFrame, "data")
+        Condition.true(not data.empty, "not data.empty")
+
+        self.instrument = instrument
+        self._data_ticks = as_utc_index(data)
+
+        self.processed_data = []
+
+    def pre_process(self, int symbol_indexer):
+        """
+        Pre-process the tick data in preparation for building ticks.
+
+        Parameters
+        ----------
+        symbol_indexer : int
+            The symbol indexer for the built ticks.
+
+        """
+        pass  # TODO: Implement
+
+    cpdef list build_ticks(self):
+        """
+        Build ticks from all data.
+
+        Returns
+        -------
+        list[TradeTick]
+
+        """
+        return list(map(self.processed_data.values,
+                        self.processed_data.index))
+
+    cpdef TradeTick _build_tick_from_values(self, str[:] values, datetime timestamp):
+        # Build a quote tick from the given values. The function expects the values to
+        # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
+        return TradeTick(
+            symbol=self.instrument.symbol,
+            price=Price(values[0]),
+            size=Quantity(values[1]),
+            maker=<Maker>values[2],
+            match_id=TradeMatchId(values[3]),
+            timestamp=timestamp,
         )
 
 
@@ -240,8 +333,8 @@ cdef class BarDataWrangler:
 
     def __init__(
             self,
-            int precision,
-            int volume_multiple=1,
+            int price_precision,
+            int size_precision,
             data: pd.DataFrame=None,
     ):
         """
@@ -249,31 +342,33 @@ cdef class BarDataWrangler:
 
         Parameters
         ----------
-        precision : int
+        price_precision : int
             The decimal precision for bar prices (>= 0).
-        volume_multiple : int
-            The volume multiple for the builder (> 0). This can be used to
-            transform decimalized volumes to integers.
+        size_precision : int
+            The decimal precision for bar volumes (>= 0).
         data : pd.DataFrame
             The the bars market data.
 
         Raises
         ------
         ValueError
-            If decimal_precision is negative (< 0).
+            If price_precision is negative (< 0).
         ValueError
-            If volume_multiple is not positive (> 0).
+            If size_precision is negative (< 0).
         ValueError
             If data not type DataFrame.
 
         """
-        Condition.not_negative_int(precision, "precision")
-        Condition.positive_int(volume_multiple, "volume_multiple")
+        Condition.not_negative_int(price_precision, "price_precision")
+        Condition.not_negative_int(size_precision, "size_precision")
         Condition.type(data, pd.DataFrame, "data")
 
-        self._precision = precision
-        self._volume_multiple = volume_multiple
+        self._price_precision = price_precision
+        self._size_precision = size_precision
         self._data = as_utc_index(data)
+
+        if "volume" not in self._data:
+            self._data["volume"] = 1
 
     cpdef list build_bars_all(self):
         """
@@ -322,10 +417,10 @@ cdef class BarDataWrangler:
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
-            Price(values[0], self._precision),
-            Price(values[1], self._precision),
-            Price(values[2], self._precision),
-            Price(values[3], self._precision),
-            Quantity(values[4] * self._volume_multiple, 0),
+            Price(values[0], self._price_precision),
+            Price(values[1], self._price_precision),
+            Price(values[2], self._price_precision),
+            Price(values[3], self._price_precision),
+            Quantity(values[4], self._size_precision),
             timestamp,
         )

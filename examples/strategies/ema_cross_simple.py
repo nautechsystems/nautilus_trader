@@ -39,7 +39,6 @@ class EMACross(TradingStrategy):
             bar_spec: BarSpecification,
             fast_ema: int=10,
             slow_ema: int=20,
-            extra_id_tag: str="",
     ):
         """
         Initialize a new instance of the `EMACross` class.
@@ -54,13 +53,11 @@ class EMACross(TradingStrategy):
             The fast EMA period.
         slow_ema : int
             The slow EMA period.
-        extra_id_tag : str
-            An additional order identifier tag.
 
         """
-        if extra_id_tag is None:
-            extra_id_tag = ""
-        super().__init__(order_id_tag=symbol.code.replace('/', "") + extra_id_tag)
+        # The order_id_tag should be unique at the 'trader level', here we are
+        # just using the traded instruments symbol as the strategy order id tag.
+        super().__init__(order_id_tag=symbol.code.replace('/', ""))
 
         # Custom strategy variables
         self.symbol = symbol
@@ -80,6 +77,7 @@ class EMACross(TradingStrategy):
         self.request_bars(self.bar_type)
 
         # Subscribe to live data
+        self.subscribe_quote_ticks(self.symbol)  # For debugging
         self.subscribe_bars(self.bar_type)
 
     def on_trade_tick(self, tick: TradeTick):
@@ -104,6 +102,7 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
+        # self.log.info(f"Received {tick}")  # For debugging
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -118,7 +117,7 @@ class EMACross(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} Bar({bar})")
+        self.log.info(f"Received {bar_type} {repr(bar)}")
 
         # Check if indicators ready
         if not self.indicators_initialized():

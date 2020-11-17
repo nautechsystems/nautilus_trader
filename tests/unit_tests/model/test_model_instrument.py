@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import decimal
+from decimal import Decimal
 import unittest
 
 from parameterized import parameterized
@@ -69,6 +69,7 @@ class InstrumentTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(int, type(result))
+        self.assertEqual(hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE))
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange
@@ -85,7 +86,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=decimal.Decimal(100))
+        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
         margin = instrument.calculate_order_margin(
@@ -121,7 +122,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=decimal.Decimal(100))
+        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
 
         last = QuoteTick(
             instrument.symbol,
@@ -195,7 +196,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(100000),
-            decimal.Decimal("11450.50"),
+            Decimal("11450.50"),
             LiquiditySide.MAKER,
         )
 
@@ -209,7 +210,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(1500000),
-            decimal.Decimal("0.80050"),
+            Decimal("0.80050"),
             LiquiditySide.TAKER,
         )
 
@@ -223,7 +224,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(100000),
-            decimal.Decimal("11450.50"),
+            Decimal("11450.50"),
             LiquiditySide.TAKER,
         )
 
@@ -237,7 +238,7 @@ class InstrumentTests(unittest.TestCase):
         # Act
         commission = instrument.calculate_commission(
             Quantity(2200000),
-            decimal.Decimal("120.310"),
+            Decimal("120.310"),
             LiquiditySide.TAKER,
         )
 

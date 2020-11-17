@@ -96,7 +96,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
-        self.market = SimulatedExchange(
+        self.exchange = SimulatedExchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -110,7 +110,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.exec_client = BacktestExecClient(
-            market=self.market,
+            exchange=self.exchange,
             account_id=account_id,
             engine=self.exec_engine,
             clock=self.clock,
@@ -119,10 +119,10 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.exec_engine.register_client(self.exec_client)
-        self.market.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
 
-        self.market.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
 
     def test_strategy_equality(self):
         # Arrange

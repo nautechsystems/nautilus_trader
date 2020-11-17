@@ -40,14 +40,6 @@ from cpython.object cimport Py_NE
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 
-cdef int _MATH_ADD = 0
-cdef int _MATH_SUB = 1
-cdef int _MATH_MUL = 2
-cdef int _MATH_DIV = 3
-cdef int _MATH_TRUEDIV = 4
-cdef int _MATH_FLOORDIV = 5
-cdef int _MATH_MOD = 6
-
 cdef str ROUND_HALF_EVEN = decimal.ROUND_HALF_EVEN
 
 
@@ -67,7 +59,7 @@ cdef class BaseDecimal:
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or BaseDecimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the decimal. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -95,7 +87,7 @@ cdef class BaseDecimal:
                 raise TypeError("precision cannot be inferred from a float, "
                                 "please specify a precision when passing a float")
             elif isinstance(value, BaseDecimal):
-                self._value = value._value
+                self._value = value.as_decimal()
             else:
                 self._value = decimal.Decimal(value)
         else:
@@ -134,38 +126,50 @@ cdef class BaseDecimal:
         return BaseDecimal._compare(self, other, Py_GE)
 
     def __add__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float) or isinstance(other, float):
-            return BaseDecimal._eval_double(self, other, _MATH_ADD)
+        if isinstance(self, float):
+            return self + float(other)
+        elif isinstance(other, float):
+            return float(self) + other
         else:
             return BaseDecimal._extract_value(self) + BaseDecimal._extract_value(other)
 
     def __sub__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float) or isinstance(other, float):
-            return BaseDecimal._eval_double(self, other, _MATH_SUB)
+        if isinstance(self, float):
+            return self - float(other)
+        elif isinstance(other, float):
+            return float(self) - other
         else:
             return BaseDecimal._extract_value(self) - BaseDecimal._extract_value(other)
 
     def __mul__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float) or isinstance(other, float):
-            return BaseDecimal._eval_double(self, other, _MATH_MUL)
+        if isinstance(self, float):
+            return self * float(other)
+        elif isinstance(other, float):
+            return float(self) * other
         else:
             return BaseDecimal._extract_value(self) * BaseDecimal._extract_value(other)
 
     def __truediv__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float) or isinstance(other, float):
-            return BaseDecimal._eval_double(self, other, _MATH_TRUEDIV)
+        if isinstance(self, float):
+            return self / float(other)
+        elif isinstance(other, float):
+            return float(self) / other
         else:
             return BaseDecimal._extract_value(self) / BaseDecimal._extract_value(other)
 
     def __floordiv__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float) or isinstance(other, float):
-            return BaseDecimal._eval_double(self, other, _MATH_FLOORDIV)
+        if isinstance(self, float):
+            return self // float(other)
+        elif isinstance(other, float):
+            return float(self) // other
         else:
             return BaseDecimal._extract_value(self) // BaseDecimal._extract_value(other)
 
     def __mod__(self, other) -> decimal.Decimal:
-        if isinstance(self, float) or isinstance(other, float):
-            return BaseDecimal._eval_double(self, other, _MATH_MOD)
+        if isinstance(self, float):
+            return self % float(other)
+        elif isinstance(other, float):
+            return float(self) % other
         else:
             return BaseDecimal._extract_value(self) % BaseDecimal._extract_value(other)
 
@@ -199,36 +203,17 @@ cdef class BaseDecimal:
     @staticmethod
     cdef inline object _extract_value(object obj):
         if isinstance(obj, BaseDecimal):
-            return obj._value
+            return obj.as_decimal()
         return obj
 
     @staticmethod
     cdef inline bint _compare(a, b, int op) except *:
         if isinstance(a, BaseDecimal):
-            a = <BaseDecimal>a._value
+            a = <BaseDecimal>a.as_decimal()
         if isinstance(b, BaseDecimal):
-            b = <BaseDecimal>b._value
+            b = <BaseDecimal>b.as_decimal()
 
         return PyObject_RichCompareBool(a, b, op)
-
-    @staticmethod
-    cdef inline double _eval_double(double a, double b, int op) except *:
-        if op == _MATH_ADD:
-            return a + b
-        elif op == _MATH_SUB:
-            return a - b
-        elif op == _MATH_MUL:
-            return a * b
-        elif op == _MATH_DIV:
-            return a / b
-        elif op == _MATH_TRUEDIV:
-            return a / b
-        elif op == _MATH_FLOORDIV:
-            return a // b
-        elif op == _MATH_MOD:
-            return a % b
-        else:
-            return NotImplemented
 
     @property
     def precision(self):
@@ -247,11 +232,11 @@ cdef class BaseDecimal:
 
     cpdef object as_decimal(self):
         """
-        Return the value as a built-in `decimal.Decimal`.
+        Return the value as a built-in `Decimal`.
 
         Returns
         -------
-        decimal.Decimal
+        Decimal
 
         """
         return self._value
@@ -294,7 +279,7 @@ cdef class Quantity(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or BaseDecimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the quantity. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -359,7 +344,7 @@ cdef class Price(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or Decimal
+        value : integer, float, string, Decimal or Decimal
             The value of the price. If value is a float, then a precision must
             be specified.
         precision : int, optional
@@ -403,7 +388,7 @@ cdef class Money(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, decimal.Decimal or BaseDecimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the money.
         currency : Currency
             The currency of the money.
@@ -424,22 +409,22 @@ cdef class Money(BaseDecimal):
         self.currency = currency
 
     def __eq__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value == other._value
+        return self.currency == other.currency and self._value == other.as_decimal()
 
     def __ne__(self, Money other) -> bool:
         return not self == other
 
     def __lt__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value < other._value
+        return self.currency == other.currency and self._value < other.as_decimal()
 
     def __le__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value <= other._value
+        return self.currency == other.currency and self._value <= other.as_decimal()
 
     def __gt__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value > other._value
+        return self.currency == other.currency and self._value > other.as_decimal()
 
     def __ge__(self, Money other) -> bool:
-        return self.currency == other.currency and self._value >= other._value
+        return self.currency == other.currency and self._value >= other.as_decimal()
 
     def __hash__(self) -> int:
         return hash((self.currency, self._value))
