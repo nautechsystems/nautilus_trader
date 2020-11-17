@@ -224,7 +224,7 @@ cdef class TradingStrategy:
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_data(self, object data) except *:
+    cpdef void on_data(self, data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 
@@ -641,7 +641,7 @@ cdef class TradingStrategy:
         for i in range(length):
             self.handle_bar(bar_type, bars[i], is_historical=True)
 
-    cpdef void handle_data(self, object data) except *:
+    cpdef void handle_data(self, data) except *:
         """
         Handle the given data object.
 

@@ -255,7 +255,7 @@ cdef class DataEngine:
 
         self._execute_command(command)
 
-    cpdef void process(self, object data) except *:
+    cpdef void process(self, data) except *:
         """
         Process the given data.
 
@@ -744,7 +744,7 @@ cdef class DataEngine:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef inline void _handle_data(self, object data) except *:
+    cdef inline void _handle_data(self, data) except *:
         # Not logging every data item received
         self.data_count += 1
 

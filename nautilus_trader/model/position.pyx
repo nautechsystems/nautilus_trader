@@ -344,9 +344,9 @@ cdef class Position:
 
     cpdef Money calculate_pnl(
             self,
-            object avg_open,
-            object avg_close,
-            object quantity,
+            avg_open: Decimal,
+            avg_close: Decimal,
+            quantity: Decimal,
     ):
         """
         Return the calculated PNL from the given parameters.
@@ -470,7 +470,7 @@ cdef class Position:
         self._sell_quantity = self._sell_quantity + event.fill_qty
         self.relative_quantity = self.relative_quantity - event.fill_qty
 
-    cdef inline object _calculate_cost(self, avg_price, total_quantity):
+    cdef inline object _calculate_cost(self, avg_price: Decimal, total_quantity: Decimal):
         return avg_price * total_quantity
 
     cdef inline object _calculate_avg_open_price(self, OrderFilled event):
@@ -488,16 +488,16 @@ cdef class Position:
 
     cdef inline object _calculate_avg_price(
         self,
-        object avg_price,
-        object quantity,
+        avg_price: Decimal,
+        quantity: Decimal,
         OrderFilled event,
     ):
-        start_cost = self._calculate_cost(avg_price, quantity)
-        event_cost = self._calculate_cost(event.avg_price, event.fill_qty)
-        cumulative_quantity = quantity + event.fill_qty
+        start_cost: Decimal = self._calculate_cost(avg_price, quantity)
+        event_cost: Decimal = self._calculate_cost(event.avg_price, event.fill_qty)
+        cumulative_quantity: Decimal = quantity + event.fill_qty
         return (start_cost + event_cost) / cumulative_quantity
 
-    cdef inline object _calculate_points(self, avg_open, avg_close):
+    cdef inline object _calculate_points(self, avg_open: Decimal, avg_close: Decimal):
         if self.side == PositionSide.LONG:
             return avg_close - avg_open
         elif self.side == PositionSide.SHORT:
@@ -505,7 +505,7 @@ cdef class Position:
         else:
             return Decimal()  # FLAT
 
-    cdef inline object _calculate_points_inverse(self, avg_open, avg_close):
+    cdef inline object _calculate_points_inverse(self, avg_open: Decimal, avg_close: Decimal):
         if self.side == PositionSide.LONG:
             return (1 / avg_open) - (1 / avg_close)
         elif self.side == PositionSide.SHORT:
@@ -513,7 +513,7 @@ cdef class Position:
         else:
             return Decimal()  # FLAT
 
-    cdef inline object _calculate_return(self, avg_open, avg_close):
+    cdef inline object _calculate_return(self, avg_open: Decimal, avg_close: Decimal):
         return self._calculate_points(avg_open, avg_close) / avg_open
 
     cdef inline object _get_close_price(self, QuoteTick last):
