@@ -40,7 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.strategies import TestStrategy
+from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -52,7 +52,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.strategies = [TestStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())]
+        self.strategies = [MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())]
 
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -118,7 +118,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
-        self.strategy = TestStrategy(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
+        self.strategy = MockStrategy(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
         self.strategy.register_trader(
             self.trader_id,
             self.clock,
@@ -175,7 +175,7 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         self.portfolio.update_tick(quote2)
 
         # Assert
-        self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[3].liquidity_side)
-        self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[8].liquidity_side)
-        self.assertEqual(Money(0.00652529, BTC), self.strategy.object_storer.get_store()[3].commission)
-        self.assertEqual(Money(-0.00217511, BTC), self.strategy.object_storer.get_store()[8].commission)
+        self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[2].liquidity_side)
+        self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[7].liquidity_side)
+        self.assertEqual(Money(0.00652529, BTC), self.strategy.object_storer.get_store()[2].commission)
+        self.assertEqual(Money(-0.00217511, BTC), self.strategy.object_storer.get_store()[7].commission)
