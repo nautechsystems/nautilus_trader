@@ -784,7 +784,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.wrangler = QuoteTickDataWrangler(
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
-            data_ticks=tick_data,
+            data_quotes=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
         )

@@ -14,6 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -29,14 +31,14 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data_provider import TestDataProvider
 
 
 if __name__ == "__main__":
     # Setup trading instruments
-    exchange = Exchange('BINANCE')
+    exchange = Venue('BINANCE')
     symbol = Symbol('ETH/USDT', exchange)
     ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
@@ -48,9 +50,10 @@ if __name__ == "__main__":
     # Instantiate your strategy
     strategy = EMACross(
         symbol=ETHUSDT_BINANCE.symbol,
-        bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.MID),
+        bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
         fast_ema=10,
         slow_ema=20,
+        trade_size=Decimal(100),
     )
 
     # Customize the backtest configuration (optional)
@@ -100,7 +103,7 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
-        print(engine.trader.generate_account_report(AccountId.from_string("SIM-000-SIMULATED")))
+        print(engine.trader.generate_account_report(AccountId.from_string("BINANCE-000-SIMULATED")))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

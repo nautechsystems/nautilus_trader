@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
-from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader

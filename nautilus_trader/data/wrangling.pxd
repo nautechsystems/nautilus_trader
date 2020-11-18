@@ -23,7 +23,7 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class QuoteTickDataWrangler:
-    cdef object _data_ticks
+    cdef object _data_quotes
     cdef dict _data_bars_ask
     cdef dict _data_bars_bid
 
@@ -36,7 +36,7 @@ cdef class QuoteTickDataWrangler:
 
 
 cdef class TradeTickDataWrangler:
-    cdef object _data_ticks
+    cdef object _data_trades
 
     cdef readonly Instrument instrument
     cdef readonly processed_data

@@ -15,6 +15,7 @@
 
 import cProfile
 from datetime import datetime
+from decimal import Decimal
 import os
 import pstats
 import unittest
@@ -96,20 +97,23 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        strategies = [EMACross(
+        strategy = EMACross(
             symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
+            trade_size=Decimal(1000000),
             fast_ema=10,
-            slow_ema=20)]
+            slow_ema=20,
+        )
 
         config = BacktestConfig(
             exec_db_type="in-memory",
             bypass_logging=True,
-            console_prints=False)
+            console_prints=False,
+        )
 
         engine = BacktestEngine(
             data=data,
-            strategies=strategies,
+            strategies=[strategy],
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -133,11 +137,13 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        strategies = [EMACross(
+        strategy = EMACross(
             symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
+            trade_size=Decimal(1000000),
             fast_ema=10,
-            slow_ema=20)]
+            slow_ema=20,
+        )
 
         config = BacktestConfig(
             exec_db_type="in-memory",
@@ -147,7 +153,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         engine = BacktestEngine(
             data=data,
-            strategies=strategies,
+            strategies=[strategy],
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,

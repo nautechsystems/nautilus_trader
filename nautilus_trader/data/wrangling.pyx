@@ -23,7 +23,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.c_enums.maker cimport MakerParser
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -40,7 +40,7 @@ cdef class QuoteTickDataWrangler:
     def __init__(
             self,
             Instrument instrument not None,
-            data_ticks: pd.DataFrame=None,
+            data_quotes: pd.DataFrame=None,
             dict data_bars_bid=None,
             dict data_bars_ask=None,
     ):
@@ -51,8 +51,8 @@ cdef class QuoteTickDataWrangler:
         ----------
         instrument : Instrument
             The instrument for the data wrangler.
-        data_ticks : pd.DataFrame, optional
-            The pd.DataFrame containing the tick data.
+        data_quotes : pd.DataFrame, optional
+            The pd.DataFrame containing the quote tick data.
         data_bars_bid : dict[BarAggregation, pd.DataFrame], optional
             The bars bid data.
         data_bars_ask : dict[BarAggregation, pd.DataFrame], optional
@@ -70,12 +70,12 @@ cdef class QuoteTickDataWrangler:
             If data_ticks is None and the bars data is None.
 
         """
-        Condition.type_or_none(data_ticks, pd.DataFrame, "data_ticks")
+        Condition.type_or_none(data_quotes, pd.DataFrame, "data_ticks")
         Condition.type_or_none(data_bars_bid, dict, "bid_data")
         Condition.type_or_none(data_bars_ask, dict, "ask_data")
 
-        if data_ticks is not None and not data_ticks.empty:
-            self._data_ticks = as_utc_index(data_ticks)
+        if data_quotes is not None and not data_quotes.empty:
+            self._data_quotes = as_utc_index(data_quotes)
         else:
             Condition.not_none(data_bars_bid, "data_bars_bid")
             Condition.not_none(data_bars_ask, "data_bars_ask")
@@ -103,9 +103,9 @@ cdef class QuoteTickDataWrangler:
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
 
-        if self._data_ticks is not None and not self._data_ticks.empty:
+        if self._data_quotes is not None and not self._data_quotes.empty:
             # Build ticks from data
-            self.processed_data = self._data_ticks
+            self.processed_data = self._data_quotes
             self.processed_data["symbol"] = symbol_indexer
 
             if "bid_size" not in self.processed_data.columns:
@@ -116,11 +116,11 @@ cdef class QuoteTickDataWrangler:
 
             # Pre-process prices into formatted strings
             price_cols = ["bid", "ask"]
-            self._data_ticks[price_cols] = self._data_ticks[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
+            self._data_quotes[price_cols] = self._data_quotes[price_cols].applymap(lambda x: f'{x:.{self.instrument.price_precision}f}')
 
             # Pre-process sizes into formatted strings
             size_cols = ["bid_size", "ask_size"]
-            self._data_ticks[size_cols] = self._data_ticks[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
+            self._data_quotes[size_cols] = self._data_quotes[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
 
             self.resolution = BarAggregation.TICK
             return
@@ -226,7 +226,6 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 1] = low
                     df_ticks_final.iloc[i + 2] = high
 
-        # Build ticks from data
         self.processed_data = df_ticks_final
         self.processed_data["symbol"] = symbol_indexer
 
@@ -284,7 +283,7 @@ cdef class TradeTickDataWrangler:
         Condition.true(not data.empty, "not data.empty")
 
         self.instrument = instrument
-        self._data_ticks = as_utc_index(data)
+        self._data_trades = as_utc_index(data)
 
         self.processed_data = []
 
@@ -298,7 +297,14 @@ cdef class TradeTickDataWrangler:
             The symbol indexer for the built ticks.
 
         """
-        pass  # TODO: Implement
+        processed_trades = pd.DataFrame(index=self._data_trades.index)
+        processed_trades["price"] = self._data_trades["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
+        processed_trades["quantity"] = self._data_trades["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
+        processed_trades["buyer_maker"] = self._data_trades["buyer_maker"].apply(lambda x: "BUYER" if x is True else "SELLER")
+        processed_trades["match_id"] = self._data_trades["trade_id"].apply(str)
+        processed_trades["symbol"] = symbol_indexer
+
+        self.processed_data = processed_trades
 
     cpdef list build_ticks(self):
         """
@@ -319,7 +325,7 @@ cdef class TradeTickDataWrangler:
             symbol=self.instrument.symbol,
             price=Price(values[0]),
             size=Quantity(values[1]),
-            maker=<Maker>values[2],
+            maker=MakerParser.from_string(values[2]),
             match_id=TradeMatchId(values[3]),
             timestamp=timestamp,
         )

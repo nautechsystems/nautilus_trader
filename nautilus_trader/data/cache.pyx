@@ -34,6 +34,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -296,7 +297,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list symbols(self):
         """
-        All instrument symbols held by the data cache.
+        Return all instrument symbols held by the data cache.
 
         Returns
         -------
@@ -306,7 +307,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list instruments(self):
         """
-        All instruments held by the data cache.
+        Return all instruments held by the data cache.
 
         Returns
         -------
@@ -317,7 +318,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list quote_ticks(self, Symbol symbol):
         """
-        The quote ticks for the given symbol.
+        Return the quote ticks for the given symbol.
 
         Parameters
         ----------
@@ -335,7 +336,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list trade_ticks(self, Symbol symbol):
         """
-        The trade ticks for the given symbol.
+        Return trade ticks for the given symbol.
 
         Parameters
         ----------
@@ -353,7 +354,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef list bars(self, BarType bar_type):
         """
-        The bars for the given bar type.
+        Return bars for the given bar type.
 
         Parameters
         ----------
@@ -371,7 +372,7 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef Instrument instrument(self, Symbol symbol):
         """
-        Find the instrument corresponding to the given symbol.
+        Return the instrument corresponding to the given symbol.
 
         Parameters
         ----------
@@ -387,10 +388,45 @@ cdef class DataCache(DataCacheFacade):
 
         return self._instruments.get(symbol)
 
+    cpdef Price price(self, Symbol symbol, PriceType price_type):
+        """
+        Return the price for the given symbol and price type.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the price.
+        price_type : PriceType
+            The price type for the query.
+
+        Returns
+        -------
+        Price or None
+
+        Raises
+        ------
+        ValueError
+            If price_type is UNDEFINED.
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_equal(price_type, PriceType.UNDEFINED, "price_type", "UNDEFINED")
+
+        cdef TradeTick trade_tick
+        cdef QuoteTick quote_tick
+
+        if price_type == PriceType.LAST:
+            trade_tick = self.trade_tick(symbol)
+            return trade_tick.price if trade_tick is not None else None
+        else:
+            quote_tick = self.quote_tick(symbol)
+            return quote_tick.extract_price(price_type) if quote_tick is not None else None
+
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
-        Find the quote tick for the given symbol at the given index, or last
-        if no index specified.
+        Return the quote tick for the given symbol at the given index.
+
+        Last quote tick if no index specified.
 
         Parameters
         ----------
@@ -422,8 +458,9 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=0):
         """
-        Find the trade tick for the given symbol at the given index or last,
-        if no index specified.
+        Return the trade tick for the given symbol at the given index
+
+        Last trade tick if no index specified.
 
         Parameters
         ----------
@@ -455,8 +492,9 @@ cdef class DataCache(DataCacheFacade):
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """
-        Find the bar for the given bar type at the given index, or last if no
-        index specified.
+        Return the bar for the given bar type at the given index.
+
+        Last bar if no index specified.
 
         Parameters
         ----------

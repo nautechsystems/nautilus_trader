@@ -17,6 +17,7 @@ from datetime import datetime
 from decimal import Decimal
 import unittest
 
+from parameterized import parameterized
 import pytz
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -28,6 +29,7 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
@@ -146,6 +148,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertFalse(self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid()))
 
     def test_symbols_when_one_instrument_returns_expected_list(self):
+        # Arrange
         instrument = InstrumentLoader.ethusdt_binance()
 
         self.cache.add_instrument(instrument)
@@ -157,6 +160,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertEqual([instrument.symbol], result)
 
     def test_instruments_when_one_instrument_returns_expected_list(self):
+        # Arrange
         instrument = InstrumentLoader.ethusdt_binance()
 
         self.cache.add_instrument(instrument)
@@ -168,6 +172,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertEqual([instrument], result)
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
+        # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM.symbol,
             Price("1.00000"),
@@ -186,6 +191,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertEqual([tick], result)
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
+        # Arrange
         tick = TradeTick(
             AUDUSD_FXCM.symbol,
             Price("1.00000"),
@@ -223,7 +229,112 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertTrue([bar], result)
 
+    def test_instrument_when_no_instrument_returns_none(self):
+        # Arrange
+        # Act
+        result = self.cache.instrument(AUDUSD_FXCM.symbol)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_instrument_when_instrument_exists_returns_expected(self):
+        self.cache.add_instrument(AUDUSD_FXCM)
+
+        # Act
+        result = self.cache.instrument(AUDUSD_FXCM.symbol)
+
+        # Assert
+        self.assertEqual(AUDUSD_FXCM, result)
+
+    def test_price_when_no_ticks_returns_none(self):
+        # Act
+        result = self.cache.price(AUDUSD_FXCM.symbol, PriceType.LAST)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_price_given_last_when_no_trade_ticks_returns_none(self):
+        # Act
+        tick = QuoteTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Price("1.00001"),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        result = self.cache.price(AUDUSD_FXCM.symbol, PriceType.LAST)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
+        # Arrange
+        tick = TradeTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Quantity(10000),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.price(AUDUSD_FXCM.symbol, PriceType.MID)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_price_given_last_when_trade_tick_returns_expected_price(self):
+        # Arrange
+        tick = TradeTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Quantity(10000),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.price(AUDUSD_FXCM.symbol, PriceType.LAST)
+
+        # Assert
+        self.assertEqual(Price("1.00000"), result)
+
+    @parameterized.expand([
+        [PriceType.BID, Price("1.00000")],
+        [PriceType.ASK, Price("1.00001")],
+        [PriceType.MID, Price("1.000005")],
+    ])
+    def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(self, price_type, expected):
+        # Arrange
+        tick = QuoteTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Price("1.00001"),
+            Quantity(1),
+            Quantity(1),
+            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.price(AUDUSD_FXCM.symbol, price_type)
+
+        # Assert
+        self.assertEqual(expected, result)
+
     def test_quote_tick_when_index_out_of_range_returns_none(self):
+        # Arrange
         tick = QuoteTick(
             AUDUSD_FXCM.symbol,
             Price("1.00000"),
@@ -243,6 +354,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_quote_tick_with_two_ticks_returns_expected_tick(self):
+        # Arrange
         tick1 = QuoteTick(
             AUDUSD_FXCM.symbol,
             Price("1.00000"),
@@ -272,6 +384,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertEqual(tick2, result)
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
+        # Arrange
         tick = TradeTick(
             AUDUSD_FXCM.symbol,
             Price("1.00000"),
@@ -291,6 +404,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_trade_tick_with_one_tick_returns_expected_tick(self):
+        # Arrange
         tick1 = TradeTick(
             AUDUSD_FXCM.symbol,
             Price("1.00000"),
@@ -320,6 +434,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertEqual(tick2, result)
 
     def test_bar_index_out_of_range_returns_expected_bar(self):
+        # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
             Price("1.00001"),
@@ -340,6 +455,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_bar_with_two_bars_returns_expected_bar(self):
+        # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar1 = Bar(
             Price("1.00001"),
