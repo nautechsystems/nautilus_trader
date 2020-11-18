@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
 from nautilus_trader.backtest.config import BacktestConfig
@@ -79,6 +80,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         strategy = EMACross(
             symbol=self.usdjpy.symbol,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1000000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -96,6 +98,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         strategy = EMACross(
             symbol=self.usdjpy.symbol,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1000000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -116,6 +119,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         strategy1 = EMACross(
             symbol=self.usdjpy.symbol,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1000000),
             fast_ema=10,
             slow_ema=20,
             extra_id_tag='001',
@@ -124,10 +128,15 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         strategy2 = EMACross(
             symbol=self.usdjpy.symbol,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1000000),
             fast_ema=20,
             slow_ema=40,
             extra_id_tag='002',
         )
+
+        # Note since these strategies are operating on the same symbol as per
+        # the EMACross BUY/SELL logic they will be flattening each others positions.
+        # The purpose of the test is just to ensure multiple strategies can run together.
 
         # Act
         self.engine.run(strategies=[strategy1, strategy2])
@@ -136,7 +145,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2689, strategy1.fast_ema.count)
         self.assertEqual(2689, strategy2.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(Money(948357.20, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(994553.21, USD), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
@@ -183,6 +192,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         strategy = EMACross(
             symbol=self.gbpusd.symbol,
             bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.MID),
+            trade_size=Decimal(1000000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -239,6 +249,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         strategy = EMACross(
             symbol=self.audusd.symbol,
             bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+            trade_size=Decimal(1000000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -256,6 +267,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         strategy = EMACross(
             symbol=self.audusd.symbol,
             bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
+            trade_size=Decimal(1000000),
             fast_ema=10,
             slow_ema=20,
         )

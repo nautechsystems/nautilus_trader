@@ -64,7 +64,7 @@ cdef class BacktestDataProducer(DataClient):
     cdef str[:] _trade_prices
     cdef str[:] _trade_sizes
     cdef str[:] _trade_match_ids
-    cdef unsigned short[:] _trade_makers
+    cdef str[:] _trade_makers
     cdef datetime[:] _trade_timestamps
     cdef int _trade_index
     cdef int _trade_index_last

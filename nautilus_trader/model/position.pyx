@@ -378,39 +378,33 @@ cdef class Position:
 
         return Money(points * quantity, self.settlement_currency)
 
-    cpdef Money unrealized_pnl(self, QuoteTick last):
+    cpdef Money unrealized_pnl(self, Price last):
         """
         Return the unrealized PNL from the given last quote tick.
 
         Parameters
         ----------
-        last : QuoteTick
-            The last tick for the calculation.
+        last : Price
+            The position symbols last price.
 
         Returns
         -------
         Money
             In the settlement currency.
 
-        Raises
-        ------
-        ValueError
-            If last.symbol != self.symbol
-
         """
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
         if self.side == PositionSide.FLAT:
             return Money(0, self.settlement_currency)
 
         return self.calculate_pnl(
             avg_open=self.avg_open,
-            avg_close=self._get_close_price(last),
+            avg_close=last,
             quantity=self.quantity,
         )
 
-    cpdef Money total_pnl(self, QuoteTick last):
+    cpdef Money total_pnl(self, Price last):
         """
         Return the total PNL from the given last quote tick.
 
@@ -424,14 +418,8 @@ cdef class Position:
         Money
             In the settlement currency.
 
-        Raises
-        ------
-        ValueError
-            If last.symbol != self.symbol
-
         """
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
 
         return Money(self.realized_pnl + self.unrealized_pnl(last), self.settlement_currency)
 

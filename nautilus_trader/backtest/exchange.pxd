@@ -43,7 +43,9 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -92,7 +94,9 @@ cdef class SimulatedExchange:
     cpdef void reset(self) except *
     cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
-    cpdef void process_tick(self, QuoteTick tick) except *
+    cpdef void process_tick(self, Tick tick) except *
+    cdef inline void _process_quote_tick(self, QuoteTick tick) except *
+    cdef inline void _process_trade_tick(self, TradeTick tick) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

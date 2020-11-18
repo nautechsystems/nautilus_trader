@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
+from decimal import Decimal
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
@@ -227,6 +228,7 @@ class EMACross(TradingStrategy):
             self,
             symbol: Symbol,
             bar_spec: BarSpecification,
+            trade_size: Decimal,
             fast_ema: int=10,
             slow_ema: int=20,
             extra_id_tag: str="",
@@ -240,6 +242,8 @@ class EMACross(TradingStrategy):
             The symbol for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
+        trade_size : Decimal
+            The position size per trade.
         fast_ema : int
             The fast EMA period.
         slow_ema : int
@@ -255,6 +259,7 @@ class EMACross(TradingStrategy):
         # Custom strategy variables
         self.symbol = symbol
         self.bar_type = BarType(symbol, bar_spec)
+        self.trade_size = trade_size
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -319,59 +324,39 @@ class EMACross(TradingStrategy):
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.symbol):
-                self.buy(1000000)
-            elif self.portfolio.is_net_long(self.symbol):
-                pass
-            else:
-                positions = self.execution.positions_open()
-                if len(positions) > 0:
-                    self.flatten_position(positions[0])
-                    self.buy(1000000)
+                self.buy()
+            elif self.portfolio.is_net_short(self.symbol):
+                self.flatten_all_positions(self.symbol)
+                self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.symbol):
-                self.sell(1000000)
-            elif self.portfolio.is_net_short(self.symbol):
-                pass
-            else:
-                positions = self.execution.positions_open()
-                if len(positions) > 0:
-                    self.flatten_position(positions[0])
-                    self.sell(1000000)
+                self.sell()
+            elif self.portfolio.is_net_long(self.symbol):
+                self.flatten_all_positions(self.symbol)
+                self.sell()
 
-    def buy(self, quantity: int):
+    def buy(self):
         """
         Users simple buy method (example).
-
-        Parameters
-        ----------
-        quantity : int
-            The quantity for the buy order.
-
         """
         order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
-            quantity=Quantity(quantity),
+            quantity=Quantity(self.trade_size),
         )
 
         self.submit_order(order)
 
-    def sell(self, quantity: int):
+    def sell(self):
         """
         Users simple sell method (example).
-
-        Parameters
-        ----------
-        quantity : int
-            The quantity for the sell order.
-
         """
         order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
-            quantity=Quantity(quantity),
+            quantity=Quantity(self.trade_size),
         )
 
         self.submit_order(order)

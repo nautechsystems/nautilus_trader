@@ -31,6 +31,8 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -42,6 +44,7 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 
 
@@ -630,7 +633,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Position position
         cdef Instrument instrument
-        cdef QuoteTick last
+        cdef Price last
         for position in positions_open:
             instrument = self._data.instrument(position.symbol)
             if instrument is None:
@@ -638,10 +641,10 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(no instrument for {position.symbol}).")
                 return None  # Cannot calculate
 
-            last = self._data.quote_tick(position.symbol)
+            last = self._get_last_price(position)  # TODO: Optimize
             if last is None:
                 self._log.error(f"Cannot calculate open value "
-                                f"(no quotes for {position.symbol}).")
+                                f"(no prices for {position.symbol}).")
                 continue  # Cannot calculate
 
             xrate_quanto, xrate_account = self._calculate_xrates(
@@ -760,10 +763,12 @@ cdef class Portfolio(PortfolioFacade):
             ) * xrate_account
 
         cdef Money order_margin = Money(margin, account.currency)
-        account.update_order_margin(order_margin)
 
-        self._log.info(f"Updated {venue} order initial margin to "
-                       f"{order_margin.to_string()}")
+        if order_margin != account.order_margin():
+            account.update_order_margin(order_margin)
+
+            self._log.info(f"Updated {venue} order initial margin to "
+                           f"{order_margin.to_string()}")
 
     cdef inline void _update_position_margin(self, Venue venue):
         cdef Account account = self._accounts.get(venue)
@@ -780,6 +785,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Position position
         cdef Instrument instrument
+        cdef Price last
         for position in open_positions:
             instrument = self._data.instrument(position.symbol)
             if instrument is None:
@@ -790,10 +796,10 @@ cdef class Portfolio(PortfolioFacade):
             if instrument.leverage == 1:
                 continue  # No margin necessary
 
-            last = self._data.quote_tick(position.symbol)
+            last = self._get_last_price(position)  # TODO: Optimize
             if last is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
-                                f"(no quotes for {position.symbol}).")
+                                f"(no prices for {position.symbol}).")
                 continue  # Cannot calculate
 
             xrate_quanto, xrate_account = self._calculate_xrates(
@@ -816,10 +822,12 @@ cdef class Portfolio(PortfolioFacade):
             ) * xrate_account
 
         cdef Money position_margin = Money(margin, account.currency)
-        account.update_position_margin(position_margin)
 
-        self._log.info(f"Updated {venue} position maintenance margin to "
-                       f"{position_margin.to_string()}")
+        if position_margin != account.position_margin():
+            account.update_position_margin(position_margin)
+
+            self._log.info(f"Updated {venue} position maintenance margin to "
+                           f"{position_margin.to_string()}")
 
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)
@@ -832,12 +840,6 @@ cdef class Portfolio(PortfolioFacade):
         if positions_open is None:
             return Money(0, account.currency)
 
-        cdef QuoteTick last = self._data.quote_tick(symbol)
-        if last is None:
-            self._log.error(f"Cannot calculate unrealized PNL "
-                            f"(no quotes for {symbol}).")
-            return None  # Cannot calculate
-
         cdef Instrument instrument = self._data.instrument(symbol)
         if instrument is None:
             self._log.error(f"Cannot calculate unrealized PNL "
@@ -847,6 +849,7 @@ cdef class Portfolio(PortfolioFacade):
         pnl = Decimal()
 
         cdef Position position
+        cdef Price last
         for position in positions_open:
             if position.symbol != symbol:
                 continue  # Nothing to calculate
@@ -862,6 +865,10 @@ cdef class Portfolio(PortfolioFacade):
                                 f"{instrument.base_currency}/{account.currency}).")
                 return None  # Cannot calculate
 
+            last = self._get_last_price(position)  # TODO: Optimize
+            if last is None:
+                self._log.error(f"Cannot calculate unrealized PNL (no prices for {symbol}).")
+                return None  # Cannot calculate
             pnl += position.unrealized_pnl(last) * xrate_account
 
         return Money(pnl, account.currency)
@@ -885,3 +892,18 @@ cdef class Portfolio(PortfolioFacade):
         )
 
         return xrate_quanto, xrate_account
+
+    cdef inline Price _get_last_price(self, Position position):
+        cdef TradeTick trade_tick
+        cdef QuoteTick quote_tick = self._data.quote_tick(position.symbol)
+        if quote_tick is not None:
+            if position.side == PositionSide.LONG:
+                return quote_tick.bid
+            elif position.side == PositionSide.SHORT:
+                return quote_tick.ask
+            else:
+                raise RuntimeError(f"invalid PositionSide, "
+                                   f"was {PositionSideParser.to_string(position.side)}")
+        else:
+            trade_tick = self._data.trade_tick(position.symbol)
+            return trade_tick.price if trade_tick is not None else None

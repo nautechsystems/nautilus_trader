@@ -91,7 +91,7 @@ cdef class Instrument:
         self,
         PositionSide side,
         Quantity quantity,
-        QuoteTick last,
+        Price last,
         xrate=*,
     )
 
@@ -99,7 +99,7 @@ cdef class Instrument:
         self,
         PositionSide side,
         Quantity quantity,
-        QuoteTick last,
+        Price last,
         xrate=*,
     )
 
@@ -110,5 +110,3 @@ cdef class Instrument:
         LiquiditySide liquidity_side,
         xrate=*,
     )
-
-    cdef inline object _get_close_price(self, PositionSide side, QuoteTick last)

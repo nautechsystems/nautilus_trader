@@ -21,7 +21,6 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Quantity
@@ -317,7 +316,7 @@ cdef class Instrument:
             self,
             PositionSide side,
             Quantity quantity,
-            QuoteTick last,
+            Price last,
             xrate: Decimal=None,
     ):
         """
@@ -328,8 +327,8 @@ cdef class Instrument:
             The currency position side.
         quantity : Quantity
             The currency position quantity.
-        last : QuoteTick
-            The last quote tick.
+        last : Price
+            The position symbols last price.
         xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
@@ -342,22 +341,18 @@ cdef class Instrument:
         Raises
         ------
         ValueError
-            If last.symbol != self.symbol.
-        ValueError
             If is_quanto and xrate is None.
 
         """
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
         # xrate checked in calculate_notional
 
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        close_price = self._get_close_price(side, last)
-        notional = self.calculate_notional(quantity, close_price, xrate)
+        notional = self.calculate_notional(quantity, last, xrate)
         margin = notional / self.leverage * self.margin_maintenance
         margin += notional * self.taker_fee
 
@@ -367,7 +362,7 @@ cdef class Instrument:
             self,
             PositionSide side,
             Quantity quantity,
-            QuoteTick last,
+            Price last,
             xrate: Decimal=None,
     ):
         """
@@ -377,8 +372,8 @@ cdef class Instrument:
             The currency position side.
         quantity : Quantity
             The open quantity.
-        last : QuoteTick
-            The last quote tick.
+        last : Price
+            The position symbols last price.
         xrate : Decimal, optional
             The exchange rate between cost and settlement currencies. Applicable
             to quanto instruments only, otherwise ignored.
@@ -393,19 +388,15 @@ cdef class Instrument:
         ValueError
             If side is UNDEFINED or FLAT.
         ValueError
-            If last.symbol != self.symbol.
-        ValueError
             If is_quanto and xrate is None.
 
         """
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        Condition.equal(last.symbol, self.symbol, "last.symbol", "self.symbol")
         # xrate checked in calculate_notional
 
-        close_price: Decimal = self._get_close_price(side, last)
-        return self.calculate_notional(quantity, close_price, xrate)
+        return self.calculate_notional(quantity, last, xrate)
 
     cpdef Money calculate_commission(
         self,
@@ -459,12 +450,3 @@ cdef class Instrument:
                                f"was {LiquiditySideParser.to_string(liquidity_side)}")
 
         return Money(commission, self.settlement_currency)  # Currently not handling quanto settlement
-
-    cdef inline object _get_close_price(self, PositionSide side, QuoteTick last):
-        if side == PositionSide.LONG:
-            return last.bid
-        elif side == PositionSide.SHORT:
-            return last.ask
-        else:
-            raise RuntimeError(f"invalid PositionSide, "
-                               f"was {PositionSideParser.to_string(side)}")
