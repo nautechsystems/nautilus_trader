@@ -159,7 +159,7 @@ cdef class Condition:
         ----------
         argument : object
             The object to check.
-        expected : object
+        expected : object or tuple of objects
             The expected class type.
         param : str
             The arguments parameter name.
@@ -1105,7 +1105,7 @@ class PyCondition:
         Condition.dict_types(argument, key_type, value_type, param, ex_type)
 
     @staticmethod
-    def is_in(object element, object collection, str param1, str param2, ex_type=None):
+    def is_in(object element, collection, str param1, str param2, ex_type=None):
         """
         Check the element is contained within the specified collection.
 
@@ -1131,7 +1131,7 @@ class PyCondition:
         Condition.is_in(element, collection, param1, param2, ex_type)
 
     @staticmethod
-    def not_in(object element, object collection, str param1, str param2, ex_type=None):
+    def not_in(object element, collection, str param1, str param2, ex_type=None):
         """
         Check the element is not contained within the specified collection.
 

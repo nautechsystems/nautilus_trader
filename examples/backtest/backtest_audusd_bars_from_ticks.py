@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import os
 
 import pandas as pd
@@ -57,6 +58,7 @@ if __name__ == "__main__":
         bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
         fast_ema=10,
         slow_ema=20,
+        trade_size=Decimal(1000000),
     )
 
     # Customize the backtest configuration (optional)

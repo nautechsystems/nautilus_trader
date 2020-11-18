@@ -27,6 +27,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
@@ -102,14 +103,9 @@ cdef class Position:
 
     cpdef void apply(self, OrderFilled event) except *
 
-    cpdef Money calculate_pnl(
-        self,
-        object avg_open,
-        object avg_close,
-        object quantity,
-    )
-    cpdef Money unrealized_pnl(self, QuoteTick last)
-    cpdef Money total_pnl(self, QuoteTick last)
+    cpdef Money calculate_pnl(self, avg_open, avg_close, quantity)
+    cpdef Money unrealized_pnl(self, Price last)
+    cpdef Money total_pnl(self, Price last)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *

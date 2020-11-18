@@ -76,7 +76,7 @@ cdef class DataEngine:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *
-    cpdef void process(self, object data) except *
+    cpdef void process(self, data) except *
     cpdef void send(self, DataRequest request) except *
     cpdef void receive(self, DataResponse response) except *
     cpdef void reset(self) except *
@@ -132,7 +132,7 @@ cdef class DataEngine:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef inline void _handle_data(self, object data) except *
+    cdef inline void _handle_data(self, data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *

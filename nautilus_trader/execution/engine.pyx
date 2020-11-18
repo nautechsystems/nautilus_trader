@@ -677,7 +677,7 @@ cdef class ExecutionEngine:
             position.quantity,  # Fill original position quantity remaining
             position.quantity,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
-            fill.avg_price,
+            fill.fill_price,
             fill.quote_currency,
             fill.settlement_currency,
             fill.is_inverse,
@@ -714,7 +714,7 @@ cdef class ExecutionEngine:
             difference,  # Fill difference from original as above
             difference,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
-            fill.avg_price,
+            fill.fill_price,
             fill.quote_currency,
             fill.settlement_currency,
             fill.is_inverse,

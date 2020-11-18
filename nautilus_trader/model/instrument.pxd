@@ -85,30 +85,28 @@ cdef class Instrument:
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 
-    cpdef Money calculate_notional(self, Quantity quantity, object close_price, object xrate=*)
-    cpdef Money calculate_order_margin(self, Quantity quantity, Price price, object xrate=*)
+    cpdef Money calculate_notional(self, Quantity quantity, close_price, xrate=*)
+    cpdef Money calculate_order_margin(self, Quantity quantity, Price price, xrate=*)
     cpdef Money calculate_position_margin(
         self,
         PositionSide side,
         Quantity quantity,
-        QuoteTick last,
-        object xrate=*,
+        Price last,
+        xrate=*,
     )
 
     cpdef Money calculate_open_value(
         self,
         PositionSide side,
         Quantity quantity,
-        QuoteTick last,
-        object xrate=*,
+        Price last,
+        xrate=*,
     )
 
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        object avg_price,
+        avg_price,
         LiquiditySide liquidity_side,
-        object xrate=*,
+        xrate=*,
     )
-
-    cdef inline object _get_close_price(self, PositionSide side, QuoteTick last)

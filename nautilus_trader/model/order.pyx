@@ -372,7 +372,7 @@ cdef class Order:
         # Update events
         self._events.append(event)
 
-        # Handle event - FSM (raises InvalidStateTrigger if trigger invalid)
+        # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderInvalid):
             self._fsm.trigger(OrderState.INVALID)
             self._invalid(event)
@@ -439,6 +439,13 @@ cdef class Order:
     cdef void _filled(self, OrderFilled event) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
+
+    cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity):
+        if self.avg_price is None:
+            return fill_price
+
+        total_quantity: Decimal = self.filled_qty + fill_quantity
+        return ((self.avg_price * self.filled_qty) + (fill_price * fill_quantity)) / total_quantity
 
 
 cdef class PassiveOrder(Order):
@@ -556,7 +563,7 @@ cdef class PassiveOrder(Order):
         self.liquidity_side = event.liquidity_side
         self.filled_qty = event.fill_qty
         self.filled_timestamp = event.timestamp
-        self.avg_price = event.avg_price
+        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
         self._set_slippage()
 
     cdef void _set_slippage(self) except *:
@@ -657,8 +664,14 @@ cdef class MarketOrder(Order):
         -------
         Order
 
+        Raises
+        ------
+        ValueError
+            If event.order_type is not equal to OrderType.MARKET.
+
         """
         Condition.not_none(event, "event")
+        Condition.equal(event.order_type, OrderType.MARKET, "event.order_type", "OrderType")
 
         return MarketOrder(
             cl_ord_id=event.cl_ord_id,
@@ -687,7 +700,7 @@ cdef class MarketOrder(Order):
         self.execution_id = event.execution_id
         self.filled_qty = event.fill_qty
         self.filled_timestamp = event.timestamp
-        self.avg_price = event.avg_price
+        self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
 
 
 cdef class LimitOrder(PassiveOrder):
@@ -759,8 +772,8 @@ cdef class LimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
         cdef dict options = {
-            POST_ONLY: post_only,
-            HIDDEN: hidden,
+            POST_ONLY: str(post_only),
+            HIDDEN: str(hidden),
         }
 
         super().__init__(
@@ -792,11 +805,18 @@ cdef class LimitOrder(PassiveOrder):
         -------
         Order
 
+        Raises
+        ------
+        ValueError
+            If event.order_type is not equal to OrderType.LIMIT.
+
         """
         Condition.not_none(event, "event")
+        Condition.equal(event.order_type, OrderType.LIMIT, "event.order_type", "OrderType")
 
         return LimitOrder(
             cl_ord_id=event.cl_ord_id,
+            strategy_id=event.strategy_id,
             symbol=event.symbol,
             order_side=event.order_side,
             quantity=event.quantity,
@@ -805,8 +825,8 @@ cdef class LimitOrder(PassiveOrder):
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
-            post_only=event.options.get(POST_ONLY),
-            hidden=event.options.get(HIDDEN),
+            post_only=str(event.options.get(POST_ONLY, True)) == str(True),
+            hidden=str(event.options.get(HIDDEN, False)) == str(True),
         )
 
 
@@ -895,8 +915,14 @@ cdef class StopMarketOrder(PassiveOrder):
         -------
         Order
 
+        Raises
+        ------
+        ValueError
+            If event.order_type is not equal to OrderType.STOP_MARKET.
+
         """
         Condition.not_none(event, "event")
+        Condition.equal(event.order_type, OrderType.STOP_MARKET, "event.order_type", "OrderType")
 
         return StopMarketOrder(
             cl_ord_id=event.cl_ord_id,
@@ -914,19 +940,23 @@ cdef class StopMarketOrder(PassiveOrder):
 
 cdef class BracketOrder:
     """
-    A bracket orders is designed to help limit a traders loss and optionally
+    Represents a bracket order.
+
+    A bracket order is designed to help limit a traders loss and optionally
     lock in a profit by "bracketing" an entry order with two opposite-side exit
-    orders. A BUY order is bracketed by a high-side sell limit order and a
+    orders. A BUY order is bracketed by a high-side sell order and a
     low-side sell stop order. A SELL order is bracketed by a high-side buy stop
-    order and a low side buy limit order.
+    order and a low-side buy order.
+
     Once the 'parent' entry order is triggered the 'child' OCO orders being a
-    STOP and optional LIMIT automatically become working on the exchange/broker side.
+    `StopMarket` and optional take-profit `PassiveOrder` automatically become
+    working on the exchange/broker side.
     """
     def __init__(
             self,
             Order entry not None,
             StopMarketOrder stop_loss not None,
-            LimitOrder take_profit=None,
+            PassiveOrder take_profit=None,
     ):
         """
         Initialize a new instance of the `BracketOrder` class.
@@ -937,8 +967,8 @@ cdef class BracketOrder:
             The entry 'parent' order.
         stop_loss : StopMarketOrder
             The stop-loss (SL) 'child' order.
-        take_profit : LimitOrder, optional
-            The take-profit (TP) 'child' order.
+        take_profit : PassiveOrder, optional
+            The take-profit (TP) 'child' order. Normally a `LimitOrder`.
 
         """
         self.id = BracketOrderId(f"B{entry.cl_ord_id.value}")
@@ -952,9 +982,6 @@ cdef class BracketOrder:
 
     def __ne__(self, BracketOrder other) -> bool:
         return self.id.value != other.id.value
-
-    def __hash__(self) -> int:
-        return hash(self.id.value)
 
     def __repr__(self) -> str:
         cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)

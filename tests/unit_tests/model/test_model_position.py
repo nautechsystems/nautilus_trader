@@ -100,19 +100,13 @@ class PositionTests(unittest.TestCase):
             fill_price=Price("1.00001"),
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00050")
 
         # Act
         position = Position(fill)
 
         # Assert
+        self.assertFalse(position != position)  # Equality operator test
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), position.from_order)
         self.assertEqual(Quantity(100000), position.quantity)
         self.assertEqual(Quantity(100000), position.peak_quantity)
@@ -123,9 +117,11 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
+        self.assertEqual([OrderId('1')], position.order_ids)
         self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
         self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
         self.assertEqual(PositionId("P-123456"), position.id)
+        self.assertEqual(1, len(position.events))
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
         self.assertFalse(position.is_closed)
@@ -152,14 +148,7 @@ class PositionTests(unittest.TestCase):
             fill_price=Price("1.00001"),
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00048"),
-            Price("1.00050"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00050")
 
         # Act
         position = Position(fill)
@@ -202,14 +191,7 @@ class PositionTests(unittest.TestCase):
             leaves_qty=Quantity(50000),
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00048"),
-            Price("1.00050"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00048")
 
         position = Position(fill)
 
@@ -261,13 +243,7 @@ class PositionTests(unittest.TestCase):
 
         position = Position(fill1)
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00048"),
-            Price("1.00050"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH)
+        last = Price("1.00050")
 
         # Act
         position.apply(fill2)
@@ -318,7 +294,7 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             order.quantity,
             Quantity(),
-            Decimal("1.00011"),
+            Price("1.00011"),
             AUDUSD_FXCM.quote_currency,
             AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
@@ -329,14 +305,7 @@ class PositionTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00050")
 
         # Act
         position.apply(fill2)
@@ -398,14 +367,7 @@ class PositionTests(unittest.TestCase):
             leaves_qty=Quantity(0),
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00050")
 
         # Act
         position.apply(fill2)
@@ -454,14 +416,7 @@ class PositionTests(unittest.TestCase):
             fill_price=Price("1.00000"),
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00050")
 
         # Act
         position.apply(fill2)
@@ -534,14 +489,7 @@ class PositionTests(unittest.TestCase):
             fill_price=Price("1.00010"),
         )
 
-        last = QuoteTick(
-            AUDUSD_FXCM.symbol,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
-            UNIX_EPOCH,
-        )
+        last = Price("1.00050")
 
         # Act
         position = Position(fill1)
@@ -750,6 +698,29 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-415.27137481, USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
         self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
+
+    def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity(12),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("10500.00"),
+        )
+        position = Position(fill)
+
+        # Act
+        result = position.calculate_pnl(Decimal("1"), Decimal("1"), Quantity(100000))
+
+        # Assert
+        self.assertEqual(Money(0, USDT), result)
 
     def test_calculate_pnl_for_long_position_win(self):
         # Arrange
@@ -965,17 +936,8 @@ class PositionTests(unittest.TestCase):
         position = Position(fill1)
         position.apply(fill2)
 
-        last = QuoteTick(
-            BTCUSDT_BINANCE.symbol,
-            Price("11505.60"),
-            Price("11506.65"),
-            Quantity(20),
-            Quantity(20),
-            UNIX_EPOCH,
-        )
-
         # Act
-        pnl = position.unrealized_pnl(last)
+        pnl = position.unrealized_pnl(Price("11505.60"))
 
         # Assert
         self.assertEqual(Money(4022.40000000, USDT), pnl)
@@ -1000,16 +962,7 @@ class PositionTests(unittest.TestCase):
 
         position = Position(fill)
 
-        last = QuoteTick(
-            BTCUSDT_BINANCE.symbol,
-            Price("10405.60"),
-            Price("10407.15"),
-            Quantity("20.000000"),
-            Quantity("20.000000"),
-            UNIX_EPOCH,
-        )
-
-        pnl = position.unrealized_pnl(last)
+        pnl = position.unrealized_pnl(Price("10407.15"))
 
         # Assert
         self.assertEqual(Money(582.03640000, USDT), pnl)
@@ -1034,18 +987,9 @@ class PositionTests(unittest.TestCase):
 
         position = Position(fill)
 
-        last = QuoteTick(
-            XBTUSD_BITMEX.symbol,
-            Price("11505.60"),
-            Price("11506.65"),
-            Quantity(25000),
-            Quantity(25000),
-            UNIX_EPOCH,
-        )
-
         # Act
 
-        pnl = position.unrealized_pnl(last)
+        pnl = position.unrealized_pnl(Price("11505.60"))
 
         # Assert
         self.assertEqual(Money(0.83238969, BTC), pnl)
@@ -1070,18 +1014,9 @@ class PositionTests(unittest.TestCase):
 
         position = Position(fill)
 
-        last = QuoteTick(
-            XBTUSD_BITMEX.symbol,
-            Price("12505.60"),
-            Price("12506.65"),
-            Quantity(125000),
-            Quantity(125000),
-            UNIX_EPOCH,
-        )
-
         # Act
 
-        pnl = position.unrealized_pnl(last)
+        pnl = position.unrealized_pnl(Price("12506.65"))
 
         # Assert
         self.assertEqual(Money(19.30166700, BTC), pnl)

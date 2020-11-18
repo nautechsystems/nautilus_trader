@@ -304,12 +304,46 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertIsNone(result)
 
-    def test_load_order_when_order_in_database_returns_order(self):
+    def test_load_order_when_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
+        )
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.cl_ord_id)
+
+        # Assert
+        self.assertEqual(order, result)
+
+    def test_load_order_when_limit_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
+        )
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.cl_ord_id)
+
+        # Assert
+        self.assertEqual(order, result)
+
+    def test_load_order_when_stop_market_order_in_database_returns_order(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("1.00000"),
         )
 
         self.database.add_order(order)
