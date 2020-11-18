@@ -39,6 +39,8 @@ cdef class OrderStateParser:
             return 'PARTIALLY_FILLED'
         elif value == 11:
             return 'FILLED'
+        elif value == 12:
+            return 'OVER_FILLED'
         else:
             return 'UNDEFINED'
 
@@ -66,6 +68,8 @@ cdef class OrderStateParser:
             return OrderState.PARTIALLY_FILLED
         elif value == 'FILLED':
             return OrderState.FILLED
+        elif value == 'OVER_FILLED':
+            return OrderState.OVER_FILLED
         else:
             return OrderState.UNDEFINED
 

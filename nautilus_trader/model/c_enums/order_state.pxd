@@ -27,6 +27,7 @@ cpdef enum OrderState:
     EXPIRED = 9,
     PARTIALLY_FILLED = 10,
     FILLED = 11,
+    OVER_FILLED = 12,
 
 
 cdef class OrderStateParser:

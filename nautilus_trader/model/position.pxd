@@ -116,4 +116,3 @@ cdef class Position:
     cdef inline object _calculate_points(self, avg_open, avg_close)
     cdef inline object _calculate_points_inverse(self, avg_open, avg_close)
     cdef inline object _calculate_return(self, avg_open, avg_close)
-    cdef inline object _get_close_price(self, QuoteTick last)

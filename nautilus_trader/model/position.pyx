@@ -23,7 +23,6 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Position:
@@ -504,12 +503,3 @@ cdef class Position:
 
     cdef inline object _calculate_return(self, avg_open: Decimal, avg_close: Decimal):
         return self._calculate_points(avg_open, avg_close) / avg_open
-
-    cdef inline object _get_close_price(self, QuoteTick last):
-        if self.side == PositionSide.LONG:
-            return last.bid
-        elif self.side == PositionSide.SHORT:
-            return last.ask
-        else:
-            raise RuntimeError(f"invalid PositionSide, "
-                               f"was {PositionSideParser.to_string(self.side)}")
