@@ -23,9 +23,13 @@ from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class ObjectStorer:
@@ -75,6 +79,96 @@ class ObjectStorer:
 
         """
         self.store((obj1, obj2))
+
+
+class MockStrategy(TradingStrategy):
+    """
+    Provides a mock trading strategy for testing.
+    """
+
+    def __init__(self, bar_type: BarType):
+        """
+        Initialize a new instance of the `MockStrategy` class.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for the strategy.
+
+        """
+        super().__init__(order_id_tag="001")
+
+        self.object_storer = ObjectStorer()
+        self.bar_type = bar_type
+
+        self.ema1 = ExponentialMovingAverage(10)
+        self.ema2 = ExponentialMovingAverage(20)
+
+        self.register_indicator_for_bars(self.bar_type, self.ema1)
+        self.register_indicator_for_bars(self.bar_type, self.ema2)
+
+        self.position_id = None
+
+        self.calls = []
+
+    def on_start(self):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_quote_tick(self, tick):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_bar(self, bar_type, bar):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store((bar_type, Bar))
+
+        if bar_type != self.bar_type:
+            return
+
+        if self.ema1.value > self.ema2.value:
+            buy_order = self.order_factory.market(
+                self.bar_type.symbol,
+                OrderSide.BUY,
+                100000,
+            )
+
+            self.submit_order(buy_order)
+            self.position_id = buy_order.cl_ord_id
+        elif self.ema1.value < self.ema2.value:
+            sell_order = self.order_factory.market(
+                self.bar_type.symbol,
+                OrderSide.SELL,
+                100000,
+            )
+
+            self.submit_order(sell_order)
+            self.position_id = sell_order.cl_ord_id
+
+    def on_instrument(self, instrument):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(instrument)
+
+    def on_event(self, event):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(event)
+
+    def on_stop(self):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_resume(self):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_reset(self):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_save(self):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        return {}
+
+    def on_load(self, state):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_dispose(self):
+        self.calls.append(inspect.currentframe().f_code.co_name)
 
 
 class MockDataClient(DataClient):

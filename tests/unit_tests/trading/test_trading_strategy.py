@@ -45,12 +45,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.strategies import TestStrategy
+from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
-USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
-AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class TradingStrategyTests(unittest.TestCase):
@@ -94,14 +95,12 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
-
         self.exchange = SimulatedExchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             exec_cache=self.exec_engine.cache,
-            instruments={usdjpy.symbol: usdjpy},
+            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
@@ -118,11 +117,11 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
+        self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
 
-        self.exchange.process_tick(TestStubs.quote_tick_3decimal(usdjpy.symbol))  # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))  # Prepare market
 
     def test_strategy_equality(self):
         # Arrange
@@ -185,7 +184,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_registered_indicators(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -202,7 +201,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_start(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -216,13 +215,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.start()
 
         # Assert
+        self.assertTrue("on_start" in strategy.calls)
         self.assertEqual(ComponentState.RUNNING, strategy.state)
-        self.assertIn("custom start logic", strategy.object_storer.get_store())
 
     def test_stop(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -237,13 +236,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.stop()
 
         # Assert
+        self.assertTrue("on_stop" in strategy.calls)
         self.assertEqual(ComponentState.STOPPED, strategy.state)
-        self.assertIn("custom stop logic", strategy.object_storer.get_store())
 
     def test_resume(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -260,13 +259,14 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.resume()
 
         # Assert
+        print(strategy.calls)
+        self.assertTrue("on_resume" in strategy.calls)
         self.assertEqual(ComponentState.RUNNING, strategy.state)
-        self.assertIn("custom start logic", strategy.object_storer.get_store())
 
     def test_reset(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -290,15 +290,15 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.reset()
 
         # Assert
+        self.assertTrue("on_reset" in strategy.calls)
         self.assertEqual(ComponentState.INITIALIZED, strategy.state)
         self.assertEqual(0, strategy.ema1.count)
         self.assertEqual(0, strategy.ema2.count)
-        self.assertIn("custom reset logic", strategy.object_storer.get_store())
 
     def test_dispose(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -312,12 +312,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.dispose()
 
         # Assert
+        self.assertTrue("on_dispose" in strategy.calls)
         self.assertEqual(ComponentState.DISPOSED, strategy.state)
 
     def test_handle_bar_updates_indicators(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -344,7 +345,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_stop_cancels_a_running_time_alert(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -359,16 +360,15 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         strategy.start()
-        time.sleep(0.1)
         strategy.stop()
 
         # Assert
-        self.assertEqual(2, strategy.object_storer.count)
+        self.assertEqual(0, len(strategy.clock.timer_names()))
 
     def test_stop_cancels_a_running_timer(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TestStrategy(bar_type)
+        strategy = MockStrategy(bar_type)
         strategy.register_trader(
             TraderId("TESTER", "000"),
             clock=self.clock,
@@ -379,15 +379,14 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         start_time = datetime.now(pytz.utc) + timedelta(milliseconds=100)
-        strategy.clock.set_timer("test_timer3", timedelta(milliseconds=100), start_time, stop_time=None)
+        strategy.clock.set_timer("test_timer", timedelta(milliseconds=100), start_time, stop_time=None)
 
         # Act
         strategy.start()
-        time.sleep(0.1)
         strategy.stop()
 
         # Assert
-        self.assertEqual(2, strategy.object_storer.count)
+        self.assertEqual(0, len(strategy.clock.timer_names()))
 
     def test_submit_order_with_valid_order_successfully_submits(self):
         # Arrange
@@ -401,7 +400,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -429,7 +428,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.stop_market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("90.100"),
@@ -463,7 +462,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.stop_market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.005"),
@@ -494,7 +493,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.001"),
@@ -526,14 +525,14 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop_market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.003"),
         )
 
         order2 = strategy.order_factory.stop_market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.005"),
@@ -543,7 +542,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order2)
 
         # Act
-        strategy.cancel_all_orders(USDJPY_FXCM)
+        strategy.cancel_all_orders(USDJPY_FXCM.symbol)
 
         # Assert
         self.assertIn(order1, strategy.execution.orders())
@@ -568,7 +567,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -602,13 +601,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.start()
 
         order1 = strategy.order_factory.market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            USDJPY_FXCM,
+            USDJPY_FXCM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -617,7 +616,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order2)
 
         # Act
-        strategy.flatten_all_positions(USDJPY_FXCM)
+        strategy.flatten_all_positions(USDJPY_FXCM.symbol)
 
         # Assert
         self.assertEqual(OrderState.FILLED, order1.state)

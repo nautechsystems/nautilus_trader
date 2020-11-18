@@ -47,7 +47,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.strategies import TestStrategy
+from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -122,7 +122,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
-        self.strategy = TestStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
+        self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
         self.strategy.register_trader(
             self.trader_id,
             self.clock,
@@ -148,8 +148,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(5, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderFilled))
+        self.assertEqual(4, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[2], OrderFilled))
         self.assertEqual(Decimal("90.003"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
 
     def test_submit_limit_order(self):
@@ -172,8 +172,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(4, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderWorking))
+        self.assertEqual(3, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[2], OrderWorking))
         self.assertEqual(Price("80.000"), order.price)
 
     def test_submit_bracket_market_order(self):
@@ -200,8 +200,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        self.assertEqual(8, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[4], OrderFilled))
+        self.assertEqual(7, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderFilled))
         self.assertEqual(Price("80.000"), bracket_order.stop_loss.price)
 
     def test_submit_bracket_stop_order(self):
@@ -230,8 +230,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        self.assertEqual(6, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[5], OrderWorking))
+        self.assertEqual(5, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[4], OrderWorking))
 
     def test_modify_stop_order(self):
         # Arrange
@@ -256,8 +256,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Price("96.714"), self.strategy.execution.order(order.cl_ord_id).price)
-        self.assertEqual(5, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[4], OrderModified))
+        self.assertEqual(4, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderModified))
 
     def test_modify_bracket_order_working_stop_loss(self):
         # Arrange
@@ -286,8 +286,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Price("85.100"), self.strategy.execution.order(bracket_order.stop_loss.cl_ord_id).price)
-        self.assertEqual(9, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[8], OrderModified))
+        self.assertEqual(8, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[-1], OrderModified))
 
     def test_submit_market_order_with_slippage_fill_model_slips_order(self):
         # Arrange
@@ -316,8 +316,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(5, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[3], OrderFilled))
+        self.assertEqual(4, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[2], OrderFilled))
         self.assertEqual(Decimal("90.004"), self.exec_engine.cache.order(order.cl_ord_id).avg_price)
 
     def test_submit_order_with_no_market_rejects_order(self):
@@ -335,8 +335,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(3, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[2], OrderRejected))
+        self.assertEqual(2, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[1], OrderRejected))
 
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange
@@ -358,8 +358,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(3, self.strategy.object_storer.count)
-        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[2], OrderRejected))
+        self.assertEqual(2, self.strategy.object_storer.count)
+        self.assertTrue(isinstance(self.strategy.object_storer.get_store()[1], OrderRejected))
 
     def test_order_fills_gets_commissioned(self):
         # Arrange
@@ -396,9 +396,9 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.strategy.submit_order(top_up_order, position_id)
         self.strategy.submit_order(reduce_order, position_id)
 
-        account_event1 = self.strategy.object_storer.get_store()[3]
-        account_event2 = self.strategy.object_storer.get_store()[7]
-        account_event3 = self.strategy.object_storer.get_store()[11]
+        account_event1 = self.strategy.object_storer.get_store()[2]
+        account_event2 = self.strategy.object_storer.get_store()[6]
+        account_event3 = self.strategy.object_storer.get_store()[10]
 
         account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
 
