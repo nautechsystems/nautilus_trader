@@ -101,20 +101,11 @@ class InstrumentTests(unittest.TestCase):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex()
 
-        last = QuoteTick(
-            instrument.symbol,
-            Price("11493.60"),
-            Price("11493.65"),
-            Quantity("19.3"),
-            Quantity("1.43"),
-            UNIX_EPOCH,
-        )
-
         # Act
         margin = instrument.calculate_position_margin(
             PositionSide.LONG,
             Quantity(100000),
-            last,
+            Price("11493.60"),
         )
 
         # Assert
@@ -124,20 +115,11 @@ class InstrumentTests(unittest.TestCase):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
 
-        last = QuoteTick(
-            instrument.symbol,
-            Price("11493.60"),
-            Price("11493.65"),
-            Quantity("19.3"),
-            Quantity("1.43"),
-            UNIX_EPOCH,
-        )
-
         # Act
         margin = instrument.calculate_position_margin(
             PositionSide.LONG,
             Quantity(100000),
-            last,
+            Price("11493.60"),
         )
 
         # Assert
@@ -147,20 +129,11 @@ class InstrumentTests(unittest.TestCase):
         # Arrange
         instrument = InstrumentLoader.btcusdt_binance()
 
-        last = QuoteTick(
-            instrument.symbol,
-            Price("11493.60"),
-            Price("11493.65"),
-            Quantity("19.3"),
-            Quantity("1.43"),
-            UNIX_EPOCH,
-        )
-
         # Act
         value = instrument.calculate_open_value(
             PositionSide.LONG,
             Quantity(10),
-            last
+            Price("11493.60"),
         )
 
         # Assert
@@ -170,20 +143,11 @@ class InstrumentTests(unittest.TestCase):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex()
 
-        last = QuoteTick(
-            instrument.symbol,
-            Price("11493.60"),
-            Price("11493.65"),
-            Quantity(55000),
-            Quantity(12500),
-            UNIX_EPOCH,
-        )
-
         # Act
         value = instrument.calculate_open_value(
             PositionSide.LONG,
             Quantity(100000),
-            last
+            Price("11493.60"),
         )
 
         # Assert

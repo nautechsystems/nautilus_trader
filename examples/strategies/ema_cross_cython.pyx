@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.bar cimport Bar
@@ -47,6 +49,7 @@ cdef class EMACross(TradingStrategy):
             self,
             Symbol symbol,
             BarSpecification bar_spec,
+            trade_size: Decimal,
             int fast_ema=10,
             int slow_ema=20,
     ):
@@ -59,6 +62,8 @@ cdef class EMACross(TradingStrategy):
             The symbol for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
+        trade_size : Decimal
+            The position size per trade.
         fast_ema : int
             The fast EMA period.
         slow_ema : int
@@ -72,6 +77,7 @@ cdef class EMACross(TradingStrategy):
         # Custom strategy variables
         self.symbol = symbol
         self.bar_type = BarType(symbol, bar_spec)
+        self.trade_size = trade_size
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema)
@@ -87,7 +93,6 @@ cdef class EMACross(TradingStrategy):
         self.request_bars(self.bar_type)
 
         # Subscribe to live data
-        self.subscribe_quote_ticks(self.symbol)  # For debugging
         self.subscribe_bars(self.bar_type)
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
@@ -112,7 +117,7 @@ cdef class EMACross(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging
+        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *:
@@ -138,54 +143,44 @@ cdef class EMACross(TradingStrategy):
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.symbol):
-                self.buy(1000000)
-            elif self.portfolio.is_net_long(self.symbol):
-                pass
-            else:
-                positions = self.execution.positions_open()
-                if len(positions) > 0:
-                    self.flatten_position(positions[0])
-                    self.buy(1000000)
+                self.buy()
+            elif self.portfolio.is_net_short(self.symbol):
+                self.flatten_all_positions(self.symbol)
+                self.buy()
 
         # SELL LOGIC
         elif self.fast_ema.value < self.slow_ema.value:
             if self.portfolio.is_flat(self.symbol):
-                self.sell(1000000)
-            elif self.portfolio.is_net_short(self.symbol):
-                pass
-            else:
-                positions = self.execution.positions_open()
-                if len(positions) > 0:
-                    self.flatten_position(positions[0])
-                    self.sell(1000000)
+                self.sell()
+            elif self.portfolio.is_net_long(self.symbol):
+                self.flatten_all_positions(self.symbol)
+                self.sell()
 
-    cpdef void buy(self, int quantity) except *:
+    cpdef void buy(self) except *:
         """
         Users simple buy method (example).
-
         """
         cdef MarketOrder order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
-            quantity=Quantity(quantity),
+            quantity=Quantity(self.trade_size),
         )
 
         self.submit_order(order)
 
-    cpdef void sell(self, int quantity) except *:
+    cpdef void sell(self) except *:
         """
         Users simple sell method (example).
-
         """
         cdef MarketOrder order = self.order_factory.market(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
-            quantity=Quantity(quantity),
+            quantity=Quantity(self.trade_size),
         )
 
         self.submit_order(order)
 
-    cpdef void on_data(self, object data) except *:
+    cpdef void on_data(self, data) except *:
         """
         Actions to be performed when the strategy is running and receives a data object.
 

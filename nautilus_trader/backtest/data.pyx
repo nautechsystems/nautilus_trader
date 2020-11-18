@@ -45,7 +45,7 @@ from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.c_enums.maker cimport MakerParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -339,7 +339,7 @@ cdef class BacktestDataProducer(DataClient):
                 timing_start = datetime.utcnow()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
-                    data_ticks=self._data.quote_ticks.get(symbol),
+                    data_quotes=self._data.quote_ticks.get(symbol),
                     data_bars_bid=self._data.bars_bid.get(symbol),
                     data_bars_ask=self._data.bars_ask.get(symbol),
                 )
@@ -431,8 +431,9 @@ cdef class BacktestDataProducer(DataClient):
 
         self.has_tick_data = False
 
-        self._log.info(f"Prepared {len(self._quote_tick_data):,} total tick rows in "
-                       f"{round((datetime.utcnow() - timing_start_total).total_seconds(), 2)}s.")
+        processing_time = round((datetime.utcnow() - timing_start_total).total_seconds(), 2)
+        self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
+                       f"total tick rows in {processing_time}s.")
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
@@ -495,7 +496,7 @@ cdef class BacktestDataProducer(DataClient):
             self._trade_prices = trade_ticks_slice["price"].values
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
-            self._trade_makers = trade_ticks_slice["buyer_maker"].to_numpy(dtype=np.ushort)
+            self._trade_makers = trade_ticks_slice["buyer_maker"].values
             self._trade_timestamps = np.asarray([<datetime>dt for dt in trade_ticks_slice.index])
 
             # Calculate cumulative data size
@@ -555,7 +556,7 @@ cdef class BacktestDataProducer(DataClient):
             self._symbol_index[self._trade_symbols[index]],
             Price(self._trade_prices[index]),
             Quantity(self._trade_sizes[index]),
-            <Maker>self._trade_makers[index],
+            MakerParser.from_string(self._trade_makers[index]),
             TradeMatchId(self._trade_match_ids[index]),
             self._trade_timestamps[index],
         )

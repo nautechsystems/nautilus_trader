@@ -21,6 +21,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -35,6 +36,7 @@ cdef class DataCacheFacade:
     cpdef list trade_ticks(self, Symbol symbol)
     cpdef list bars(self, BarType bar_type)
     cpdef Instrument instrument(self, Symbol symbol)
+    cpdef Price price(self, Symbol symbol, PriceType price_type)
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=*)
     cpdef TradeTick trade_tick(self, Symbol symbol, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)

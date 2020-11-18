@@ -188,6 +188,24 @@ class IdentifierTests(unittest.TestCase):
         # Assert
         self.assertEqual(symbol, result)
 
+    def test_account_id_given_malformed_string_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, AccountId.from_string, "BAD_STRING")
+
+    def test_strategy_id_given_malformed_string_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, StrategyId.from_string, "BAD_STRING")
+
+    def test_trader_id_given_malformed_string_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(ValueError, TraderId.from_string, "BAD_STRING")
+
     def test_trader_identifier(self):
         # Arrange
         # Act

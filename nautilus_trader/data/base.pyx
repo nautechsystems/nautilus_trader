@@ -56,6 +56,10 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef Price price(self, Symbol symbol, PriceType price_type):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

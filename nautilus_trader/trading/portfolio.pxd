@@ -26,7 +26,9 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.account cimport Account
 
@@ -89,3 +91,4 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline void _update_position_margin(self, Venue venue)
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol)
     cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side)
+    cdef inline Price _get_last_price(self, Position position)

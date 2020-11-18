@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -61,7 +62,9 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -260,24 +263,70 @@ cdef class SimulatedExchange:
 
         self.fill_model = fill_model
 
-    cpdef void process_tick(self, QuoteTick tick) except *:
+    cpdef void process_tick(self, Tick tick) except *:
         """
-        Process the execution client with the given tick. Market dynamics are
-        simulated against working orders.
+        Process the exchanges markets with the given tick.
+
+        Market dynamics are simulated against working orders for the ticks symbol.
 
         Parameters
         ----------
-        tick : QuoteTick
-            The tick data to process with.
+        tick : Tick
+            The tick data to process with. Can be `QuoteTick` or `TradeTick`.
 
         """
         Condition.not_none(tick, "tick")
 
         self._clock.set_time(tick.timestamp)
 
+        if isinstance(tick, QuoteTick):
+            self._process_quote_tick(tick)
+        else:
+            self._process_trade_tick(tick)
+
+    cdef inline void _process_quote_tick(self, QuoteTick tick) except *:
         cdef Symbol symbol = tick.symbol
         self._market_bids[symbol] = tick.bid
         self._market_asks[symbol] = tick.ask
+
+        cdef datetime now = self._clock.utc_now()
+
+        # Iterate through modules
+        cdef SimulationModule module
+        for module in self.modules:
+            module.process(tick, now)
+
+        cdef Order order
+        cdef Instrument instrument
+        for order in self._working_orders.copy().values():  # Copy dict for safe loop
+            if order.symbol != tick.symbol:
+                continue  # Order is for a different symbol
+            if not order.is_working_c():
+                continue  # Orders state has changed since the loop started
+
+            instrument = self.instruments[order.symbol]
+
+            # Check for order fill
+            if order.side == OrderSide.BUY:
+                self._auction_buy_order(order, tick.ask)
+            elif order.side == OrderSide.SELL:
+                self._auction_sell_order(order, tick.bid)
+            else:
+                raise RuntimeError("invalid order side")
+
+            # Check for order expiry
+            if order.expire_time and now >= order.expire_time:
+                self._working_orders.pop(order.cl_ord_id, None)
+
+    cdef inline void _process_trade_tick(self, TradeTick tick) except *:
+        cdef Symbol symbol = tick.symbol
+
+        if tick.maker == Maker.BUYER:  # TAKER hit the bid
+            self._market_bids[symbol] = tick.price
+        elif tick.maker == Maker.SELLER:  # TAKER lifted the offer
+            self._market_asks[symbol] = tick.price
+        else:
+            raise RuntimeError("invalid maker")
 
         cdef datetime now = self._clock.utc_now()
 
@@ -829,7 +878,7 @@ cdef class SimulatedExchange:
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
-            fill_price.as_decimal(),
+            fill_price,
             liquidity_side,
             xrate=Decimal(1),  # Currently not handling quanto settlement
         )
@@ -847,7 +896,7 @@ cdef class SimulatedExchange:
             order.quantity,
             order.quantity,
             Quantity(),  # Not modeling partial fills yet
-            fill_price.as_decimal(),
+            fill_price,
             instrument.quote_currency,
             instrument.settlement_currency,
             instrument.is_inverse,

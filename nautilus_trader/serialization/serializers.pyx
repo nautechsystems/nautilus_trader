@@ -585,10 +585,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
-            package[FILLED_QUANTITY] = str(event.fill_qty)
+            package[FILL_QUANTITY] = str(event.fill_qty)
+            package[FILL_PRICE] = str(event.fill_price)
             package[CUM_QUANTITY] = str(event.cum_qty)
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
-            package[AVERAGE_PRICE] = str(event.avg_price)
             package[QUOTE_CURRENCY] = event.quote_currency.code
             package[SETTLEMENT_CURRENCY] = event.settlement_currency.code
             package[IS_INVERSE] = str(event.is_inverse)
@@ -761,10 +761,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
                 OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                Quantity(unpacked[FILLED_QUANTITY].decode(UTF8)),
+                Quantity(unpacked[FILL_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[CUM_QUANTITY].decode(UTF8)),
                 Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
-                Decimal(unpacked[AVERAGE_PRICE].decode(UTF8)),
+                Price(unpacked[FILL_PRICE].decode(UTF8)),
                 Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
                 Currency.from_string_c(unpacked[SETTLEMENT_CURRENCY].decode(UTF8)),
                 unpacked[IS_INVERSE].decode(UTF8) == str(True),

@@ -51,7 +51,60 @@ class BaseDecimalTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(TypeError, BaseDecimal, 1.11, 2, "UNKNOWN")
+        self.assertRaises(TypeError, BaseDecimal, 1.11, 1, "UNKNOWN")
+
+    @parameterized.expand([
+        [BaseDecimal("2.15"), -1, Decimal("0E+1")],
+        [BaseDecimal("2.15"), 0, Decimal("2")],
+        [BaseDecimal("2.15"), 1, Decimal("2.2")],
+        [BaseDecimal("2.255"), 2, Decimal("2.26")],
+    ])
+    def test_round_with_various_digits_returns_expected_decimal(self, value, precision, expected):
+        # Arrange
+        # Act
+        result = round(value, precision)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        [BaseDecimal("-0"), Decimal("0")],
+        [BaseDecimal("0"), Decimal("0")],
+        [BaseDecimal("1"), Decimal("1")],
+        [BaseDecimal("-1"), Decimal("1")],
+        [BaseDecimal("-1.1"), Decimal("1.1")],
+    ])
+    def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
+        # Arrange
+        # Act
+        result = abs(value)
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        [BaseDecimal("-1"), Decimal("-1")],  # Matches built-in decimal.Decimal behaviour
+        [BaseDecimal("0"), Decimal("0")],
+    ])
+    def test_pos_with_various_values_returns_expected_decimal(self, value, expected):
+        # Arrange
+        # Act
+        result = +value
+
+        # Assert
+        self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        [BaseDecimal("1"), Decimal("-1")],
+        [BaseDecimal("0"), Decimal("0")],
+    ])
+    def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
+        # Arrange
+        # Act
+        result = -value
+
+        # Assert
+        self.assertEqual(expected, result)
 
     @parameterized.expand([
         [1.15, 1, decimal.ROUND_HALF_EVEN, BaseDecimal("1.1")],
@@ -208,8 +261,8 @@ class BaseDecimalTests(unittest.TestCase):
         [BaseDecimal(), 1, Decimal, 1],
         [0, BaseDecimal(), Decimal, 0],
         [1, BaseDecimal(), Decimal, 1],
-        [BaseDecimal(), 0.0, float, 0],
-        [BaseDecimal(), 1.0, float, 1.0],
+        [BaseDecimal(), 0.1, float, 0.1],
+        [BaseDecimal(), 1.1, float, 1.1],
         [-1.1, BaseDecimal(), float, -1.1],
         [1.1, BaseDecimal(), float, 1.1],
         [BaseDecimal("1"), BaseDecimal("1.1"), Decimal, Decimal("2.1")],
@@ -236,8 +289,8 @@ class BaseDecimalTests(unittest.TestCase):
         [BaseDecimal(), 1, Decimal, -1],
         [0, BaseDecimal(), Decimal, 0],
         [1, BaseDecimal("1"), Decimal, 0],
-        [BaseDecimal(), 0.0, float, 0],
-        [BaseDecimal(), 1.0, float, -1.0],
+        [BaseDecimal(), 0.1, float, -0.1],
+        [BaseDecimal(), 1.1, float, -1.1],
         [0.1, BaseDecimal("1"), float, -0.9],
         [1.1, BaseDecimal("1"), float, 0.10000000000000009],
         [BaseDecimal("1"), BaseDecimal("1.1"), Decimal, Decimal("-0.1")],
@@ -260,9 +313,9 @@ class BaseDecimalTests(unittest.TestCase):
     @parameterized.expand([
         [BaseDecimal(), 0, Decimal, 0],
         [BaseDecimal(1), 1, Decimal, 1],
-        [BaseDecimal(2), 1.0, float, 2],
         [1, BaseDecimal(1), Decimal, 1],
         [2, BaseDecimal(3), Decimal, 6],
+        [BaseDecimal(2), 1.0, float, 2],
         [1.1, BaseDecimal(2), float, 2.2],
         [BaseDecimal("1.1"), BaseDecimal("1.1"), Decimal, Decimal("1.21")],
         [BaseDecimal("1.1"), Decimal("1.1"), Decimal, Decimal("1.21")],
@@ -286,8 +339,8 @@ class BaseDecimalTests(unittest.TestCase):
         [1.1, BaseDecimal("1.1"), float, 1],
         [BaseDecimal(), 1, Decimal, 0],
         [BaseDecimal(1), 2, Decimal, Decimal("0.5")],
-        [BaseDecimal(2), 1.1, float, 1.8181818181818181],
         [2, BaseDecimal(1), Decimal, Decimal("2.0")],
+        [BaseDecimal(2), 1.1, float, 1.8181818181818181],
         [1.1, BaseDecimal(2), float, 1.1 / 2],
         [BaseDecimal("1.1"), BaseDecimal("1.2"), Decimal, Decimal("0.9166666666666666")],
         [BaseDecimal("1.1"), Decimal("1.2"), Decimal, Decimal("0.9166666666666666")],
@@ -313,6 +366,8 @@ class BaseDecimalTests(unittest.TestCase):
         [2, BaseDecimal(1), Decimal, Decimal(2)],
         [2.1, BaseDecimal("1.1"), float, 1],
         [4.4, BaseDecimal("1.1"), float, 4],
+        [BaseDecimal("2.1"), 1.1, float, 1],
+        [BaseDecimal("4.4"), 1.1, float, 4],
         [BaseDecimal("1.1"), BaseDecimal("1.2"), Decimal, Decimal(0)],
         [BaseDecimal("1.1"), Decimal("1.2"), Decimal, Decimal(0)],
     ])
@@ -337,6 +392,8 @@ class BaseDecimalTests(unittest.TestCase):
         [2, BaseDecimal(1), Decimal, 0],
         [2.1, BaseDecimal("1.1"), float, 1.0],
         [1.1, BaseDecimal("2.1"), float, 1.1],
+        [BaseDecimal("2.1"), 1.1, float, 1.0],
+        [BaseDecimal("1.1"), 2.1, float, 1.1],
         [BaseDecimal("1.1"), BaseDecimal("0.2"), Decimal, Decimal("0.1")],
         [BaseDecimal("1.1"), Decimal("0.2"), Decimal, Decimal("0.1")],
     ])

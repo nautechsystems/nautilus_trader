@@ -15,6 +15,7 @@
 
 import cProfile
 from datetime import datetime
+from decimal import Decimal
 import os
 import pstats
 import unittest
@@ -96,20 +97,23 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        strategies = [EMACross(
+        strategy = EMACross(
             symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
+            trade_size=Decimal(1000000),
             fast_ema=10,
-            slow_ema=20)]
+            slow_ema=20,
+        )
 
         config = BacktestConfig(
             exec_db_type="in-memory",
             bypass_logging=True,
-            console_prints=False)
+            console_prints=False,
+        )
 
         engine = BacktestEngine(
             data=data,
-            strategies=strategies,
+            strategies=[strategy],
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -133,11 +137,13 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        strategies = [EMACross(
+        strategy = EMACross(
             symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
+            trade_size=Decimal(1000000),
             fast_ema=10,
-            slow_ema=20)]
+            slow_ema=20,
+        )
 
         config = BacktestConfig(
             exec_db_type="in-memory",
@@ -147,7 +153,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         engine = BacktestEngine(
             data=data,
-            strategies=strategies,
+            strategies=[strategy],
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -192,3 +198,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 08/11/20  4345844 function calls (4320541 primitive calls) in 5.960 seconds (centralize exchange rate calculations)
         # 12/11/20  4346944 function calls (4321640 primitive calls) in 5.809 seconds (change value object API)
         # 15/11/20  4378755 function calls (4353255 primitive calls) in 5.927 seconds (performance check)
+        # 18/11/20  4377984 function calls (4352279 primitive calls) in 5.908 seconds (performance check)
