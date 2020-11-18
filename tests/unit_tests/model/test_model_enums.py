@@ -370,6 +370,7 @@ class OrderStateTests(unittest.TestCase):
         [OrderState.EXPIRED, "EXPIRED"],
         [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
         [OrderState.FILLED, "FILLED"],
+        [OrderState.OVER_FILLED, "OVER_FILLED"],
     ])
     def test_order_state_to_string(self, enum, expected):
         # Arrange
@@ -393,6 +394,7 @@ class OrderStateTests(unittest.TestCase):
         ["EXPIRED", OrderState.EXPIRED],
         ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
         ["FILLED", OrderState.FILLED],
+        ["OVER_FILLED", OrderState.OVER_FILLED],
     ])
     def test_order_state_from_string(self, string, expected):
         # Arrange

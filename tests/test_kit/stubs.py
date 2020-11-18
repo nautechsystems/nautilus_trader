@@ -253,8 +253,7 @@ class TestStubs:
             position_id=None,
             strategy_id=None,
             fill_price=None,
-            filled_qty=None,
-            leaves_qty=None,
+            fill_qty=None,
             liquidity_side=LiquiditySide.TAKER,
             xrate=None,
     ) -> OrderFilled:
@@ -264,10 +263,8 @@ class TestStubs:
             strategy_id = StrategyId.null()
         if fill_price is None:
             fill_price = Price("1.00000")
-        if filled_qty is None:
-            filled_qty = order.quantity
-        if leaves_qty is None:
-            leaves_qty = Quantity()
+        if fill_qty is None:
+            fill_qty = order.quantity
 
         commission = instrument.calculate_commission(
             quantity=order.quantity,
@@ -277,26 +274,26 @@ class TestStubs:
         )
 
         return OrderFilled(
-            TestStubs.account_id(),
-            order.cl_ord_id,
-            OrderId("1"),
-            ExecutionId(order.cl_ord_id.value.replace("O", "E")),
-            position_id,
-            strategy_id,
-            order.symbol,
-            order.side,
-            filled_qty,
-            Quantity(order.quantity - leaves_qty),
-            leaves_qty,
-            order.price if fill_price is None else fill_price,
-            instrument.quote_currency,
-            instrument.settlement_currency,
-            instrument.is_inverse,
-            Money(-commission, commission.currency),
-            LiquiditySide.TAKER,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH,
+            account_id=TestStubs.account_id(),
+            cl_ord_id=order.cl_ord_id,
+            order_id=OrderId("1"),
+            execution_id=ExecutionId(order.cl_ord_id.value.replace("O", "E")),
+            position_id=position_id,
+            strategy_id=strategy_id,
+            symbol=order.symbol,
+            order_side=order.side,
+            fill_qty=fill_qty,
+            cum_qty=Quantity(order.filled_qty + fill_qty),
+            leaves_qty=Quantity(max(0, order.quantity - order.filled_qty - fill_qty)),
+            fill_price=order.price if fill_price is None else fill_price,
+            quote_currency=instrument.quote_currency,
+            settlement_currency=instrument.settlement_currency,
+            is_inverse=instrument.is_inverse,
+            commission=Money(-commission, commission.currency),
+            liquidity_side=liquidity_side,
+            execution_time=UNIX_EPOCH,
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
         )
 
     @staticmethod
