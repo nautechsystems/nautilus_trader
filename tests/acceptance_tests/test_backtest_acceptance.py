@@ -14,12 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+import os
 import unittest
+
+import pandas as pd
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import AUD
@@ -32,6 +36,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EmptyStrategy
@@ -73,6 +78,11 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             config=config,
         )
 
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        self.engine.load_module(Venue('FXCM'), fx_rollover_interest)
+
     def tearDown(self):
         self.engine.dispose()
 
@@ -92,7 +102,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         # Assert - Should return expected PNL
         self.assertEqual(2689, strategy.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(Money(997688.53, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(997645.85, USD), self.engine.portfolio.account(self.venue).balance())
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -146,7 +156,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.assertEqual(2689, strategy1.fast_ema.count)
         self.assertEqual(2689, strategy2.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(Money(994553.21, USD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(994443.48, USD), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
@@ -185,6 +195,11 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
             config=config,
         )
 
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        self.engine.load_module(Venue('FXCM'), fx_rollover_interest)
+
     def tearDown(self):
         self.engine.dispose()
 
@@ -204,7 +219,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         # Assert
         self.assertEqual(8353, strategy.fast_ema.count)
         self.assertEqual(120467, self.engine.iteration)
-        self.assertEqual(Money(947965.44, GBP), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(948704.04, GBP), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
@@ -242,6 +257,11 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
             config=config,
         )
 
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        self.engine.load_module(Venue('FXCM'), fx_rollover_interest)
+
     def tearDown(self):
         self.engine.dispose()
 
@@ -261,7 +281,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         # Assert
         self.assertEqual(1771, strategy.fast_ema.count)
         self.assertEqual(99999, self.engine.iteration)
-        self.assertEqual(Money(991318.55, AUD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(991276.91, AUD), self.engine.portfolio.account(self.venue).balance())
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
@@ -279,7 +299,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         # Assert
         self.assertEqual(999, strategy.fast_ema.count)
         self.assertEqual(99999, self.engine.iteration)
-        self.assertEqual(Money(995390.28, AUD), self.engine.portfolio.account(self.venue).balance())
+        self.assertEqual(Money(995348.64, AUD), self.engine.portfolio.account(self.venue).balance())
 
 
 class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
