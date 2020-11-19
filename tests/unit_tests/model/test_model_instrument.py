@@ -30,8 +30,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))

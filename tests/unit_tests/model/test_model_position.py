@@ -43,7 +43,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -124,6 +123,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(1, len(position.events))
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
+        self.assertTrue(position.is_open)
         self.assertFalse(position.is_closed)
         self.assertEqual(0, position.realized_points)
         self.assertEqual(0, position.realized_return)
@@ -165,6 +165,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(PositionId("P-123456"), position.id)
         self.assertFalse(position.is_long)
         self.assertTrue(position.is_short)
+        self.assertTrue(position.is_open)
         self.assertFalse(position.is_closed)
         self.assertEqual(0, position.realized_points)
         self.assertEqual(0, position.realized_return)
@@ -187,8 +188,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
-            filled_qty=Quantity(50000),
-            leaves_qty=Quantity(50000),
+            fill_qty=Quantity(50000),
         )
 
         last = Price("1.00048")
@@ -205,6 +205,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(1, position.event_count)
         self.assertTrue(position.is_long)
         self.assertFalse(position.is_short)
+        self.assertTrue(position.is_open)
         self.assertFalse(position.is_closed)
         self.assertEqual(0, position.realized_points)
         self.assertEqual(0, position.realized_return)
@@ -227,8 +228,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
-            filled_qty=Quantity(50000),
-            leaves_qty=Quantity(50000),
+            fill_qty=Quantity(50000),
         )
 
         fill2 = TestStubs.event_order_filled(
@@ -237,8 +237,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
-            filled_qty=Quantity(50000),
-            leaves_qty=Quantity(),
+            fill_qty=Quantity(50000),
         )
 
         position = Position(fill1)
@@ -256,6 +255,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(2, position.event_count)
         self.assertFalse(position.is_long)
         self.assertTrue(position.is_short)
+        self.assertTrue(position.is_open)
         self.assertFalse(position.is_closed)
         self.assertEqual(0, position.realized_points)
         self.assertEqual(0, position.realized_return)
@@ -321,6 +321,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00011"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
+        self.assertFalse(position.is_open)
         self.assertTrue(position.is_closed)
         self.assertEqual(Decimal("0.00010"), position.realized_points)
         self.assertEqual(Decimal('0.00009999900000999990000099999000'), position.realized_return)
@@ -353,8 +354,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
-            filled_qty=Quantity(50000),
-            leaves_qty=Quantity(50000),
+            fill_qty=Quantity(50000),
         )
 
         fill3 = TestStubs.event_order_filled(
@@ -363,8 +363,7 @@ class PositionTests(unittest.TestCase):
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
-            filled_qty=Quantity(50000),
-            leaves_qty=Quantity(0),
+            fill_qty=Quantity(50000),
         )
 
         last = Price("1.00050")
@@ -384,6 +383,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00002"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
+        self.assertFalse(position.is_open)
         self.assertTrue(position.is_closed)
         self.assertEqual(Money(-8.00, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))
@@ -438,6 +438,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.0"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
+        self.assertFalse(position.is_open)
         self.assertTrue(position.is_closed)
         self.assertEqual(0, position.realized_points)
         self.assertEqual(0, position.realized_return)
@@ -507,6 +508,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.0001"), position.avg_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
+        self.assertFalse(position.is_open)
         self.assertTrue(position.is_closed)
         self.assertEqual(Money(11.00, USD), position.realized_pnl)
         self.assertEqual(Money(0, USD), position.unrealized_pnl(last))

@@ -50,8 +50,6 @@ cdef class AccountState(Event):
 cdef class OrderEvent(Event):
     cdef readonly ClientOrderId cl_ord_id
     """The client order identifier associated with the event.\n\n:returns: `ClientOrderId`"""
-    cdef readonly bint is_completion_trigger
-    """If this event represents an `Order` completion trigger.\n\n:returns: `bool`"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -192,8 +190,6 @@ cdef class OrderFilled(OrderEvent):
     """The order cumulative filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity leaves_qty
     """The order quantity remaining to be filled.\n\n:returns: `Quantity`"""
-    cdef readonly bint is_partial_fill
-    """If the fill is partial (leaves_qty > 0).\n\n:returns: `bool`"""
     cdef readonly Price fill_price
     """The fill price (not average).\n\n:returns: `Price`"""
     cdef readonly Currency quote_currency
