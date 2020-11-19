@@ -29,24 +29,6 @@ from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-class EmptyStrategy(TradingStrategy):
-    """
-    An empty strategy which does nothing.
-    """
-
-    def __init__(self, order_id_tag: str):
-        """
-        Initialize a new instance of the `EmptyStrategy` class.
-
-        Parameters
-        ----------
-        order_id_tag : str
-            The order_id tag for the strategy (should be unique at trader level).
-
-        """
-        super().__init__(order_id_tag=order_id_tag)
-
-
 class TickTock(TradingStrategy):
     """
     A strategy to test correct sequencing of tick data and timers.

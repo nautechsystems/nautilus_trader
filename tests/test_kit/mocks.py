@@ -104,15 +104,14 @@ class MockStrategy(TradingStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.register_indicator_for_bars(self.bar_type, self.ema1)
-        self.register_indicator_for_bars(self.bar_type, self.ema2)
-
         self.position_id = None
 
         self.calls = []
 
     def on_start(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
+        self.register_indicator_for_bars(self.bar_type, self.ema1)
+        self.register_indicator_for_bars(self.bar_type, self.ema2)
 
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -181,24 +180,22 @@ class KaboomStrategy(TradingStrategy):
         Initialize a new instance of the `KaboomStrategy` class.
         """
         super().__init__(order_id_tag="000")
+        self._explode_on_start = True
+        self._explode_on_stop = True
+
+    def set_explode_on_start(self, setting):
+        self._explode_on_start = setting
+
+    def set_explode_on_stop(self, setting):
+        self._explode_on_stop = setting
 
     def on_start(self):
-        raise RuntimeError(f"{self} BOOM!")
-
-    def on_quote_tick(self, tick):
-        raise RuntimeError(f"{self} BOOM!")
-
-    def on_bar(self, bar_type, bar):
-        raise RuntimeError(f"{self} BOOM!")
-
-    def on_instrument(self, instrument):
-        raise RuntimeError(f"{self} BOOM!")
-
-    def on_event(self, event):
-        raise RuntimeError(f"{self} BOOM!")
+        if self._explode_on_start:
+            raise RuntimeError(f"{self} BOOM!")
 
     def on_stop(self):
-        raise RuntimeError(f"{self} BOOM!")
+        if self._explode_on_stop:
+            raise RuntimeError(f"{self} BOOM!")
 
     def on_resume(self):
         raise RuntimeError(f"{self} BOOM!")
@@ -213,6 +210,21 @@ class KaboomStrategy(TradingStrategy):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_quote_tick(self, tick):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_trade_tick(self, tick):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_bar(self, bar_type, bar):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_data(self, data):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_event(self, event):
         raise RuntimeError(f"{self} BOOM!")
 
 
