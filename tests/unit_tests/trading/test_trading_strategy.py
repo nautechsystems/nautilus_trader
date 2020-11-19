@@ -15,7 +15,6 @@
 
 from datetime import datetime
 from datetime import timedelta
-import time
 import unittest
 
 import pytz
@@ -30,6 +29,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -38,16 +38,15 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
@@ -125,17 +124,14 @@ class TradingStrategyTests(unittest.TestCase):
 
     def test_strategy_equality(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag="001")
+        strategy1 = TradingStrategy(order_id_tag="AUD/USD-001")
         strategy2 = TradingStrategy(order_id_tag="AUD/USD-001")
         strategy3 = TradingStrategy(order_id_tag="AUD/USD-002")
 
         # Act
         # Assert
         self.assertTrue(strategy1 == strategy1)
-        self.assertFalse(strategy1 == strategy2)
-        self.assertFalse(strategy2 == strategy3)
-        self.assertFalse(strategy1 != strategy1)
-        self.assertTrue(strategy1 != strategy2)
+        self.assertTrue(strategy1 == strategy2)
         self.assertTrue(strategy2 != strategy3)
 
     def test_str_and_repr(self):
@@ -147,13 +143,13 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", str(strategy))
         self.assertEqual("TradingStrategy(id=TradingStrategy-GBP/USD-MM)", repr(strategy))
 
-    def test_get_strategy_id(self):
+    def test_id(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
 
         # Act
         # Assert
-        self.assertEqual(StrategyId.from_string("TradingStrategy-001"), strategy.id)
+        self.assertEqual(StrategyId("TradingStrategy", "001"), strategy.id)
 
     def test_initialization(self):
         # Arrange
@@ -165,11 +161,280 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual([], strategy.registered_indicators())
         self.assertFalse(strategy.indicators_initialized())
 
+    def test_start_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.start)
+
+    def test_stop_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.stop)
+
+    def test_resume_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.resume)
+
+    def test_reset_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.reset)
+
+    def test_dispose_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.dispose)
+
+    def test_save_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.save)
+
+    def test_load_when_not_registered_with_trader_raises_runtime_error(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.load, {})
+
+    def test_start_when_not_in_valid_state_raises_invalid_state_trigger(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.dispose()  # Always a final state
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, strategy.start)
+
+    def test_stop_when_not_in_valid_state_raises_invalid_state_trigger(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.dispose()  # Always a final state
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, strategy.stop)
+
+    def test_resume_when_not_in_valid_state_raises_invalid_state_trigger(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.dispose()  # Always a final state
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, strategy.resume)
+
+    def test_reset_when_not_in_valid_state_raises_invalid_state_trigger(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.dispose()  # Always a final state
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, strategy.reset)
+
+    def test_dispose_when_not_in_valid_state_raises_invalid_state_trigger(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.dispose()  # Always a final state
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, strategy.dispose)
+
+    def test_start_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.start)
+        self.assertEqual(ComponentState.RUNNING, strategy.state)
+
+    def test_stop_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Intentionally bad practice
+        # noinspection PyBroadException
+        try:
+            strategy.start()
+        except RuntimeError:
+            # Normally a poor practice to catch an exception in a unit test.
+            # However, in this case it allows us to put the strategy into
+            # the desired state to test without writing another mock.
+            pass
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.stop)
+        self.assertEqual(ComponentState.STOPPED, strategy.state)
+
+    def test_resume_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Intentionally bad practice
+        # noinspection PyBroadException
+        try:
+            strategy.start()
+        except RuntimeError:
+            # Normally a poor practice to catch an exception in a unit test.
+            # However, in this case it allows us to put the strategy into
+            # the desired state to test without writing another mock.
+            pass
+
+        # Intentionally bad practice
+        # noinspection PyBroadException
+        try:
+            strategy.stop()
+        except RuntimeError:
+            # Normally a poor practice to catch an exception in a unit test.
+            # However, in this case it allows us to put the strategy into
+            # the desired state to test without writing another mock.
+            pass
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.resume)
+        self.assertEqual(ComponentState.RUNNING, strategy.state)
+
+    def test_reset_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.reset)
+        self.assertEqual(ComponentState.INITIALIZED, strategy.state)
+
+    def test_dispose_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.dispose)
+        self.assertEqual(ComponentState.DISPOSED, strategy.state)
+
+    def test_save_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.save)
+
+    def test_load_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.load, {})
+
     def test_register_strategy_with_exec_client(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -186,7 +451,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -203,7 +468,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -223,7 +488,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -244,7 +509,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -268,7 +533,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -300,7 +565,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -320,7 +585,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -347,7 +612,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -370,7 +635,7 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -392,7 +657,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -419,7 +684,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -454,7 +719,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -486,7 +751,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
@@ -518,7 +783,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger)
@@ -556,7 +821,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
@@ -587,7 +852,7 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            TraderId("TESTER", "000"),
+            trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,

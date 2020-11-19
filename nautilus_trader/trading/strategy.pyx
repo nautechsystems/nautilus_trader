@@ -24,6 +24,8 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
+import warnings
+
 import cython
 
 from cpython.datetime cimport datetime
@@ -184,7 +186,8 @@ cdef class TradingStrategy:
         """
         Actions to be performed on strategy start.
         """
-        pass  # Optionally override in subclass
+        # Should override in subclass
+        warnings.warn("on_start was called when not overridden")
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
@@ -252,7 +255,8 @@ cdef class TradingStrategy:
         """
         Actions to be performed when the strategy is stopped.
         """
-        pass  # Optionally override in subclass
+        # Should override in subclass
+        warnings.warn("on_stop was called when not overridden")
 
     cpdef void on_resume(self) except *:
         """
@@ -264,7 +268,8 @@ cdef class TradingStrategy:
         """
         Actions to be performed when the strategy is reset.
         """
-        pass  # Optionally override in subclass
+        # Should override in subclass
+        warnings.warn("on_reset was called when not overridden")
 
     cpdef dict on_save(self):
         """
@@ -294,7 +299,8 @@ cdef class TradingStrategy:
 
         Cleanup any resources used by the strategy here.
         """
-        pass  # Optionally override in subclass
+        # Should override in subclass
+        warnings.warn("on_dispose was called when not overridden")
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -483,7 +489,7 @@ cdef class TradingStrategy:
                 self.on_quote_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                self.stop()  # Halt strategy
+                raise ex
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -544,7 +550,7 @@ cdef class TradingStrategy:
                 self.on_trade_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                self.stop()  # Halt strategy
+                raise ex
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -608,7 +614,7 @@ cdef class TradingStrategy:
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
-                self.stop()  # Halt strategy
+                raise ex
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -660,7 +666,7 @@ cdef class TradingStrategy:
                 self.on_data(data)
             except Exception as ex:
                 self.log.exception(ex)
-                self.stop()  # Halt strategy
+                raise ex
 
     cpdef void handle_event(self, Event event) except *:
         """
@@ -686,7 +692,7 @@ cdef class TradingStrategy:
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-                self.stop()  # Halt strategy
+                raise ex
 
 # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
 
@@ -694,46 +700,70 @@ cdef class TradingStrategy:
         """
         Start the trading strategy.
 
-        Calls on_start().
+        Calls `on_start`.
+
+        Raises
+        ------
+        RuntimeError
+            If strategy is not registered with a trader.
+        InvalidStateTrigger
+            If invalid trigger from current strategy state.
+
+        Warnings
+        --------
+        Exceptions raised in `on_start` will be caught, logged, and reraised.
+
         """
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("start called when not registered with a trader")
+
         try:
             self._fsm.trigger(ComponentTrigger.START)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
-            self.stop()  # Do not start strategy in an invalid state
-            return
+            raise ex  # Guards against strategy being put in an invalid state
 
         self.log.info(f"state={self._fsm.state_string_c()}...")
-
-        if self._data_engine is None:
-            self.log.error("Cannot start strategy (the data engine is not registered).")
-            return
-
-        if self._exec_engine is None:
-            self.log.error("Cannot start strategy (the execution engine is not registered).")
-            return
 
         try:
             self.on_start()
         except Exception as ex:
             self.log.exception(ex)
-            self.stop()
-            return
-
-        self._fsm.trigger(ComponentTrigger.RUNNING)
-        self.log.info(f"state={self._fsm.state_string_c()}.")
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.RUNNING)
+            self.log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void stop(self) except *:
         """
         Stop the trading strategy.
 
-        Calls on_stop().
+        Calls `on_stop`.
+
+        Raises
+        ------
+        RuntimeError
+            If strategy is not registered with a trader.
+        InvalidStateTrigger
+            If invalid trigger from current strategy state.
+
+        Warnings
+        --------
+        Exceptions raised in `on_stop` will be caught, logged, and reraised.
+
         """
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("stop called when not registered with a trader")
+
         try:
             self._fsm.trigger(ComponentTrigger.STOP)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
-            return
+            raise ex  # Guards against strategy being put in an invalid state
 
         self.log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -749,22 +779,39 @@ cdef class TradingStrategy:
             self.on_stop()
         except Exception as ex:
             self.log.exception(ex)
-
-        self._fsm.trigger(ComponentTrigger.STOPPED)
-        self.log.info(f"state={self._fsm.state_string_c()}.")
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.STOPPED)
+            self.log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void resume(self) except *:
         """
         Resume the trading strategy.
 
-        Calls on_resume().
+        Calls `on_resume`.
+
+        Raises
+        ------
+        RuntimeError
+            If strategy is not registered with a trader.
+        InvalidStateTrigger
+            If invalid trigger from current strategy state.
+
+        Warnings
+        --------
+        Exceptions raised in `on_resume` will be caught, logged, and reraised.
+
         """
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("resume called when not registered with a trader")
+
         try:
             self._fsm.trigger(ComponentTrigger.RESUME)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
-            self.stop()  # Do not start strategy in an invalid state
-            return
+            raise ex  # Guards against strategy being put in an invalid state
 
         self.log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -772,30 +819,40 @@ cdef class TradingStrategy:
             self.on_resume()
         except Exception as ex:
             self.log.exception(ex)
-            self.stop()
-            return
-
-        self._fsm.trigger(ComponentTrigger.RUNNING)
-        self.log.info(f"state={self._fsm.state_string_c()}.")
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.RUNNING)
+            self.log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void reset(self) except *:
         """
         Reset the trading strategy.
 
         All stateful values are reset to their initial value, then calls
-        `on_reset()`.
+        `on_reset`.
 
         Raises
         ------
+        RuntimeError
+            If strategy is not registered with a trader.
         InvalidStateTrigger
-            If strategy state is RUNNING.
+            If invalid trigger from current strategy state.
+
+        Warnings
+        --------
+        Exceptions raised in `on_reset` will be caught, logged, and reraised.
 
         """
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("reset called when not registered with a trader")
+
         try:
             self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
-            return
+            raise ex  # Guards against strategy being put in an invalid state
 
         self.log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -811,19 +868,39 @@ cdef class TradingStrategy:
             self.on_reset()
         except Exception as ex:
             self.log.exception(ex)
-
-        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self.log.info(f"state={self._fsm.state_string_c()}.")
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
+            self.log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void dispose(self) except *:
         """
         Dispose of the trading strategy.
+
+        Calls `on_dispose`.
+
+        Raises
+        ------
+        RuntimeError
+            If strategy is not registered with a trader.
+        InvalidStateTrigger
+            If invalid trigger from current strategy state.
+
+        Warnings
+        --------
+        Exceptions raised in `dispose` will be caught, logged, and reraised.
+
         """
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("dispose called when not registered with a trader")
+
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self.log.exception(ex)
-            return
+            raise ex  # Guards against strategy being put in an invalid state
 
         self.log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -831,36 +908,69 @@ cdef class TradingStrategy:
             self.on_dispose()
         except Exception as ex:
             self.log.exception(ex)
-
-        self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self.log.info(f"state={self._fsm.state_string_c()}.")
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.DISPOSED)
+            self.log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef dict save(self):
         """
         Return the strategy state dictionary to be saved.
+
+        Calls `on_save`.
+
+        Raises
+        ------
+        RuntimeError
+            If strategy is not registered with a trader.
+
+        Warnings
+        --------
+        Exceptions raised in `on_save` will be caught, logged, and reraised.
+
         """
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("save called when not registered with a trader")
+
         cpdef dict state = {"OrderIdCount": self.order_factory.count}
 
         try:
             user_state = self.on_save()
         except Exception as ex:
             self.log.exception(ex)
-
-        return {**state, **user_state}
+            raise ex  # Invalid state information could be saved
 
     cpdef void load(self, dict state) except *:
         """
         Load the strategy state from the give state dictionary.
+
+        Calls `on_load` and passes the state.
 
         Parameters
         ----------
         state : dict[str, object]
             The state dictionary.
 
-        """
-        Condition.not_empty(state, "state")
+        Raises
+        ------
+        RuntimeError
+            If strategy is not registered with a trader.
 
-        order_id_count = state.get(b'OrderIdCount')
+        Warnings
+        --------
+        Exceptions raised in `on_load` will be caught, logged, and reraised.
+
+        """
+        Condition.not_none(state, "state")
+
+        if self.trader_id is None:
+            # This guards the case where some below components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("load called when not registered with a trader")
+
+        cdef bytes order_id_count = state.get(b'OrderIdCount')
         if order_id_count is not None:
             order_id_count = int(order_id_count.decode("utf8"))
             self.order_factory.set_count(order_id_count)
@@ -870,6 +980,7 @@ cdef class TradingStrategy:
             self.on_load(state)
         except Exception as ex:
             self.log.exception(ex)
+            raise ex
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
