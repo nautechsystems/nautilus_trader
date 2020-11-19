@@ -183,37 +183,37 @@ class KaboomStrategy(TradingStrategy):
         super().__init__(order_id_tag="000")
 
     def on_start(self):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_quote_tick(self, tick):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_bar(self, bar_type, bar):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_instrument(self, instrument):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_event(self, event):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_stop(self):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_resume(self):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_reset(self):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_save(self):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_load(self, state):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self):
-        raise RuntimeError("BOOM!")
+        raise RuntimeError(f"{self} BOOM!")
 
 
 class MockDataClient(DataClient):
