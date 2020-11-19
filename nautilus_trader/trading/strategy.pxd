@@ -76,23 +76,22 @@ cdef class TradingStrategy:
     cdef ComponentState state_c(self)
     cdef str state_string_c(self)
 
-    cpdef list registered_indicators(self)
     cpdef bint indicators_initialized(self) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *
-    cpdef void on_quote_tick(self, QuoteTick tick) except *
-    cpdef void on_trade_tick(self, TradeTick tick) except *
-    cpdef void on_bar(self, BarType bar_type, Bar bar) except *
-    cpdef void on_data(self, data) except *
-    cpdef void on_event(self, Event event) except *
     cpdef void on_stop(self) except *
     cpdef void on_resume(self) except *
     cpdef void on_reset(self) except *
     cpdef dict on_save(self)
     cpdef void on_load(self, dict state) except *
     cpdef void on_dispose(self) except *
+    cpdef void on_quote_tick(self, QuoteTick tick) except *
+    cpdef void on_trade_tick(self, TradeTick tick) except *
+    cpdef void on_bar(self, BarType bar_type, Bar bar) except *
+    cpdef void on_data(self, data) except *
+    cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 

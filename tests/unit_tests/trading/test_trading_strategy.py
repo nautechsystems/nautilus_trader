@@ -33,10 +33,14 @@ from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -50,6 +54,7 @@ from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
@@ -158,8 +163,135 @@ class TradingStrategyTests(unittest.TestCase):
         # Act
         # Assert
         self.assertTrue(ComponentState.INITIALIZED, strategy.state)
-        self.assertEqual([], strategy.registered_indicators())
         self.assertFalse(strategy.indicators_initialized())
+
+    def test_on_start_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_start()
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_stop_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_stop()
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_resume_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_resume()
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_reset_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_reset()
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_save_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_save()
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_load_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_load({})
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_dispose_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_load({})
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_quote_tick_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        tick = TestStubs.quote_tick_5decimal()
+
+        # Act
+        strategy.on_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_trade_tick_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        tick = TestStubs.trade_tick_5decimal()
+
+        # Act
+        strategy.on_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_bar_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        strategy.on_bar(bar_type, bar)
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_data_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.on_data("DATA")
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
+    def test_on_event_when_not_overridden_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        event = TestStubs.event_account_state(AccountId.from_string("SIM-000-SIMULATED"))
+
+        # Act
+        strategy.on_event(event)
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
 
     def test_start_when_not_registered_with_trader_raises_runtime_error(self):
         # Arrange
@@ -322,15 +454,8 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        # Intentionally bad practice
-        # noinspection PyBroadException
-        try:
-            strategy.start()
-        except RuntimeError:
-            # Normally a poor practice to catch an exception in a unit test.
-            # However, in this case it allows us to put the strategy into
-            # the desired state to test without writing another mock.
-            pass
+        strategy.set_explode_on_start(False)
+        strategy.start()
 
         # Act
         # Assert
@@ -347,25 +472,10 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        # Intentionally bad practice
-        # noinspection PyBroadException
-        try:
-            strategy.start()
-        except RuntimeError:
-            # Normally a poor practice to catch an exception in a unit test.
-            # However, in this case it allows us to put the strategy into
-            # the desired state to test without writing another mock.
-            pass
-
-        # Intentionally bad practice
-        # noinspection PyBroadException
-        try:
-            strategy.stop()
-        except RuntimeError:
-            # Normally a poor practice to catch an exception in a unit test.
-            # However, in this case it allows us to put the strategy into
-            # the desired state to test without writing another mock.
-            pass
+        strategy.set_explode_on_start(False)
+        strategy.set_explode_on_stop(False)
+        strategy.start()
+        strategy.stop()
 
         # Act
         # Assert
@@ -430,7 +540,119 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertRaises(RuntimeError, strategy.load, {})
 
-    def test_register_strategy_with_exec_client(self):
+    def test_load(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        state = {"OrderIdCount": 2}
+
+        # Act
+        strategy.load(state)
+
+        # Assert
+        self.assertEqual(2, strategy.order_factory.count)
+
+    def test_handle_quote_tick_when_user_code_raises_exception_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.set_explode_on_start(False)
+        strategy.start()
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.handle_quote_tick, tick)
+
+    def test_handle_trade_tick_when_user_code_raises_exception_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.set_explode_on_start(False)
+        strategy.start()
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.handle_trade_tick, tick)
+
+    def test_handle_bar_when_user_code_raises_exception_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.set_explode_on_start(False)
+        strategy.start()
+
+        bar = TestStubs.bar_5decimal()
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.handle_bar, bar_type, bar)
+
+    def test_handle_data_when_user_code_raises_exception_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.set_explode_on_start(False)
+        strategy.start()
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.handle_data, "SOME_DATA")
+
+    def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        strategy.set_explode_on_start(False)
+        strategy.start()
+
+        event = TestStubs.event_account_state(AccountId.from_string("TEST-000-SIMULATED"))
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.on_event, event)
+
+    def test_register_data_engine(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -441,15 +663,14 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         # Act
-        self.exec_engine.register_strategy(strategy)
+        strategy.register_data_engine(self.data_engine)
 
         # Assert
-        self.assertIsNotNone(strategy.execution)
+        self.assertIsNotNone(strategy.data)
 
-    def test_registered_indicators(self):
+    def test_register_execution_engine(self):
         # Arrange
-        bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = MockStrategy(bar_type)
+        strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
@@ -458,10 +679,11 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         # Act
-        result = strategy.registered_indicators()
+        strategy.register_execution_engine(self.exec_engine)
 
         # Assert
-        self.assertEqual([strategy.ema1, strategy.ema2], result)
+        self.assertIsNotNone(strategy.portfolio)
+        self.assertIsNotNone(strategy.execution)
 
     def test_start(self):
         # Arrange
@@ -524,7 +746,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.resume()
 
         # Assert
-        print(strategy.calls)
         self.assertTrue("on_resume" in strategy.calls)
         self.assertEqual(ComponentState.RUNNING, strategy.state)
 
@@ -580,10 +801,9 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertTrue("on_dispose" in strategy.calls)
         self.assertEqual(ComponentState.DISPOSED, strategy.state)
 
-    def test_handle_bar_updates_indicators(self):
+    def test_register_indicator_for_quote_ticks_when_already_registered(self):
         # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = MockStrategy(bar_type)
+        strategy = TradingStrategy("000")
         strategy.register_trader(
             trader_id=TraderId("TESTER", "000"),
             clock=self.clock,
@@ -591,21 +811,271 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        bar = Bar(
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+        ema1 = ExponentialMovingAverage(10, price_type=PriceType.MID)
+        ema2 = ExponentialMovingAverage(10, price_type=PriceType.MID)
+
+        # Act
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema1)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema2)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema2)
+
+        self.assertEqual(2, len(strategy.registered_indicators))
+        self.assertIn(ema1, strategy.registered_indicators)
+        self.assertIn(ema2, strategy.registered_indicators)
+
+    def test_register_indicator_for_trade_ticks_when_already_registered(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
         )
+
+        ema1 = ExponentialMovingAverage(10)
+        ema2 = ExponentialMovingAverage(10)
+
+        # Act
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema1)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema2)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema2)
+
+        self.assertEqual(2, len(strategy.registered_indicators))
+        self.assertIn(ema1, strategy.registered_indicators)
+        self.assertIn(ema2, strategy.registered_indicators)
+
+    def test_register_indicator_for_bars_when_already_registered(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema1 = ExponentialMovingAverage(10)
+        ema2 = ExponentialMovingAverage(10)
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+
+        # Act
+        strategy.register_indicator_for_bars(bar_type, ema1)
+        strategy.register_indicator_for_bars(bar_type, ema2)
+        strategy.register_indicator_for_bars(bar_type, ema2)
+
+        self.assertEqual(2, len(strategy.registered_indicators))
+        self.assertIn(ema1, strategy.registered_indicators)
+        self.assertIn(ema2, strategy.registered_indicators)
+
+    def test_register_indicator_for_multiple_data_sources(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+
+        # Act
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_quote_ticks(GBPUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_bars(bar_type, ema)
+
+        self.assertEqual(1, len(strategy.registered_indicators))
+        self.assertIn(ema, strategy.registered_indicators)
+
+    def test_handle_quote_tick_updates_indicator_registered_for_quote_ticks(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        strategy.handle_quote_tick(tick)
+        strategy.handle_quote_tick(tick, is_historical=True)
+
+        # Assert
+        self.assertEqual(2, ema.count)
+
+    def test_handle_quote_ticks_with_no_ticks_logs_and_continues(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+
+        # Act
+        strategy.handle_quote_ticks([])
+
+        # Assert
+        self.assertEqual(0, ema.count)
+
+    def test_handle_quote_ticks_updates_indicator_registered_for_quote_ticks(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        strategy.handle_quote_ticks([tick])
+
+        # Assert
+        self.assertEqual(1, ema.count)
+
+    def test_handle_trade_tick_updates_indicator_registered_for_trade_ticks(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        strategy.handle_trade_tick(tick)
+        strategy.handle_trade_tick(tick, is_historical=True)
+
+        # Assert
+        self.assertEqual(2, ema.count)
+
+    def test_handle_trade_ticks_updates_indicator_registered_for_trade_ticks(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        strategy.handle_trade_ticks([tick])
+
+        # Assert
+        self.assertEqual(1, ema.count)
+
+    def test_handle_trade_ticks_with_no_ticks_logs_and_continues(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+
+        # Act
+        strategy.handle_trade_ticks([])
+
+        # Assert
+        self.assertEqual(0, ema.count)
+
+    def test_handle_bar_updates_indicator_registered_for_bars(self):
+        # Arrange
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        strategy.register_indicator_for_bars(bar_type, ema)
+        bar = TestStubs.bar_5decimal()
 
         # Act
         strategy.handle_bar(bar_type, bar)
+        strategy.handle_bar(bar_type, bar, is_historical=True)
 
         # Assert
-        self.assertEqual(1, strategy.ema1.count)
-        self.assertEqual(1, strategy.ema2.count)
+        self.assertEqual(2, ema.count)
+
+    def test_handle_bars_updates_indicator_registered_for_bars(self):
+        # Arrange
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        strategy.register_indicator_for_bars(bar_type, ema)
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        strategy.handle_bars(bar_type, [bar])
+
+        # Assert
+        self.assertEqual(1, ema.count)
+
+    def test_handle_bars_with_no_bars_logs_and_continues(self):
+        # Arrange
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        strategy = TradingStrategy("000")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        ema = ExponentialMovingAverage(10)
+        strategy.register_indicator_for_bars(bar_type, ema)
+
+        # Act
+        strategy.handle_bars(bar_type, [])
+
+        # Assert
+        self.assertEqual(0, ema.count)
 
     def test_stop_cancels_a_running_time_alert(self):
         # Arrange
@@ -816,6 +1286,43 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual(OrderState.CANCELLED, strategy.execution.orders()[1].state)
         self.assertIn(order1, strategy.execution.orders_completed())
         self.assertIn(order2, strategy.execution.orders_completed())
+
+    def test_flatten_position_when_position_already_flat_does_nothing(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            trader_id=TraderId("TESTER", "000"),
+            clock=self.clock,
+            uuid_factory=self.uuid_factory,
+            logger=self.logger,
+        )
+
+        # Wire strategy into system
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        order1 = strategy.order_factory.market(
+            USDJPY_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            USDJPY_FXCM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+        )
+
+        strategy.submit_order(order1)
+        strategy.submit_order(order2, position_id=PositionId("B-USD/JPY-1"))
+
+        position = strategy.execution.positions_closed()[0]
+
+        # Act
+        strategy.flatten_position(position)
+
+        # Assert
+        self.assertTrue(strategy.portfolio.is_completely_flat())
 
     def test_flatten_position(self):
         # Arrange

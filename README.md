@@ -65,15 +65,17 @@ The documentation for the latest version of the package is available at _readthe
 ## Installation
 
 The latest version is tested against Python 3.6 - 3.9 on _Linux_ and _MacOS_.
-It can be installed via PyPI, just run:
+_Windows_ support is in the pipeline.
+
+To install the latest package from PyPI, run:
 
     pip install nautilus_trader
 
-From source using _Poetry_ https://python-poetry.org/:
+To install from source using [Poetry](https://python-poetry.org/), run:
 
     poetry install
 
-From source using _pip_:
+To install from source using _pip_, run:
 
     pip install .
 
@@ -83,21 +85,21 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 > https://www.jetbrains.com/pycharm/
 
-To run code or tests from the source code, first compile the C extensions for the package:
+To run code or tests from the source code, first compile the C extensions for the package by running:
 
     python build.py
 
-Please refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further details.
+Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 
 ## Contributing
 
-Involvement from the developer community is a goal for this project, all help is welcome!
-Please open an issue on GitHub to discuss proposed enhancements, make feature
-requests, and report bugs.
+Involvement from the trading community is a goal for this project. All help is welcome!
+Developers can open issues on GitHub to discuss proposed enhancements/changes, or
+to make bug reports.
 
 Please make all pull requests to the `develop` branch.
 
-Refer to [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for more details.
+Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
 
 ---
 
