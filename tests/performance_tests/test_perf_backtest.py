@@ -33,10 +33,10 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 
 
@@ -53,7 +53,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        strategies = [EmptyStrategy("001")]
+        strategies = [TradingStrategy("001")]
 
         config = BacktestConfig(exec_db_type="in-memory")
         engine = BacktestEngine(

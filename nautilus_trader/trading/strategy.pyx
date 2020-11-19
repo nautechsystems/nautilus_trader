@@ -150,9 +150,10 @@ cdef class TradingStrategy:
         """
         return self.state_c()
 
-    cpdef list registered_indicators(self):
+    @property
+    def registered_indicators(self):
         """
-        Return the registered indicators for the strategy.
+        The registered indicators for the strategy.
 
         Returns
         -------
@@ -188,6 +189,57 @@ cdef class TradingStrategy:
         """
         # Should override in subclass
         warnings.warn("on_start was called when not overridden")
+
+    cpdef void on_stop(self) except *:
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        # Should override in subclass
+        warnings.warn("on_stop was called when not overridden")
+
+    cpdef void on_resume(self) except *:
+        """
+        Actions to be performed when the strategy is stopped.
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_reset(self) except *:
+        """
+        Actions to be performed when the strategy is reset.
+        """
+        # Should override in subclass
+        warnings.warn("on_reset was called when not overridden")
+
+    cpdef dict on_save(self):
+        """
+        Actions to be performed when the strategy is saved.
+
+        Create and return a state dictionary of values to be saved.
+
+        Notes
+        -----
+        'OrderIdCount' and 'PositionIdCount' are reserved keys for
+        the returned state dictionary.
+
+        """
+        return {}  # Optionally override in subclass
+
+    cpdef void on_load(self, dict state) except *:
+        """
+        Actions to be performed when the strategy is loaded.
+
+        Saved state values will be contained in the give state dictionary.
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_dispose(self) except *:
+        """
+        Actions to be performed when the strategy is disposed.
+
+        Cleanup any resources used by the strategy here.
+        """
+        # Should override in subclass
+        warnings.warn("on_dispose was called when not overridden")
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
@@ -250,57 +302,6 @@ cdef class TradingStrategy:
 
         """
         pass  # Optionally override in subclass
-
-    cpdef void on_stop(self) except *:
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        # Should override in subclass
-        warnings.warn("on_stop was called when not overridden")
-
-    cpdef void on_resume(self) except *:
-        """
-        Actions to be performed when the strategy is stopped.
-        """
-        pass  # Optionally override in subclass
-
-    cpdef void on_reset(self) except *:
-        """
-        Actions to be performed when the strategy is reset.
-        """
-        # Should override in subclass
-        warnings.warn("on_reset was called when not overridden")
-
-    cpdef dict on_save(self):
-        """
-        Actions to be performed when the strategy is saved.
-
-        Create and return a state dictionary of values to be saved.
-
-        Notes
-        -----
-        'OrderIdCount' and 'PositionIdCount' are reserved keys for
-        the returned state dictionary.
-
-        """
-        return {}  # Optionally override in subclass
-
-    cpdef void on_load(self, dict state) except *:
-        """
-        Actions to be performed when the strategy is loaded.
-
-        Saved state values will be contained in the give state dictionary.
-        """
-        pass  # Optionally override in subclass
-
-    cpdef void on_dispose(self) except *:
-        """
-        Actions to be performed when the strategy is disposed.
-
-        Cleanup any resources used by the strategy here.
-        """
-        # Should override in subclass
-        warnings.warn("on_dispose was called when not overridden")
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -399,6 +400,7 @@ cdef class TradingStrategy:
 
         if indicator not in self._indicators_for_quotes[symbol]:
             self._indicators_for_quotes[symbol].append(indicator)
+            self.log.info(f"Indicator {indicator} registered for {symbol} quote ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {symbol} quote ticks.")
 
@@ -426,6 +428,7 @@ cdef class TradingStrategy:
 
         if indicator not in self._indicators_for_trades[symbol]:
             self._indicators_for_trades[symbol].append(indicator)
+            self.log.info(f"Indicator {indicator} registered for {symbol} trade ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {symbol} trade ticks.")
 
@@ -453,6 +456,7 @@ cdef class TradingStrategy:
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
+            self.log.info(f"Indicator {indicator} registered for {bar_type} bars.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
@@ -462,14 +466,18 @@ cdef class TradingStrategy:
         """
         Handle the given tick.
 
-        System method (not intended to be called by users).
+        Calls `on_quote_tick` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
         tick : QuoteTick
             The received tick.
         is_historical : bool
-            If tick is historical then it won't be passed to on_quote_tick().
+            If tick is historical then it won't be passed to `on_quote_tick`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(tick, "tick")
@@ -497,12 +505,14 @@ cdef class TradingStrategy:
         """
         Handle the given list of ticks by handling each tick individually.
 
-        System method (not intended to be called by users).
-
         Parameters
         ----------
         ticks : list[QuoteTick]
             The received ticks.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(ticks, "ticks")  # Could be empty
@@ -523,14 +533,18 @@ cdef class TradingStrategy:
         """
         Handle the given tick.
 
-        System method (not intended to be called by users).
+        Calls `on_trade_tick` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
         tick : TradeTick
             The received trade tick.
         is_historical : bool
-            If tick is historical then it won't be passed to on_trade_tick().
+            If tick is historical then it won't be passed to `on_trade_tick`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(tick, "tick")
@@ -558,12 +572,14 @@ cdef class TradingStrategy:
         """
         Handle the given list of ticks by handling each tick individually.
 
-        System method (not intended to be called by users).
-
         Parameters
         ----------
         ticks : list[TradeTick]
             The received ticks.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(ticks, "ticks")  # Could be empty
@@ -584,7 +600,7 @@ cdef class TradingStrategy:
         """
         Handle the given bar type and bar.
 
-        System method (not intended to be called by users).
+        Calls `on_bar` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
@@ -593,7 +609,11 @@ cdef class TradingStrategy:
         bar : Bar
             The bar received.
         is_historical : bool
-            If bar is historical then it won't be passed to on_bar().
+            If bar is historical then it won't be passed to `on_bar`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(bar_type, "bar_type")
@@ -622,14 +642,16 @@ cdef class TradingStrategy:
         """
         Handle the given bar type and bars by handling each bar individually.
 
-        System method (not intended to be called by users).
-
         Parameters
         ----------
         bar_type : BarType
             The received bar type.
         bars : list[Bar]
             The bars to handle.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(bar_type, "bar_type")
@@ -651,12 +673,16 @@ cdef class TradingStrategy:
         """
         Handle the given data object.
 
-        System method (not intended to be called by users).
+        Calls `on_data` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
         data : object
             The received data object.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(data, "data")
@@ -672,12 +698,16 @@ cdef class TradingStrategy:
         """
         Hand the given event.
 
-        System method (not intended to be called by users).
+        Calls `on_event` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
         event : Event
             The received event.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(event, "event")
@@ -942,6 +972,8 @@ cdef class TradingStrategy:
             self.log.exception(ex)
             raise ex  # Invalid state information could be saved
 
+        return {**state, **user_state}
+
     cpdef void load(self, dict state) except *:
         """
         Load the strategy state from the give state dictionary.
@@ -970,11 +1002,11 @@ cdef class TradingStrategy:
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
             raise RuntimeError("load called when not registered with a trader")
 
-        cdef bytes order_id_count = state.get(b'OrderIdCount')
-        if order_id_count is not None:
-            order_id_count = int(order_id_count.decode("utf8"))
-            self.order_factory.set_count(order_id_count)
-            self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
+        self.log.info("Loading state...")
+
+        cdef int order_id_count = state.get("OrderIdCount", 0)
+        self.order_factory.set_count(order_id_count)
+        self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
 
         try:
             self.on_load(state)
