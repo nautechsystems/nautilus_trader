@@ -171,6 +171,51 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 
+class KaboomStrategy(TradingStrategy):
+    """
+    Provides a mock trading strategy where every called method blows up.
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the `KaboomStrategy` class.
+        """
+        super().__init__(order_id_tag="000")
+
+    def on_start(self):
+        raise RuntimeError("BOOM!")
+
+    def on_quote_tick(self, tick):
+        raise RuntimeError("BOOM!")
+
+    def on_bar(self, bar_type, bar):
+        raise RuntimeError("BOOM!")
+
+    def on_instrument(self, instrument):
+        raise RuntimeError("BOOM!")
+
+    def on_event(self, event):
+        raise RuntimeError("BOOM!")
+
+    def on_stop(self):
+        raise RuntimeError("BOOM!")
+
+    def on_resume(self):
+        raise RuntimeError("BOOM!")
+
+    def on_reset(self):
+        raise RuntimeError("BOOM!")
+
+    def on_save(self):
+        raise RuntimeError("BOOM!")
+
+    def on_load(self, state):
+        raise RuntimeError("BOOM!")
+
+    def on_dispose(self):
+        raise RuntimeError("BOOM!")
+
+
 class MockDataClient(DataClient):
     """
     Provides a mock data client for testing.
