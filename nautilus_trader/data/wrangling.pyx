@@ -106,7 +106,6 @@ cdef class QuoteTickDataWrangler:
         if self._data_quotes is not None and not self._data_quotes.empty:
             # Build ticks from data
             self.processed_data = self._data_quotes
-            self.processed_data["symbol"] = symbol_indexer
 
             if "bid_size" not in self.processed_data.columns:
                 self.processed_data["bid_size"] = 1
@@ -122,6 +121,7 @@ cdef class QuoteTickDataWrangler:
             size_cols = ["bid_size", "ask_size"]
             self._data_quotes[size_cols] = self._data_quotes[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
 
+            self.processed_data["symbol"] = symbol_indexer
             self.resolution = BarAggregation.TICK
             return
 
@@ -315,7 +315,8 @@ cdef class TradeTickDataWrangler:
         list[TradeTick]
 
         """
-        return list(map(self.processed_data.values,
+        return list(map(self._build_tick_from_values,
+                        self.processed_data.values,
                         self.processed_data.index))
 
     cpdef TradeTick _build_tick_from_values(self, str[:] values, datetime timestamp):

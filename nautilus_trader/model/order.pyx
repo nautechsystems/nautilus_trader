@@ -61,6 +61,7 @@ cdef set _COMPLETED_STATES = {
     OrderState.CANCELLED,
     OrderState.EXPIRED,
     OrderState.FILLED,
+    OrderState.OVER_FILLED,
 }
 
 
@@ -88,6 +89,9 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.OVER_FILLED): OrderState.OVER_FILLED,
+    (OrderState.FILLED, OrderState.OVER_FILLED): OrderState.OVER_FILLED,
+    (OrderState.OVER_FILLED, OrderState.OVER_FILLED): OrderState.OVER_FILLED,
 }
 
 
@@ -401,12 +405,15 @@ cdef class Order:
             self._fsm.trigger(OrderState.WORKING)
             self._modified(event)
         elif isinstance(event, OrderFilled):
-            if event.is_partial_fill:
+            leaves_qty: Decimal = self.quantity - self.filled_qty - event.fill_qty
+            if leaves_qty > 0:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
-                self._filled(event)
-            else:
+            elif leaves_qty == 0:
                 self._fsm.trigger(OrderState.FILLED)
-                self._filled(event)
+            else:
+                self._fsm.trigger(OrderState.OVER_FILLED)
+
+            self._filled(event)
 
     cdef void _invalid(self, OrderInvalid event) except *:
         pass  # Do nothing else
@@ -561,7 +568,7 @@ cdef class PassiveOrder(Order):
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
         self.liquidity_side = event.liquidity_side
-        self.filled_qty = event.fill_qty
+        self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
         self.filled_timestamp = event.timestamp
         self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
         self._set_slippage()
@@ -698,7 +705,7 @@ cdef class MarketOrder(Order):
         self.strategy_id = event.strategy_id
         self._execution_ids.append(event.execution_id)
         self.execution_id = event.execution_id
-        self.filled_qty = event.fill_qty
+        self.filled_qty = Quantity(self.filled_qty + event.fill_qty)
         self.filled_timestamp = event.timestamp
         self.avg_price = self._calculate_avg_price(event.fill_price, event.fill_qty)
 

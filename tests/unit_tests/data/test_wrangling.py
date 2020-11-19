@@ -21,7 +21,12 @@ from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
+from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.identifiers import TradeMatchId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -29,7 +34,7 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 
-class TickDataWranglerTests(unittest.TestCase):
+class QuoteTickDataWranglerTests(unittest.TestCase):
 
     def setUp(self):
         self.clock = TestClock()
@@ -42,16 +47,14 @@ class TickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(1000, len(ticks))
 
-    def test_build_with_tick_data(self):
+    def test_pre_process_with_tick_data(self):
         # Arrange
         tick_data = TestDataProvider.usdjpy_ticks()
-        bid_data = TestDataProvider.usdjpy_1min_bid()
-        ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
             instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_quotes=tick_data,
-            data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data},
+            data_bars_bid=None,
+            data_bars_ask=None,
         )
 
         # Act
@@ -63,7 +66,7 @@ class TickDataWranglerTests(unittest.TestCase):
         self.assertEqual(1000, len(ticks))
         self.assertEqual(Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name)
 
-    def test_build_ticks_with_bar_data(self):
+    def test_pre_process_with_bar_data(self):
         # Arrange
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
@@ -94,6 +97,101 @@ class TickDataWranglerTests(unittest.TestCase):
         self.assertEqual("1", tick_data.iloc[2]["ask_size"])
         self.assertEqual("1", tick_data.iloc[3]["bid_size"])
         self.assertEqual("1", tick_data.iloc[3]["ask_size"])
+
+    def test_build_ticks_with_tick_data(self):
+        # Arrange
+        tick_data = TestDataProvider.audusd_ticks()
+        self.tick_builder = QuoteTickDataWrangler(
+            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm()),
+            data_quotes=tick_data,
+            data_bars_bid=None,
+            data_bars_ask=None,
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.build_ticks()
+
+        # Assert
+        self.assertEqual(100000, len(ticks))
+        self.assertEqual(Price("0.67067"), ticks[0].bid)
+        self.assertEqual(Price("0.67070"), ticks[0].ask)
+        self.assertEqual(Quantity("1"), ticks[0].bid_size)
+        self.assertEqual(Quantity("1"), ticks[0].ask_size)
+        self.assertEqual(Timestamp("2020-01-30 15:28:09.820000+0000", tz="UTC"), ticks[0].timestamp)
+
+    def test_build_ticks_with_bar_data(self):
+        # Arrange
+        bid_data = TestDataProvider.usdjpy_1min_bid()
+        ask_data = TestDataProvider.usdjpy_1min_ask()
+        self.tick_builder = QuoteTickDataWrangler(
+            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            data_quotes=None,
+            data_bars_bid={BarAggregation.MINUTE: bid_data},
+            data_bars_ask={BarAggregation.MINUTE: ask_data},
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.build_ticks()
+
+        # Assert
+        self.assertEqual(115044, len(ticks))
+        self.assertEqual(Price("91.715"), ticks[0].bid)
+        self.assertEqual(Price("91.717"), ticks[0].ask)
+        self.assertEqual(Quantity("1"), ticks[0].bid_size)
+        self.assertEqual(Quantity("1"), ticks[0].ask_size)
+        self.assertEqual(Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC"), ticks[0].timestamp)
+
+
+class TradeTickDataWranglerTests(unittest.TestCase):
+
+    def setUp(self):
+        self.clock = TestClock()
+
+    def test_tick_data(self):
+        # Arrange
+        # Act
+        ticks = TestDataProvider.ethusdt_trades()
+
+        # Assert
+        self.assertEqual(69806, len(ticks))
+
+    def test_process(self):
+        # Arrange
+        tick_data = TestDataProvider.ethusdt_trades()
+        self.tick_builder = TradeTickDataWrangler(
+            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            data=tick_data,
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.processed_data
+
+        # Assert
+        self.assertEqual(69806, len(ticks))
+        self.assertEqual(Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks.iloc[0].name)
+
+    def test_build_ticks(self):
+        # Arrange
+        tick_data = TestDataProvider.ethusdt_trades()
+        self.tick_builder = TradeTickDataWrangler(
+            instrument=InstrumentLoader.ethusdt_binance(),
+            data=tick_data,
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.build_ticks()
+
+        # Assert
+        self.assertEqual(69806, len(ticks))
+        self.assertEqual(Price("423.760"), ticks[0].price)
+        self.assertEqual(Quantity("2.67900"), ticks[0].size)
+        self.assertEqual(Maker.BUYER, ticks[0].maker)
+        self.assertEqual(TradeMatchId("148568980"), ticks[0].match_id)
+        self.assertEqual(Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks[0].timestamp)
 
 
 class BarDataWranglerTests(unittest.TestCase):

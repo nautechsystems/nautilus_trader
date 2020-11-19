@@ -25,6 +25,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
@@ -279,3 +280,60 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.assertEqual(999, strategy.fast_ema.count)
         self.assertEqual(99999, self.engine.iteration)
         self.assertEqual(Money(995390.28, AUD), self.engine.portfolio.account(self.venue).balance())
+
+
+class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
+
+    def setUp(self):
+        self.venue = Venue("BINANCE")
+        self.ethusdt = InstrumentLoader.ethusdt_binance()
+        data = BacktestDataContainer()
+        data.add_instrument(self.ethusdt)
+        data.add_trade_ticks(self.ethusdt.symbol, TestDataProvider.ethusdt_trades())
+
+        config = BacktestConfig(
+            tick_capacity=1000,
+            bar_capacity=1000,
+            exec_db_type='in-memory',
+            exec_db_flush=False,
+            frozen_account=False,
+            starting_capital=1000000,
+            account_currency=USDT,  # Atypical account currency
+            short_term_interest_csv_path='default',
+            bypass_logging=True,
+            level_console=LogLevel.DEBUG,
+            level_file=LogLevel.DEBUG,
+            level_store=LogLevel.WARNING,
+            log_thread=False,
+            log_to_file=False,
+        )
+
+        self.engine = BacktestEngine(
+            data=data,
+            strategies=[EmptyStrategy('000')],
+            venue=self.venue,
+            oms_type=OMSType.NETTING,
+            generate_position_ids=True,
+            config=config,
+        )
+
+    def tearDown(self):
+        self.engine.dispose()
+
+    def test_run_ema_cross_with_tick_bar_spec(self):
+        # Arrange
+        strategy = EMACross(
+            symbol=self.ethusdt.symbol,
+            bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+            trade_size=Decimal(100),
+            fast_ema=10,
+            slow_ema=20,
+        )
+
+        # Act
+        self.engine.run(strategies=[strategy])
+
+        # Assert
+        self.assertEqual(279, strategy.fast_ema.count)
+        self.assertEqual(69806, self.engine.iteration)
+        self.assertEqual(Money(997725.31100000, USDT), self.engine.portfolio.account(self.venue).balance())
