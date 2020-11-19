@@ -159,9 +159,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_3decimal(symbol) -> QuoteTick:
+    def quote_tick_3decimal(symbol=None) -> QuoteTick:
         return QuoteTick(
-            symbol,
+            symbol if symbol is not None else TestStubs.symbol_usdjpy_fxcm(),
             Price("90.002"),
             Price("90.003"),
             Quantity(1),
@@ -170,9 +170,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_5decimal(symbol) -> QuoteTick:
+    def quote_tick_5decimal(symbol=None) -> QuoteTick:
         return QuoteTick(
-            symbol,
+            symbol if symbol is not None else TestStubs.symbol_audusd_fxcm(),
             Price("1.00001"),
             Price("1.00003"),
             Quantity(1),
@@ -181,9 +181,9 @@ class TestStubs:
         )
 
     @staticmethod
-    def trade_tick_5decimal(symbol) -> TradeTick:
+    def trade_tick_5decimal(symbol=None) -> TradeTick:
         return TradeTick(
-            symbol,
+            symbol if symbol is not None else TestStubs.symbol_audusd_fxcm(),
             Price("1.00001"),
             Quantity(100000),
             Maker.BUYER,

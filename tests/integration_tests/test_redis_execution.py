@@ -31,7 +31,7 @@ from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.trading.account import Account
-from tests.test_kit.strategies import EmptyStrategy
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.stubs import TestStubs
 
 
@@ -51,7 +51,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         self.trader_id = TraderId("TESTER", "000")
 
-        self.strategy = EmptyStrategy(order_id_tag="001")
+        self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(
             TraderId("TESTER", "000"),
             clock,

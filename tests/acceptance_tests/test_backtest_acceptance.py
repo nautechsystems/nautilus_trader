@@ -36,10 +36,10 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.strategies import EMACross
-from tests.test_kit.strategies import EmptyStrategy
 
 
 class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
@@ -71,7 +71,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy('000')],
+            strategies=[TradingStrategy('000')],
             venue=self.venue,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -188,7 +188,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy('000')],
+            strategies=[TradingStrategy('000')],
             venue=self.venue,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -250,7 +250,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy('000')],
+            strategies=[TradingStrategy('000')],
             venue=self.venue,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
@@ -330,7 +330,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy('000')],
+            strategies=[TradingStrategy('000')],
             venue=self.venue,
             oms_type=OMSType.NETTING,
             generate_position_ids=True,

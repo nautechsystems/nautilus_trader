@@ -24,8 +24,8 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.data_provider import TestDataProvider
-from tests.test_kit.strategies import EmptyStrategy
 from tests.test_kit.stubs import TestStubs
 
 
@@ -43,7 +43,7 @@ class BacktestEngineTests(unittest.TestCase):
 
         self.engine = BacktestEngine(
             data=data,
-            strategies=[EmptyStrategy("000")],
+            strategies=[TradingStrategy("000")],
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
