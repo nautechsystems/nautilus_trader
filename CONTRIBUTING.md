@@ -1,39 +1,44 @@
 # Contributing to NautilusTrader
 
-Involvement from the trading community is a goal for this project. All developers
-are welcome to open issues/discussions on GitHub for proposed enhancements, feature
-requests, and bug reports. Its best practice to keep all discussions for changes
-to the codebase public.
+Involvement from the trading community is a goal for this project. All help is welcome!
+Developers can open issues on GitHub to discuss proposed enhancements/changes, or
+to make bug reports.
 
-To contribute the following steps are suggested;
+It's a best practice to keep all discussions regarding changes to the codebase public.
+
+To contribute, the following steps should be followed;
 
 - Open an issue on GitHub to discuss your proposal.
 
-- Take a fork of the develop branch.
+- Once everyone is on the same page, take a fork of the `develop` branch (or ensure all upstream changes are merged).
 
 - Install and setup pre-commit so that the pre-commit hook will be picked up on
   your local machine. This will automatically run various checks, auto-formatters
-  and linting tools. More information can be found here https://pre-commit.com/.
+  and linting tools. Further information can be found here https://pre-commit.com/.
 
 - Install the latest version of isort `pip install -U isort` (used in the pre-commit).
 
-- Before committing it's good practice to run `pre-commit run --all-files` yourself.
+- Before committing it's a good practice to run `pre-commit run --all-files` yourself.
 
-- It's recommended you install Redis with the default configuration so that integration
+- It's recommended you install _Redis_ with a default configuration, so that integration
   tests will pass on your machine.
 
-- Open a pull request (PR) on the develop branch with some comments, its suggested to
-  also reference any related GitHub issues.
+- Open a pull request (PR) on the `develop` branch with a summary comment.
 
-- A heads up that once the PR hits the branch the CI system will run the full test suite over
-  your code including all unit, integration, acceptance and performance tests.
-  Codacy will also automatically run a code review.
+- The CI system will run the full test-suite over your code including all unit and integration tests, so please include appropriate tests
+  with the PR.
 
-- We will endeavour to review your code expeditiously and merge it into develop!
+- [Codacy](https://www.codacy.com/) will perform an automated code review. Please
+  fix any issues which cause a failed check, and add the commit to your PR.
 
-Please include appropriate tests along with your code. Code coverage tracking
-will soon be introduced and its a goal to work towards 100%.
+- We will endeavour to review your code expeditiously, there may be some
+  feedback on needed changes before merging.
 
-Please conform to the established coding practices and also keep PR's focused.
+### Tips
+- Conform to the established coding practices, see _Coding Standards_ in the
+  [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html).
 
-Thank you for your interest in NautilusTrader!
+- Keep PR's small and focused.
+- Reference the related GitHub issue(s) in the PR comment.
+
+Thank you for your interest in _NautilusTrader_!
