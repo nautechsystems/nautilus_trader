@@ -918,7 +918,7 @@ cdef class TradingStrategy:
 
         Warnings
         --------
-        Exceptions raised in `dispose` will be caught, logged, and reraised.
+        Exceptions raised in `on_dispose` will be caught, logged, and reraised.
 
         """
         if self.trader_id is None:
@@ -964,6 +964,8 @@ cdef class TradingStrategy:
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
             raise RuntimeError("save called when not registered with a trader")
 
+        self.log.info("Saving state...")
+
         cpdef dict state = {"OrderIdCount": self.order_factory.count}
 
         try:
@@ -971,6 +973,8 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
             raise ex  # Invalid state information could be saved
+
+        self.log.info("Saved state.")
 
         return {**state, **user_state}
 
@@ -1013,6 +1017,8 @@ cdef class TradingStrategy:
         except Exception as ex:
             self.log.exception(ex)
             raise ex
+
+        self.log.info("Loaded state.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -1469,11 +1475,11 @@ cdef class TradingStrategy:
         cdef Quantity quantity = order.quantity
         cdef Price price = order.price
 
-        if new_quantity is not None:
+        if new_quantity is not None and new_quantity != quantity:
             modifying = True
             quantity = new_quantity
 
-        if new_price is not None:
+        if new_price is not None and new_price != price:
             modifying = True
             price = new_price
 
