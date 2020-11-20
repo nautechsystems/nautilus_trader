@@ -57,6 +57,7 @@ uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
 # - https://github.com/cython/cython/issues/3515
 coverage = "^4.5.4"
 flake8 = "^3.8.4"
+isort = "^5.6.4"
 nox = "^2020.8.22"
 parameterized = "^0.7.4"
 pre-commit = "^2.7.1"
