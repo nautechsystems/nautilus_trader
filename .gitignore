@@ -22,7 +22,7 @@
 .python-version
 .vscode/
 __pycache__
-venv/
+venv*/
 build/
 dist/
 log/
