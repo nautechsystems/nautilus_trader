@@ -509,6 +509,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 year=now.year,
                 month=now.month,
                 day=now.day - (now.day % step),
+                tzinfo=now.tzinfo,
             )
         else:
             # Design time error
