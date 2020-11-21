@@ -496,7 +496,7 @@ cdef class SimulatedExchange:
         self.account_balance = Money(self.account_balance + adjustment, self.account_currency)
         self.account_activity_day = Money(self.account_activity_day + adjustment, self.account_currency)
 
-        # Generate and send event
+        # Generate and handle event
         cdef AccountState event = self._generate_account_event()
         self.account.apply(event)
         self.exec_client.handle_event(event)
