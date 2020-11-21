@@ -210,8 +210,7 @@ cdef class Trader:
             self._fsm.trigger(ComponentTrigger.START)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            self.stop()  # Do not start trader in an invalid state
-            return
+            raise ex  # Do not put trader in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -234,7 +233,7 @@ cdef class Trader:
             self._fsm.trigger(ComponentTrigger.STOP)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex  # Do not put trader in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -284,7 +283,7 @@ cdef class Trader:
             self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex  # Do not put trader in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -307,7 +306,7 @@ cdef class Trader:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex  # Do not put trader in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 

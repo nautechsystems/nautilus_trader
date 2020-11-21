@@ -23,24 +23,7 @@ import pytz
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEvent
-from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.stubs import UNIX_EPOCH
-
-
-class TimeEventTests(unittest.TestCase):
-
-    def test_sort_time_events(self):
-        # Arrange
-        event1 = TimeEvent("123", uuid4(), UNIX_EPOCH)
-        event2 = TimeEvent("123", uuid4(), UNIX_EPOCH)
-        event3 = TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1))
-
-        # Act
-        # Stable sort as event1 and event2 remain in order
-        result = sorted([event3, event1, event2])
-
-        # Assert
-        self.assertEqual([event1, event2, event3], result)
 
 
 class TestClockTests(unittest.TestCase):

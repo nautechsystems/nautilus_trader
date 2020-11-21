@@ -27,6 +27,7 @@ FILES_TO_CLEAN = {
     "coverage.xml",
     "dump.rdb",
 }
+
 DIRS_TO_CLEAN = {
     ".nox",
     ".profile",
@@ -40,7 +41,6 @@ DIRS_TO_CLEAN = {
 }
 
 EXTENSIONS_TO_CLEAN = (
-    ".c",
     ".dll",
     ".html",
     ".o",
@@ -54,6 +54,7 @@ if __name__ == "__main__":
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     print(f"root_dir={root_dir}")
 
+    # Remove specific files
     for target in FILES_TO_CLEAN:
         try:
             os.remove(os.path.join(root_dir, target))
@@ -61,12 +62,14 @@ if __name__ == "__main__":
         except FileNotFoundError:
             pass
 
+    # Remove specific directories
     for target in DIRS_TO_CLEAN:
         print(f"Removing dir: {target}")
         shutil.rmtree(os.path.join(root_dir, target), ignore_errors=True)
 
+    # Walk /nautilus_trader/ and remove files by extension
     removed_count = 0
-    for root, _dirs, files in os.walk(root_dir):
+    for root, _dirs, files in os.walk(root_dir + '/nautilus_trader/'):
         for name in files:
             path = os.path.join(root, name)
             if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):

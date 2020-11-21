@@ -64,16 +64,14 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Installation
 
-The latest version is tested against Python 3.6 - 3.9 on _Linux_ and _MacOS_.
-_Windows_ support is in the pipeline.
+The latest version is tested against Python 3.6 - 3.9 on Linux and MacOS.
+Windows support is in the pipeline.
+
+We recommend you setup a virtual environment to isolate the dependencies.
 
 To install the latest package from PyPI, run:
 
     pip install nautilus_trader
-
-To install from source using [Poetry](https://python-poetry.org/), run:
-
-    poetry install
 
 To install from source using _pip_, run:
 
@@ -85,9 +83,15 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 > https://www.jetbrains.com/pycharm/
 
-To run code or tests from the source code, first compile the C extensions for the package by running:
+To install all dependencies using [Poetry](https://python-poetry.org/), run:
+
+    poetry install
+
+Then compile the C extensions for the package by running:
 
     python build.py
+
+After each code change to a `.pyx` or `.pxd` file, you must recompile.
 
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 

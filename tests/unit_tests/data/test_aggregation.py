@@ -18,6 +18,7 @@ from datetime import timedelta
 from decimal import Decimal
 import unittest
 
+from parameterized import parameterized
 import pytz
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -64,6 +65,16 @@ class BarBuilderTests(unittest.TestCase):
         self.assertIsNone(builder.last_timestamp)
         self.assertEqual(0, builder.count)
 
+    def test_str_repr(self):
+        # Arrange
+        bar_spec = TestStubs.bar_spec_1min_mid()
+        builder = BarBuilder(bar_spec, use_previous_close=False)
+
+        # Act
+        # Assert
+        self.assertEqual("BarBuilder(bar_spec=1-MINUTE-MID,None,None,None,None,0)", str(builder))
+        self.assertEqual("BarBuilder(bar_spec=1-MINUTE-MID,None,None,None,None,0)", repr(builder))
+
     def test_single_update_results_in_expected_properties(self):
         # Arrange
         bar_spec = TestStubs.bar_spec_1min_mid()
@@ -71,6 +82,20 @@ class BarBuilderTests(unittest.TestCase):
 
         # Act
         builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+
+        # Assert
+        self.assertTrue(builder.initialized)
+        self.assertEqual(UNIX_EPOCH, builder.last_timestamp)
+        self.assertEqual(1, builder.count)
+
+    def test_single_update_when_timestamp_less_than_last_update_ignores(self):
+        # Arrange
+        bar_spec = TestStubs.bar_spec_1min_mid()
+        builder = BarBuilder(bar_spec, use_previous_close=True)
+        builder.update(Price("1.00000"), Quantity("1"), UNIX_EPOCH)
+
+        # Act
+        builder.update(Price("1.00001"), Quantity("1"), UNIX_EPOCH - timedelta(seconds=1))
 
         # Assert
         self.assertTrue(builder.initialized)
@@ -721,6 +746,47 @@ class ValueBarAggregatorTests(unittest.TestCase):
 
 class TimeBarAggregatorTests(unittest.TestCase):
 
+    def test_instantiate_given_invalid_bar_spec_raises_value_error(self):
+        # Arrange
+        clock = TestClock()
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(symbol, bar_spec)
+
+        # Act
+        # Assert
+        self.assertRaises(
+            ValueError,
+            TimeBarAggregator,
+            bar_type,
+            handler,
+            True,
+            clock,
+            TestLogger(clock),
+        )
+
+    @parameterized.expand([
+        [BarSpecification(10, BarAggregation.SECOND, PriceType.MID), datetime(1970, 1, 1, 0, 0, 10, tzinfo=pytz.utc)],
+        [BarSpecification(1, BarAggregation.MINUTE, PriceType.MID), datetime(1970, 1, 1, 0, 1, tzinfo=pytz.utc)],
+        [BarSpecification(1, BarAggregation.HOUR, PriceType.MID), datetime(1970, 1, 1, 1, 0, tzinfo=pytz.utc)],
+        [BarSpecification(1, BarAggregation.DAY, PriceType.MID), datetime(1970, 1, 2, 0, 0, tzinfo=pytz.utc)],
+    ])
+    def test_instantiate_with_various_bar_specs(self, bar_spec, expected):
+        # Arrange
+        clock = TestClock()
+        bar_store = ObjectStorer()
+        handler = bar_store.store
+        symbol = TestStubs.symbol_audusd_fxcm()
+        bar_type = BarType(symbol, bar_spec)
+
+        # Act
+        aggregator = TimeBarAggregator(bar_type, handler, True, clock, TestLogger(clock))
+
+        # Assert
+        self.assertEqual(expected, aggregator.next_close)
+
     def test_update_timed_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
         clock = TestClock()
@@ -806,5 +872,4 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         builder.receive(ticks)
 
         # Assert
-        print(bar_store.get_store())
         self.assertEqual(333, len(bar_store.get_store()[0][1]))

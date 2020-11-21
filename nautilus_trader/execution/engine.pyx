@@ -300,7 +300,7 @@ cdef class ExecutionEngine:
             self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -323,7 +323,7 @@ cdef class ExecutionEngine:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -549,6 +549,7 @@ cdef class ExecutionEngine:
             order.apply(event)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
+            # Not re-raising to avoid crashing engine
 
         self.cache.update_order(order)
 
