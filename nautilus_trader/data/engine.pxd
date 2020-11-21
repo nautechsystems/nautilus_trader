@@ -148,7 +148,7 @@ cdef class DataEngine:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _internal_update_instruments(self, list instruments) except *
+    cpdef void _internal_update_instruments(self, list instruments) except *
     cdef inline void _start_bar_aggregator(self, BarType bar_type) except *
     cdef inline void _stop_bar_aggregator(self, BarType bar_type) except *
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *

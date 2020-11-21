@@ -687,10 +687,8 @@ class MoneyTests(unittest.TestCase):
         money0 = Money(0, USD)
 
         # Act
-        result = hash(money0)
-
         # Assert
-        self.assertEqual(int, type(result))
+        self.assertEqual(int, type(hash(money0)))
         self.assertEqual(hash(money0), hash(money0))
 
     def test_str(self):

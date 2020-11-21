@@ -49,28 +49,16 @@ cdef class TimeEvent(Event):
             The event timestamp.
 
         """
-        # Precondition: name checked in Timer
+        Condition.valid_string(name, "name")
         super().__init__(event_id, event_timestamp)
 
         self.name = name
 
     def __eq__(self, TimeEvent other) -> bool:
-        return self.timestamp == other.timestamp
+        return self.name == other.name
 
     def __ne__(self, TimeEvent other) -> bool:
-        return self.timestamp != other.timestamp
-
-    def __lt__(self, TimeEvent other) -> bool:
-        return self.timestamp < other.timestamp
-
-    def __le__(self, TimeEvent other) -> bool:
-        return self.timestamp <= other.timestamp
-
-    def __gt__(self, TimeEvent other) -> bool:
-        return self.timestamp > other.timestamp
-
-    def __ge__(self, TimeEvent other) -> bool:
-        return self.timestamp >= other.timestamp
+        return self.name != other.name
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
