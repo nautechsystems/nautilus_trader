@@ -18,6 +18,3 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _queue
-    cdef object _thread
-
-    cpdef void _loop(self) except *

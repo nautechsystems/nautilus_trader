@@ -27,6 +27,7 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
@@ -354,7 +355,9 @@ cdef class BacktestEngine:
         # TODO: Temporary fix to initialize account
         self.exchange.adjust_account(Money(0, self.exchange.account_currency))
 
-        # Start trader which starts strategies
+        # Start main components
+        self.data_engine.start()
+        self.exec_engine.start()
         self.trader.start()
 
         cdef Tick tick
@@ -367,9 +370,8 @@ cdef class BacktestEngine:
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
-        self.log.debug("Stopping...")
         self.trader.stop()
-        self.log.info("Stopped.")
+
         self._backtest_footer(run_started, self.clock.utc_now(), start, stop)
         if print_log_store:
             self.print_log_store()
@@ -423,16 +425,22 @@ cdef class BacktestEngine:
         """
         self.log.debug(f"Resetting...")
 
-        self.iteration = 0
+        if self.data_engine.state_c() == ComponentState.RUNNING:
+            self.data_engine.stop()
         self.data_engine.reset()
+
+        if self.exec_engine.state_c() == ComponentState.RUNNING:
+            self.exec_engine.stop()
         if self.config.exec_db_flush:
             self.exec_engine.flush_db()
         self.exec_engine.reset()
-        self.exec_client.reset()
+
         self.trader.reset()
         self.exchange.reset()
         self.logger.clear_log_store()
         self.test_logger.clear_log_store()
+
+        self.iteration = 0
 
         self.log.info("Reset.")
 
@@ -442,6 +450,12 @@ cdef class BacktestEngine:
 
         """
         self.trader.dispose()
+
+        if self.data_engine.state_c() == ComponentState.RUNNING:
+            self.data_engine.stop()
+        if self.exec_engine.state_c() == ComponentState.RUNNING:
+            self.exec_engine.stop()
+
         self.data_engine.dispose()
         self.exec_engine.dispose()
 

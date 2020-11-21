@@ -306,6 +306,8 @@ cdef class BacktestDataProducer(DataClient):
             logger,
         )
 
+        self._is_connected = False
+
         # Check data integrity
         data.check_integrity()
         self._data = data
@@ -581,11 +583,31 @@ cdef class BacktestDataProducer(DataClient):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef bint is_connected(self) except *:
+        """
+        Return a value indicating whether the client is connected.
+
+        Returns
+        -------
+        bool
+            True if connected, else False.
+
+        """
+        return self._is_connected
+
     cpdef void connect(self) except *:
-        pass  # NO-OP for backtest engine
+        """
+        Connect the client.
+        """
+        self._is_connected = True
+        self._log.debug(f"Connected.")
 
     cpdef void disconnect(self) except *:
-        pass  # NO-OP for backtest engine
+        """
+        Disconnect the client.
+        """
+        self._is_connected = False
+        self._log.debug(f"Disconnected.")
 
     cpdef void reset(self) except *:
         """
@@ -636,7 +658,12 @@ cdef class BacktestDataProducer(DataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
-        # Do nothing for backtest
+
+        if not self._is_connected:
+            self._log.error(f"Cannot request quote ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void request_trade_ticks(
             self,
@@ -649,7 +676,12 @@ cdef class BacktestDataProducer(DataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
-        # Do nothing for backtest
+
+        if not self._is_connected:
+            self._log.error(f"Cannot request trade ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void request_bars(
             self,
@@ -662,11 +694,20 @@ cdef class BacktestDataProducer(DataClient):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
-        # Do nothing for backtest
+
+        if not self._is_connected:
+            self._log.error(f"Cannot request bars for {bar_type} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
+
+        if not self._is_connected:
+            self._log.error(f"Cannot request instrument for {symbol} (not connected).")
+            return
 
         cdef Instrument instrument = self._data.instruments.get(symbol)
 
@@ -682,33 +723,59 @@ cdef class BacktestDataProducer(DataClient):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
-        pass
-        # Do nothing for backtest
+        if not self._is_connected:
+            self._log.error(f"Cannot subscribe to instrument for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
-        pass
-        # Do nothing for backtest
+        if not self._is_connected:
+            self._log.error(f"Cannot subscribe to quote ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
-        pass
-        # Do nothing for backtest
+        if not self._is_connected:
+            self._log.error(f"Cannot subscribe to trade ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
+        if not self._is_connected:
+            self._log.error(f"Cannot subscribe to bars for {bar_type} (not connected).")
+            return
+
         self._log.error(f"Cannot subscribe to externally aggregated bars "
                         f"(backtesting only supports internal aggregation at this stage).")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
-        pass
-        # Do nothing for backtest
+        if not self._is_connected:
+            self._log.error(f"Cannot unsubscribe from instrument for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
-        pass
-        # Do nothing for backtest
+        if not self._is_connected:
+            self._log.error(f"Cannot unsubscribe from quote ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
-        pass
-        # Do nothing for backtest
+        if not self._is_connected:
+            self._log.error(f"Cannot unsubscribe from trade ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+        if not self._is_connected:
+            self._log.error(f"Cannot unsubscribe from bars {bar_type} (not connected).")
+            return
+
         self._log.error(f"Cannot unsubscribe from externally aggregated bars "
                         f"(backtesting only supports internal aggregation at this stage).")

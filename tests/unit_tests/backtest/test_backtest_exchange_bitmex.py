@@ -128,6 +128,8 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
 
         self.data_engine.register_strategy(self.strategy)
         self.exec_engine.register_strategy(self.strategy)
+        self.data_engine.start()
+        self.exec_engine.start()
 
     def test_commission_maker_taker_order(self):
         # Arrange

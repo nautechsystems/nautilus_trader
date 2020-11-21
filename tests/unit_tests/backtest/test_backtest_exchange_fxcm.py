@@ -132,6 +132,8 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         self.data_engine.register_strategy(self.strategy)
         self.exec_engine.register_strategy(self.strategy)
+        self.data_engine.start()
+        self.exec_engine.start()
 
     def test_submit_market_order(self):
         # Arrange

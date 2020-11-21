@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.messages cimport Connect
 from nautilus_trader.common.messages cimport Disconnect
@@ -68,20 +69,29 @@ cdef class DataEngine:
     cdef readonly int response_count
     """The total count of responses received by the engine.\n\n:returns: `int`"""
 
+    cdef ComponentState state_c(self)
+
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *
     cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_client(self, DataClient client) except *
 
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void on_start(self) except *
+    cpdef void on_stop(self) except *
+
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void start(self) except *
+    cpdef void stop(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, data) except *
     cpdef void send(self, DataRequest request) except *
     cpdef void receive(self, DataResponse response) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
     cpdef void update_instruments(self, Venue venue) except *
     cpdef void update_instruments_all(self) except *
 

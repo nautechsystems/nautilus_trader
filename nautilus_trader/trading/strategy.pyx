@@ -186,6 +186,19 @@ cdef class TradingStrategy:
     cpdef void on_start(self) except *:
         """
         Actions to be performed on strategy start.
+
+        The intent is that this method is called once per fresh trading session
+        when the strategy is initially started.
+
+        It is recommended to subscribe/request data here, and also register
+        indicators for data.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
         """
         # Should override in subclass
         warnings.warn("on_start was called when not overridden")
@@ -193,19 +206,41 @@ cdef class TradingStrategy:
     cpdef void on_stop(self) except *:
         """
         Actions to be performed when the strategy is stopped.
+
+        The intent is that this method is called every time the strategy is
+        paused, and also when it is done for day.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
         """
         # Should override in subclass
         warnings.warn("on_stop was called when not overridden")
 
     cpdef void on_resume(self) except *:
         """
-        Actions to be performed when the strategy is stopped.
+        Actions to be performed when the strategy is resumed.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         pass  # Optionally override in subclass
 
     cpdef void on_reset(self) except *:
         """
         Actions to be performed when the strategy is reset.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
         """
         # Should override in subclass
         warnings.warn("on_reset was called when not overridden")
@@ -221,6 +256,10 @@ cdef class TradingStrategy:
         'OrderIdCount' and 'PositionIdCount' are reserved keys for
         the returned state dictionary.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         return {}  # Optionally override in subclass
 
@@ -229,6 +268,11 @@ cdef class TradingStrategy:
         Actions to be performed when the strategy is loaded.
 
         Saved state values will be contained in the give state dictionary.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         pass  # Optionally override in subclass
 
@@ -237,6 +281,13 @@ cdef class TradingStrategy:
         Actions to be performed when the strategy is disposed.
 
         Cleanup any resources used by the strategy here.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
         """
         # Should override in subclass
         warnings.warn("on_dispose was called when not overridden")
@@ -250,6 +301,10 @@ cdef class TradingStrategy:
         tick : QuoteTick
             The tick received.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         pass  # Optionally override in subclass
 
@@ -261,6 +316,10 @@ cdef class TradingStrategy:
         ----------
         tick : TradeTick
             The tick received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         pass  # Optionally override in subclass
@@ -276,6 +335,10 @@ cdef class TradingStrategy:
         bar : Bar
             The bar received.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         pass  # Optionally override in subclass
 
@@ -288,6 +351,10 @@ cdef class TradingStrategy:
         data : object
             The data object received.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         pass  # Optionally override in subclass
 
@@ -299,6 +366,10 @@ cdef class TradingStrategy:
         ----------
         event : Event
             The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         pass  # Optionally override in subclass
@@ -325,6 +396,10 @@ cdef class TradingStrategy:
             The uuid_factory for the strategy.
         logger : Logger
             The logger for the strategy.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(trader_id, "trader_id")
@@ -354,6 +429,10 @@ cdef class TradingStrategy:
         engine : DataEngine
             The data engine to register.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         Condition.not_none(engine, "engine")
 
@@ -368,6 +447,10 @@ cdef class TradingStrategy:
         ----------
         engine : ExecutionEngine
             The execution engine to register.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(engine, "engine")
@@ -415,6 +498,7 @@ cdef class TradingStrategy:
             The symbol for tick updates.
         indicator : indicator
             The indicator to register.
+
 
         """
         Condition.not_none(symbol, "symbol")
@@ -1491,7 +1575,7 @@ cdef class TradingStrategy:
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot modify {order} (no account assigned to order yet).")
+            self.log.error(f"Cannot modify order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
         cdef ModifyOrder command = ModifyOrder(
@@ -1526,7 +1610,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._exec_engine, "exec_engine")
 
         if order.account_id is None:
-            self.log.error(f"Cannot cancel {order} (no account assigned to order yet).")
+            self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
         cdef CancelOrder command = CancelOrder(
@@ -1584,8 +1668,8 @@ cdef class TradingStrategy:
 
         if position.is_closed_c():
             self.log.warning(
-                f"Cannot flatten {position} "
-                f"(the position is already closed)."
+                f"Cannot flatten position "
+                f"(the position is already closed), {position}."
             )
             return  # Invalid command
 

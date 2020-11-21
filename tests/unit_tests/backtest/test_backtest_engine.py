@@ -52,6 +52,7 @@ class BacktestEngineTests(unittest.TestCase):
         )
 
     def tearDown(self):
+        self.engine.reset()
         self.engine.dispose()
 
     def test_initialization(self):

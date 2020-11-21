@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import queue
-import threading
+import asyncio
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -77,14 +76,26 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             logger=logger,
         )
 
-        self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        self._queue = asyncio.Queue()
+
+    cpdef void on_start(self) except *:
+        self.process_queue()
+
+    async def process_queue(self):
+        cdef Message message
+        while True:
+            message = self._queue.get()
+
+            if message.type == MessageType.EVENT:
+                self._handle_event(message)
+            elif message.type == MessageType.COMMAND:
+                self._execute_command(message)
+            else:
+                self._log.error(f"Invalid message type on queue ({repr(message)}).")
 
     cpdef void execute(self, Command command) except *:
         """
-        Handle the given command by inserting it into the message bus for
-        execution.
+        Execute the given command.
 
         Parameters
         ----------
@@ -98,8 +109,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cpdef void process(self, Event event) except *:
         """
-        Handle the given event by inserting it into the message bus for
-        processing.
+        Process the given event.
 
         Parameters
         ----------
@@ -110,17 +120,3 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.not_none(event, "event")
 
         self._queue.put(event)
-
-    cpdef void _loop(self) except *:
-        self._log.info("Running...")
-
-        cdef Message message
-        while True:
-            message = self._queue.get()
-
-            if message.type == MessageType.EVENT:
-                self._handle_event(message)
-            elif message.type == MessageType.COMMAND:
-                self._execute_command(message)
-            else:
-                self._log.error(f"Invalid message type on queue ({repr(message)}).")

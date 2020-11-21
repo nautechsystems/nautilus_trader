@@ -47,8 +47,8 @@ cdef class BacktestDataProducer(DataClient):
     cdef BacktestDataContainer _data
     cdef object _quote_tick_data
     cdef object _trade_tick_data
-
     cdef dict _symbol_index
+    cdef bint _is_connected
 
     cdef unsigned short[:] _quote_symbols
     cdef str[:] _quote_bids
