@@ -70,7 +70,7 @@ cdef class Connect(Command):
 
         Parameters
         ----------
-        venue : Venue
+        venue : Venue or None
             The venue to connect to. If None then command is to connect to all
             venues.
         command_id : UUID
@@ -106,7 +106,7 @@ cdef class Disconnect(Command):
 
         Parameters
         ----------
-        venue : Venue
+        venue : Venue or None
             The venue to disconnect from. If None then command is to disconnect
             from all venues.
         command_id : UUID

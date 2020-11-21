@@ -307,7 +307,7 @@ cdef class DataEngine:
             self._fsm.trigger(ComponentTrigger.RESET)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -341,7 +341,7 @@ cdef class DataEngine:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            return
+            raise ex
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -368,20 +368,20 @@ cdef class DataEngine:
         cdef DataRequest request = DataRequest(
             data_type=Instrument,
             metadata={VENUE: venue},
-            handler=self._internal_update_instruments,
-            command_id=self._uuid_factory.generate(),
-            command_timestamp=self._clock.utc_now(),
+            callback=self._internal_update_instruments,
+            request_id=self._uuid_factory.generate(),
+            request_timestamp=self._clock.utc_now(),
         )
 
         # Send to external API entry as this method could be called at any time
-        self.execute(request)
+        self.send(request)
 
     cpdef void update_instruments_all(self) except *:
         """
         Update all instruments for every venue.
         """
         cdef Venue venue
-        for venue in self.registered_venues():
+        for venue in self.registered_venues:
             self.update_instruments(venue)
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
@@ -402,8 +402,6 @@ cdef class DataEngine:
             self._log.error(f"Cannot handle unrecognized command {command}.")
 
     cdef inline void _handle_connect(self, Connect command) except *:
-        self._log.info("Connecting all clients...")
-
         cdef DataClient client
         if command.venue is not None:
             client = self._clients.get(command.venue)
@@ -411,14 +409,14 @@ cdef class DataEngine:
                 self._log.error(f"Cannot handle command "
                                 f"(no client registered for {command.venue}).")
             else:
+                self._log.info(f"Connecting {command.venue}...")
                 client.connect()
         else:
-            for client in self._clients:
+            for client in self._clients.values():
+                self._log.info(f"Connecting {client.venue}...")
                 client.connect()
 
     cdef inline void _handle_disconnect(self, Disconnect command) except *:
-        self._log.info("Disconnecting all clients...")
-
         cdef DataClient client
         if command.venue is not None:
             client = self._clients.get(command.venue)
@@ -426,9 +424,11 @@ cdef class DataEngine:
                 self._log.error(f"Cannot handle command "
                                 f"(no client registered for {command.venue}).")
             else:
+                self._log.info(f"Disconnecting {command.venue}...")
                 client.disconnect()
         else:
-            for client in self._clients:
+            for client in self._clients.values():
+                self._log.info(f"Disconnecting {client.venue}...")
                 client.disconnect()
 
     cdef inline void _handle_subscribe(self, Subscribe command) except *:
@@ -824,6 +824,9 @@ cdef class DataEngine:
             self._log.error(f"Callback not found for correlation_id {correlation_id}.")
             return
 
+        if callback == self._internal_update_instruments:
+            return  # Already updated
+
         callback(instruments)
 
     cdef inline void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *:
@@ -858,7 +861,8 @@ cdef class DataEngine:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _internal_update_instruments(self, list instruments: [Instrument]) except *:
+    # Python wrapper to enable callbacks
+    cpdef void _internal_update_instruments(self, list instruments: [Instrument]) except *:
         # Handle all instruments individually
         cdef Instrument instrument
         for instrument in instruments:
