@@ -112,9 +112,7 @@ cdef class MsgPackSerializer:
         """
         Condition.not_none(message_bytes, "message_bytes")
 
-        cdef dict unpacked = msgpack.unpackb(message_bytes)
-
-        return {k: v for k, v in unpacked.items()}
+        return msgpack.unpackb(message_bytes)
 
 
 cdef class MsgPackDictionarySerializer(DictionarySerializer):
