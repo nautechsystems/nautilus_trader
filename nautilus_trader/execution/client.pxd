@@ -37,20 +37,20 @@ cdef class ExecutionClient:
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
 
+    cpdef bint is_connected(self) except *
+
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
 
-    cpdef bint is_connected(self) except *
-
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
     cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_event(self, Event event) except *

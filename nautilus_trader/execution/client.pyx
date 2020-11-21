@@ -94,7 +94,7 @@ cdef class ExecutionClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- COMMANDS --------------------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
         """Abstract method (implement in subclass)."""
@@ -112,7 +112,7 @@ cdef class ExecutionClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_event(self, Event event) except *:
         """

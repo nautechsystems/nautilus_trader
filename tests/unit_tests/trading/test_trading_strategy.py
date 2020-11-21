@@ -147,6 +147,9 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))  # Prepare market
 
+        self.data_engine.start()
+        self.exec_engine.start()
+
     def test_strategy_equality(self):
         # Arrange
         strategy1 = TradingStrategy(order_id_tag="AUD/USD-001")
