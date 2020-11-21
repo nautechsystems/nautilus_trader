@@ -779,8 +779,8 @@ cdef class LimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
         cdef dict options = {
-            POST_ONLY: str(post_only),
-            HIDDEN: str(hidden),
+            POST_ONLY: post_only,
+            HIDDEN: hidden,
         }
 
         super().__init__(
@@ -832,8 +832,8 @@ cdef class LimitOrder(PassiveOrder):
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
-            post_only=str(event.options.get(POST_ONLY, True)) == str(True),
-            hidden=str(event.options.get(HIDDEN, False)) == str(True),
+            post_only=event.options.get(POST_ONLY, True),
+            hidden=event.options.get(HIDDEN, False),
         )
 
 

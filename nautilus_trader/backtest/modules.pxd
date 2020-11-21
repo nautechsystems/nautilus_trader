@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from decimal import Decimal
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.logging cimport LoggerAdapter
