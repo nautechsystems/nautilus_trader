@@ -217,7 +217,7 @@ cdef class DataEngine:
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client", "_clients")
+        Condition.not_in(client.venue, self._clients, "client", "self._clients")
 
         self._clients[client.venue] = client
 
@@ -238,6 +238,22 @@ cdef class DataEngine:
         strategy.register_data_engine(self)
 
         self._log.info(f"Registered {strategy}.")
+
+    cpdef void deregister_client(self, DataClient client) except *:
+        """
+        Deregister the given data client from the data engine.
+
+        Parameters
+        ----------
+        client : DataClient
+            The data client to deregister.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
+
+        del self._clients[client.venue]
+        self._log.info(f"De-registered {client}.")
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -363,7 +379,7 @@ cdef class DataEngine:
 
         """
         Condition.not_none(venue, "venue")
-        Condition.is_in(venue, self._clients, "venue", "_clients")
+        Condition.is_in(venue, self._clients, "venue", "self._clients")
 
         cdef DataRequest request = DataRequest(
             data_type=Instrument,
