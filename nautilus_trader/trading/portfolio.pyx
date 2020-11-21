@@ -170,7 +170,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(account, "account")
-        Condition.not_in(account.id.issuer, self._accounts, "venue", "_accounts")
+        Condition.not_in(account.id.issuer, self._accounts, "venue", "self._accounts")
 
         cdef AccountId account_id = account.id
         self._accounts[account_id.issuer_as_venue()] = account

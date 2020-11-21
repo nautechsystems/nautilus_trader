@@ -170,7 +170,7 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client.venue", "_clients")
+        Condition.not_in(client.venue, self._clients, "client.venue", "self._clients")
 
         self._clients[client.venue] = client
         self._log.info(f"Registered {client}.")
@@ -208,7 +208,7 @@ cdef class ExecutionEngine:
 
         """
         Condition.not_none(client, "client")
-        Condition.is_in(client.venue, self._clients, "client.venue", "_clients")
+        Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
 
         del self._clients[client.venue]
         self._log.info(f"De-registered {client}.")

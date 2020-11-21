@@ -1554,7 +1554,7 @@ cdef class TradingStrategy:
             The symbol for the orders to cancel.
 
         """
-        Condition.not_none(self._exec_engine, "_exec_engine")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list working_orders = self.execution.orders_working(symbol, self.id)
 
@@ -1580,7 +1580,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position, "position")
-        Condition.not_none(self._exec_engine, "_exec_engine")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         if position.is_closed_c():
             self.log.warning(
@@ -1625,7 +1625,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._exec_engine, "_exec_engine")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef list positions_open = self.execution.positions_open(symbol, self.id)
 
