@@ -15,54 +15,18 @@
 
 import asyncio
 
-from nautilus_trader.data.engine cimport DataEngine
-
-from cpython.datetime cimport datetime
-
-from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.messages cimport Connect
-from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
-from nautilus_trader.common.messages cimport Subscribe
-from nautilus_trader.common.messages cimport Unsubscribe
-from nautilus_trader.common.component cimport ComponentFSMFactory
-from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport RECV
-from nautilus_trader.common.logging cimport RES
-from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.aggregation cimport BarAggregator
-from nautilus_trader.data.aggregation cimport TickBarAggregator
-from nautilus_trader.data.aggregation cimport TimeBarAggregator
-from nautilus_trader.data.aggregation cimport ValueBarAggregator
-from nautilus_trader.data.aggregation cimport VolumeBarAggregator
-from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
-from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
-from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
-from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class LiveDataEngine(DataEngine):
@@ -106,24 +70,36 @@ cdef class LiveDataEngine(DataEngine):
         self._queue = asyncio.Queue()
 
     cpdef void on_start(self) except *:
-        self.process_queue()
+        self._process_queue()
 
-    async def process_queue(self):
+    async def _process_queue(self):
         while True:
             item = await self._queue.get()
 
+            print(item)
             if isinstance(item, Message):
                 self._process_message(item)
             else:
                 self.process(item)  # Data
 
-    cdef inline void _process_message(self, Message message):
+    cdef inline void _process_message(self, Message message) except *:
         if message.type == MessageType.COMMAND:
             self.execute(message)
         elif message.type == MessageType.REQUEST:
             self.send(message)
         elif message.type == MessageType.RESPONSE:
             self.receive(message)
+
+    cpdef int queue_size(self) except *:
+        """
+        Return the number of messages in the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._queue.qsize()
 
     cpdef void execute(self, Command command) except *:
         """
@@ -137,7 +113,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(command, "command")
 
-        self._queue.put(command)
+        self._queue.put_nowait(command)
 
     cpdef void process(self, data) except *:
         """
@@ -151,7 +127,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(data, "data")
 
-        self._queue.put(data)
+        self._queue.put_nowait(data)
 
     cpdef void send(self, DataRequest request) except *:
         """
@@ -165,7 +141,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(request, "request")
 
-        self._queue.put(request)
+        self._queue.put_nowait(request)
 
     cpdef void receive(self, DataResponse response) except *:
         """
@@ -179,4 +155,4 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(response, "response")
 
-        self._queue.put(response)
+        self._queue.put_nowait(response)

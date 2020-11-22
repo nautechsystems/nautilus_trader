@@ -115,7 +115,7 @@ cdef class DataEngine:
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._use_previous_close = config.get('use_previous_close', True)
+        self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}              # type: {Venue, DataClient}
         self._correlation_index = {}    # type: {UUID, callable}
 

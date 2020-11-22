@@ -4,22 +4,12 @@
     "id_tag": "000"
   },
 
-  "account": {
-    "issuer": "FXCM",
-    "identifier": "02402856",
-    "account_type": "DEMO"
-  },
-
   "logging": {
     "log_level_console": "INFO",
     "log_level_file": "DEBUG",
     "log_level_store": "WARNING",
     "log_to_file": true,
     "log_file_path": "logs/"
-  },
-
-  "exec_engine": {
-    "oms_type": "NETTING"
   },
 
   "exec_database": {
@@ -31,31 +21,5 @@
   "strategy": {
     "load_state": true,
     "save_state": true
-  },
-
-  "messaging": {
-    "zmq_threads": 2,
-    "api_version": "1.0",
-    "compression": "lz4",
-    "encryption": "curve",
-    "keys_dir": "/home/nautilus/keys/"
-  },
-
-  "data_client": {
-    "host": "localhost",
-    "data_req_port": 55501,
-    "data_res_port": 55502,
-    "data_pub_port": 55503,
-    "tick_pub_port": 55504,
-    "venue": "FXCM",
-    "tick_capacity": 1000,
-    "bar_capacity": 1000
-  },
-
-  "exec_client": {
-    "host": "localhost",
-    "command_req_port": 55555,
-    "command_res_port": 55556,
-    "event_pub_port": 55557
   }
 }

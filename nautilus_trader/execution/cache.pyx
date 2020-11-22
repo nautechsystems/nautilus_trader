@@ -81,6 +81,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_positions_closed = set()  # type: {PositionId}
         self._index_strategies = set()        # type: {StrategyId}
 
+        self._log.info("Initialized.")
+
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void cache_accounts(self) except *:

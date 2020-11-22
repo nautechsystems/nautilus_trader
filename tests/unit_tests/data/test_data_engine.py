@@ -34,6 +34,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.stubs import TestStubs
 
 
 BITMEX = Venue("BITMEX")
@@ -230,7 +231,7 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
 
-    def test_receive_request_when_no_data_clients_registered_does_nothing(self):
+    def test_send_request_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         handler = []
         request = DataRequest(
@@ -357,3 +358,14 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
+
+    def test_process_data_places_data_on_queue(self):
+        # Arrange
+        tick = TestStubs.trade_tick_5decimal()
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        # Already received 3 instruments
+        self.assertEqual(4, self.data_engine.data_count)

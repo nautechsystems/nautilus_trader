@@ -179,7 +179,7 @@ cdef class BacktestEngine:
             clock=self.test_clock,
             uuid_factory=self.uuid_factory,
             logger=self.test_logger,
-            config={'use_previous_close': False},
+            config={'use_previous_close': False},  # Ensures bars match historical data
         )
 
         self.exec_engine = ExecutionEngine(
