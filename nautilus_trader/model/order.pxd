@@ -91,7 +91,7 @@ cdef class Order:
     cdef OrderEvent last_event_c(self)
     cdef list events_c(self)
     cdef list execution_ids_c(self)
-    cdef int event_count_c(self)
+    cdef int event_count_c(self) except *
     cdef str state_string_c(self)
     cdef str status_string_c(self)
     cdef bint is_buy_c(self) except *

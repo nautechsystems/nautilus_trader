@@ -24,7 +24,6 @@ from nautilus_trader.backtest.data cimport BacktestDataProducer
 from nautilus_trader.backtest.data cimport BacktestDataContainer
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
-from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -33,6 +32,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
+from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -448,6 +448,8 @@ cdef class BacktestEngine:
         """
         Dispose of the backtest engine by disposing the trader and releasing system resources.
 
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         self.trader.dispose()
 

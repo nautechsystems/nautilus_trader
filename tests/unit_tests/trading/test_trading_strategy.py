@@ -27,10 +27,10 @@ from nautilus_trader.backtest.data import BacktestDataProducer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
@@ -378,7 +378,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -394,7 +393,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -410,7 +408,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -426,7 +423,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -442,7 +438,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -458,7 +453,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -473,7 +467,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -491,7 +484,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -511,7 +503,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -526,7 +517,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -541,7 +531,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -555,7 +544,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -569,7 +557,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -587,7 +574,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -606,7 +592,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -625,7 +610,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -645,7 +629,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -662,7 +645,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -681,7 +663,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -697,7 +678,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -715,7 +695,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -736,7 +715,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -758,7 +736,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -782,7 +759,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -813,7 +789,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -833,7 +808,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -852,7 +826,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -874,7 +847,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -896,7 +868,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -919,7 +890,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -941,7 +911,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -963,7 +932,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -982,7 +950,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1003,7 +970,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1025,7 +991,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1046,7 +1011,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1066,7 +1030,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1088,7 +1051,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1109,7 +1071,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1129,7 +1090,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1153,7 +1113,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1177,7 +1136,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1198,7 +1156,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1221,7 +1178,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1242,7 +1198,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1265,7 +1220,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1286,7 +1240,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1309,7 +1262,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1330,7 +1282,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1353,7 +1304,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1373,7 +1323,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1393,7 +1342,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1417,7 +1365,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1434,7 +1381,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1462,7 +1408,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1497,7 +1442,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1530,7 +1474,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1557,7 +1500,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1591,7 +1533,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1631,7 +1572,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1668,7 +1608,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 
@@ -1699,7 +1638,6 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            self.uuid_factory,
             self.logger,
         )
 

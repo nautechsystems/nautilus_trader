@@ -105,7 +105,7 @@ cdef class Trader:
 
         self.initialize_strategies(strategies)
 
-    cdef ComponentState state_c(self):
+    cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
 
     cdef str state_string_c(self):
@@ -187,7 +187,6 @@ cdef class Trader:
             strategy.register_trader(
                 self.id,
                 self._clock.__class__(),  # Clock per strategy
-                self._uuid_factory,
                 self._log.get_logger(),
             )
 
@@ -301,6 +300,9 @@ cdef class Trader:
         Dispose of the trader.
 
         Disposes all internally held strategies.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)

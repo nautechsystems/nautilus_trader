@@ -17,9 +17,9 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -97,10 +97,9 @@ class ExecutionEngineTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.trader_id,
+            self.clock,
+            self.logger,
         )
 
         # Act
@@ -114,9 +113,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)
@@ -131,9 +129,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
@@ -149,9 +146,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)
@@ -185,9 +181,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)
@@ -237,9 +232,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)
@@ -289,9 +283,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)
@@ -361,9 +354,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)
@@ -439,17 +431,15 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
         strategy2.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy1)
@@ -541,17 +531,15 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
         strategy2.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy1)
@@ -661,9 +649,8 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
-            clock=self.clock,
-            uuid_factory=UUIDFactory(),
-            logger=self.logger,
+            self.clock,
+            self.logger,
         )
 
         self.exec_engine.register_strategy(strategy)

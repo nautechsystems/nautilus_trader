@@ -45,7 +45,6 @@ cdef class OrderFactory:
             TraderId trader_id not None,
             StrategyId strategy_id not None,
             Clock clock=None,
-            UUIDFactory uuid_factory=None,
             int initial_count=0,
     ):
         """
@@ -59,8 +58,6 @@ cdef class OrderFactory:
             The strategy identifier (only numerical tag sent to exchange/broker).
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         initial_count : int, optional
             The initial order count for the factory.
 
@@ -72,12 +69,10 @@ cdef class OrderFactory:
         """
         if clock is None:
             clock = LiveClock()
-        if uuid_factory is None:
-            uuid_factory = UUIDFactory()
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 

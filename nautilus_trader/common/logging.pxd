@@ -114,6 +114,10 @@ cdef class LoggerAdapter:
 cpdef void nautilus_header(LoggerAdapter logger) except *
 
 
+cdef class TestLogger(Logger):
+    pass
+
+
 cdef class LiveLogger(Logger):
     cdef object _queue
     cdef object _thread
