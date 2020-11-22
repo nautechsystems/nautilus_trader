@@ -77,28 +77,17 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
     def tearDown(self):
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
-        pass
 
-    # TODO: TypeError: Expected bytes, got list
-    # def test_add_account(self):
-    #     # Arrange
-    #     event = AccountState(
-    #         AccountId.from_string("BITMEX-1513111-SIMULATED"),
-    #         BTC,
-    #         Money(10., BTC),
-    #         Money(0., BTC),
-    #         Money(0., BTC),
-    #         uuid4(),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     account = Account(event)
-    #
-    #     # Act
-    #     self.database.add_account(account)
-    #
-    #     # Assert
-    #     self.assertEqual(account, self.database.load_account(account.id))
+    def test_add_account(self):
+        # Arrange
+        event = TestStubs.event_account_state()
+        account = Account(event)
+
+        # Act
+        self.database.add_account(account)
+
+        # Assert
+        self.assertEqual(account, self.database.load_account(account.id))
 
     def test_add_order(self):
         # Arrange
@@ -140,18 +129,17 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual(position, self.database.load_position(position.id))
 
-    # TODO: TypeError: Expected bytes, got list
-    # def test_update_account(self):
-    #     # Arrange
-    #     event = TestStubs.account_event()
-    #     account = Account(event)
-    #     self.database.add_account(account)
-    #
-    #     # Act
-    #     self.database.update_account(account)
-    #
-    #     # Assert
-    #     self.assertEqual(account, self.database.load_account(account.id))
+    def test_update_account(self):
+        # Arrange
+        event = TestStubs.event_account_state()
+        account = Account(event)
+        self.database.add_account(account)
+
+        # Act
+        self.database.update_account(account)
+
+        # Assert
+        self.assertEqual(account, self.database.load_account(account.id))
 
     def test_update_order_for_working_order(self):
         # Arrange
@@ -277,18 +265,17 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertIsNone(result)
 
-    # TODO: TypeError: Expected bytes, got list
-    # def test_load_account_when_account_in_database_returns_account(self):
-    #     # Arrange
-    #     event = TestStubs.account_event()
-    #     account = Account(event)
-    #     self.database.add_account(account)
-    #
-    #     # Act
-    #     result = self.database.load_account(account.id)
-    #
-    #     # Assert
-    #     self.assertEqual(account, result)
+    def test_load_account_when_account_in_database_returns_account(self):
+        # Arrange
+        event = TestStubs.event_account_state()
+        account = Account(event)
+        self.database.add_account(account)
+
+        # Act
+        result = self.database.load_account(account.id)
+
+        # Assert
+        self.assertEqual(account, result)
 
     def test_load_order_when_no_order_in_database_returns_none(self):
         # Arrange
@@ -399,26 +386,15 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, result)
 
-    # TODO: TypeError: Expected bytes, got list
-    # def test_load_accounts_cache_when_one_account_in_database(self):
-    #     # Arrange
-    #     event = AccountState(
-    #         AccountId.from_string("BITMEX-1513111-SIMULATED"),
-    #         BTC,
-    #         Money(10., BTC),
-    #         Money(0., BTC),
-    #         Money(0., BTC),
-    #         uuid4(),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     account = Account(event)
-    #     self.database.add_account(account)
-    #
-    #     # Act
-    #
-    #     # Assert
-    #     self.assertEqual(account, self.database.load_account(account.id))
+    def test_load_accounts_cache_when_one_account_in_database(self):
+        # Arrange
+        event = TestStubs.event_account_state()
+        account = Account(event)
+        self.database.add_account(account)
+
+        # Act
+        # Assert
+        self.assertEqual(account, self.database.load_account(account.id))
 
     def test_load_orders_cache_when_no_orders(self):
         # Arrange

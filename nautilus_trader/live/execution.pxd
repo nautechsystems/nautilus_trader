@@ -13,15 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Event
-from nautilus_trader.backtest.exchange cimport SimulatedExchange
-from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.engine cimport ExecutionEngine
 
 
-cdef class BacktestExecClient(ExecutionClient):
-    cdef SimulatedExchange _exchange
-    cdef bint _is_connected
+cdef class LiveExecutionEngine(ExecutionEngine):
+    cdef object _queue
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cdef void handle_event(self, Event event) except *
+    cpdef int queue_size(self) except *

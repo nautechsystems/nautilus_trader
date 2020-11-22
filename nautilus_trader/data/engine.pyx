@@ -50,6 +50,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -71,6 +72,7 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class DataEngine:
@@ -113,7 +115,7 @@ cdef class DataEngine:
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._use_previous_close = config.get('use_previous_close', True)
+        self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}              # type: {Venue, DataClient}
         self._correlation_index = {}    # type: {UUID, callable}
 
@@ -138,6 +140,9 @@ cdef class DataEngine:
 
         self._log.info("Initialized.")
         self._log.info(f"use_previous_close={self._use_previous_close}")
+
+    cdef ComponentState state_c(self):
+        return <ComponentState>self._fsm.state
 
     @property
     def registered_venues(self):
@@ -217,7 +222,7 @@ cdef class DataEngine:
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client", "_clients")
+        Condition.not_in(client.venue, self._clients, "client", "self._clients")
 
         self._clients[client.venue] = client
 
@@ -239,7 +244,89 @@ cdef class DataEngine:
 
         self._log.info(f"Registered {strategy}.")
 
+    cpdef void deregister_client(self, DataClient client) except *:
+        """
+        Deregister the given data client from the data engine.
+
+        Parameters
+        ----------
+        client : DataClient
+            The data client to deregister.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
+
+        del self._clients[client.venue]
+        self._log.info(f"De-registered {client}.")
+
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void on_start(self) except *:
+        """
+        Actions to be performed when the engine is started.
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_stop(self) except *:
+        """
+        Actions to be performed when the engine is stopped.
+        """
+        pass  # Optionally override in subclass
+
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void start(self) except *:
+        """
+        Start the data engine.
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.START)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            raise ex  # Do not put trader in an invalid state
+
+        self._log.info(f"state={self._fsm.state_string_c()}...")
+
+        cdef DataClient client
+        for client in self._clients.values():
+            self._log.info(f"Connecting {client.venue}...")
+            client.connect()
+
+        try:
+            self.on_start()
+        except Exception as ex:
+            self._log.exception(ex)
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.RUNNING)
+            self._log.info(f"state={self._fsm.state_string_c()}.")
+
+    cpdef void stop(self) except *:
+        """
+        Stop the data engine.
+        """
+        try:
+            self._fsm.trigger(ComponentTrigger.STOP)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            raise ex  # Do not put trader in an invalid state
+
+        self._log.info(f"state={self._fsm.state_string_c()}...")
+
+        cdef DataClient client
+        for client in self._clients.values():
+            self._log.info(f"Disconnecting {client.venue}...")
+            client.disconnect()
+
+        try:
+            self.on_stop()
+        except Exception as ex:
+            self._log.exception(ex)
+            raise ex
+        finally:
+            self._fsm.trigger(ComponentTrigger.STOPPED)
+            self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void execute(self, Command command) except *:
         """
@@ -363,7 +450,7 @@ cdef class DataEngine:
 
         """
         Condition.not_none(venue, "venue")
-        Condition.is_in(venue, self._clients, "venue", "_clients")
+        Condition.is_in(venue, self._clients, "venue", "self._clients")
 
         cdef DataRequest request = DataRequest(
             data_type=Instrument,

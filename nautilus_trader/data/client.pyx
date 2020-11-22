@@ -80,6 +80,10 @@ cdef class DataClient:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
 
+    cpdef bint is_connected(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void connect(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -93,10 +97,6 @@ cdef class DataClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void dispose(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef bint is_connected(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

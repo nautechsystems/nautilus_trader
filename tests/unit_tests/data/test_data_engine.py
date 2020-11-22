@@ -33,6 +33,8 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.stubs import TestStubs
 
 
 BITMEX = Venue("BITMEX")
@@ -89,14 +91,11 @@ class DataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.data_engine.register_client(self.binance_client)
-        self.data_engine.register_client(self.bitmex_client)
-
     def test_registered_venues(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([Venue("BINANCE"), Venue("BITMEX")], self.data_engine.registered_venues)
+        self.assertEqual([], self.data_engine.registered_venues)
 
     def test_subscribed_instruments_when_nothing_subscribed_returns_empty_list(self):
         # Arrange
@@ -121,6 +120,34 @@ class DataEngineTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual([], self.data_engine.subscribed_bars)
+
+    def test_register_client_successfully_adds_client(self):
+        # Arrange
+        # Act
+        self.data_engine.register_client(self.binance_client)
+
+        # Assert
+        self.assertIn(BINANCE, self.data_engine.registered_venues)
+
+    def test_deregister_client_successfully_removes_client(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        # Act
+        self.data_engine.deregister_client(self.binance_client)
+
+        # Assert
+        self.assertNotIn(BINANCE, self.data_engine.registered_venues)
+
+    def test_register_strategy_successfully_registered_with_strategy(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        # Act
+        strategy.register_data_engine(self.data_engine)
+
+        # Assert
+        self.assertEqual(self.data_engine.cache, strategy.data)
 
     def test_reset(self):
         # Arrange
@@ -204,7 +231,7 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
 
-    def test_receive_request_when_no_data_clients_registered_does_nothing(self):
+    def test_send_request_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         handler = []
         request = DataRequest(
@@ -245,6 +272,8 @@ class DataEngineTests(unittest.TestCase):
 
     def test_update_instruments_sends_request_to_self(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+
         # Act
         self.data_engine.update_instruments(BINANCE)
 
@@ -254,6 +283,9 @@ class DataEngineTests(unittest.TestCase):
 
     def test_update_instruments_all_sends_request_to_self(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.bitmex_client)
+
         # Act
         self.data_engine.update_instruments_all()
 
@@ -263,6 +295,8 @@ class DataEngineTests(unittest.TestCase):
 
     def test_execute_connect_given_specified_venue_with_data_client(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+
         connect = Connect(
             venue=BINANCE,
             command_id=self.uuid_factory.generate(),
@@ -277,6 +311,9 @@ class DataEngineTests(unittest.TestCase):
 
     def test_execute_connect_given_venue_none_with_data_client(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.bitmex_client)
+
         connect = Connect(
             venue=None,
             command_id=self.uuid_factory.generate(),
@@ -291,6 +328,8 @@ class DataEngineTests(unittest.TestCase):
 
     def test_disconnect_given_specified_venue_with_data_client(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+
         connect = Disconnect(
             venue=BINANCE,
             command_id=self.uuid_factory.generate(),
@@ -305,6 +344,9 @@ class DataEngineTests(unittest.TestCase):
 
     def test_disconnect_given_venue_none_with_data_client(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.bitmex_client)
+
         connect = Disconnect(
             venue=None,
             command_id=self.uuid_factory.generate(),
@@ -316,3 +358,14 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
+
+    def test_process_data_places_data_on_queue(self):
+        # Arrange
+        tick = TestStubs.trade_tick_5decimal()
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        # Already received 3 instruments
+        self.assertEqual(4, self.data_engine.data_count)

@@ -66,20 +66,33 @@ cdef class BacktestExecClient(ExecutionClient):
         )
 
         self._exchange = exchange
+        self._is_connected = False
+
+    cpdef bint is_connected(self) except *:
+        """
+        Return a value indicating whether the client is connected.
+
+        Returns
+        -------
+        bool
+            True if connected, else False.
+
+        """
+        return self._is_connected
 
     cpdef void connect(self) except *:
         """
-        Connect to the execution service.
+        Connect the client.
         """
+        self._is_connected = True
         self._log.info("Connected.")
-        # Do nothing else
 
     cpdef void disconnect(self) except *:
         """
-        Disconnect from the execution service.
+        Disconnect the client.
         """
+        self._is_connected = False
         self._log.info("Disconnected.")
-        # Do nothing else
 
     cpdef void reset(self) except *:
         """
@@ -99,21 +112,37 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         pass  # Nothing to dispose
 
-# -- COMMAND EXECUTION -----------------------------------------------------------------------------
+# -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
+        if not self._is_connected:
+            self._log.error(f"Cannot send command (not connected), {command}.")
+            return
+
         self._exchange.handle_submit_order(command)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
+        if not self._is_connected:
+            self._log.error(f"Cannot send command (not connected), {command}.")
+            return
+
         self._exchange.handle_submit_bracket_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
+        if not self._is_connected:
+            self._log.error(f"Cannot send command (not connected), {command}.")
+            return
+
         self._exchange.handle_cancel_order(command)
 
     cpdef void modify_order(self, ModifyOrder command) except *:
+        if not self._is_connected:
+            self._log.error(f"Cannot send command (not connected), {command}.")
+            return
+
         self._exchange.handle_modify_order(command)
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void handle_event(self, Event event) except *:
         self._handle_event(event)

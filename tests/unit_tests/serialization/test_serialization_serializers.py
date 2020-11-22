@@ -25,10 +25,12 @@ from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCancelReject
 from nautilus_trader.model.events import OrderCancelled
@@ -41,6 +43,7 @@ from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
@@ -375,6 +378,25 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackEventSerializer()
+
+    def test_serialize_and_deserialize_account_state_events(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "000", AccountType.SIMULATED),
+            currency=USD,
+            balance=Money(1525000, USD),
+            margin_balance=Money(1425000, USD),
+            margin_available=Money(1325000, USD),
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        self.assertEqual(deserialized, event)
 
     def test_serialize_and_deserialize_order_initialized_events(self):
         # Arrange

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import msgpack
 
 from cpython.datetime cimport datetime
@@ -94,10 +93,10 @@ cdef class MsgPackSerializer:
         """
         Condition.not_none(message, "message")
 
-        return msgpack.packb(message, use_bin_type=False)
+        return msgpack.packb(message)
 
     @staticmethod
-    cdef dict deserialize(bytes message_bytes, bint raw_values=True):
+    cdef dict deserialize(bytes message_bytes):
         """
         Deserialize the given `MessagePack` specification bytes to a dictionary.
 
@@ -105,22 +104,15 @@ cdef class MsgPackSerializer:
         ----------
         message_bytes : bytes
             The message bytes to deserialize.
-        raw_values : bool
-            If the values should be deserialized as raw bytes.
 
         Returns
         -------
-        dict[str, str]
+        dict[str, object]
 
         """
         Condition.not_none(message_bytes, "message_bytes")
 
-        cdef dict raw_unpacked = msgpack.unpackb(message_bytes, raw=True)
-
-        cdef bytes k, v
-        if raw_values:
-            return {k.decode(UTF8): v for k, v in raw_unpacked.items()}
-        return {k.decode(UTF8): v.decode(UTF8) for k, v in raw_unpacked.items()}
+        return msgpack.unpackb(message_bytes)
 
 
 cdef class MsgPackDictionarySerializer(DictionarySerializer):
@@ -170,7 +162,7 @@ cdef class MsgPackDictionarySerializer(DictionarySerializer):
         """
         Condition.not_none(dictionary_bytes, "dictionary_bytes")
 
-        return MsgPackSerializer.deserialize(dictionary_bytes, raw_values=False)
+        return MsgPackSerializer.deserialize(dictionary_bytes)
 
 
 cdef class MsgPackOrderSerializer(OrderSerializer):
@@ -223,8 +215,8 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 package[EXPIRE_TIME] = ObjectParser.datetime_to_string(order.expire_time)
 
         if isinstance(order, LimitOrder):
-            package[POST_ONLY] = str(order.is_post_only)
-            package[HIDDEN] = str(order.is_hidden)
+            package[POST_ONLY] = order.is_post_only
+            package[HIDDEN] = order.is_hidden
 
         return MsgPackSerializer.serialize(package)
 
@@ -254,15 +246,15 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         if not unpacked:
             return None  # Null order
 
-        cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID].decode(UTF8))
-        cdef StrategyId strategy_id = StrategyId.from_string_c(unpacked[STRATEGY_ID].decode(UTF8))
-        cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL].decode(UTF8))
-        cdef OrderSide order_side = OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8)))
-        cdef OrderType order_type = OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8)))
-        cdef Quantity quantity = Quantity(unpacked[QUANTITY].decode(UTF8))
-        cdef TimeInForce time_in_force = TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8))
-        cdef UUID init_id = UUID.from_string_c(unpacked[INIT_ID].decode(UTF8))
-        cdef datetime timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
+        cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID])
+        cdef StrategyId strategy_id = StrategyId.from_string_c(unpacked[STRATEGY_ID])
+        cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL])
+        cdef OrderSide order_side = OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
+        cdef OrderType order_type = OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
+        cdef Quantity quantity = Quantity(unpacked[QUANTITY])
+        cdef TimeInForce time_in_force = TimeInForceParser.from_string(unpacked[TIME_IN_FORCE])
+        cdef UUID init_id = UUID.from_string_c(unpacked[INIT_ID])
+        cdef datetime timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
         if order_type == OrderType.MARKET:
             return MarketOrder(
@@ -276,10 +268,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 timestamp=timestamp,
             )
 
-        cdef bytes expire_time_str = unpacked.get(EXPIRE_TIME)
+        cdef str expire_time_str = unpacked.get(EXPIRE_TIME)
         cdef datetime expire_time = None
         if expire_time_str is not None:
-            expire_time = ObjectParser.string_to_datetime((expire_time_str.decode(UTF8)))
+            expire_time = ObjectParser.string_to_datetime(expire_time_str)
         if order_type == OrderType.LIMIT:
             return LimitOrder(
                 cl_ord_id=cl_ord_id,
@@ -287,13 +279,13 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE].decode(UTF8)),
+                price=Price(unpacked[PRICE]),
                 time_in_force=time_in_force,
                 expire_time=expire_time,
                 init_id=init_id,
                 timestamp=timestamp,
-                post_only=unpacked[POST_ONLY].decode(UTF8) == str(True),
-                hidden=unpacked[HIDDEN].decode(UTF8) == str(True),
+                post_only=unpacked[POST_ONLY],
+                hidden=unpacked[HIDDEN],
             )
 
         if order_type == OrderType.STOP_MARKET:
@@ -303,7 +295,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 symbol=symbol,
                 order_side=order_side,
                 quantity=quantity,
-                price=Price(unpacked[PRICE].decode(UTF8)),
+                price=Price(unpacked[PRICE]),
                 time_in_force=time_in_force,
                 expire_time=expire_time,
                 init_id=init_id,
@@ -413,27 +405,27 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: {str, bytes}
 
-        cdef str command_type = unpacked[TYPE].decode(UTF8)
-        cdef UUID command_id = UUID.from_string_c(unpacked[ID].decode(UTF8))
-        cdef datetime command_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
+        cdef str command_type = unpacked[TYPE]
+        cdef UUID command_id = UUID.from_string_c(unpacked[ID])
+        cdef datetime command_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
         if command_type == SubmitOrder.__name__:
             return SubmitOrder(
-                Venue(unpacked[VENUE].decode(UTF8)),
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                PositionId(unpacked[POSITION_ID].decode(UTF8)),
+                Venue(unpacked[VENUE]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                PositionId(unpacked[POSITION_ID]),
                 self.order_serializer.deserialize(unpacked[ORDER]),
                 command_id,
                 command_timestamp,
             )
         elif command_type == SubmitBracketOrder.__name__:
             return SubmitBracketOrder(
-                Venue(unpacked[VENUE].decode(UTF8)),
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
+                Venue(unpacked[VENUE]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 BracketOrder(self.order_serializer.deserialize(unpacked[ENTRY]),
                              self.order_serializer.deserialize(unpacked[STOP_LOSS]),
                              self.order_serializer.deserialize(unpacked[TAKE_PROFIT])),
@@ -442,21 +434,21 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             )
         elif command_type == ModifyOrder.__name__:
             return ModifyOrder(
-                Venue(unpacked[VENUE].decode(UTF8)),
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                Quantity(unpacked[QUANTITY].decode(UTF8)),
-                Price(unpacked[PRICE].decode(UTF8)),
+                Venue(unpacked[VENUE]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                Quantity(unpacked[QUANTITY]),
+                Price(unpacked[PRICE]),
                 command_id,
                 command_timestamp,
             )
         elif command_type == CancelOrder.__name__:
             return CancelOrder(
-                Venue(unpacked[VENUE].decode(UTF8)),
-                self.identifier_cache.get_trader_id(unpacked[TRADER_ID].decode(UTF8)),
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
+                Venue(unpacked[VENUE]),
+                self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 command_id,
                 command_timestamp,
             )
@@ -508,7 +500,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
-            package[CURRENCY] = event.currency.code,
+            # Using update otherwise serializes as a tuple?
+            package.update({CURRENCY: event.currency.code})
             package[BALANCE] = str(event.balance)
             package[MARGIN_BALANCE] = str(event.margin_balance)
             package[MARGIN_AVAILABLE] = str(event.margin_available)
@@ -591,7 +584,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
             package[QUOTE_CURRENCY] = event.quote_currency.code
             package[SETTLEMENT_CURRENCY] = event.settlement_currency.code
-            package[IS_INVERSE] = str(event.is_inverse)
+            package[IS_INVERSE] = event.is_inverse
             package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_string(event.liquidity_side)
@@ -626,151 +619,151 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: {str, bytes}
 
-        cdef str event_type = unpacked[TYPE].decode(UTF8)
-        cdef UUID event_id = UUID.from_string_c(unpacked[ID].decode(UTF8))
-        cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP].decode(UTF8))
+        cdef str event_type = unpacked[TYPE]
+        cdef UUID event_id = UUID.from_string_c(unpacked[ID])
+        cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
         cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = Currency.from_string_c(unpacked[CURRENCY].decode(UTF8))
+            currency = Currency.from_string_c(unpacked[CURRENCY])
             return AccountState(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 currency,
-                Money(unpacked[BALANCE].decode(UTF8), currency),
-                Money(unpacked[MARGIN_BALANCE].decode(UTF8), currency),
-                Money(unpacked[MARGIN_AVAILABLE].decode(UTF8), currency),
+                Money(unpacked[BALANCE], currency),
+                Money(unpacked[MARGIN_BALANCE], currency),
+                Money(unpacked[MARGIN_AVAILABLE], currency),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderInitialized.__name__:
             return OrderInitialized(
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
-                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
-                Quantity(unpacked[QUANTITY].decode(UTF8)),
-                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
+                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                Quantity(unpacked[QUANTITY]),
+                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE]),
                 event_id,
                 event_timestamp,
-                MsgPackSerializer.deserialize(unpacked[OPTIONS], raw_values=False),
+                MsgPackSerializer.deserialize(unpacked[OPTIONS]),
             )
         elif event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[SUBMITTED_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                ObjectParser.string_to_datetime(unpacked[SUBMITTED_TIME]),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderInvalid.__name__:
             return OrderInvalid(
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                unpacked[REASON].decode(UTF8),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                unpacked[REASON],
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderDenied.__name__:
             return OrderDenied(
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                unpacked[REASON].decode(UTF8),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                unpacked[REASON],
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderAccepted.__name__:
             return OrderAccepted(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[ACCEPTED_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                ObjectParser.string_to_datetime(unpacked[ACCEPTED_TIME]),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderRejected.__name__:
             return OrderRejected(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[REASON].decode(UTF8),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                ObjectParser.string_to_datetime(unpacked[REJECTED_TIME]),
+                unpacked[REASON],
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderWorking.__name__:
             return OrderWorking(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                Symbol.from_string_c(unpacked[SYMBOL].decode(UTF8)),
-                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE].decode(UTF8))),
-                Quantity(unpacked[QUANTITY].decode(UTF8)),
-                Price(unpacked[PRICE].decode(UTF8)),
-                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[EXPIRE_TIME].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[WORKING_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                Symbol.from_string_c(unpacked[SYMBOL]),
+                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                Quantity(unpacked[QUANTITY]),
+                Price(unpacked[PRICE]),
+                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE]),
+                ObjectParser.string_to_datetime(unpacked[EXPIRE_TIME]),
+                ObjectParser.string_to_datetime(unpacked[WORKING_TIME]),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderCancelled.__name__:
             return OrderCancelled(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[CANCELLED_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                ObjectParser.string_to_datetime(unpacked[CANCELLED_TIME]),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderCancelReject.__name__:
             return OrderCancelReject(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[REJECTED_TIME].decode(UTF8)),
-                unpacked[RESPONSE_TO].decode(UTF8),
-                unpacked[REASON].decode(UTF8),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                ObjectParser.string_to_datetime(unpacked[REJECTED_TIME]),
+                unpacked[RESPONSE_TO],
+                unpacked[REASON],
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderModified.__name__:
             return OrderModified(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                Quantity(unpacked[QUANTITY].decode(UTF8)),
-                Price(unpacked[PRICE].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[MODIFIED_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                Quantity(unpacked[QUANTITY]),
+                Price(unpacked[PRICE]),
+                ObjectParser.string_to_datetime(unpacked[MODIFIED_TIME]),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderExpired.__name__:
             return OrderExpired(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[EXPIRED_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                ObjectParser.string_to_datetime(unpacked[EXPIRED_TIME]),
                 event_id,
                 event_timestamp,
             )
         elif event_type == OrderFilled.__name__:
-            commission_currency = Currency.from_string_c(unpacked[COMMISSION_CURRENCY].decode(UTF8))
+            commission_currency = Currency.from_string_c(unpacked[COMMISSION_CURRENCY])
             return OrderFilled(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID].decode(UTF8)),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID].decode(UTF8)),
-                OrderId(unpacked[ORDER_ID].decode(UTF8)),
-                ExecutionId(unpacked[EXECUTION_ID].decode(UTF8)),
-                PositionId(unpacked[POSITION_ID].decode(UTF8)),
-                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID].decode(UTF8)),
-                self.identifier_cache.get_symbol(unpacked[SYMBOL].decode(UTF8)),
-                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE].decode(UTF8))),
-                Quantity(unpacked[FILL_QUANTITY].decode(UTF8)),
-                Quantity(unpacked[CUM_QUANTITY].decode(UTF8)),
-                Quantity(unpacked[LEAVES_QUANTITY].decode(UTF8)),
-                Price(unpacked[FILL_PRICE].decode(UTF8)),
-                Currency.from_string_c(unpacked[QUOTE_CURRENCY].decode(UTF8)),
-                Currency.from_string_c(unpacked[SETTLEMENT_CURRENCY].decode(UTF8)),
-                unpacked[IS_INVERSE].decode(UTF8) == str(True),
-                Money(unpacked[COMMISSION].decode(UTF8), commission_currency),
-                LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE].decode(UTF8)),
-                ObjectParser.string_to_datetime(unpacked[EXECUTION_TIME].decode(UTF8)),
+                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
+                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
+                ExecutionId(unpacked[EXECUTION_ID]),
+                PositionId(unpacked[POSITION_ID]),
+                self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
+                self.identifier_cache.get_symbol(unpacked[SYMBOL]),
+                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                Quantity(unpacked[FILL_QUANTITY]),
+                Quantity(unpacked[CUM_QUANTITY]),
+                Quantity(unpacked[LEAVES_QUANTITY]),
+                Price(unpacked[FILL_PRICE]),
+                Currency.from_string_c(unpacked[QUOTE_CURRENCY]),
+                Currency.from_string_c(unpacked[SETTLEMENT_CURRENCY]),
+                unpacked[IS_INVERSE],
+                Money(unpacked[COMMISSION], commission_currency),
+                LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE]),
+                ObjectParser.string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp,
             )

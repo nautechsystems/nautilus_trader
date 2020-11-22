@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.messages cimport Connect
 from nautilus_trader.common.messages cimport Disconnect
@@ -65,6 +66,8 @@ cdef class ExecutionEngine:
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
+    cdef ComponentState state_c(self)
+
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client) except *
@@ -72,15 +75,22 @@ cdef class ExecutionEngine:
     cpdef void deregister_client(self, ExecutionClient client) except *
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void on_start(self) except *
+    cpdef void on_stop(self) except *
+
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void start(self) except *
+    cpdef void stop(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
     cpdef void load_cache(self) except *
     cpdef void integrity_check(self) except *
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------

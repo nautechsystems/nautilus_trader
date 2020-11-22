@@ -46,6 +46,8 @@ cdef class ExecutionDatabase:
         self.trader_id = trader_id
         self._log = LoggerAdapter(type(self).__name__, logger)
 
+        self._log.info("Initialized.")
+
     cpdef void flush(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

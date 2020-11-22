@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.core.message cimport Message
 
 
-cdef class LiveExecutionEngine(ExecutionEngine):
+cdef class LiveDataEngine(DataEngine):
     cdef object _queue
-    cdef object _thread
 
-    cpdef void _loop(self) except *
+    cpdef int queue_size(self) except *
+    cdef inline void _process_message(self, Message message) except *
