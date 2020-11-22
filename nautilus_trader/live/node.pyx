@@ -217,6 +217,9 @@ cdef class TradingNode:
     cpdef void dispose(self) except *:
         """
         Dispose of the trading node.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         self._log.info("Disposing resources...")
 

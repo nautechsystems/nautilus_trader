@@ -642,6 +642,9 @@ cdef class BacktestDataProducer(DataClient):
     cpdef void dispose(self) except *:
         """
         Dispose of the data client.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         pass  # Nothing to dispose
 

@@ -17,11 +17,11 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import TestLogger
 
 
 class LogLevelParserTests(unittest.TestCase):

@@ -54,10 +54,10 @@ cdef class TradingStrategy:
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
-    cdef readonly StrategyId id
-    """The trading strategies identifier.\n\n:returns: `StrategyId`"""
     cdef readonly TraderId trader_id
     """The trader identifier associated with the trading strategy.\n\n:returns: `TraderId`"""
+    cdef readonly StrategyId id
+    """The trading strategies identifier.\n\n:returns: `StrategyId`"""
     cdef readonly Clock clock
     """The trading strategies clock.\n\n:returns: `Clock`"""
     cdef readonly UUIDFactory uuid_factory
@@ -73,7 +73,8 @@ cdef class TradingStrategy:
     cdef readonly OrderFactory order_factory
     """The trading strategies order factory.\n\n:returns: `OrderFactory`"""
 
-    cdef ComponentState state_c(self)
+    cdef inline void _check_trader_registered(self) except *
+    cdef ComponentState state_c(self) except *
     cdef str state_string_c(self)
 
     cpdef bint indicators_initialized(self) except *
@@ -99,7 +100,6 @@ cdef class TradingStrategy:
         self,
         TraderId trader_id,
         Clock clock,
-        UUIDFactory uuid_factory,
         Logger logger,
     ) except *
     cpdef void register_data_engine(self, DataEngine engine) except *
@@ -107,17 +107,6 @@ cdef class TradingStrategy:
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, Symbol symbol, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *
-
-# -- HANDLERS --------------------------------------------------------------------------------------
-
-    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
-    cpdef void handle_quote_ticks(self, list ticks) except *
-    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
-    cpdef void handle_trade_ticks(self, list ticks) except *
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *
-    cpdef void handle_data(self, data) except *
-    cpdef void handle_event(self, Event event) except *
 
 # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
 
@@ -170,3 +159,14 @@ cdef class TradingStrategy:
     cpdef void cancel_all_orders(self, Symbol symbol) except *
     cpdef void flatten_position(self, Position position) except *
     cpdef void flatten_all_positions(self, Symbol symbol) except *
+
+# -- HANDLERS --------------------------------------------------------------------------------------
+
+    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
+    cpdef void handle_quote_ticks(self, list ticks) except *
+    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
+    cpdef void handle_trade_ticks(self, list ticks) except *
+    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=*) except *
+    cpdef void handle_bars(self, BarType bar_type, list bars) except *
+    cpdef void handle_data(self, data) except *
+    cpdef void handle_event(self, Event event) except *

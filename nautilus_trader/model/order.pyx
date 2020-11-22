@@ -166,7 +166,7 @@ cdef class Order:
     cdef list execution_ids_c(self):
         return self._execution_ids.copy()
 
-    cdef int event_count_c(self):
+    cdef int event_count_c(self) except *:
         return len(self._events)
 
     cdef str state_string_c(self):

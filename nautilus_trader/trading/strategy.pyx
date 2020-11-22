@@ -33,6 +33,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -41,6 +42,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
+from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
@@ -99,7 +101,6 @@ cdef class TradingStrategy:
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        # Private components
         self._fsm = ComponentFSMFactory.create()
         self._data_engine = None    # Initialized when registered with the data engine
         self._exec_engine = None    # Initialized when registered with the execution engine
@@ -111,13 +112,14 @@ cdef class TradingStrategy:
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
         # Identifiers
-        self.id = StrategyId(type(self).__name__, order_id_tag)
         self.trader_id = None      # Initialized when registered with a trader
+        self.id = StrategyId(type(self).__name__, order_id_tag)
 
         # Public components
-        self.clock = None          # Initialized when registered with a trader
-        self.uuid_factory = None   # Initialized when registered with a trader
-        self.log = None            # Initialized when registered with a trader
+        self.uuid_factory = UUIDFactory()
+        self.clock = LiveClock()
+        self.log = LoggerAdapter(self.id.value, TestLogger(self.clock, self.id.value))
+
         self.data = None           # Initialized when registered with the data engine
         self.execution = None      # Initialized when registered with the execution engine
         self.portfolio = None      # Initialized when registered with the execution engine
@@ -132,7 +134,13 @@ cdef class TradingStrategy:
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id.value})"
 
-    cdef ComponentState state_c(self):
+    cdef inline void _check_trader_registered(self) except *:
+        if self.trader_id is None:
+            # This guards the case where some components are called which
+            # have not yet been assigned, resulting in a SIGSEGV at runtime.
+            raise RuntimeError("a trader has not been registered")
+
+    cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
 
     cdef str state_string_c(self):
@@ -380,7 +388,6 @@ cdef class TradingStrategy:
             self,
             TraderId trader_id,
             Clock clock,
-            UUIDFactory uuid_factory,
             Logger logger,
     ) except *:
         """
@@ -392,8 +399,6 @@ cdef class TradingStrategy:
             The trader_id for the strategy.
         clock : Clock
             The clock for the strategy.
-        uuid_factory : UUIDFactory
-            The uuid_factory for the strategy.
         logger : Logger
             The logger for the strategy.
 
@@ -404,20 +409,17 @@ cdef class TradingStrategy:
         """
         Condition.not_none(trader_id, "trader_id")
         Condition.not_none(clock, "clock")
-        Condition.not_none(uuid_factory, "uuid_factory")
         Condition.not_none(logger, "logger")
 
         self.trader_id = trader_id
         self.clock = clock
         self.clock.register_default_handler(self.handle_event)
-        self.uuid_factory = uuid_factory
         self.log = LoggerAdapter(self.id.value, logger)
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=self.id,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
         )
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
@@ -544,270 +546,6 @@ cdef class TradingStrategy:
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- HANDLERS --------------------------------------------------------------------------------------
-
-    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
-        """
-        Handle the given tick.
-
-        Calls `on_quote_tick` if `strategy.state` is `RUNNING`.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The received tick.
-        is_historical : bool
-            If tick is historical then it won't be passed to `on_quote_tick`.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(tick, "tick")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(tick.symbol)  # Could be None
-        cdef Indicator indicator
-        if indicators is not None:
-            for indicator in indicators:
-                indicator.handle_quote_tick(tick)
-
-        if is_historical:
-            return  # Don't pass to on_tick()
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_quote_tick(tick)
-            except Exception as ex:
-                self.log.exception(ex)
-                raise ex
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_quote_ticks(self, list ticks) except *:
-        """
-        Handle the given list of ticks by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[QuoteTick]
-            The received ticks.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef QuoteTick first = ticks[0] if length > 0 else None
-        cdef Symbol symbol = first.symbol if first is not None else None
-
-        if length > 0:
-            self.log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
-        else:
-            self.log.warning("Received <QuoteTick[]> data with no ticks.")
-
-        for i in range(length):
-            self.handle_quote_tick(ticks[i], is_historical=True)
-
-    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
-        """
-        Handle the given tick.
-
-        Calls `on_trade_tick` if `strategy.state` is `RUNNING`.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The received trade tick.
-        is_historical : bool
-            If tick is historical then it won't be passed to `on_trade_tick`.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(tick, "tick")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(tick.symbol)  # Could be None
-        cdef Indicator indicator
-        if indicators is not None:
-            for indicator in indicators:
-                indicator.handle_trade_tick(tick)
-
-        if is_historical:
-            return  # Don't pass to on_tick()
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_trade_tick(tick)
-            except Exception as ex:
-                self.log.exception(ex)
-                raise ex
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_trade_ticks(self, list ticks) except *:
-        """
-        Handle the given list of ticks by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[TradeTick]
-            The received ticks.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef TradeTick first = ticks[0] if length > 0 else None
-        cdef Symbol symbol = first.symbol if first is not None else None
-
-        if length > 0:
-            self.log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
-        else:
-            self.log.warning("Received <TradeTick[]> data with no ticks.")
-
-        for i in range(length):
-            self.handle_trade_tick(ticks[i], is_historical=True)
-
-    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
-        """
-        Handle the given bar type and bar.
-
-        Calls `on_bar` if `strategy.state` is `RUNNING`.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The received bar type.
-        bar : Bar
-            The bar received.
-        is_historical : bool
-            If bar is historical then it won't be passed to `on_bar`.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(bar, "bar")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar_type)  # Could be None
-        cdef Indicator indicator
-        if indicators is not None:
-            for indicator in indicators:
-                indicator.handle_bar(bar)
-
-        if is_historical:
-            return  # Don't pass to on_bar()
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_bar(bar_type, bar)
-            except Exception as ex:
-                self.log.exception(ex)
-                raise ex
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
-        """
-        Handle the given bar type and bars by handling each bar individually.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The received bar type.
-        bars : list[Bar]
-            The bars to handle.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(bars, "bars")  # Can be empty
-
-        cdef int length = len(bars)
-        cdef Bar first = bars[0] if length > 0 else None
-        cdef Bar last = bars[length - 1] if length > 0 else None
-
-        self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
-
-        if length > 0 and first.timestamp > last.timestamp:
-            raise RuntimeError(f"Cannot handle <Bar[{length}]> data (incorrectly sorted).")
-
-        for i in range(length):
-            self.handle_bar(bar_type, bars[i], is_historical=True)
-
-    cpdef void handle_data(self, data) except *:
-        """
-        Handle the given data object.
-
-        Calls `on_data` if `strategy.state` is `RUNNING`.
-
-        Parameters
-        ----------
-        data : object
-            The received data object.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(data, "data")
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_data(data)
-            except Exception as ex:
-                self.log.exception(ex)
-                raise ex
-
-    cpdef void handle_event(self, Event event) except *:
-        """
-        Hand the given event.
-
-        Calls `on_event` if `strategy.state` is `RUNNING`.
-
-        Parameters
-        ----------
-        event : Event
-            The received event.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(event, "event")
-
-        if isinstance(event, (OrderRejected, OrderCancelReject)):
-            self.log.warning(f"{RECV}{EVT} {event}.")
-        else:
-            self.log.info(f"{RECV}{EVT} {event}.")
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_event(event)
-            except Exception as ex:
-                self.log.exception(ex)
-                raise ex
-
 # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
 
     cpdef void start(self) except *:
@@ -828,10 +566,7 @@ cdef class TradingStrategy:
         Exceptions raised in `on_start` will be caught, logged, and reraised.
 
         """
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("start called when not registered with a trader")
+        self._check_trader_registered()
 
         try:
             self._fsm.trigger(ComponentTrigger.START)
@@ -868,10 +603,7 @@ cdef class TradingStrategy:
         Exceptions raised in `on_stop` will be caught, logged, and reraised.
 
         """
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("stop called when not registered with a trader")
+        self._check_trader_registered()
 
         try:
             self._fsm.trigger(ComponentTrigger.STOP)
@@ -916,10 +648,7 @@ cdef class TradingStrategy:
         Exceptions raised in `on_resume` will be caught, logged, and reraised.
 
         """
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("resume called when not registered with a trader")
+        self._check_trader_registered()
 
         try:
             self._fsm.trigger(ComponentTrigger.RESUME)
@@ -957,10 +686,7 @@ cdef class TradingStrategy:
         Exceptions raised in `on_reset` will be caught, logged, and reraised.
 
         """
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("reset called when not registered with a trader")
+        self._check_trader_registered()
 
         try:
             self._fsm.trigger(ComponentTrigger.RESET)
@@ -993,6 +719,9 @@ cdef class TradingStrategy:
 
         Calls `on_dispose`.
 
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
+
         Raises
         ------
         RuntimeError
@@ -1005,10 +734,7 @@ cdef class TradingStrategy:
         Exceptions raised in `on_dispose` will be caught, logged, and reraised.
 
         """
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("dispose called when not registered with a trader")
+        self._check_trader_registered()
 
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
@@ -1043,10 +769,7 @@ cdef class TradingStrategy:
         Exceptions raised in `on_save` will be caught, logged, and reraised.
 
         """
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("save called when not registered with a trader")
+        self._check_trader_registered()
 
         self.log.info("Saving state...")
 
@@ -1085,10 +808,7 @@ cdef class TradingStrategy:
         """
         Condition.not_none(state, "state")
 
-        if self.trader_id is None:
-            # This guards the case where some below components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("load called when not registered with a trader")
+        self._check_trader_registered()
 
         self.log.info("Loading state...")
 
@@ -1664,6 +1384,7 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position, "position")
+        Condition.not_none(self.trader_id, "trader_id")
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         if position.is_closed_c():
@@ -1722,3 +1443,267 @@ cdef class TradingStrategy:
         cdef Position position
         for position in positions_open:
             self.flatten_position(position)
+
+# -- HANDLERS --------------------------------------------------------------------------------------
+
+    cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
+        """
+        Handle the given tick.
+
+        Calls `on_quote_tick` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The received tick.
+        is_historical : bool
+            If tick is historical then it won't be passed to `on_quote_tick`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(tick, "tick")
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_quotes.get(tick.symbol)  # Could be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.handle_quote_tick(tick)
+
+        if is_historical:
+            return  # Don't pass to on_tick()
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_quote_tick(tick)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_quote_ticks(self, list ticks) except *:
+        """
+        Handle the given list of ticks by handling each tick individually.
+
+        Parameters
+        ----------
+        ticks : list[QuoteTick]
+            The received ticks.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(ticks, "ticks")  # Could be empty
+
+        cdef int length = len(ticks)
+        cdef QuoteTick first = ticks[0] if length > 0 else None
+        cdef Symbol symbol = first.symbol if first is not None else None
+
+        if length > 0:
+            self.log.info(f"Received <QuoteTick[{length}]> data for {symbol}.")
+        else:
+            self.log.warning("Received <QuoteTick[]> data with no ticks.")
+
+        for i in range(length):
+            self.handle_quote_tick(ticks[i], is_historical=True)
+
+    cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=False) except *:
+        """
+        Handle the given tick.
+
+        Calls `on_trade_tick` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The received trade tick.
+        is_historical : bool
+            If tick is historical then it won't be passed to `on_trade_tick`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(tick, "tick")
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_trades.get(tick.symbol)  # Could be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.handle_trade_tick(tick)
+
+        if is_historical:
+            return  # Don't pass to on_tick()
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_trade_tick(tick)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_trade_ticks(self, list ticks) except *:
+        """
+        Handle the given list of ticks by handling each tick individually.
+
+        Parameters
+        ----------
+        ticks : list[TradeTick]
+            The received ticks.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(ticks, "ticks")  # Could be empty
+
+        cdef int length = len(ticks)
+        cdef TradeTick first = ticks[0] if length > 0 else None
+        cdef Symbol symbol = first.symbol if first is not None else None
+
+        if length > 0:
+            self.log.info(f"Received <TradeTick[{length}]> data for {symbol}.")
+        else:
+            self.log.warning("Received <TradeTick[]> data with no ticks.")
+
+        for i in range(length):
+            self.handle_trade_tick(ticks[i], is_historical=True)
+
+    cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
+        """
+        Handle the given bar type and bar.
+
+        Calls `on_bar` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The received bar type.
+        bar : Bar
+            The bar received.
+        is_historical : bool
+            If bar is historical then it won't be passed to `on_bar`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(bar, "bar")
+
+        # Update indicators
+        cdef list indicators = self._indicators_for_bars.get(bar_type)  # Could be None
+        cdef Indicator indicator
+        if indicators is not None:
+            for indicator in indicators:
+                indicator.handle_bar(bar)
+
+        if is_historical:
+            return  # Don't pass to on_bar()
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_bar(bar_type, bar)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void handle_bars(self, BarType bar_type, list bars) except *:
+        """
+        Handle the given bar type and bars by handling each bar individually.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The received bar type.
+        bars : list[Bar]
+            The bars to handle.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(bars, "bars")  # Can be empty
+
+        cdef int length = len(bars)
+        cdef Bar first = bars[0] if length > 0 else None
+        cdef Bar last = bars[length - 1] if length > 0 else None
+
+        self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
+
+        if length > 0 and first.timestamp > last.timestamp:
+            raise RuntimeError(f"Cannot handle <Bar[{length}]> data (incorrectly sorted).")
+
+        for i in range(length):
+            self.handle_bar(bar_type, bars[i], is_historical=True)
+
+    cpdef void handle_data(self, data) except *:
+        """
+        Handle the given data object.
+
+        Calls `on_data` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        data : object
+            The received data object.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(data, "data")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_data(data)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex
+
+    cpdef void handle_event(self, Event event) except *:
+        """
+        Hand the given event.
+
+        Calls `on_event` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        event : Event
+            The received event.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(event, "event")
+
+        if isinstance(event, (OrderRejected, OrderCancelReject)):
+            self.log.warning(f"{RECV}{EVT} {event}.")
+        else:
+            self.log.info(f"{RECV}{EVT} {event}.")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_event(event)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex

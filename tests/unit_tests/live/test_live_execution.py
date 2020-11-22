@@ -18,9 +18,9 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -93,7 +93,6 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            UUIDFactory(),
             self.logger,
         )
 
@@ -130,7 +129,6 @@ class ExecutionEngineTests(unittest.TestCase):
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            UUIDFactory(),
             self.logger,
         )
 

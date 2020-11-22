@@ -69,7 +69,7 @@ cdef class DataEngine:
     cdef readonly int response_count
     """The total count of responses received by the engine.\n\n:returns: `int`"""
 
-    cdef ComponentState state_c(self)
+    cdef ComponentState state_c(self) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 

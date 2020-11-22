@@ -17,8 +17,8 @@ import time
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.messages import Connect
 from nautilus_trader.common.messages import DataRequest
 from nautilus_trader.common.messages import DataResponse

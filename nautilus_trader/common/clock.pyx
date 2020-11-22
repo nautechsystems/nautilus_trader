@@ -33,17 +33,11 @@ cdef class Clock:
     The base class for all clocks. All times are timezone aware UTC.
     """
 
-    def __init__(self, UUIDFactory uuid_factory not None):
+    def __init__(self):
         """
         Initialize a new instance of the `Clock` class.
-
-        Parameters
-        ----------
-        uuid_factory : UUIDFactory
-            The uuid factory for the clocks time events.
-
         """
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._timers = {}    # type: {str, Timer}
         self._handlers = {}  # type: {str, callable}
         self._stack = None
@@ -383,7 +377,7 @@ cdef class TestClock(Clock):
             The initial time for the clock.
 
         """
-        super().__init__(UUIDFactory())
+        super().__init__()
 
         self._time = initial_time
         self.is_test_clock = True
@@ -484,7 +478,7 @@ cdef class LiveClock(Clock):
         """
         Initialize a new instance of the `LiveClock` class.
         """
-        super().__init__(UUIDFactory())
+        super().__init__()
 
     cpdef datetime utc_now(self):
         """
