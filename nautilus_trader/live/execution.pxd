@@ -18,3 +18,5 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _queue
+
+    cpdef int queue_size(self) except *

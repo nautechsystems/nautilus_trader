@@ -12,13 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.core.message cimport Message
-
-
-cdef class LiveDataEngine(DataEngine):
-    cdef object _queue
-
-    cpdef int queue_size(self) except *
-    cdef inline void _process_message(self, Message message) except *
