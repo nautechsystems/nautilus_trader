@@ -157,7 +157,7 @@ cdef class LogMessage:
         str
 
         """
-        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{LogLevelParser.from_string(self.level)}] {self.text}"
+        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{LogLevelParser.to_string(self.level)}] {self.text}"
 
 
 cdef class Logger:
@@ -176,7 +176,7 @@ cdef class Logger:
             bint console_prints=True,
             bint log_thread=False,
             bint log_to_file=False,
-            str log_file_path not None="log/",
+            str log_file_path not None="",
     ):
         """
         Initialize a new instance of the `Logger` class.
@@ -216,8 +216,10 @@ cdef class Logger:
             Condition.valid_string(name, "name")
         else:
             name = "tmp"
-
-        Condition.valid_string(log_file_path, "log_file_path")
+        if log_to_file:
+            if log_file_path == "":
+                log_file_path = "log/"
+            Condition.valid_string(log_file_path, "log_file_path")
 
         self.name = name
         self.bypass_logging = bypass_logging

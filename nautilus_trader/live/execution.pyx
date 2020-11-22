@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import queue
-import threading
+import asyncio
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -22,12 +21,10 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -38,25 +35,20 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     def __init__(
             self,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            ExecutionCache database not None,
+            ExecutionDatabase database not None,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
+            dict config=None,
     ):
         """
         Initialize a new instance of the `LiveExecutionEngine` class.
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader identifier for the engine.
-        account_id : AccountId
-            The account_id for the engine.
-        database : ExecutionCache
-            The execution cache for the engine.
+        database : ExecutionDatabase
+            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         clock : Clock
@@ -65,55 +57,25 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The uuid factory for the engine.
         logger : Logger
             The logger for the engine.
+        config : dict, option
+            The configuration options.
 
         """
         super().__init__(
-            trader_id=trader_id,
-            account_id=account_id,
             database=database,
             portfolio=portfolio,
             clock=clock,
             uuid_factory=uuid_factory,
             logger=logger,
+            config=config,
         )
 
-        self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        self._queue = asyncio.Queue()
 
-    cpdef void execute(self, Command command) except *:
-        """
-        Handle the given command by inserting it into the message bus for
-        execution.
+    cpdef void on_start(self) except *:
+        self._process_queue()
 
-        Parameters
-        ----------
-        command : Command
-            The command to execute.
-
-        """
-        Condition.not_none(command, "command")
-
-        self._queue.put(command)
-
-    cpdef void process(self, Event event) except *:
-        """
-        Handle the given event by inserting it into the message bus for
-        processing.
-
-        Parameters
-        ----------
-        event : Event
-            The event to process.
-
-        """
-        Condition.not_none(event, "event")
-
-        self._queue.put(event)
-
-    cpdef void _loop(self) except *:
-        self._log.info("Running...")
-
+    async def _process_queue(self):
         cdef Message message
         while True:
             message = self._queue.get()
@@ -124,3 +86,42 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 self._execute_command(message)
             else:
                 self._log.error(f"Invalid message type on queue ({repr(message)}).")
+
+    cpdef int queue_size(self) except *:
+        """
+        Return the number of messages in the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._queue.qsize()
+
+    cpdef void execute(self, Command command) except *:
+        """
+        Execute the given command.
+
+        Parameters
+        ----------
+        command : Command
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._queue.put_nowait(command)
+
+    cpdef void process(self, Event event) except *:
+        """
+        Process the given event.
+
+        Parameters
+        ----------
+        event : Event
+            The event to process.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._queue.put_nowait(event)
