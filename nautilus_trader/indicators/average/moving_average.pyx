@@ -35,7 +35,9 @@ class MovingAverageType(Enum):
 
 cdef class MovingAverage(Indicator):
     """
-    The base class for all moving average type indicators.
+    The abstract base class for all moving average type indicators.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

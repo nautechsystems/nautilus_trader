@@ -28,7 +28,9 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class ExecutionDatabase:
     """
-    The base class for all execution databases.
+    The abstract base class for all execution databases.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):

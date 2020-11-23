@@ -137,6 +137,18 @@ cdef class ExecutionEngine:
         return <ComponentState>self._fsm.state
 
     @property
+    def state(self):
+        """
+        The execution engines current state.
+
+        Returns
+        -------
+        ComponentState
+
+        """
+        return self.state_c()
+
+    @property
     def registered_venues(self):
         """
         The trading venues registered with the execution engine.

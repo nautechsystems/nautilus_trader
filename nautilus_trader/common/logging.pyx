@@ -162,7 +162,9 @@ cdef class LogMessage:
 
 cdef class Logger:
     """
-    The base class for all Loggers.
+    The abstract base class for all Loggers.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

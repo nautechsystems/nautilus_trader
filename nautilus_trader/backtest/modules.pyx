@@ -35,7 +35,9 @@ from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 cdef class SimulationModule:
     """
-    The base class for all simulation modules
+    The abstract base class for all simulation modules.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):

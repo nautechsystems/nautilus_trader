@@ -30,7 +30,9 @@ from nautilus_trader.core.datetime cimport UNIX_EPOCH
 
 cdef class Clock:
     """
-    The base class for all clocks. All times are timezone aware UTC.
+    The abstract base class for all clocks.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):
@@ -51,6 +53,7 @@ cdef class Clock:
 
     cpdef datetime utc_now(self):
         """Abstract method (implement in subclass)."""
+        # As the method implies, this should return a tz-aware UTC datetime
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef datetime local_now(self, tzinfo tz):

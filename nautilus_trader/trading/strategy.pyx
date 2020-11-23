@@ -81,7 +81,9 @@ from nautilus_trader.model.tick cimport TradeTick
 
 cdef class TradingStrategy:
     """
-    The base class for all trading strategies.
+    The abstract base class for all trading strategies.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, str order_id_tag not None):
@@ -1180,8 +1182,8 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "exec_engine")
+        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef Position position
         if position_id is None:
@@ -1224,8 +1226,8 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(bracket_order, "bracket_order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "exec_engine")
+        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef AccountId account_id = self.execution.account_id(bracket_order.entry.symbol.venue)
         if account_id is None:
@@ -1272,8 +1274,8 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "exec_engine")
+        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         cdef bint modifying = False  # Set validation flag (must become true)
         cdef Quantity quantity = order.quantity
@@ -1326,8 +1328,8 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(self.trader_id, "trader_id")
-        Condition.not_none(self._exec_engine, "exec_engine")
+        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.not_none(self._exec_engine, "self._exec_engine")
 
         if order.account_id is None:
             self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
@@ -1384,7 +1386,8 @@ cdef class TradingStrategy:
 
         """
         Condition.not_none(position, "position")
-        Condition.not_none(self.trader_id, "trader_id")
+        Condition.not_none(self.trader_id, "self.trader_id")
+        Condition.not_none(self.order_factory, "self.order_factory")
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
         if position.is_closed_c():

@@ -145,6 +145,18 @@ cdef class DataEngine:
         return <ComponentState>self._fsm.state
 
     @property
+    def state(self):
+        """
+        The data engines current state.
+
+        Returns
+        -------
+        ComponentState
+
+        """
+        return self.state_c()
+
+    @property
     def registered_venues(self):
         """
         The venues registered with the data engine.
