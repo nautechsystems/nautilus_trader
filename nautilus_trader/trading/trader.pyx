@@ -160,7 +160,7 @@ cdef class Trader:
             self._log.error("Cannot re-initialize the strategies of a running trader.")
             return
 
-        self._log.debug(f"Initializing strategies...")
+        self._log.info(f"Initializing strategies...")
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:

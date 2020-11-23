@@ -18,6 +18,8 @@ import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.messages import Connect
 from nautilus_trader.common.messages import DataRequest
@@ -40,11 +42,11 @@ ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
 class LiveDataEngineTests(unittest.TestCase):
 
-    def setUp(self):
+    def setUp(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
+        self.logger = TestLogger(self.clock, level_console=LogLevel.DEBUG)
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -59,15 +61,20 @@ class LiveDataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
+    def tearDown(self) -> None:
+        self.data_engine.stop()
+
     def test_start(self):
         # Arrange
         # Act
         self.data_engine.start()
 
-        # Assert
-        # TODO: Implement test
+        time.sleep(0.1)
 
-    def test_given_execute_command_places_message_on_queue(self):
+        # Assert
+        self.assertEqual(ComponentState.RUNNING, self.data_engine.state)
+
+    def test_execute_command_processes_message(self):
         # Arrange
         self.data_engine.start()
 
@@ -83,10 +90,13 @@ class LiveDataEngineTests(unittest.TestCase):
         time.sleep(0.1)
 
         # Assert
-        self.assertEqual(1, self.data_engine.queue_size())
+        self.assertEqual(0, self.data_engine.message_qsize())
+        self.assertEqual(1, self.data_engine.command_count)
 
-    def test_send_request_places_message_on_queue(self):
+    def test_send_request_processes_message(self):
         # Arrange
+        self.data_engine.start()
+
         handler = []
         request = DataRequest(
             data_type=QuoteTick,
@@ -107,10 +117,13 @@ class LiveDataEngineTests(unittest.TestCase):
         time.sleep(0.1)
 
         # Assert
-        self.assertEqual(1, self.data_engine.queue_size())
+        self.assertEqual(0, self.data_engine.message_qsize())
+        self.assertEqual(1, self.data_engine.request_count)
 
-    def test_receive_response_places_message_on_queue(self):
+    def test_receive_response_processes_message(self):
         # Arrange
+        self.data_engine.start()
+
         response = DataResponse(
             data_type=QuoteTick,
             metadata={},  # Malformed response anyway
@@ -126,15 +139,21 @@ class LiveDataEngineTests(unittest.TestCase):
         time.sleep(0.1)
 
         # Assert
-        self.assertEqual(1, self.data_engine.queue_size())
+        self.assertEqual(0, self.data_engine.message_qsize())
+        self.assertEqual(1, self.data_engine.response_count)
 
-    def test_process_data_places_data_on_queue(self):
+    def test_process_data_processes_data(self):
         # Arrange
+        self.data_engine.start()
+
         # Act
         tick = TestStubs.trade_tick_5decimal()
 
         # Act
         self.data_engine.process(tick)
 
+        time.sleep(0.3)
+
         # Assert
-        self.assertEqual(1, self.data_engine.queue_size())
+        self.assertEqual(0, self.data_engine.data_qsize())
+        self.assertEqual(1, self.data_engine.data_count)
