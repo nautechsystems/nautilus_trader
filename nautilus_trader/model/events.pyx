@@ -92,7 +92,9 @@ cdef class AccountState(Event):
 
 cdef class OrderEvent(Event):
     """
-    The base class for all order events.
+    The abstract base class for all order events.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -896,7 +898,9 @@ cdef class OrderFilled(OrderEvent):
 
 cdef class PositionEvent(Event):
     """
-    The base class for all position events.
+    The abstract base class for all position events.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

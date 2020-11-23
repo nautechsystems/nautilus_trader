@@ -82,7 +82,9 @@ cpdef MessageType message_type_from_string(str value):
 
 cdef class Message:
     """
-    The base class for all messages.
+    The abstract base class for all messages.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -130,7 +132,9 @@ cdef class Message:
 
 cdef class Command(Message):
     """
-    The base class for all commands.
+    The abstract base class for all commands.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, UUID identifier not None, datetime timestamp not None):
@@ -150,7 +154,9 @@ cdef class Command(Message):
 
 cdef class Document(Message):
     """
-    The base class for all documents.
+    The abstract base class for all documents.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -174,7 +180,9 @@ cdef class Document(Message):
 
 cdef class Event(Message):
     """
-    The base class for all events.
+    The abstract base class for all events.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -198,7 +206,9 @@ cdef class Event(Message):
 
 cdef class Request(Message):
     """
-    The base class for all requests.
+    The abstract base class for all requests.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, UUID identifier not None, datetime timestamp not None):
@@ -218,7 +228,9 @@ cdef class Request(Message):
 
 cdef class Response(Message):
     """
-    The base class for all responses.
+    The abstract base class for all responses.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

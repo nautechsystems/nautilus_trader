@@ -97,7 +97,9 @@ cdef dict _ORDER_STATE_TABLE = {
 
 cdef class Order:
     """
-    The base class for all orders.
+    The abstract base class for all orders.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, OrderInitialized event not None):
@@ -457,7 +459,9 @@ cdef class Order:
 
 cdef class PassiveOrder(Order):
     """
-    The base class for all passive orders.
+    The abstract base class for all passive orders.
+
+    It should not be used directly, but through its concrete subclasses.
     """
     def __init__(
             self,
