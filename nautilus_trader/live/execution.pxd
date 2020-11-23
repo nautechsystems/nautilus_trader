@@ -17,6 +17,10 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
+    cdef object _thread
     cdef object _queue
+    cdef bint _is_running
 
-    cpdef int queue_size(self) except *
+    cpdef int qsize(self) except *
+
+    cpdef void _process_queue(self) except *

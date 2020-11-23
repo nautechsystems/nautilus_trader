@@ -694,7 +694,7 @@ cdef class LiveLogger(Logger):
         """
         Condition.not_none(message, "message")
 
-        self._queue.put(message)
+        self._queue.put_nowait(message)
 
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message

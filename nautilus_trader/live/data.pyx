@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+import threading
+import queue
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.messages cimport DataRequest
@@ -43,7 +44,7 @@ cdef class LiveDataEngine(DataEngine):
             dict config=None,
     ):
         """
-        Initialize a new instance of the `DataEngine` class.
+        Initialize a new instance of the `LiveDataEngine` class.
 
         Parameters
         ----------
@@ -67,39 +68,73 @@ cdef class LiveDataEngine(DataEngine):
             config,
         )
 
-        self._queue = asyncio.Queue()
+        self._data_thread = threading.Thread(target=self._process_data_queue)
+        self._message_thread = threading.Thread(target=self._process_message_queue)
+        self._data_queue = queue.Queue()
+        self._message_queue = queue.Queue()
+        self._is_running = False
 
     cpdef void on_start(self) except *:
-        self._process_queue()
+        self._log.info("Starting queue processing...")
+        self._is_running = True
+        self._data_thread.start()
+        self._message_thread.start()
 
-    async def _process_queue(self):
-        while True:
-            item = await self._queue.get()
+    cpdef void on_stop(self) except *:
+        self._log.info("Shutting down queue processing...")
+        self._is_running = False
+        self._data_queue.put_nowait(None)     # None message pattern
+        self._message_queue.put_nowait(None)  # None message pattern
 
-            print(item)
-            if isinstance(item, Message):
-                self._process_message(item)
+    cpdef void _process_data_queue(self) except *:
+        while self._is_running:
+            data = self._data_queue.get()
+            if data is None:
+                continue
+
+            self._handle_data(data)
+
+        self._log.info("Finished processing data queue.")
+
+    cpdef void _process_message_queue(self) except *:
+        cdef Message message
+        while self._is_running:
+            message = self._message_queue.get()
+            if message is None:
+                continue
+
+            if message.type == MessageType.COMMAND:
+                self._execute_command(message)
+            elif message.type == MessageType.REQUEST:
+                self._handle_request(message)
+            elif message.type == MessageType.RESPONSE:
+                self._handle_response(message)
             else:
-                self.process(item)  # Data
+                self._log.error(f"Cannot handle unrecognized message {message}.")
 
-    cdef inline void _process_message(self, Message message) except *:
-        if message.type == MessageType.COMMAND:
-            self.execute(message)
-        elif message.type == MessageType.REQUEST:
-            self.send(message)
-        elif message.type == MessageType.RESPONSE:
-            self.receive(message)
+        self._log.info("Finished processing message queue.")
 
-    cpdef int queue_size(self) except *:
+    cpdef int data_qsize(self) except *:
         """
-        Return the number of messages in the internal queue.
+        Return the number of objects buffered on the internal data queue.
 
         Returns
         -------
         int
 
         """
-        return self._queue.qsize()
+        return self._data_queue.qsize()
+
+    cpdef int message_qsize(self) except *:
+        """
+        Return the number of objects buffered on the internal message queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._message_queue.qsize()
 
     cpdef void execute(self, Command command) except *:
         """
@@ -113,7 +148,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(command, "command")
 
-        self._queue.put_nowait(command)
+        self._message_queue.put_nowait(command)
 
     cpdef void process(self, data) except *:
         """
@@ -127,7 +162,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(data, "data")
 
-        self._queue.put_nowait(data)
+        self._data_queue.put_nowait(data)
 
     cpdef void send(self, DataRequest request) except *:
         """
@@ -141,7 +176,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(request, "request")
 
-        self._queue.put_nowait(request)
+        self._message_queue.put_nowait(request)
 
     cpdef void receive(self, DataResponse response) except *:
         """
@@ -155,4 +190,4 @@ cdef class LiveDataEngine(DataEngine):
         """
         Condition.not_none(response, "response")
 
-        self._queue.put_nowait(response)
+        self._message_queue.put_nowait(response)
