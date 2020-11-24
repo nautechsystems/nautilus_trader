@@ -183,7 +183,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         account_id : AccountId
             The account identifier for the client.
         engine : LiveDataEngine
-            The live data engine for the client.
+            The data engine for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger

@@ -235,7 +235,7 @@ cdef class LiveDataClient(DataClient):
         venue : Venue
             The venue for the client.
         engine : LiveDataEngine
-            The live data engine for the client.
+            The data engine for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
