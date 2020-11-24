@@ -85,7 +85,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.cache = self.exec_engine.cache
         self.exec_engine.process(TestStubs.event_account_state())
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         if self.exec_engine.state == ComponentState.RUNNING:
             self.exec_engine.stop()
 

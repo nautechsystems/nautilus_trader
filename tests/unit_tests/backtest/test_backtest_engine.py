@@ -35,6 +35,7 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)

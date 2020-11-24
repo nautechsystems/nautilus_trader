@@ -21,9 +21,8 @@ from nautilus_trader.indicators.volatility_ratio import VolatilityRatio
 
 class VolatilityCompressionRatioTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.vcr = VolatilityRatio(10, 100)
 
     def test_name_returns_expected_string(self):

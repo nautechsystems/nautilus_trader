@@ -21,9 +21,8 @@ from nautilus_trader.indicators.pressure import Pressure
 
 class PressureTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.pressure = Pressure(10, MovingAverageType.EXPONENTIAL)
 
     def test_name_returns_expected_string(self):

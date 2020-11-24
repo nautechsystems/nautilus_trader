@@ -21,9 +21,8 @@ from nautilus_trader.indicators.hilbert_period import HilbertPeriod
 
 class HilbertPeriodTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.h_period = HilbertPeriod()
 
     def test_name_returns_expected_name(self):

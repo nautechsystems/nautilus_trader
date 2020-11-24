@@ -36,7 +36,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 class AccountTests(unittest.TestCase):
 
     def setUp(self):
-        # Fixture setup
+        # Fixture Setup
         self.clock = TestClock()
         uuid_factor = UUIDFactory()
         logger = TestLogger(self.clock)

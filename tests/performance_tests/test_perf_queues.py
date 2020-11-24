@@ -22,6 +22,7 @@ from tests.test_kit.performance import PerformanceHarness
 class PythonDequePerformanceTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.deque = deque(maxlen=1000)
         self.deque.append(1.0)
 

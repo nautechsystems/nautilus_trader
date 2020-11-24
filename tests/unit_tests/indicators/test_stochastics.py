@@ -20,9 +20,8 @@ from nautilus_trader.indicators.stochastics import Stochastics
 
 class StochasticsTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.stochastics = Stochastics(14, 3)
 
     def test_name_returns_expected_string(self):

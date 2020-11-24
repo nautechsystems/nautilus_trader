@@ -37,6 +37,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 class QuoteTickDataWranglerTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.clock = TestClock()
 
     def test_tick_data(self):
@@ -147,6 +148,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
 class TradeTickDataWranglerTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.clock = TestClock()
 
     def test_tick_data(self):
@@ -197,6 +199,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
 class BarDataWranglerTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         data = TestDataProvider.gbpusd_1min_bid()[:1000]
         self.bar_builder = BarDataWrangler(5, 1, data)
 

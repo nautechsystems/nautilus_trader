@@ -42,7 +42,7 @@ ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
 class LiveDataEngineTests(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -66,7 +66,7 @@ class LiveDataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         if self.data_engine.state == ComponentState.RUNNING:
             self.data_engine.stop()
 
