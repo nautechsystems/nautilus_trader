@@ -189,6 +189,8 @@ cdef class TradingNode:
         """
         Start the trading nodes trader.
         """
+        self._data_engine.start()
+        self._exec_engine.start()
         self.trader.start()
 
     cpdef void stop(self) except *:
@@ -202,11 +204,15 @@ cdef class TradingNode:
         """
         self.trader.stop()
 
+        self._log.info("Awaiting residual state...")
         time.sleep(self._check_residuals_delay)
         self.trader.check_residuals()
 
         if self._save_strategy_state:
             self.trader.save()
+
+        self._data_engine.stop()
+        self._exec_engine.stop()
 
     cpdef void disconnect(self) except *:
         """
@@ -217,10 +223,11 @@ cdef class TradingNode:
     cpdef void dispose(self) except *:
         """
         Dispose of the trading node.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         self._log.info("Disposing resources...")
-
-        time.sleep(1.0)  # Hard coded delay to await graceful disconnection (refactor)
 
         self.trader.dispose()
         self._data_engine.dispose()

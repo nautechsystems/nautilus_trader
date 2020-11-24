@@ -18,10 +18,10 @@ from decimal import Decimal
 
 from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.execution cimport BacktestExecClient
-from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache

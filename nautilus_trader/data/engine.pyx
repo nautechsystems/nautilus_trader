@@ -141,8 +141,20 @@ cdef class DataEngine:
         self._log.info("Initialized.")
         self._log.info(f"use_previous_close={self._use_previous_close}")
 
-    cdef ComponentState state_c(self):
+    cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
+
+    @property
+    def state(self):
+        """
+        The data engines current state.
+
+        Returns
+        -------
+        ComponentState
+
+        """
+        return self.state_c()
 
     @property
     def registered_venues(self):
@@ -423,6 +435,9 @@ cdef class DataEngine:
         Dispose the data engine
 
         All registered data clients are disposed.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)

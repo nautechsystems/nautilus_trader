@@ -404,7 +404,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         pipe = self._redis.pipeline()
         for key, value in state.items():
             pipe.hset(name=self._key_strategies + strategy.id.value + ":State", key=key, value=value)
-            self._log.debug(f"Saving {strategy.id} state (key='{key}', value={value})...")
+            self._log.debug(f"Saving {strategy.id} state {{ {key}: {value} }}")
         cdef list reply = pipe.execute()
 
         self._log.info(f"Saved strategy state for {strategy.id.value}.")

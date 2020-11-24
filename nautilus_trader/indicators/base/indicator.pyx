@@ -16,7 +16,9 @@
 
 cdef class Indicator:
     """
-    The base class for all indicators.
+    The abstract base class for all indicators.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, list params not None):

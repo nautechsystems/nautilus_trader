@@ -24,7 +24,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class PositionSizer:
     """
-    The base class for all position sizers.
+    The abstract base class for all position sizers.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, Instrument instrument not None):

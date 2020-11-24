@@ -42,7 +42,9 @@ from nautilus_trader.model.tick cimport TradeTick
 
 cdef class DataClient:
     """
-    The base class for all data clients.
+    The abstract base class for all data clients.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

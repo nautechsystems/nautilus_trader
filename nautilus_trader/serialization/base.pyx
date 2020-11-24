@@ -21,8 +21,9 @@ from nautilus_trader.model.order cimport Order
 
 cdef class Serializer:
     """
-    The base class for all serializers.
+    The abstract base class for all serializers.
 
+    It should not be used directly, but through its concrete subclasses.
     """
     cdef inline str convert_camel_to_snake(self, str value):
         return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
@@ -41,8 +42,9 @@ cdef class Serializer:
 
 cdef class DictionarySerializer(Serializer):
     """
-    The base class for all dictionary serializers.
+    The abstract base class for all dictionary serializers.
 
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):
@@ -62,8 +64,9 @@ cdef class DictionarySerializer(Serializer):
 
 cdef class InstrumentSerializer(Serializer):
     """
-    The base class for all instrument serializers.
+    The abstract base class for all instrument serializers.
 
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):
@@ -84,8 +87,9 @@ cdef class InstrumentSerializer(Serializer):
 
 cdef class OrderSerializer(Serializer):
     """
-    The base class for all order serializers.
+    The abstract base class for all order serializers.
 
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):
@@ -106,8 +110,9 @@ cdef class OrderSerializer(Serializer):
 
 cdef class CommandSerializer(Serializer):
     """
-    The base class for all command serializers.
+    The abstract base class for all command serializers.
 
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):
@@ -127,8 +132,9 @@ cdef class CommandSerializer(Serializer):
 
 cdef class EventSerializer(Serializer):
     """
-    The base class for all event serializers.
+    The abstract base class for all event serializers.
 
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):

@@ -18,9 +18,10 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
@@ -79,21 +80,31 @@ class ExecutionEngineTests(unittest.TestCase):
         self.cache = self.exec_engine.cache
         self.exec_engine.process(TestStubs.event_account_state())
 
+    def tearDown(self) -> None:
+        if self.exec_engine.state == ComponentState.RUNNING:
+            self.exec_engine.stop()
+            time.sleep(0.1)
+
+        self.exec_engine.dispose()
+
     def test_start(self):
         # Arrange
         # Act
         self.exec_engine.start()
+        time.sleep(0.1)
 
         # Assert
-        # TODO: Implement test
+        self.assertEqual(ComponentState.RUNNING, self.exec_engine.state)
 
     def test_execute_command_places_command_on_queue(self):
         # Arrange
+        self.exec_engine.start()
+        time.sleep(0.1)
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            UUIDFactory(),
             self.logger,
         )
 
@@ -118,19 +129,21 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.exec_engine.execute(submit_order)
-
         time.sleep(0.1)
 
         # Assert
-        self.assertEqual(2, self.exec_engine.queue_size())
+        self.assertEqual(0, self.exec_engine.qsize())
+        self.assertEqual(1, self.exec_engine.command_count)
 
     def test_handle_position_opening_with_position_id_none(self):
         # Arrange
+        self.exec_engine.start()
+        time.sleep(0.1)
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
             self.clock,
-            UUIDFactory(),
             self.logger,
         )
 
@@ -146,8 +159,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.exec_engine.process(event)
-
         time.sleep(0.1)
 
         # Assert
-        self.assertEqual(2, self.exec_engine.queue_size())
+        self.assertEqual(0, self.exec_engine.qsize())
+        self.assertEqual(2, self.exec_engine.event_count)

@@ -16,9 +16,8 @@
 """
 This module provides components relating to data for backtesting.
 
-A `BacktestDataContainer` is
-a convenient container for holding and organizing backtest related data - which can be passed
-to one or more `BacktestDataEngine`(s).
+A `BacktestDataContainer` is a convenient container for holding and organizing
+backtest related data - which can be passed to one or more `BacktestDataEngine`(s).
 """
 
 import gc
@@ -642,6 +641,9 @@ cdef class BacktestDataProducer(DataClient):
     cpdef void dispose(self) except *:
         """
         Dispose of the data client.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         pass  # Nothing to dispose
 

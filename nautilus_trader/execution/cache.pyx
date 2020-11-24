@@ -228,9 +228,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef dict state = self._database.load_strategy(strategy.id)
 
         if state is not None:
-            strategy.load(state)
             for key, value in state.items():
-                self._log.debug(f"Loading {repr(strategy.id)}) state (key='{key}', value={value})...")
+                self._log.debug(f"Loading {strategy.id}) state {{ {key}: {value} }}")
+            strategy.load(state)
         else:
             self._log.info(f"No previous state found for {repr(strategy.id)}")
 
@@ -528,7 +528,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(strategy, "strategy")
 
         self._index_strategies.add(strategy.id)
-        self._log.info(f"Saving {strategy.id} (in-memory cache does nothing).")
 
         # Update database
         self._database.update_strategy(strategy)

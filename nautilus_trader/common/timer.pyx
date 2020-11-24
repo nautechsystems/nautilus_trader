@@ -104,7 +104,9 @@ cdef class TimeEventHandler:
 
 cdef class Timer:
     """
-    The base class for all timers.
+    The abstract base class for all timers.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
