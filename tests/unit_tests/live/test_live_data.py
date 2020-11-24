@@ -62,13 +62,16 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        self.data_engine.stop()
+        if self.data_engine.state == ComponentState.RUNNING:
+            self.data_engine.stop()
+            time.sleep(0.1)
+
+        self.data_engine.dispose()
 
     def test_start(self):
         # Arrange
         # Act
         self.data_engine.start()
-
         time.sleep(0.1)
 
         # Assert
@@ -77,6 +80,7 @@ class LiveDataEngineTests(unittest.TestCase):
     def test_execute_command_processes_message(self):
         # Arrange
         self.data_engine.start()
+        time.sleep(0.1)
 
         connect = Connect(
             venue=BINANCE,
@@ -86,7 +90,6 @@ class LiveDataEngineTests(unittest.TestCase):
 
         # Act
         self.data_engine.execute(connect)
-
         time.sleep(0.1)
 
         # Assert
@@ -96,6 +99,7 @@ class LiveDataEngineTests(unittest.TestCase):
     def test_send_request_processes_message(self):
         # Arrange
         self.data_engine.start()
+        time.sleep(0.1)
 
         handler = []
         request = DataRequest(
@@ -113,7 +117,6 @@ class LiveDataEngineTests(unittest.TestCase):
 
         # Act
         self.data_engine.send(request)
-
         time.sleep(0.1)
 
         # Assert
@@ -123,6 +126,7 @@ class LiveDataEngineTests(unittest.TestCase):
     def test_receive_response_processes_message(self):
         # Arrange
         self.data_engine.start()
+        time.sleep(0.1)
 
         response = DataResponse(
             data_type=QuoteTick,
@@ -135,7 +139,6 @@ class LiveDataEngineTests(unittest.TestCase):
 
         # Act
         self.data_engine.receive(response)
-
         time.sleep(0.1)
 
         # Assert
@@ -145,6 +148,7 @@ class LiveDataEngineTests(unittest.TestCase):
     def test_process_data_processes_data(self):
         # Arrange
         self.data_engine.start()
+        time.sleep(0.1)
 
         # Act
         tick = TestStubs.trade_tick_5decimal()
@@ -152,7 +156,7 @@ class LiveDataEngineTests(unittest.TestCase):
         # Act
         self.data_engine.process(tick)
 
-        time.sleep(0.3)
+        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.data_qsize())
