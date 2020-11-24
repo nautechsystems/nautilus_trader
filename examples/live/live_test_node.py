@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from decimal import Decimal
 
 from nautilus_trader.model.bar import BarSpecification
@@ -57,7 +58,10 @@ config = {
     }
 }
 
+loop = asyncio.get_event_loop()  # TODO: Implement async run
+
 node = TradingNode(
+    loop=loop,
     strategies=[strategy],
     config=config,
 )
