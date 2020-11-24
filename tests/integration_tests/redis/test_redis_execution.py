@@ -457,7 +457,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({position.id: position}, result)
 
-    def test_can_delete_strategy(self):
+    def test_delete_strategy(self):
         # Arrange
         # Act
         self.database.delete_strategy(self.strategy.id)
@@ -466,7 +466,7 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, result)
 
-    def test_can_flush(self):
+    def test_flush(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_FXCM.symbol,

@@ -16,43 +16,61 @@
 import unittest
 
 from nautilus_trader.indicators.swings import Swings
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class SwingsTests(unittest.TestCase):
 
-    # test fixture
     def setUp(self):
-        # arrange
+        # Fixture Setup
         self.swings = Swings(3)
 
     def test_name_returns_expected_name(self):
-        # act
-        # assert
+        # Arrange
+        # Act
+        # Assert
         self.assertEqual("Swings", self.swings.name)
 
-    def test_str_returns_expected_string(self):
-        # act
-        # assert
+    def test_str_repr_returns_expected_string(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertEqual("Swings(3)", str(self.swings))
         self.assertEqual("Swings(3)", repr(self.swings))
 
-    def test_period_returns_expected_value(self):
-        # act
-        # assert
+    def test_instantiate_returns_expected_property_values(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertEqual(3, self.swings.period)
-
-    def test_properties_with_no_values_returns_expected(self):
-        # act
-        # assert
         self.assertEqual(False, self.swings.initialized)
         self.assertEqual(0, self.swings.direction)
         self.assertEqual(False, self.swings.changed)
         self.assertEqual(0, self.swings.since_high)
         self.assertEqual(0, self.swings.since_low)
 
-    def test_can_determine_swing_high(self):
-        # arrange
+    def test_handle_bar(self):
+        # Arrange
+        bar = Bar(
+            Price("1.00000"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.swings.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(self.swings.has_inputs)
+
+    def test_determine_swing_high(self):
+        # Arrange
         self.swings.update_raw(1.00010, 1.00000, UNIX_EPOCH)
         self.swings.update_raw(1.00030, 1.00010, UNIX_EPOCH)
         self.swings.update_raw(1.00040, 1.00020, UNIX_EPOCH)
@@ -60,15 +78,13 @@ class SwingsTests(unittest.TestCase):
         self.swings.update_raw(1.00060, 1.00040, UNIX_EPOCH)
         self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
 
-        # act
-        result = self.swings.high_price
-
-        # assert
+        # Act
+        # Assert
         self.assertEqual(1, self.swings.direction)
-        self.assertEqual(1.0006, result)
+        self.assertEqual(1.0006, self.swings.high_price)
 
-    def test_can_determine_swing_low(self):
-        # arrange
+    def test_determine_swing_low(self):
+        # Arrange
         self.swings.update_raw(1.00100, 1.00080, UNIX_EPOCH)
         self.swings.update_raw(1.00080, 1.00060, UNIX_EPOCH)
         self.swings.update_raw(1.00060, 1.00040, UNIX_EPOCH)
@@ -76,9 +92,80 @@ class SwingsTests(unittest.TestCase):
         self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
         self.swings.update_raw(1.00020, 1.00020, UNIX_EPOCH)
 
-        # act
-        result = self.swings.low_price
-
-        # assert
+        # Act
+        # Assert
         self.assertEqual(-1, self.swings.direction)
-        self.assertEqual(1.0001, result)
+        self.assertEqual(1.0001, self.swings.low_price)
+
+    def test_swing_change_high_to_low(self):
+        # Arrange
+        self.swings.update_raw(1.00010, 1.00000, UNIX_EPOCH)
+        self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
+        self.swings.update_raw(1.00030, 1.00020, UNIX_EPOCH)
+        self.swings.update_raw(1.00040, 1.00030, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00050, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
+
+        # Act
+        # Assert
+        self.assertEqual(-1, self.swings.direction)
+        self.assertTrue(self.swings.changed)
+        self.assertEqual(0, self.swings.since_low)
+        self.assertEqual(1, self.swings.since_high)
+        self.assertEqual(0, self.swings.length)  # Just changed
+
+    def test_swing_change_low_to_high(self):
+        # Arrange
+        self.swings.update_raw(1.00090, 1.00080, UNIX_EPOCH)
+        self.swings.update_raw(1.00080, 1.00070, UNIX_EPOCH)
+        self.swings.update_raw(1.00070, 1.00060, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00050, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00050, UNIX_EPOCH)
+
+        # Act
+        # Assert
+        self.assertEqual(1, self.swings.direction)
+        self.assertTrue(self.swings.changed)
+        self.assertEqual(0, self.swings.since_high)
+        self.assertEqual(1, self.swings.since_low)
+        self.assertEqual(0, self.swings.length)  # Just changed
+
+    def test_swing_changes(self):
+        # Arrange
+        self.swings.update_raw(1.00010, 1.00000, UNIX_EPOCH)
+        self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
+        self.swings.update_raw(1.00030, 1.00020, UNIX_EPOCH)
+        self.swings.update_raw(1.00040, 1.00030, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00050, UNIX_EPOCH)
+        self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
+        self.swings.update_raw(1.00040, 1.00030, UNIX_EPOCH)
+        self.swings.update_raw(1.00030, 1.00020, UNIX_EPOCH)
+        self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
+        self.swings.update_raw(1.00010, 1.00000, UNIX_EPOCH)
+        self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
+        self.swings.update_raw(1.00030, 1.00020, UNIX_EPOCH)
+        self.swings.update_raw(1.00040, 1.00030, UNIX_EPOCH)
+
+        # Act
+        # Assert
+        self.assertEqual(1, self.swings.direction)
+        self.assertEqual(3, self.swings.since_low)
+        self.assertEqual(0, self.swings.since_high)
+        self.assertEqual(0.00039999999999995595, self.swings.length)
+        self.assertTrue(self.swings.initialized)
+
+    def test_reset(self):
+        # Arrange
+        self.swings.update_raw(1.00100, 1.00080, UNIX_EPOCH)
+        self.swings.update_raw(1.00080, 1.00060, UNIX_EPOCH)
+        self.swings.update_raw(1.00060, 1.00040, UNIX_EPOCH)
+
+        # Act
+        self.swings.reset()
+
+        # Assert
+        self.assertEqual(0, self.swings.has_inputs)
+        self.assertEqual(0, self.swings.direction)

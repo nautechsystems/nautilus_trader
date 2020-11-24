@@ -21,6 +21,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -93,6 +94,22 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.exec_client)
 
+    def test_registered_venues_returns_expected(self):
+        # Arrange
+        # Act
+        result = self.exec_engine.registered_venues
+
+        # Assert
+        self.assertEqual([Venue("FXCM")], result)
+
+    def test_deregister_client_removes_client(self):
+        # Arrange
+        # Act
+        self.exec_engine.deregister_client(self.exec_client)
+
+        # Assert
+        self.assertEqual([], self.exec_engine.registered_venues)
+
     def test_register_strategy(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
@@ -125,7 +142,8 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertNotIn(strategy.id, self.exec_engine.registered_strategies)
 
-    def test_reset_execution_engine(self):
+    def test_reset_retains_registered_strategies(self):
+        # Arrange
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -140,6 +158,22 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertIn(strategy.id, self.exec_engine.registered_strategies)
+
+    def test_start_in_invalid_state_raises_invalid_state_trigger(self):
+        # Arrange
+        self.exec_engine.dispose()
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, self.exec_engine.start)
+
+    def test_integrity_check_calls_check_on_cache(self):
+        # Arrange
+        self.exec_engine.dispose()
+
+        # Act
+        # Assert
+        self.assertRaises(InvalidStateTrigger, self.exec_engine.start)
 
     def test_submit_order(self):
         # Arrange

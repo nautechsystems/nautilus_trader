@@ -28,6 +28,7 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 class OrderPerformanceTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.generator = OrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
 
     def test_order_id_generator(self):

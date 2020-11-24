@@ -22,9 +22,8 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.vwap = VolumeWeightedAveragePrice()
 
     def test_name_returns_expected_string(self):

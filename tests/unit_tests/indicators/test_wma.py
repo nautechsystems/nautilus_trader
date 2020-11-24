@@ -22,20 +22,21 @@ from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
 class WeightedMovingAverageTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.w = [round(i * 0.1, 2) for i in range(1, 11)]
         self.wma = WeightedMovingAverage(10, self.w)
         self.wma_noweights = WeightedMovingAverage(10)
         self.wma_factory = MovingAverageFactory.create(10, MovingAverageType.WEIGHTED, weights=self.w)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("WeightedMovingAverage", self.wma.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(
@@ -48,14 +49,18 @@ class WeightedMovingAverageTests(unittest.TestCase):
         )
 
     def test_weights_returns_expected_weights(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(self.w, self.wma.weights)
 
-    def test_wma_factory_kwargs(self):
+    def test_wma_factory_update_raw(self):
+        # Arrange
+        # Act
         for i in range(1, 12):
             self.wma_factory.update_raw(float(i))
 
+        # Assert
         self.assertEqual(8.0, self.wma_factory.value)
         self.assertEqual(self.w, self.wma_factory.weights)
 

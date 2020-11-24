@@ -226,7 +226,7 @@ cdef class ExecutionEngine:
         Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
 
         del self._clients[client.venue]
-        self._log.info(f"De-registered {client}.")
+        self._log.info(f"Deregistered {client}.")
 
     cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
         """
@@ -247,7 +247,7 @@ cdef class ExecutionEngine:
         Condition.is_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
 
         del self._strategies[strategy.id]
-        self._log.info(f"De-registered {strategy}.")
+        self._log.info(f"Deregistered {strategy}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

@@ -34,7 +34,6 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-
         self.facade = ExecutionCacheFacade()
 
     def test_account_when_not_implemented_raises_exception(self):

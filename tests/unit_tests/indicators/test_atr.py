@@ -21,33 +21,37 @@ from nautilus_trader.indicators.atr import AverageTrueRange
 
 class AverageTrueRangeTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.atr = AverageTrueRange(10)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual('AverageTrueRange', self.atr.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual('AverageTrueRange(10, SIMPLE, True, 0.0)', str(self.atr))
         self.assertEqual('AverageTrueRange(10, SIMPLE, True, 0.0)', repr(self.atr))
 
     def test_period(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.atr.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.atr.initialized)
 
     def test_initialized_with_required_inputs_returns_true(self):
+        # Arrange
         # Act
         for _i in range(10):
             self.atr.update_raw(1.00000, 1.00000, 1.00000)
@@ -56,6 +60,7 @@ class AverageTrueRangeTests(unittest.TestCase):
         self.assertEqual(True, self.atr.initialized)
 
     def test_value_with_no_inputs_returns_zero(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(0.0, self.atr.value)

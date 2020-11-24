@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import threading
-import queue
+from asyncio import AbstractEventLoop
+import asyncio
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -36,6 +36,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     def __init__(
             self,
+            loop: AbstractEventLoop,
             ExecutionDatabase database not None,
             Portfolio portfolio not None,
             Clock clock not None,
@@ -48,6 +49,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         Parameters
         ----------
+        loop : AbstractEventLoop
+            The event loop for the engine.
         database : ExecutionDatabase
             The execution database for the engine.
         portfolio : Portfolio
@@ -71,24 +74,30 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             config=config,
         )
 
-        self._thread = threading.Thread(target=self._process_queue)
-        self._queue = queue.Queue()
+        self._loop = loop
+        self._queue = asyncio.Queue()
+        self._task_queue = None
         self._is_running = False
 
     cpdef void on_start(self) except *:
         self._log.info("Starting queue processing...")
+        if not self._loop.is_running():
+            self._log.warning("Started when loop is not running.")
         self._is_running = True
-        self._thread.start()
+        self._task_queue = self._loop.create_task(self._run_queue())
+
+        self._log.info(f"Scheduled {self._task_queue}")
 
     cpdef void on_stop(self) except *:
         self._log.info("Shutting down queue processing...")
         self._is_running = False
         self._queue.put_nowait(None)  # None message pattern
+        self._loop.run_until_complete(self._task_queue)
 
-    cpdef void _process_queue(self) except *:
+    async def _run_queue(self):
         cdef Message message
         while self._is_running:
-            message = self._queue.get()
+            message = await self._queue.get()
             if message is None:
                 continue
             if message.type == MessageType.EVENT:

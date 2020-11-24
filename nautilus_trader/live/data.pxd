@@ -17,14 +17,12 @@ from nautilus_trader.data.engine cimport DataEngine
 
 
 cdef class LiveDataEngine(DataEngine):
-    cdef object _data_thread
+    cdef object _loop
     cdef object _data_queue
-    cdef object _message_thread
     cdef object _message_queue
+    cdef object _task_data_queue
+    cdef object _task_message_queue
     cdef bint _is_running
 
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *
-
-    cpdef void _process_data_queue(self) except *
-    cpdef void _process_message_queue(self) except *

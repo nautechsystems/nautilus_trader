@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
+import asyncio
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -42,7 +42,7 @@ ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
 class LiveDataEngineTests(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -54,109 +54,120 @@ class LiveDataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
         self.data_engine = LiveDataEngine(
+            loop=self.loop,
             portfolio=self.portfolio,
             clock=self.clock,
             uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         if self.data_engine.state == ComponentState.RUNNING:
             self.data_engine.stop()
-            time.sleep(0.1)
 
         self.data_engine.dispose()
+        self.loop.stop()
+        self.loop.close()
 
     def test_start(self):
-        # Arrange
-        # Act
-        self.data_engine.start()
-        time.sleep(0.1)
+        async def run_test():
+            # Arrange
+            # Act
+            self.data_engine.start()
+
+        self.loop.run_until_complete(run_test())
 
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.data_engine.state)
 
     def test_execute_command_processes_message(self):
-        # Arrange
-        self.data_engine.start()
-        time.sleep(0.1)
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
 
-        connect = Connect(
-            venue=BINANCE,
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
-        )
+            connect = Connect(
+                venue=BINANCE,
+                command_id=self.uuid_factory.generate(),
+                command_timestamp=self.clock.utc_now(),
+            )
 
-        # Act
-        self.data_engine.execute(connect)
-        time.sleep(0.1)
+            # Act
+            self.data_engine.execute(connect)
+
+        self.loop.run_until_complete(run_test())
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_send_request_processes_message(self):
-        # Arrange
-        self.data_engine.start()
-        time.sleep(0.1)
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
 
-        handler = []
-        request = DataRequest(
-            data_type=QuoteTick,
-            metadata={
-                "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
-                "FromDateTime": None,
-                "ToDateTime": None,
-                "Limit": 1000,
-            },
-            callback=handler.append,
-            request_id=self.uuid_factory.generate(),
-            request_timestamp=self.clock.utc_now(),
-        )
+            handler = []
+            request = DataRequest(
+                data_type=QuoteTick,
+                metadata={
+                    "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+                callback=handler.append,
+                request_id=self.uuid_factory.generate(),
+                request_timestamp=self.clock.utc_now(),
+            )
 
-        # Act
-        self.data_engine.send(request)
-        time.sleep(0.1)
+            # Act
+            self.data_engine.send(request)
+
+        self.loop.run_until_complete(run_test())
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
         self.assertEqual(1, self.data_engine.request_count)
 
     def test_receive_response_processes_message(self):
-        # Arrange
-        self.data_engine.start()
-        time.sleep(0.1)
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
 
-        response = DataResponse(
-            data_type=QuoteTick,
-            metadata={},  # Malformed response anyway
-            data=[],
-            correlation_id=self.uuid_factory.generate(),
-            response_id=self.uuid_factory.generate(),
-            response_timestamp=self.clock.utc_now(),
-        )
+            response = DataResponse(
+                data_type=QuoteTick,
+                metadata={},  # Malformed response anyway
+                data=[],
+                correlation_id=self.uuid_factory.generate(),
+                response_id=self.uuid_factory.generate(),
+                response_timestamp=self.clock.utc_now(),
+            )
 
-        # Act
-        self.data_engine.receive(response)
-        time.sleep(0.1)
+            # Act
+            self.data_engine.receive(response)
+
+        self.loop.run_until_complete(run_test())
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
         self.assertEqual(1, self.data_engine.response_count)
 
     def test_process_data_processes_data(self):
-        # Arrange
-        self.data_engine.start()
-        time.sleep(0.1)
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
 
-        # Act
-        tick = TestStubs.trade_tick_5decimal()
+            # Act
+            tick = TestStubs.trade_tick_5decimal()
 
-        # Act
-        self.data_engine.process(tick)
+            # Act
+            self.data_engine.process(tick)
 
-        time.sleep(0.1)
+        self.loop.run_until_complete(run_test())
 
         # Assert
         self.assertEqual(0, self.data_engine.data_qsize())

@@ -20,28 +20,31 @@ from nautilus_trader.indicators.donchian_channel import DonchianChannel
 
 class DonchianChannelTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.dc = DonchianChannel(10)
 
     def test_name_returns_expected_name(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("DonchianChannel", self.dc.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("DonchianChannel(10)", str(self.dc))
         self.assertEqual("DonchianChannel(10)", repr(self.dc))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.dc.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.dc.initialized)

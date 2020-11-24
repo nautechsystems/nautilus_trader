@@ -26,7 +26,7 @@ from nautilus_trader.core.fsm import InvalidStateTrigger
 class FiniteStateMachineTests(unittest.TestCase):
 
     def setUp(self):
-        # Fixture setup
+        # Fixture Setup
         self.fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.INITIALIZED,

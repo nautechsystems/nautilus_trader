@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
+import asyncio
 import unittest
 
 from nautilus_trader.common.enums import ComponentState
@@ -22,6 +22,12 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class TradingNodeConfigurationTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
 
     def test_config_with_inmemory_execution_database(self):
         # Arrange
@@ -49,6 +55,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
         # Act
         node = TradingNode(
+            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -84,6 +91,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
         # Act
         node = TradingNode(
+            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -95,7 +103,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 class TradingNodeOperationTests(unittest.TestCase):
 
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         config = {
             "trader": {
                 "name": "tester",
@@ -118,34 +126,43 @@ class TradingNodeOperationTests(unittest.TestCase):
             }
         }
 
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
         self.node = TradingNode(
+            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         if self.node.trader.state == ComponentState.RUNNING:
             self.node.stop()
 
         self.node.dispose()
+        self.loop.stop()
+        self.loop.close()
 
     def test_load_strategies(self):
-        # Arrange
-        strategy = TradingStrategy("000")
+        async def run_test():
+            # Arrange
+            strategy = TradingStrategy("000")
 
-        # Act
-        self.node.load_strategies([strategy])
+            # Act
+            self.node.load_strategies([strategy])
 
-        # Assert
-        self.assertIsNotNone(strategy.trader_id)
-        self.assertIsNotNone(strategy.data)
-        self.assertIsNotNone(strategy.execution)
-        self.assertIsNotNone(strategy.portfolio)
+            # Assert
+            self.assertIsNotNone(strategy.trader_id)
+            self.assertIsNotNone(strategy.data)
+            self.assertIsNotNone(strategy.execution)
+            self.assertIsNotNone(strategy.portfolio)
+
+        self.loop.run_until_complete(run_test())
 
     def test_connect(self):
         # Arrange
         self.node.start()
-        time.sleep(0.1)
 
         # Act
         self.node.connect()
@@ -156,11 +173,9 @@ class TradingNodeOperationTests(unittest.TestCase):
     def test_stop(self):
         # Arrange
         self.node.start()
-        time.sleep(0.1)
 
         # Act
         self.node.stop()
-        time.sleep(0.1)
 
         # Assert
         self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
@@ -168,7 +183,6 @@ class TradingNodeOperationTests(unittest.TestCase):
     def test_disconnect(self):
         # Arrange
         self.node.start()
-        time.sleep(0.1)
 
         # Act
         self.node.disconnect()
