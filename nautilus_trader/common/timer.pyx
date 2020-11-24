@@ -106,7 +106,7 @@ cdef class Timer:
     """
     The abstract base class for all timers.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

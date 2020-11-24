@@ -16,7 +16,7 @@
 from asyncio import AbstractEventLoop
 import asyncio
 
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.logging cimport Logger
@@ -26,7 +26,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -39,7 +41,7 @@ cdef class LiveDataEngine(DataEngine):
             self,
             loop: AbstractEventLoop,
             Portfolio portfolio not None,
-            Clock clock not None,
+            LiveClock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
             dict config=None,
@@ -126,6 +128,17 @@ cdef class LiveDataEngine(DataEngine):
         self._log.info("Finished processing message queue.")
         return
 
+    cpdef object get_event_loop(self):
+        """
+        Return the internal event loop for the engine.
+
+        Returns
+        -------
+        AbstractEventLoop
+
+        """
+        return self._loop
+
     cpdef int data_qsize(self) except *:
         """
         Return the number of objects buffered on the internal data queue.
@@ -203,3 +216,43 @@ cdef class LiveDataEngine(DataEngine):
         Condition.not_none(response, "response")
 
         self._message_queue.put_nowait(response)
+
+
+cdef class LiveDataClient(DataClient):
+    """
+    The abstract base class live data clients.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+            self,
+            Venue venue not None,
+            LiveDataEngine engine not None,
+            LiveClock clock not None,
+            Logger logger not None,
+    ):
+        """
+        Initialize a new instance of the `LiveDataClient` class.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the client.
+        engine : LiveDataEngine
+            The live data engine for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : Logger
+            The logger for the client.
+
+        """
+        super().__init__(
+            venue,
+            engine,
+            clock,
+            UUIDFactory(),
+            logger,
+        )
+
+        self._loop = engine.get_event_loop()

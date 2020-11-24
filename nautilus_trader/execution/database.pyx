@@ -30,7 +30,7 @@ cdef class ExecutionDatabase:
     """
     The abstract base class for all execution databases.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):

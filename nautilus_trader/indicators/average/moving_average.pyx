@@ -37,7 +37,7 @@ cdef class MovingAverage(Indicator):
     """
     The abstract base class for all moving average type indicators.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

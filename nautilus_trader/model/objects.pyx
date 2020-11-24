@@ -49,7 +49,7 @@ cdef class BaseDecimal:
     """
     The abstract base class for all domain objects.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
 
     Represents a decimal number with a specified precision.
     """

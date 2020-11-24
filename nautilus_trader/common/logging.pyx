@@ -164,7 +164,7 @@ cdef class Logger:
     """
     The abstract base class for all Loggers.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

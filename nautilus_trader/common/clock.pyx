@@ -32,7 +32,7 @@ cdef class Clock:
     """
     The abstract base class for all clocks.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self):
