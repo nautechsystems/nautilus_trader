@@ -25,17 +25,20 @@ class KeltnerPositionTests(unittest.TestCase):
         self.kp = KeltnerPosition(10, 2.5)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("KeltnerPosition", self.kp.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp))
         self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp))
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.kp.initialized)
@@ -50,11 +53,13 @@ class KeltnerPositionTests(unittest.TestCase):
         self.assertEqual(True, self.kp.initialized)
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.kp.period)
 
     def test_k_multiple_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(2.5, self.kp.k_multiplier)
@@ -68,7 +73,6 @@ class KeltnerPositionTests(unittest.TestCase):
         self.assertEqual(0, self.kp.value)
 
     def test_value_with_zero_width_input_returns_zero(self):
-        # Arrange
         # Arrange
         for _i in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)

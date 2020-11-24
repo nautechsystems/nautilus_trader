@@ -29,17 +29,20 @@ class SwingsTests(unittest.TestCase):
         self.swings = Swings(3)
 
     def test_name_returns_expected_name(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("Swings", self.swings.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("Swings(3)", str(self.swings))
         self.assertEqual("Swings(3)", repr(self.swings))
 
     def test_instantiate_returns_expected_property_values(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(3, self.swings.period)

@@ -57,11 +57,13 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_initialization(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertEqual(1, len(self.engine.trader.strategy_states()))
 
     def test_reset_engine(self):
         # Arrange
-
         self.engine.run()
 
         # Act

@@ -25,27 +25,32 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         self.ema = ExponentialMovingAverage(10)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual('ExponentialMovingAverage', self.ema.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual('ExponentialMovingAverage(10)', str(self.ema))
         self.assertEqual('ExponentialMovingAverage(10)', repr(self.ema))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.ema.period)
 
     def test_multiplier_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(0.18181818181818182, self.ema.alpha)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.ema.initialized)

@@ -25,22 +25,26 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         self.rsi = RelativeStrengthIndex(10)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("RelativeStrengthIndex", self.rsi.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", str(self.rsi))
         self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", repr(self.rsi))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.rsi.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.rsi.initialized)

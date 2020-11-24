@@ -26,27 +26,32 @@ class KeltnerChannelTests(unittest.TestCase):
         self.kc = KeltnerChannel(10, 2.5, MovingAverageType.EXPONENTIAL, MovingAverageType.SIMPLE)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("KeltnerChannel", self.kc.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kc))
         self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kc))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.kc.period)
 
     def test_k_multiple_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(2.5, self.kc.k_multiplier)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.kc.initialized)

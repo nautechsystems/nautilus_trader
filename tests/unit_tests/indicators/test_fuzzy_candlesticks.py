@@ -79,17 +79,20 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         self.assertEqual("FuzzyCandle(1, 3, 2, 1, 1)", repr(fuzzy_candle))
 
     def test_name_returns_expected_name(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("FuzzyCandlesticks", self.fc.name)
 
     def test_str_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)", str(self.fc))
         self.assertEqual("FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)", repr(self.fc))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.fc.period)
