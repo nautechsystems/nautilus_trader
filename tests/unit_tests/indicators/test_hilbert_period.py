@@ -26,27 +26,32 @@ class HilbertPeriodTests(unittest.TestCase):
         self.h_period = HilbertPeriod()
 
     def test_name_returns_expected_name(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("HilbertPeriod", self.h_period.name)
 
     def test_str_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("HilbertPeriod(7)", str(self.h_period))
         self.assertEqual("HilbertPeriod(7)", repr(self.h_period))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(7, self.h_period.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.h_period.initialized)
 
     def test_initialized_with_required_inputs_returns_true(self):
+        # Arrange
         # Act
         for _i in range(10):
             self.h_period.update_raw(1.00010, 1.00000)
@@ -55,6 +60,7 @@ class HilbertPeriodTests(unittest.TestCase):
         self.assertEqual(True, self.h_period.initialized)
 
     def test_value_with_no_inputs_returns_none(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(0.0, self.h_period.value)

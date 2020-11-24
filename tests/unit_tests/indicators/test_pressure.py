@@ -26,22 +26,26 @@ class PressureTests(unittest.TestCase):
         self.pressure = Pressure(10, MovingAverageType.EXPONENTIAL)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("Pressure", self.pressure.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", str(self.pressure))
         self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", repr(self.pressure))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.pressure.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.pressure.initialized)

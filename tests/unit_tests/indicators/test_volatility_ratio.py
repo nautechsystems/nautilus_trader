@@ -26,22 +26,26 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         self.vcr = VolatilityRatio(10, 100)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("VolatilityRatio", self.vcr.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("VolatilityRatio(10, 100, SIMPLE, True, 0.0)", str(self.vcr))
         self.assertEqual("VolatilityRatio(10, 100, SIMPLE, True, 0.0)", repr(self.vcr))
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.vcr.initialized)
 
     def test_initialized_with_required_inputs_returns_true(self):
+        # Arrange
         # Act
         for _i in range(100):
             self.vcr.update_raw(1.00000, 1.00000, 1.00000)
@@ -50,6 +54,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         self.assertEqual(True, self.vcr.initialized)
 
     def test_value_with_no_inputs_returns_none(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(0, self.vcr.value)

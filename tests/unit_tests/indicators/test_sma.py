@@ -30,22 +30,26 @@ class SimpleMovingAverageTests(unittest.TestCase):
         self.sma = SimpleMovingAverage(10)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("SimpleMovingAverage", self.sma.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("SimpleMovingAverage(10)", str(self.sma))
         self.assertEqual("SimpleMovingAverage(10)", repr(self.sma))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.sma.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.sma.initialized)

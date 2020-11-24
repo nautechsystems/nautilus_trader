@@ -270,7 +270,7 @@ cdef class DataEngine:
         Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
 
         del self._clients[client.venue]
-        self._log.info(f"De-registered {client}.")
+        self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
