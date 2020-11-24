@@ -63,7 +63,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
         self.portfolio.register_cache(DataCache(self.logger))
@@ -80,7 +79,6 @@ class ExecutionEngineTests(unittest.TestCase):
             database=database,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -202,7 +200,6 @@ class LiveExecutionClientTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
         self.portfolio.register_cache(DataCache(self.logger))
@@ -219,7 +216,6 @@ class LiveExecutionClientTests(unittest.TestCase):
             database=database,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

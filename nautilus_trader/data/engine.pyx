@@ -85,7 +85,6 @@ cdef class DataEngine:
             self,
             Portfolio portfolio not None,
             Clock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
             dict config=None,
     ):
@@ -98,8 +97,6 @@ cdef class DataEngine:
             The portfolio to register.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
         config : dict, option
@@ -111,7 +108,7 @@ cdef class DataEngine:
 
         # Core components
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._fsm = ComponentFSMFactory.create()
 

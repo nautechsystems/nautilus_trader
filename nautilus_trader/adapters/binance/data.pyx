@@ -15,7 +15,6 @@
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
@@ -49,6 +48,5 @@ cdef class BinanceDataClient(LiveDataClient):
             Venue('BINANCE'),
             engine,
             clock,
-            UUIDFactory(),
             logger,
         )

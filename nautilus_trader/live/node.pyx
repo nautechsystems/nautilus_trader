@@ -120,7 +120,6 @@ cdef class TradingNode:
 
         self.portfolio = Portfolio(
             clock=self._clock,
-            uuid_factory=self._uuid_factory,
             logger=self._logger,
         )
 
@@ -128,7 +127,6 @@ cdef class TradingNode:
             loop=self._loop,
             portfolio=self.portfolio,
             clock=self._clock,
-            uuid_factory=self._uuid_factory,
             logger=self._logger,
         )
 
@@ -156,7 +154,6 @@ cdef class TradingNode:
             database=exec_db,
             portfolio=self.portfolio,
             clock=self._clock,
-            uuid_factory=self._uuid_factory,
             logger=self._logger,
         )
 
@@ -166,7 +163,6 @@ cdef class TradingNode:
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
-            uuid_factory=self._uuid_factory,
             logger=self._logger,
         )
 

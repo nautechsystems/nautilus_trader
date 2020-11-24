@@ -18,7 +18,6 @@ import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
@@ -43,7 +42,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             ExecutionDatabase database not None,
             Portfolio portfolio not None,
             LiveClock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
             dict config=None,
     ):
@@ -60,8 +58,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The portfolio for the engine.
         clock : Clock
             The clock for the engine.
-        uuid_factory : UUIDFactory
-            The uuid factory for the engine.
         logger : Logger
             The logger for the engine.
         config : dict, option
@@ -72,7 +68,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             database=database,
             portfolio=portfolio,
             clock=clock,
-            uuid_factory=uuid_factory,
             logger=logger,
             config=config,
         )
@@ -200,7 +195,6 @@ cdef class LiveExecutionClient(ExecutionClient):
             account_id,
             engine,
             clock,
-            UUIDFactory(),
             logger,
         )
 

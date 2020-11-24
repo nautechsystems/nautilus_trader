@@ -20,7 +20,6 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
@@ -42,7 +41,6 @@ cdef class LiveDataEngine(DataEngine):
             loop: AbstractEventLoop,
             Portfolio portfolio not None,
             LiveClock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
             dict config=None,
     ):
@@ -57,8 +55,6 @@ cdef class LiveDataEngine(DataEngine):
             The portfolio to register.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
         config : dict, option
@@ -68,7 +64,6 @@ cdef class LiveDataEngine(DataEngine):
         super().__init__(
             portfolio,
             clock,
-            uuid_factory,
             logger,
             config,
         )
@@ -251,7 +246,6 @@ cdef class LiveDataClient(DataClient):
             venue,
             engine,
             clock,
-            UUIDFactory(),
             logger,
         )
 

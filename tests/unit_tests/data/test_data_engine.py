@@ -54,14 +54,12 @@ class DataEngineTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -76,7 +74,6 @@ class DataEngineTests(unittest.TestCase):
             venue=BINANCE,
             engine=self.data_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -88,7 +85,6 @@ class DataEngineTests(unittest.TestCase):
             venue=BITMEX,
             engine=self.data_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
