@@ -65,14 +65,12 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
             config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
@@ -92,7 +90,6 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             database=exec_db,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -106,7 +103,6 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             config=self.config,
             fill_model=FillModel(),
             clock=self.clock,
-            uuid_factory=UUIDFactory(),
             logger=self.logger,
         )
 
@@ -115,7 +111,6 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

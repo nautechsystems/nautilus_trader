@@ -32,7 +32,6 @@ from pandas import DatetimeIndex
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
@@ -279,7 +278,6 @@ cdef class BacktestDataProducer(DataClient):
             Venue venue not None,
             DataEngine engine not None,
             Clock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
     ):
         """
@@ -291,8 +289,6 @@ cdef class BacktestDataProducer(DataClient):
             The data engine to connect to the producer.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
@@ -301,7 +297,6 @@ cdef class BacktestDataProducer(DataClient):
             venue,
             engine,
             clock,
-            uuid_factory,
             logger,
         )
 

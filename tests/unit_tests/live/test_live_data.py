@@ -51,7 +51,6 @@ class LiveDataEngineTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -63,7 +62,6 @@ class LiveDataEngineTests(unittest.TestCase):
             loop=self.loop,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -193,7 +191,6 @@ class LiveDataClientTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -205,7 +202,6 @@ class LiveDataClientTests(unittest.TestCase):
             loop=self.loop,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

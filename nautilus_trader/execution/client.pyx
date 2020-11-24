@@ -40,7 +40,6 @@ cdef class ExecutionClient:
             AccountId account_id not None,
             ExecutionEngine engine not None,
             Clock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None):
         """
         Initialize a new instance of the `ExecutionClient` class.
@@ -55,8 +54,6 @@ cdef class ExecutionClient:
             The execution engine to connect to the client.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
@@ -64,7 +61,7 @@ cdef class ExecutionClient:
         Condition.equal(venue, account_id.issuer_as_venue(), "venue", "account_id.issuer_as_venue()")
 
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"{type(self).__name__}-{venue.value}", logger)
         self._engine = engine
 

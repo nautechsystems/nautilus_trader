@@ -86,7 +86,6 @@ cdef class ExecutionEngine:
             ExecutionDatabase database not None,
             Portfolio portfolio not None,
             Clock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
             dict config=None,
     ):
@@ -101,8 +100,6 @@ cdef class ExecutionEngine:
             The portfolio for the engine.
         clock : Clock
             The clock for the engine.
-        uuid_factory : UUIDFactory
-            The uuid_factory for the engine.
         logger : Logger
             The logger for the engine.
         config : dict, option
@@ -114,7 +111,7 @@ cdef class ExecutionEngine:
 
         # Core components
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter("ExecEngine", logger)
         self._fsm = ComponentFSMFactory.create()
 

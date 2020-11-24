@@ -18,7 +18,6 @@ import inspect
 
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
@@ -241,7 +240,6 @@ class MockDataClient(DataClient):
             venue: Venue,
             engine: DataEngine,
             clock: Clock,
-            uuid_factory: UUIDFactory,
             logger: Logger,
     ):
         """
@@ -255,8 +253,6 @@ class MockDataClient(DataClient):
             The data engine to connect to the client.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
@@ -265,7 +261,6 @@ class MockDataClient(DataClient):
             venue,
             engine,
             clock,
-            uuid_factory,
             logger,
         )
 
@@ -366,7 +361,6 @@ class MockExecutionClient(ExecutionClient):
             account_id,
             exec_engine,
             clock,
-            uuid_factory,
             logger,
     ):
         """
@@ -382,8 +376,6 @@ class MockExecutionClient(ExecutionClient):
             The execution engine for the component.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
@@ -393,7 +385,6 @@ class MockExecutionClient(ExecutionClient):
             account_id,
             exec_engine,
             clock,
-            uuid_factory,
             logger,
         )
 

@@ -48,7 +48,6 @@ cdef class Trader:
             DataEngine data_engine not None,
             ExecutionEngine exec_engine not None,
             Clock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
     ):
         """
@@ -66,8 +65,6 @@ cdef class Trader:
             The execution engine to register the traders strategies with.
         clock : Clock
             The clock for the trader.
-        uuid_factory : UUIDFactory
-            The uuid_factory for the trader.
         logger : Logger
             The logger for the trader.
 
@@ -89,7 +86,7 @@ cdef class Trader:
 
         # Core components
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"Trader-{trader_id.value}", logger)
         self._fsm = ComponentFSMFactory.create()
 

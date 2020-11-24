@@ -73,14 +73,12 @@ class TradingStrategyTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
             config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
@@ -100,7 +98,6 @@ class TradingStrategyTests(unittest.TestCase):
             database=self.exec_db,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -113,7 +110,6 @@ class TradingStrategyTests(unittest.TestCase):
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
-            uuid_factory=UUIDFactory(),
             logger=self.logger,
         )
 
@@ -127,7 +123,6 @@ class TradingStrategyTests(unittest.TestCase):
             venue=Venue("FXCM"),
             engine=self.data_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -136,7 +131,6 @@ class TradingStrategyTests(unittest.TestCase):
             account_id=account_id,
             engine=self.exec_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
