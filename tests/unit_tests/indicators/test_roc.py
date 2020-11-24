@@ -20,9 +20,8 @@ from nautilus_trader.indicators.roc import RateOfChange
 
 class RateOfChangeTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.roc = RateOfChange(3)
 
     def test_name_returns_expected_string(self):

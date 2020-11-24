@@ -16,6 +16,7 @@
 import time
 import msgpack
 import redis
+from asyncio import AbstractEventLoop
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
@@ -46,6 +47,7 @@ cdef class TradingNode:
     cdef LiveLogger _logger
     cdef LoggerAdapter _log
 
+    cdef object _loop
     cdef LiveExecutionEngine _exec_engine
     cdef LiveDataEngine _data_engine
 
@@ -60,6 +62,7 @@ cdef class TradingNode:
 
     def __init__(
             self,
+            loop: AbstractEventLoop,
             list strategies not None,
             dict config not None,
     ):
@@ -68,6 +71,8 @@ cdef class TradingNode:
 
         Parameters
         ----------
+        loop : AbstractEventLoop
+            The event loop for the engine.
         strategies : list[TradingStrategy]
             The list of strategies for the internal `Trader`.
         config : dict
@@ -84,6 +89,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
+        self._loop = loop
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -119,6 +125,7 @@ cdef class TradingNode:
         )
 
         self._data_engine = LiveDataEngine(
+            loop=self._loop,
             portfolio=self.portfolio,
             clock=self._clock,
             uuid_factory=self._uuid_factory,
@@ -145,6 +152,7 @@ cdef class TradingNode:
             )
 
         self._exec_engine = LiveExecutionEngine(
+            loop=self._loop,
             database=exec_db,
             portfolio=self.portfolio,
             clock=self._clock,

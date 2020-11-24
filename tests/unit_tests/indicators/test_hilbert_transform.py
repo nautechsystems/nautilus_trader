@@ -21,33 +21,37 @@ from nautilus_trader.indicators.hilbert_transform import HilbertTransform
 
 class HilbertTransformTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.ht = HilbertTransform()
 
     def test_name_returns_expected_name(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("HilbertTransform", self.ht.name)
 
     def test_str_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("HilbertTransform(7)", str(self.ht))
         self.assertEqual("HilbertTransform(7)", repr(self.ht))
 
     def test_period_returns_expected_value(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(7, self.ht.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.ht.initialized)
 
     def test_initialized_with_required_inputs_returns_true(self):
+        # Arrange
         # Act
         for _i in range(10):
             self.ht.update_raw(1.00000)
@@ -56,6 +60,7 @@ class HilbertTransformTests(unittest.TestCase):
         self.assertEqual(True, self.ht.initialized)
 
     def test_value_with_no_inputs_returns_none(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(0.0, self.ht.value_in_phase)

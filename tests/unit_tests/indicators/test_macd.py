@@ -20,23 +20,25 @@ from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.macd = MovingAverageConvergenceDivergence(3, 10)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("MovingAverageConvergenceDivergence", self.macd.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd))
         self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", repr(self.macd))
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.macd.initialized)

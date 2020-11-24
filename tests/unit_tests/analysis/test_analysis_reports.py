@@ -19,15 +19,21 @@ from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.trading.account import Account
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -46,6 +52,28 @@ class ReportProviderTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
+
+    def test_generate_accounts_report_with_initial_account_state_returns_expected(self):
+        # Arrange
+        state = AccountState(
+            AccountId.from_string("BITMEX-1513111-SIMULATED"),
+            BTC,
+            Money(10., BTC),
+            Money(0., BTC),
+            Money(0., BTC),
+            uuid4(),
+            UNIX_EPOCH,
+        )
+
+        account = Account(state)
+
+        report_provider = ReportProvider()
+
+        # Act
+        report = report_provider.generate_account_report(account)
+
+        # Assert
+        self.assertEqual(1, len(report))
 
     def test_generate_orders_report_with_no_order_returns_emtpy_dataframe(self):
         # Arrange

@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import threading
-import queue
+from asyncio import AbstractEventLoop
+import asyncio
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.messages cimport DataRequest
@@ -37,6 +37,7 @@ cdef class LiveDataEngine(DataEngine):
 
     def __init__(
             self,
+            loop: AbstractEventLoop,
             Portfolio portfolio not None,
             Clock clock not None,
             UUIDFactory uuid_factory not None,
@@ -48,6 +49,8 @@ cdef class LiveDataEngine(DataEngine):
 
         Parameters
         ----------
+        loop : AbstractEventLoop
+            The event loop for the engine.
         portfolio : int
             The portfolio to register.
         clock : Clock
@@ -68,27 +71,35 @@ cdef class LiveDataEngine(DataEngine):
             config,
         )
 
-        self._data_thread = threading.Thread(target=self._process_data_queue, daemon=True)
-        self._message_thread = threading.Thread(target=self._process_message_queue, daemon=True)
-        self._data_queue = queue.Queue()
-        self._message_queue = queue.Queue()
+        self._loop = loop
+        self._data_queue = asyncio.Queue()
+        self._message_queue = asyncio.Queue()
+        self._task_data_queue = None
+        self._task_message_queue = None
         self._is_running = False
 
     cpdef void on_start(self) except *:
         self._log.info("Starting queue processing...")
+        if not self._loop.is_running():
+            self._log.warning("Started when loop is not running.")
         self._is_running = True
-        self._data_thread.start()
-        self._message_thread.start()
+        self._task_data_queue = self._loop.create_task(self._run_data_queue())
+        self._task_message_queue = self._loop.create_task(self._run_message_queue())
+
+        self._log.info(f"Scheduled {self._task_data_queue}")
+        self._log.info(f"Scheduled {self._task_message_queue}")
 
     cpdef void on_stop(self) except *:
         self._log.info("Shutting down queue processing...")
         self._is_running = False
         self._data_queue.put_nowait(None)     # None message pattern
         self._message_queue.put_nowait(None)  # None message pattern
+        self._loop.run_until_complete(self._task_data_queue)
+        self._loop.run_until_complete(self._task_message_queue)
 
-    cpdef void _process_data_queue(self) except *:
+    async def _run_data_queue(self):
         while self._is_running:
-            data = self._data_queue.get()
+            data = await self._data_queue.get()
             if data is None:
                 continue
 
@@ -96,10 +107,10 @@ cdef class LiveDataEngine(DataEngine):
 
         self._log.info("Finished processing data queue.")
 
-    cpdef void _process_message_queue(self) except *:
+    async def _run_message_queue(self):
         cdef Message message
         while self._is_running:
-            message = self._message_queue.get()
+            message = await self._message_queue.get()
             if message is None:
                 continue
 
@@ -113,6 +124,7 @@ cdef class LiveDataEngine(DataEngine):
                 self._log.error(f"Cannot handle unrecognized message {message}.")
 
         self._log.info("Finished processing message queue.")
+        return
 
     cpdef int data_qsize(self) except *:
         """

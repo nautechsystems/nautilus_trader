@@ -302,7 +302,7 @@ cdef class PerformanceAnalyzer:
         cdef list winners = [x for x in self._realized_pnls if x > 0]
         cdef list losers = [x for x in self._realized_pnls if x <= 0]
 
-        return len(winners) / max(1, (len(winners) + len(losers)))
+        return len(winners) / float(max(1, (len(winners) + len(losers))))
 
     cpdef double expectancy(self) except *:
         """

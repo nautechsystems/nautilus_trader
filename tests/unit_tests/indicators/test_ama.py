@@ -20,33 +20,37 @@ from nautilus_trader.indicators.average.ama import AdaptiveMovingAverage
 
 class AdaptiveMovingAverageTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.ama = AdaptiveMovingAverage(10, 2, 30)
 
     def test_name_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("AdaptiveMovingAverage", self.ama.name)
 
     def test_str_repr_returns_expected_string(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", str(self.ama))
         self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", repr(self.ama))
 
     def test_period(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(10, self.ama.period)
 
     def test_initialized_without_inputs_returns_false(self):
+        # Arrange
         # Act
         # Assert
         self.assertEqual(False, self.ama.initialized)
 
     def test_initialized_with_required_inputs_returns_true(self):
+        # Arrange
         # Arrange
         # Act
         for _i in range(10):

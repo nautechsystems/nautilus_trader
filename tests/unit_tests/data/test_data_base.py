@@ -31,7 +31,6 @@ class DataCacheFacadeTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-
         self.facade = DataCacheFacade()
 
     def test_symbols_when_not_implemented_raises_exception(self):

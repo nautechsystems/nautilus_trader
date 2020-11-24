@@ -20,9 +20,8 @@ from nautilus_trader.indicators.efficiency_ratio import EfficiencyRatio
 
 class EfficiencyRatioTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.er = EfficiencyRatio(10)
 
     def test_name_returns_expected_string(self):

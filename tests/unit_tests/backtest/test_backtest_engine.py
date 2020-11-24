@@ -35,6 +35,7 @@ USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
 class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
@@ -56,11 +57,13 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_initialization(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertEqual(1, len(self.engine.trader.strategy_states()))
 
     def test_reset_engine(self):
         # Arrange
-
         self.engine.run()
 
         # Act

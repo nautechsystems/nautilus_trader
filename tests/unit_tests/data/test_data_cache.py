@@ -38,6 +38,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 FXCM = Venue("FXCM")
@@ -49,7 +50,6 @@ class DataCacheTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-
         self.cache = DataCache(logger=TestLogger(TestClock()))
 
     def test_reset_an_empty_cache(self):
@@ -179,7 +179,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_ticks([tick])
@@ -198,7 +198,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             Maker.BUYER,
             TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_trade_ticks([tick])
@@ -218,7 +218,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_bars(bar_type, [bar])
@@ -261,7 +261,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_tick(tick)
@@ -279,7 +279,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             Maker.BUYER,
             TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_trade_tick(tick)
@@ -298,7 +298,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             Maker.BUYER,
             TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_trade_tick(tick)
@@ -322,7 +322,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_tick(tick)
@@ -341,7 +341,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_tick(tick)
@@ -361,7 +361,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00001"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         tick2 = QuoteTick(
@@ -370,7 +370,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00003"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 1, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_tick(tick1)
@@ -391,7 +391,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             Maker.BUYER,
             TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_trade_tick(tick)
@@ -411,7 +411,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(10000),
             Maker.BUYER,
             TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         tick2 = TradeTick(
@@ -420,7 +420,7 @@ class DataCacheTests(unittest.TestCase):
             Quantity(20000),
             Maker.SELLER,
             TradeMatchId("123456789"),
-            datetime(2018, 1, 1, 19, 59, 1, 1, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_trade_tick(tick1)
@@ -442,7 +442,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_bar(bar_type, bar)
@@ -463,7 +463,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         bar2 = Bar(
@@ -472,7 +472,7 @@ class DataCacheTests(unittest.TestCase):
             Price("1.00004"),
             Price("1.00005"),
             Quantity(200000),
-            datetime(1970, 1, 1, 00, 1, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_bar(bar_type, bar1)
@@ -495,7 +495,7 @@ class DataCacheTests(unittest.TestCase):
             Price("110.80010"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_tick(tick)
@@ -524,7 +524,7 @@ class DataCacheTests(unittest.TestCase):
             Price("0.80010"),
             Quantity(1),
             Quantity(1),
-            datetime(2018, 1, 1, 19, 59, 1, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         self.cache.add_quote_tick(tick)

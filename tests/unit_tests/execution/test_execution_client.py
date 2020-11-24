@@ -24,7 +24,12 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import ModifyOrder
+from nautilus_trader.model.commands import SubmitBracketOrder
+from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -99,6 +104,86 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_is_connected_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.client.is_connected)
+
+    def test_submit_order_raises_exception(self):
+        order = self.order_factory.limit(
+            AUDUSD_FXCM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("1.00000"),
+        )
+
+        command = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            StrategyId("SCALPER", "001"),
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.assertRaises(NotImplementedError, self.client.submit_order, command)
+
+    def test_submit_bracket_order_raises_not_implemented_error(self):
+        entry_order = self.order_factory.stop_market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("0.99995"),
+        )
+
+        # Act
+        bracket_order = self.order_factory.bracket(
+            entry_order,
+            Price("0.99990"),
+            Price("1.00010"),
+        )
+
+        command = SubmitBracketOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            StrategyId("SCALPER", "001"),
+            bracket_order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.assertRaises(NotImplementedError, self.client.submit_bracket_order, command)
+
+    def test_modify_order_raises_not_implemented_error(self):
+        # Arrange
+        # Act
+        command = ModifyOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            ClientOrderId("O-123456789"),
+            Quantity(120000),
+            Price("1.00000"),
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.modify_order, command)
+
+    def test_cancel_order_raises_not_implemented_error(self):
+        # Arrange
+        # Act
+        command = CancelOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            ClientOrderId("O-123456789"),
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.cancel_order, command)
 
     def test_handle_event_sends_to_execution_engine(self):
         # Arrange
