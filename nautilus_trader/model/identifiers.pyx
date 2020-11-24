@@ -22,7 +22,7 @@ cdef class Identifier:
     """
     The abstract base class for all identifiers.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, str value):

@@ -31,7 +31,7 @@ cdef class ExecutionClient:
     """
     The abstract base class for all execution clients.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

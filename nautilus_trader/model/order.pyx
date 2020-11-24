@@ -99,7 +99,7 @@ cdef class Order:
     """
     The abstract base class for all orders.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, OrderInitialized event not None):
@@ -461,7 +461,7 @@ cdef class PassiveOrder(Order):
     """
     The abstract base class for all passive orders.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
     def __init__(
             self,

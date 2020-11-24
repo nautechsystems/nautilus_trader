@@ -16,16 +16,19 @@
 from asyncio import AbstractEventLoop
 import asyncio
 
-from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -39,7 +42,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             loop: AbstractEventLoop,
             ExecutionDatabase database not None,
             Portfolio portfolio not None,
-            Clock clock not None,
+            LiveClock clock not None,
             UUIDFactory uuid_factory not None,
             Logger logger not None,
             dict config=None,
@@ -109,6 +112,17 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._log.info("Finished processing message queue.")
 
+    cpdef object get_event_loop(self):
+        """
+        Return the internal event loop for the engine.
+
+        Returns
+        -------
+        AbstractEventLoop
+
+        """
+        return self._loop
+
     cpdef int qsize(self) except *:
         """
         Return the number of messages buffered on the internal queue.
@@ -147,3 +161,47 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.not_none(event, "event")
 
         self._queue.put_nowait(event)
+
+
+cdef class LiveExecutionClient(ExecutionClient):
+    """
+    The abstract base class for all live execution clients.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+            self,
+            Venue venue not None,
+            AccountId account_id not None,
+            LiveExecutionEngine engine not None,
+            LiveClock clock not None,
+            Logger logger not None,
+    ):
+        """
+        Initialize a new instance of the `LiveExecutionClient` class.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the client.
+        account_id : AccountId
+            The account identifier for the client.
+        engine : LiveDataEngine
+            The live data engine for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : Logger
+            The logger for the client.
+
+        """
+        super().__init__(
+            venue,
+            account_id,
+            engine,
+            clock,
+            UUIDFactory(),
+            logger,
+        )
+
+        self._loop = engine.get_event_loop()

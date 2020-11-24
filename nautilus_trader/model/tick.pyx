@@ -33,7 +33,7 @@ cdef class Tick:
     """
     The abstract base class for all ticks.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
