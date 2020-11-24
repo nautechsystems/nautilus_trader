@@ -21,9 +21,8 @@ from nautilus_trader.indicators.keltner_channel import KeltnerChannel
 
 class KeltnerChannelTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.kc = KeltnerChannel(10, 2.5, MovingAverageType.EXPONENTIAL, MovingAverageType.SIMPLE)
 
     def test_name_returns_expected_string(self):

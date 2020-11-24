@@ -23,7 +23,8 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 class TradingNodeConfigurationTests(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def setUp(self):
+        # Fixture Setup
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -102,7 +103,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 class TradingNodeOperationTests(unittest.TestCase):
 
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         config = {
             "trader": {
                 "name": "tester",
@@ -135,7 +136,7 @@ class TradingNodeOperationTests(unittest.TestCase):
             config=config,
         )
 
-    def tearDown(self) -> None:
+    def tearDown(self):
         if self.node.trader.state == ComponentState.RUNNING:
             self.node.stop()
 

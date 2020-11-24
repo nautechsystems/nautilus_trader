@@ -20,9 +20,8 @@ from nautilus_trader.indicators.donchian_channel import DonchianChannel
 
 class DonchianChannelTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.dc = DonchianChannel(10)
 
     def test_name_returns_expected_name(self):

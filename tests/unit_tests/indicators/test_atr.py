@@ -21,9 +21,8 @@ from nautilus_trader.indicators.atr import AverageTrueRange
 
 class AverageTrueRangeTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.atr = AverageTrueRange(10)
 
     def test_name_returns_expected_string(self):

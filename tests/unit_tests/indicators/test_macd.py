@@ -20,9 +20,8 @@ from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.macd = MovingAverageConvergenceDivergence(3, 10)
 
     def test_name_returns_expected_string(self):

@@ -27,9 +27,8 @@ from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
 
 class FuzzyCandlesticksTests(unittest.TestCase):
 
-    # Test Fixture
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.fc = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)
 
     def test_fuzzy_candle_equality(self):
@@ -96,7 +95,7 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         self.assertEqual(10, self.fc.period)
 
     def test_values_with_doji_bars_returns_expected_results(self):
-        # arrange
+        # Arrange
         self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
         self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
         self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
@@ -109,11 +108,11 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
         self.fc.update_raw(1.00000, 1.00000, 1.00000, 1.00000)
 
-        # act
+        # Act
         result_candle = self.fc.value
         result_vector = self.fc.vector
 
-        # assert
+        # Assert
         self.assertTrue(np.array_equal([0, 0, 0, 0, 0], result_vector))
         self.assertEqual(CandleDirection.NONE, result_candle.direction)
         self.assertEqual(CandleSize.NONE, result_candle.size)

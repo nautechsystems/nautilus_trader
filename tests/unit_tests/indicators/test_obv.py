@@ -20,9 +20,8 @@ from nautilus_trader.indicators.obv import OnBalanceVolume
 
 class OnBalanceVolumeTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.obv = OnBalanceVolume(100)
 
     def test_name_returns_expected_string(self):

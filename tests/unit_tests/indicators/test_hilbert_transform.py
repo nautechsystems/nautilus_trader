@@ -21,9 +21,8 @@ from nautilus_trader.indicators.hilbert_transform import HilbertTransform
 
 class HilbertTransformTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.ht = HilbertTransform()
 
     def test_name_returns_expected_name(self):

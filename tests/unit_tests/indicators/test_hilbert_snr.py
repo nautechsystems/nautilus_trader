@@ -21,9 +21,8 @@ from nautilus_trader.indicators.hilbert_snr import HilbertSignalNoiseRatio
 
 class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.snr = HilbertSignalNoiseRatio()
 
     def test_name_returns_expected_name(self):

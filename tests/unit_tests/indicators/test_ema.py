@@ -20,9 +20,8 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 
 class ExponentialMovingAverageTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.ema = ExponentialMovingAverage(10)
 
     def test_name_returns_expected_string(self):

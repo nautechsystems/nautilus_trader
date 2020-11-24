@@ -45,6 +45,7 @@ from tests.test_kit.strategies import EMACross
 class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.venue = Venue("SIM")
         self.usdjpy = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", self.venue))
         data = BacktestDataContainer()
@@ -162,6 +163,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.venue = Venue("SIM")
         self.gbpusd = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", self.venue))
         data = BacktestDataContainer()
@@ -225,6 +227,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.venue = Venue("SIM")
         self.audusd = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", self.venue))
         data = BacktestDataContainer()
@@ -305,6 +308,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
 class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.venue = Venue("BINANCE")
         self.ethusdt = InstrumentLoader.ethusdt_binance()
         data = BacktestDataContainer()

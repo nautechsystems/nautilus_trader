@@ -20,9 +20,8 @@ from nautilus_trader.indicators.rsi import RelativeStrengthIndex
 
 class RelativeStrengthIndexTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.rsi = RelativeStrengthIndex(10)
 
     def test_name_returns_expected_string(self):

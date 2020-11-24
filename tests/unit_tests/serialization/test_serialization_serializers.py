@@ -69,6 +69,7 @@ AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class SerializerBaseTests(unittest.TestCase):
+
     def setUp(self):
         # Fixture Setup
         self.serializer = Serializer()

@@ -30,6 +30,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
@@ -174,7 +175,7 @@ class BarTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
             True,
         )
 
@@ -190,7 +191,7 @@ class BarTests(unittest.TestCase):
             Price("1.00000"),
             Price("1.00005"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
             True,
         )
 
@@ -206,7 +207,7 @@ class BarTests(unittest.TestCase):
             Price("1.00000"),
             Price("0.99999"),  # Close below low
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
             True,
         )
 
@@ -218,7 +219,7 @@ class BarTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         bar2 = Bar(
@@ -227,7 +228,7 @@ class BarTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         # Act
@@ -243,7 +244,7 @@ class BarTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         # Act
@@ -259,7 +260,7 @@ class BarTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         # Act
@@ -276,7 +277,7 @@ class BarTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         # Act
@@ -307,7 +308,7 @@ class BarDataTests(unittest.TestCase):
             Price("1.00002"),
             Price("1.00003"),
             Quantity(100000),
-            datetime(1970, 1, 1, 00, 00, 0, 0, pytz.utc),
+            UNIX_EPOCH,
         )
 
         bar_data = BarData(bar_type, bar)

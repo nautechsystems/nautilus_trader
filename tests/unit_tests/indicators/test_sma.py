@@ -25,9 +25,8 @@ AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
 
 class SimpleMovingAverageTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.sma = SimpleMovingAverage(10)
 
     def test_name_returns_expected_string(self):

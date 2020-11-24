@@ -47,6 +47,7 @@ ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 class DataEngineTests(unittest.TestCase):
 
     def setUp(self):
+        # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock)

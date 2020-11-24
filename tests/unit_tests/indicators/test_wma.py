@@ -22,9 +22,8 @@ from nautilus_trader.indicators.average.wma import WeightedMovingAverage
 
 class WeightedMovingAverageTests(unittest.TestCase):
 
-    # Fixture Setup
     def setUp(self):
-        # Arrange
+        # Fixture Setup
         self.w = [round(i * 0.1, 2) for i in range(1, 11)]
         self.wma = WeightedMovingAverage(10, self.w)
         self.wma_noweights = WeightedMovingAverage(10)
