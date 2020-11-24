@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
 import unittest
 
+from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -121,6 +123,12 @@ class TradingNodeOperationTests(unittest.TestCase):
             config=config,
         )
 
+    def tearDown(self) -> None:
+        if self.node.trader.state == ComponentState.RUNNING:
+            self.node.stop()
+
+        self.node.dispose()
+
     def test_load_strategies(self):
         # Arrange
         strategy = TradingStrategy("000")
@@ -136,8 +144,11 @@ class TradingNodeOperationTests(unittest.TestCase):
 
     def test_connect(self):
         # Arrange
-        # Act
         self.node.start()
+        time.sleep(0.1)
+
+        # Act
+        self.node.connect()
 
         # Assert
         # TODO: Implement TradingNode
@@ -145,25 +156,22 @@ class TradingNodeOperationTests(unittest.TestCase):
     def test_stop(self):
         # Arrange
         self.node.start()
+        time.sleep(0.1)
 
         # Act
         self.node.stop()
+        time.sleep(0.1)
 
         # Assert
-        # TODO: Implement TradingNode
+        self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
 
     def test_disconnect(self):
         # Arrange
+        self.node.start()
+        time.sleep(0.1)
+
         # Act
         self.node.disconnect()
 
         # Assert
-        # TODO: Implement TradingNode
-
-    def test_dispose(self):
-        # Arrange
-        # Act
-        self.node.dispose()
-
-        # Assert
-        # TODO: Implement TradingNode
+        # self.assertEqual(ComponentState.STOPPED, self.node.trader.state)

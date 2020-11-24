@@ -229,8 +229,6 @@ cdef class TradingNode:
         """
         self._log.info("Disposing resources...")
 
-        # time.sleep(1.0)  # Hard coded delay to await graceful disconnection (refactor)
-
         self.trader.dispose()
         self._data_engine.dispose()
         self._exec_engine.dispose()

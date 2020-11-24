@@ -68,8 +68,8 @@ cdef class LiveDataEngine(DataEngine):
             config,
         )
 
-        self._data_thread = threading.Thread(target=self._process_data_queue)
-        self._message_thread = threading.Thread(target=self._process_message_queue)
+        self._data_thread = threading.Thread(target=self._process_data_queue, daemon=True)
+        self._message_thread = threading.Thread(target=self._process_message_queue, daemon=True)
         self._data_queue = queue.Queue()
         self._message_queue = queue.Queue()
         self._is_running = False

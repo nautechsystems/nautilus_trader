@@ -81,13 +81,16 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_account_state())
 
     def tearDown(self) -> None:
-        self.exec_engine.stop()
+        if self.exec_engine.state == ComponentState.RUNNING:
+            self.exec_engine.stop()
+            time.sleep(0.1)
+
+        self.exec_engine.dispose()
 
     def test_start(self):
         # Arrange
         # Act
         self.exec_engine.start()
-
         time.sleep(0.1)
 
         # Assert
@@ -96,6 +99,7 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_execute_command_places_command_on_queue(self):
         # Arrange
         self.exec_engine.start()
+        time.sleep(0.1)
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -125,7 +129,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.exec_engine.execute(submit_order)
-
         time.sleep(0.1)
 
         # Assert
@@ -135,6 +138,7 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_handle_position_opening_with_position_id_none(self):
         # Arrange
         self.exec_engine.start()
+        time.sleep(0.1)
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
@@ -155,7 +159,6 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.exec_engine.process(event)
-
         time.sleep(0.1)
 
         # Assert
