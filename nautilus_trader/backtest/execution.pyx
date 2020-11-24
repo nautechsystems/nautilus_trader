@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
-from nautilus_trader.backtest.logging cimport TestLogger
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -109,6 +109,9 @@ cdef class BacktestExecClient(ExecutionClient):
     cpdef void dispose(self) except *:
         """
         Dispose of the execution client.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         pass  # Nothing to dispose
 

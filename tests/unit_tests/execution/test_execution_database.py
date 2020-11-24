@@ -15,9 +15,9 @@
 
 import unittest
 
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.database import ExecutionDatabase

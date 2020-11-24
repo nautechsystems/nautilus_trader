@@ -16,8 +16,8 @@
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.backtest.logging import TestLogger
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
@@ -71,57 +71,111 @@ class DataClientTests(unittest.TestCase):
         )
 
     def test_connect_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.connect)
 
     def test_disconnect_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.disconnect)
 
     def test_reset_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.reset)
 
     def test_dispose_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.dispose)
 
     def test_is_connected_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.is_connected)
 
     def test_subscribe_instrument_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.subscribe_instrument, AUDUSD_FXCM.symbol)
 
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.subscribe_quote_ticks, AUDUSD_FXCM.symbol)
 
     def test_subscribe_trade_ticks_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.subscribe_trade_ticks, AUDUSD_FXCM.symbol)
 
     def test_subscribe_bars_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.subscribe_bars, TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_unsubscribe_instrument_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_FXCM.symbol)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.unsubscribe_quote_ticks, AUDUSD_FXCM.symbol)
 
     def test_unsubscribe_trade_ticks_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.unsubscribe_trade_ticks, AUDUSD_FXCM.symbol)
 
     def test_unsubscribe_bars_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.unsubscribe_bars, TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_request_instrument_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.request_instrument, None, None)
 
     def test_request_instruments_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.request_instruments, None)
 
     def test_request_quote_ticks_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.request_quote_ticks, None, None, None, 0, None)
 
     def test_request_trade_ticks_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.request_trade_ticks, None, None, None, 0, None)
 
     def test_request_bars_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
         self.assertRaises(NotImplementedError, self.client.request_bars, None, None, None, 0, None)
 
     def test_handle_instrument_sends_to_data_engine(self):

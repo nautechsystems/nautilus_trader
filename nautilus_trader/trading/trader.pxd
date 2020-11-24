@@ -45,7 +45,7 @@ cdef class Trader:
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
-    cdef ComponentState state_c(self)
+    cdef ComponentState state_c(self) except *
     cdef str state_string_c(self)
     cdef list strategies_c(self)
 

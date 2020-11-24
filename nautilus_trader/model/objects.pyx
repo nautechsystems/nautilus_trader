@@ -47,8 +47,11 @@ cdef str ROUND_HALF_EVEN = decimal.ROUND_HALF_EVEN
 
 cdef class BaseDecimal:
     """
-    The base class for all domain objects representing a decimal number with a
-    specified precision.
+    The abstract base class for all domain objects.
+
+    It should not be used directly, but through its concrete subclasses.
+
+    Represents a decimal number with a specified precision.
     """
 
     def __init__(

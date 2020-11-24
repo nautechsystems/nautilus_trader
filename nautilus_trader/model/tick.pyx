@@ -31,7 +31,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Tick:
     """
-    The base class for all ticks.
+    The abstract base class for all ticks.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

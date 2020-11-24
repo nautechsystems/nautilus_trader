@@ -20,7 +20,9 @@ from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 
 cdef class Identifier:
     """
-    The base class for all identifiers.
+    The abstract base class for all identifiers.
+
+    It should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, str value):

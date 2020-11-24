@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+import threading
+import queue
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -30,7 +31,7 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     """
-    Provides a process and thread safe high-performance execution engine.
+    Provides a high-performance asynchronous live execution engine.
     """
 
     def __init__(
@@ -70,26 +71,38 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             config=config,
         )
 
-        self._queue = asyncio.Queue()
+        self._thread = threading.Thread(target=self._process_queue)
+        self._queue = queue.Queue()
+        self._is_running = False
 
     cpdef void on_start(self) except *:
-        self._process_queue()
+        self._log.info("Starting queue processing...")
+        self._is_running = True
+        self._thread.start()
 
-    async def _process_queue(self):
+    cpdef void on_stop(self) except *:
+        self._log.info("Shutting down queue processing...")
+        self._is_running = False
+        self._queue.put_nowait(None)  # None message pattern
+
+    cpdef void _process_queue(self) except *:
         cdef Message message
-        while True:
+        while self._is_running:
             message = self._queue.get()
-
+            if message is None:
+                continue
             if message.type == MessageType.EVENT:
                 self._handle_event(message)
             elif message.type == MessageType.COMMAND:
                 self._execute_command(message)
             else:
-                self._log.error(f"Invalid message type on queue ({repr(message)}).")
+                self._log.error(f"Cannot handle unrecognized message {message}.")
 
-    cpdef int queue_size(self) except *:
+        self._log.info("Finished processing message queue.")
+
+    cpdef int qsize(self) except *:
         """
-        Return the number of messages in the internal queue.
+        Return the number of messages buffered on the internal queue.
 
         Returns
         -------

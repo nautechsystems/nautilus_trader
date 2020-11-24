@@ -137,6 +137,18 @@ cdef class ExecutionEngine:
         return <ComponentState>self._fsm.state
 
     @property
+    def state(self):
+        """
+        The execution engines current state.
+
+        Returns
+        -------
+        ComponentState
+
+        """
+        return self.state_c()
+
+    @property
     def registered_venues(self):
         """
         The trading venues registered with the execution engine.
@@ -333,6 +345,9 @@ cdef class ExecutionEngine:
     cpdef void dispose(self) except *:
         """
         Dispose all execution clients.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
         try:
             self._fsm.trigger(ComponentTrigger.DISPOSE)
@@ -359,7 +374,7 @@ cdef class ExecutionEngine:
         self.cache.build_index()
         self._set_position_symbol_counts()
 
-        # Update portfolio
+        # Update portfolio - methods require sets
         self.portfolio.update_orders_working(set(self.cache.orders_working()))
         self.portfolio.update_positions(set(self.cache.positions_open()))
 
