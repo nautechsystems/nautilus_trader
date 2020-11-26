@@ -22,11 +22,11 @@ from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.model.commands cimport VenueCommand
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -38,7 +38,7 @@ cdef class LiveDataEngine(DataEngine):
 
     def __init__(
             self,
-            loop: AbstractEventLoop,
+            loop not None: AbstractEventLoop,
             Portfolio portfolio not None,
             LiveClock clock not None,
             Logger logger not None,
@@ -91,8 +91,9 @@ cdef class LiveDataEngine(DataEngine):
         self._is_running = False
         self._data_queue.put_nowait(None)     # None message pattern
         self._message_queue.put_nowait(None)  # None message pattern
-        self._loop.run_until_complete(self._task_data_queue)
-        self._loop.run_until_complete(self._task_message_queue)
+        # TODO: Engine not responsible for commanding the loop
+        # self._loop.run_until_complete(self._task_data_queue)
+        # self._loop.run_until_complete(self._task_message_queue)
 
     async def _run_data_queue(self):
         while self._is_running:
@@ -156,13 +157,13 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._message_queue.qsize()
 
-    cpdef void execute(self, Command command) except *:
+    cpdef void execute(self, VenueCommand command) except *:
         """
         Execute the given command.
 
         Parameters
         ----------
-        command : Command
+        command : VenueCommand
             The command to execute.
 
         """

@@ -192,8 +192,9 @@ cdef class DataClient:
 
     cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=Instrument,
-            metadata={VENUE: self.venue},
+            metadata={},
             data=instruments,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -204,6 +205,7 @@ cdef class DataClient:
 
     cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=QuoteTick,
             metadata={SYMBOL: symbol},
             data=ticks,
@@ -216,6 +218,7 @@ cdef class DataClient:
 
     cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=TradeTick,
             metadata={SYMBOL: symbol},
             data=ticks,
@@ -228,6 +231,7 @@ cdef class DataClient:
 
     cpdef void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=Bar,
             metadata={BAR_TYPE: bar_type},
             data=bars,

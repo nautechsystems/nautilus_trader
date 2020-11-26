@@ -158,11 +158,13 @@ cdef class OrderIdGenerator(IdentifierGenerator):
             If initial_count is negative (< 0).
 
         """
-        super().__init__("O",
-                         id_tag_trader,
-                         id_tag_strategy,
-                         clock,
-                         initial_count)
+        super().__init__(
+            "O",
+            id_tag_trader,
+            id_tag_strategy,
+            clock,
+            initial_count,
+        )
 
     cpdef ClientOrderId generate(self):
         """

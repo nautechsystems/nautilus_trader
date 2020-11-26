@@ -144,48 +144,20 @@ class TradingNodeOperationTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    def test_load_strategies(self):
-        async def run_test():
-            # Arrange
-            strategy = TradingStrategy("000")
-
-            # Act
-            self.node.load_strategies([strategy])
-
-            # Assert
-            self.assertIsNotNone(strategy.trader_id)
-            self.assertIsNotNone(strategy.data)
-            self.assertIsNotNone(strategy.execution)
-            self.assertIsNotNone(strategy.portfolio)
-
-        self.loop.run_until_complete(run_test())
-
-    def test_connect(self):
-        # Arrange
-        self.node.start()
-
-        # Act
-        self.node.connect()
-
-        # Assert
-        # TODO: Implement TradingNode
-
-    def test_stop(self):
-        # Arrange
-        self.node.start()
-
-        # Act
-        self.node.stop()
-
-        # Assert
-        self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
-
-    def test_disconnect(self):
-        # Arrange
-        self.node.start()
-
-        # Act
-        self.node.disconnect()
-
-        # Assert
-        # self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+    # def test_run(self):
+    #     # Arrange
+    #     self.node.run()
+    #
+    #     # Act
+    #     # Assert
+    #     # TODO: Implement TradingNode
+    #
+    # def test_stop(self):
+    #     # Arrange
+    #     self.node.start()
+    #
+    #     # Act
+    #     self.node.stop()
+    #
+    #     # Assert
+    #     self.assertEqual(ComponentState.STOPPED, self.node.trader.state)

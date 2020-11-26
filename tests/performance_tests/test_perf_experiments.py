@@ -15,13 +15,12 @@
 
 import unittest
 
-from nautilus_trader.common.messages import KillSwitch
+from nautilus_trader.common.messages import Connect
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -30,8 +29,8 @@ from tests.test_kit.stubs import UNIX_EPOCH
 AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
 MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
 
-MESSAGE1 = KillSwitch(TraderId("TESTER", "001"), uuid4(), UNIX_EPOCH)
-MESSAGE2 = KillSwitch(TraderId("TESTER", "001"), uuid4(), UNIX_EPOCH)
+MESSAGE1 = Connect(Venue("BINANCE"), uuid4(), UNIX_EPOCH)
+MESSAGE2 = Connect(Venue("BINANCE"), uuid4(), UNIX_EPOCH)
 
 
 class Experiments:

@@ -25,6 +25,12 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.live.node import TradingNode
 from examples.strategies.ema_cross_simple import EMACross
 
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
+
 
 strategy = EMACross(
     symbol=Symbol("ETHUSDT", Venue("BINANCE")),
@@ -58,21 +64,17 @@ config = {
     }
 }
 
-loop = asyncio.get_event_loop()  # TODO: Implement async run
-
-node = TradingNode(
-    loop=loop,
-    strategies=[strategy],
-    config=config,
-)
 
 if __name__ == "__main__":
 
-    node.connect()
-    node.start()
+    node = TradingNode(
+        loop=asyncio.get_event_loop(),
+        strategies=[strategy],
+        config=config,
+    )
+
+    node.run()
 
     input()
 
     node.stop()
-    node.disconnect()
-    node.dispose()
