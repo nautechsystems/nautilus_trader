@@ -43,14 +43,12 @@ class BacktestDataClientTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -64,7 +62,6 @@ class BacktestDataClientTests(unittest.TestCase):
             venue=USDJPY_FXCM.symbol.venue,
             engine=self.data_engine,
             clock=TestClock(),
-            uuid_factory=UUIDFactory(),
             logger=self.logger,
         )
 

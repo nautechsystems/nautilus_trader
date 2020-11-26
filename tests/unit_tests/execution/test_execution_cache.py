@@ -24,6 +24,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
@@ -56,6 +57,134 @@ class ExecutionCacheTests(unittest.TestCase):
         exec_db = BypassExecutionDatabase(trader_id=self.trader_id, logger=logger)
         self.cache = ExecutionCache(database=exec_db, logger=logger)
 
+    def test_cache_accounts_with_no_accounts(self):
+        # Arrange
+        # Act
+        self.cache.cache_accounts()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_cache_orders_with_no_orders(self):
+        # Arrange
+        # Act
+        self.cache.cache_orders()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_cache_positions_with_no_positions(self):
+        # Arrange
+        # Act
+        self.cache.cache_positions()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_build_index_with_no_objects(self):
+        # Arrange
+        # Act
+        self.cache.build_index()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_integrity_check(self):
+        # Arrange
+        # Act
+        self.cache.integrity_check()
+
+        # Assert
+        # TODO: Implement functionality
+
+    def test_add_account(self):
+        # Arrange
+        initial = TestStubs.event_account_state()
+        account = Account(initial)
+
+        # Act
+        self.cache.add_account(account)
+
+        # Assert
+        self.assertEqual(account, self.cache.load_account(account.id))
+
+    def test_load_account(self):
+        # Arrange
+        initial = TestStubs.event_account_state()
+        account = Account(initial)
+
+        self.cache.add_account(account)
+
+        # Act
+        result = self.cache.load_account(account.id)
+
+        # Assert
+        self.assertEqual(account, result)
+
+    def test_account_for_venue(self):
+        # Arrange
+        # Act
+        result = self.cache.account_for_venue(Venue("FXCM"))
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
+        # Arrange
+        # Act
+        result = self.cache.strategy_ids()
+
+        # Assert
+        self.assertEqual(set(), result)
+
+    def test_get_strategy_ids_with_id_returns_correct_set(self):
+        # Arrange
+        self.cache.update_strategy(self.strategy)
+
+        # Act
+        result = self.cache.strategy_ids()
+
+        # Assert
+        self.assertEqual({self.strategy.id}, result)
+
+    def test_position_exists_when_no_position_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.cache.position_exists(PositionId("P-123456")))
+
+    def test_order_exists_when_no_order_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.cache.order_exists(ClientOrderId("O-123456")))
+
+    def test_position_when_no_position_returns_none(self):
+        # Arrange
+        position_id = PositionId("P-123456")
+
+        # Act
+        result = self.cache.position(position_id)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_order_when_no_order_returns_none(self):
+        # Arrange
+        order_id = ClientOrderId("O-201908080101-000-001")
+
+        # Act
+        result = self.cache.order(order_id)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_strategy_id_for_position_when_no_strategy_registered_returns_none(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertIsNone(self.cache.strategy_id_for_position(PositionId("P-123456")))
+
     def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
@@ -75,6 +204,23 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id))
         self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
         self.assertIn(order, self.cache.orders())
+
+    def test_load_order(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        position_id = PositionId('P-1')
+        self.cache.add_order(order, position_id)
+
+        # Act
+        result = self.cache.load_order(order.cl_ord_id)
+
+        # Assert
+        self.assertEqual(order, result)
 
     def test_add_position(self):
         # Arrange
@@ -112,6 +258,33 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
         self.assertNotIn(position, self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
 
+    def test_load_position(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        position_id = PositionId('P-1')
+        self.cache.add_order(order, position_id)
+
+        order_filled = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_FXCM,
+            position_id=PositionId('P-1'),
+            fill_price=Price("1.00000"),
+        )
+
+        position = Position(order_filled)
+        self.cache.add_position(position)
+
+        # Act
+        result = self.cache.load_position(position.id)
+
+        # Assert
+        self.assertEqual(position, result)
+
     def test_update_order_for_working_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
@@ -147,6 +320,9 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(order, self.cache.orders_completed(symbol=order.symbol))
         self.assertNotIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
         self.assertNotIn(order, self.cache.orders_completed(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertEqual(1, self.cache.orders_working_count())
+        self.assertEqual(0, self.cache.orders_completed_count())
+        self.assertEqual(1, self.cache.orders_total_count())
 
     def test_update_order_for_completed_order(self):
         # Arrange
@@ -185,6 +361,9 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(order, self.cache.orders_working(symbol=order.symbol))
         self.assertNotIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
         self.assertNotIn(order, self.cache.orders_working(symbol=order.symbol, strategy_id=self.strategy.id))
+        self.assertEqual(0, self.cache.orders_working_count())
+        self.assertEqual(1, self.cache.orders_completed_count())
+        self.assertEqual(1, self.cache.orders_total_count())
 
     def test_update_position_for_open_position(self):
         # Arrange
@@ -226,6 +405,9 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
         self.assertNotIn(position, self.cache.positions_closed(symbol=position.symbol, strategy_id=self.strategy.id))
         self.assertEqual(position, self.cache.position(position_id))
+        self.assertEqual(1, self.cache.positions_open_count())
+        self.assertEqual(0, self.cache.positions_closed_count())
+        self.assertEqual(1, self.cache.positions_total_count())
 
     def test_update_position_for_closed_position(self):
         # Arrange
@@ -288,17 +470,9 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertNotIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
         self.assertNotIn(position, self.cache.positions_open(symbol=position.symbol, strategy_id=self.strategy.id))
         self.assertEqual(position, self.cache.position(position_id))
-
-    def test_add_account(self):
-        # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
-
-        # Act
-        self.cache.add_account(account)
-
-        # Assert
-        self.assertTrue(True)  # Did not raise exception
+        self.assertEqual(0, self.cache.positions_open_count())
+        self.assertEqual(1, self.cache.positions_closed_count())
+        self.assertEqual(1, self.cache.positions_total_count())
 
     def test_update_account(self):
         # Arrange
@@ -373,7 +547,8 @@ class ExecutionCacheTests(unittest.TestCase):
         # Act
         self.cache.check_residuals()
 
-        # Does not raise exception
+        # Assert
+        self.assertTrue(True)  # No exception raised
 
     def test_reset(self):
         # Arrange
@@ -482,54 +657,4 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.flush_db()
 
         # Assert
-        # Does not raise exception
-
-    def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
-        # Arrange
-        # Act
-        result = self.cache.strategy_ids()
-
-        # Assert
-        self.assertEqual(set(), result)
-
-    def test_get_strategy_ids_with_id_returns_correct_set(self):
-        # Arrange
-        self.cache.update_strategy(self.strategy)
-
-        # Act
-        result = self.cache.strategy_ids()
-
-        # Assert
-        self.assertEqual({self.strategy.id}, result)
-
-    def test_position_exists_when_no_position_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.cache.position_exists(PositionId("P-123456")))
-
-    def test_order_exists_when_no_order_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertFalse(self.cache.order_exists(ClientOrderId("O-123456")))
-
-    def test_get_order_when_no_order_returns_none(self):
-        # Arrange
-        position_id = PositionId("P-123456")
-
-        # Act
-        result = self.cache.position(position_id)
-
-        # Assert
-        self.assertIsNone(result)
-
-    def test_get_position_when_no_position_returns_none(self):
-        # Arrange
-        order_id = ClientOrderId("O-201908080101-000-001")
-
-        # Act
-        result = self.cache.order(order_id)
-
-        # Assert
-        self.assertIsNone(result)
+        self.assertTrue(True)  # No exception raised

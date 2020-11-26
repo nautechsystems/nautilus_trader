@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
 
 
@@ -24,5 +25,10 @@ cdef class LiveDataEngine(DataEngine):
     cdef object _task_message_queue
     cdef bint _is_running
 
+    cpdef object get_event_loop(self)
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *
+
+
+cdef class LiveDataClient(DataClient):
+    cdef object _loop

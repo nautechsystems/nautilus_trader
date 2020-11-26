@@ -49,14 +49,12 @@ class DataClientTests(unittest.TestCase):
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -66,7 +64,6 @@ class DataClientTests(unittest.TestCase):
             venue=self.venue,
             engine=self.data_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

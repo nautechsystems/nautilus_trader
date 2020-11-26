@@ -83,15 +83,15 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 > https://www.jetbrains.com/pycharm/
 
-To install all dependencies using [Poetry](https://python-poetry.org/), run:
+[Poetry](https://python-poetry.org/) is the preferred tool for handling all package and dev dependencies.
+
+To install all dependencies and compile the C extensions, run:
 
     poetry install
 
-Then compile the C extensions for the package by running:
+You can recompile following changes to `.pyx` and `.pxd` files by running:
 
     python build.py
-
-After each code change to a `.pyx` or `.pxd` file, you must recompile.
 
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 

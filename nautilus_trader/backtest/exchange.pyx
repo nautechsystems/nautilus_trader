@@ -84,7 +84,6 @@ cdef class SimulatedExchange:
             BacktestConfig config not None,
             FillModel fill_model not None,
             TestClock clock not None,
-            UUIDFactory uuid_factory not None,
             TestLogger logger not None,
     ):
         """
@@ -106,8 +105,6 @@ cdef class SimulatedExchange:
             The fill model for the backtest.
         clock : TestClock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : TestLogger
             The logger for the component.
 
@@ -120,7 +117,7 @@ cdef class SimulatedExchange:
         Condition.dict_types(instruments, Symbol, Instrument, "instruments")
 
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
 
         self.venue = venue

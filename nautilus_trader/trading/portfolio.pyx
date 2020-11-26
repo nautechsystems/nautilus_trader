@@ -105,12 +105,7 @@ cdef class Portfolio(PortfolioFacade):
     Provides a trading portfolio.
     """
 
-    def __init__(
-            self,
-            Clock clock not None,
-            UUIDFactory uuid_factory not None,
-            Logger logger=None,
-    ):
+    def __init__(self, Clock clock not None, Logger logger=None):
         """
         Initialize a new instance of the `Portfolio` class.
 
@@ -118,14 +113,12 @@ cdef class Portfolio(PortfolioFacade):
         ----------
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The uuid factory for the component.
         logger : Logger
             The logger for the component.
 
         """
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._data = None  # Initialized when cache registered
 

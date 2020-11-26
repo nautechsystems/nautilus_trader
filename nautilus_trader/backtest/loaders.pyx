@@ -99,10 +99,10 @@ cdef class InstrumentLoader:
     @staticmethod
     def btcusdt_binance() -> Instrument:
         """
-        Return the Binance BTC/USDT instrument for backtesting.
+        Return the Binance BTCUSDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("BTC/USDT", Venue("BINANCE")),
+            symbol=Symbol("BTCUSDT", Venue("BINANCE")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SPOT,
             base_currency=BTC,
@@ -133,10 +133,10 @@ cdef class InstrumentLoader:
     @staticmethod
     def ethusdt_binance() -> Instrument:
         """
-        Return the Binance ETH/USDT instrument for backtesting.
+        Return the Binance ETHUSDT instrument for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/USDT", Venue("BINANCE")),
+            symbol=Symbol("ETHUSDT", Venue("BINANCE")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SPOT,
             base_currency=ETH,
@@ -167,10 +167,10 @@ cdef class InstrumentLoader:
     @staticmethod
     def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX XBT/USD perpetual contract for backtesting.
+        Return the BitMEX XBTUSD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("XBT/USD", Venue("BITMEX")),
+            symbol=Symbol("XBTUSD", Venue("BITMEX")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=BTC,
@@ -201,10 +201,10 @@ cdef class InstrumentLoader:
     @staticmethod
     def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX ETH/USD perpetual contract for backtesting.
+        Return the BitMEX ETHUSD perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/USD", Venue("BITMEX")),
+            symbol=Symbol("ETHUSD", Venue("BITMEX")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=ETH,
@@ -235,10 +235,10 @@ cdef class InstrumentLoader:
     @staticmethod
     def ethxbt_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX ETH/XBT perpetual contract for backtesting.
+        Return the BitMEX ETHXBT perpetual contract for backtesting.
         """
         return Instrument(
-            symbol=Symbol("ETH/XBT", Venue("BITMEX")),
+            symbol=Symbol("ETHXBT", Venue("BITMEX")),
             asset_class=AssetClass.CRYPTO,
             asset_type=AssetType.SWAP,
             base_currency=ETH,

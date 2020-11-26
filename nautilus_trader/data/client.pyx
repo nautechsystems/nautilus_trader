@@ -44,7 +44,7 @@ cdef class DataClient:
     """
     The abstract base class for all data clients.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -52,7 +52,6 @@ cdef class DataClient:
             Venue venue not None,
             DataEngine engine not None,
             Clock clock not None,
-            UUIDFactory uuid_factory not None,
             Logger logger not None,
     ):
         """
@@ -64,14 +63,12 @@ cdef class DataClient:
             The data engine to connect to the client.
         clock : Clock
             The clock for the component.
-        uuid_factory : UUIDFactory
-            The UUID factory for the component.
         logger : Logger
             The logger for the component.
 
         """
         self._clock = clock
-        self._uuid_factory = uuid_factory
+        self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"{type(self).__name__}-{venue.value}", logger)
         self._engine = engine
 
@@ -195,8 +192,9 @@ cdef class DataClient:
 
     cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=Instrument,
-            metadata={VENUE: self.venue},
+            metadata={},
             data=instruments,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -207,6 +205,7 @@ cdef class DataClient:
 
     cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=QuoteTick,
             metadata={SYMBOL: symbol},
             data=ticks,
@@ -219,6 +218,7 @@ cdef class DataClient:
 
     cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=TradeTick,
             metadata={SYMBOL: symbol},
             data=ticks,
@@ -231,6 +231,7 @@ cdef class DataClient:
 
     cpdef void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
+            venue=self.venue,
             data_type=Bar,
             metadata={BAR_TYPE: bar_type},
             data=bars,

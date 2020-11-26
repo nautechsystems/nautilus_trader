@@ -27,12 +27,12 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.commands cimport VenueCommand
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -88,7 +88,7 @@ cdef class DataEngine:
     cpdef void stop(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
-    cpdef void execute(self, Command command) except *
+    cpdef void execute(self, VenueCommand command) except *
     cpdef void process(self, data) except *
     cpdef void send(self, DataRequest request) except *
     cpdef void receive(self, DataResponse response) except *
@@ -97,49 +97,18 @@ cdef class DataEngine:
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, Command command) except *
-    cdef inline void _handle_connect(self, Connect command) except *
-    cdef inline void _handle_disconnect(self, Disconnect command) except *
-    cdef inline void _handle_subscribe(self, Subscribe command) except *
-    cdef inline void _handle_unsubscribe(self, Unsubscribe command) except *
+    cdef inline void _execute_command(self, VenueCommand command) except *
+    cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *
+    cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
+    cdef inline void _handle_subscribe_instrument(self, DataClient client, Symbol symbol, handler) except *
+    cdef inline void _handle_subscribe_quote_ticks(self, DataClient client, Symbol symbol, handler) except *
+    cdef inline void _handle_subscribe_trade_ticks(self, DataClient client, Symbol symbol, handler) except *
+    cdef inline void _handle_subscribe_bars(self, DataClient client, BarType bar_type, handler) except *
+    cdef inline void _handle_unsubscribe_instrument(self, DataClient client, Symbol symbol, handler) except *
+    cdef inline void _handle_unsubscribe_quote_ticks(self, DataClient client, Symbol symbol, handler) except *
+    cdef inline void _handle_unsubscribe_trade_ticks(self, DataClient client, Symbol symbol, handler) except *
+    cdef inline void _handle_unsubscribe_bars(self, DataClient client, BarType bar_type, handler) except *
     cdef inline void _handle_request(self, DataRequest request) except *
-    cdef inline void _handle_subscribe_instrument(self, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_quote_ticks(self, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_trade_ticks(self, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_bars(self, BarType bar_type, handler) except *
-    cdef inline void _handle_unsubscribe_instrument(self, Symbol symbol, handler) except *
-    cdef inline void _handle_unsubscribe_quote_ticks(self, Symbol symbol, handler) except *
-    cdef inline void _handle_unsubscribe_trade_ticks(self, Symbol symbol, handler) except *
-    cdef inline void _handle_unsubscribe_bars(self, BarType bar_type, handler) except *
-
-# -- REQUEST HANDLERS ------------------------------------------------------------------------------
-
-    cdef inline void _handle_request_instrument(self, Symbol symbol, UUID correlation_id) except *
-    cdef inline void _handle_request_instruments(self, Venue venue, UUID correlation_id) except *
-    cdef inline void _handle_request_quote_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        UUID correlation_id,
-    ) except *
-    cdef inline void _handle_request_trade_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        UUID correlation_id,
-    ) except *
-    cdef inline void _handle_request_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        UUID correlation_id,
-    ) except *
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
@@ -160,8 +129,8 @@ cdef class DataEngine:
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef void _internal_update_instruments(self, list instruments) except *
-    cdef inline void _start_bar_aggregator(self, BarType bar_type) except *
-    cdef inline void _stop_bar_aggregator(self, BarType bar_type) except *
+    cdef inline void _start_bar_aggregator(self, DataClient client, BarType bar_type) except *
+    cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler) except *
     cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler) except *

@@ -39,7 +39,7 @@ from tests.test_kit.data_provider import TestDataProvider
 if __name__ == "__main__":
     # Setup trading instruments
     exchange = Venue('BINANCE')
-    symbol = Symbol('ETH/USDT', exchange)
+    symbol = Symbol('ETHUSDT', exchange)
     ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
     # Setup data container

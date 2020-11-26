@@ -83,7 +83,7 @@ cdef class TradingStrategy:
     """
     The abstract base class for all trading strategies.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, str order_id_tag not None):
@@ -812,7 +812,7 @@ cdef class TradingStrategy:
 
         self._check_trader_registered()
 
-        self.log.info("Loading state...")
+        self.log.debug("Loading state...")
 
         cdef int order_id_count = state.get("OrderIdCount", 0)
         self.order_factory.set_count(order_id_count)
@@ -842,6 +842,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe subscribe = Subscribe(
+            venue=symbol.venue,
             data_type=Instrument,
             metadata={SYMBOL: symbol},
             handler=self.handle_data,
@@ -867,6 +868,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe subscribe = Subscribe(
+            venue=symbol.venue,
             data_type=QuoteTick,
             metadata={SYMBOL: symbol},
             handler=self.handle_quote_tick,
@@ -892,6 +894,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe subscribe = Subscribe(
+            venue=symbol.venue,
             data_type=TradeTick,
             metadata={SYMBOL: symbol},
             handler=self.handle_trade_tick,
@@ -917,6 +920,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe subscribe = Subscribe(
+            venue=bar_type.symbol.venue,
             data_type=Bar,
             metadata={BAR_TYPE: bar_type},
             handler=self.handle_bar,
@@ -942,6 +946,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
+            venue=symbol.venue,
             data_type=Instrument,
             metadata={SYMBOL: symbol},
             handler=self.handle_data,
@@ -967,6 +972,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
+            venue=symbol.venue,
             data_type=QuoteTick,
             metadata={SYMBOL: symbol},
             handler=self.handle_quote_tick,
@@ -992,6 +998,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
+            venue=symbol.venue,
             data_type=TradeTick,
             metadata={SYMBOL: symbol},
             handler=self.handle_trade_tick,
@@ -1017,6 +1024,7 @@ cdef class TradingStrategy:
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
+            venue=bar_type.symbol.venue,
             data_type=Bar,
             metadata={BAR_TYPE: bar_type},
             handler=self.handle_bar,
@@ -1061,6 +1069,7 @@ cdef class TradingStrategy:
             Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         cdef DataRequest request = DataRequest(
+            venue=symbol.venue,
             data_type=QuoteTick,
             metadata={
                 SYMBOL: symbol,
@@ -1106,6 +1115,7 @@ cdef class TradingStrategy:
             Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         cdef DataRequest request = DataRequest(
+            venue=symbol.venue,
             data_type=TradeTick,
             metadata={
                 SYMBOL: symbol,
@@ -1150,6 +1160,7 @@ cdef class TradingStrategy:
             Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
 
         cdef DataRequest request = DataRequest(
+            venue=bar_type.symbol.venue,
             data_type=Bar,
             metadata={
                 BAR_TYPE: bar_type,
