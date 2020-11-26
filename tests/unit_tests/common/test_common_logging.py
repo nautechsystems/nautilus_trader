@@ -74,7 +74,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter.verbose("This is a log message.")
 
         # Assert
-        self.assertTrue(True)  # Does not raise errors.
+        self.assertTrue(True)  # No exception raised
 
     def test_log_debug_messages_to_console(self):
         # Arrange
@@ -85,7 +85,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter.debug("This is a log message.")
 
         # Assert
-        self.assertTrue(True)  # Does not raise errors.
+        self.assertTrue(True)  # No exception raised
 
     def test_log_info_messages_to_console(self):
         # Arrange
@@ -96,7 +96,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter.info("This is a log message.")
 
         # Assert
-        self.assertTrue(True)  # Does not raise errors.
+        self.assertTrue(True)  # No exception raised
 
     def test_log_warning_messages_to_console(self):
         # Arrange
@@ -107,7 +107,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter.warning("This is a log message.")
 
         # Assert
-        self.assertTrue(True)  # Does not raise errors.
+        self.assertTrue(True)  # No exception raised
 
     def test_log_error_messages_to_console(self):
         # Arrange
@@ -118,7 +118,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter.error("This is a log message.")
 
         # Assert
-        self.assertTrue(True)  # Does not raise errors.
+        self.assertTrue(True)  # No exception raised
 
     def test_log_critical_messages_to_console(self):
         # Arrange
@@ -129,4 +129,4 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter.critical("This is a log message.")
 
         # Assert
-        self.assertTrue(True)  # Does not raise errors.
+        self.assertTrue(True)  # No exception raised

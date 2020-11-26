@@ -18,6 +18,7 @@ import os
 import unittest
 
 import pandas as pd
+from parameterized import parameterized
 import pytz
 
 from nautilus_trader.core.datetime import as_utc_index
@@ -34,53 +35,33 @@ class ForexSessionFilterTests(unittest.TestCase):
         # Fixture Setup
         self.session_filter = ForexSessionFilter()
 
-    def test_local_from_utc_given_sydney_session_returns_expected_datetime(self):
+    @parameterized.expand([
+        [ForexSession.SYDNEY, "1970-01-01 10:00:00+10:00"],
+        [ForexSession.TOKYO, "1970-01-01 09:00:00+09:00"],
+        [ForexSession.LONDON, "1970-01-01 01:00:00+01:00"],
+        [ForexSession.NEW_YORK, "1969-12-31 19:00:00-05:00"],
+    ])
+    def test_local_from_utc_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
-        result = self.session_filter.local_from_utc(ForexSession.SYDNEY, UNIX_EPOCH)
+        result = self.session_filter.local_from_utc(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual("1970-01-01 10:00:00+10:00", str(result))
+        self.assertEqual(expected, str(result))
 
-    def test_local_from_utc_given_tokyo_session_returns_expected_datetime(self):
+    @parameterized.expand([
+        [ForexSession.SYDNEY, datetime(1970, 1, 1, 21, 0, tzinfo=pytz.utc)],
+        [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
+        [ForexSession.LONDON, datetime(1970, 1, 1, 7, 0, tzinfo=pytz.utc)],
+        [ForexSession.NEW_YORK, datetime(1970, 1, 1, 13, 0, tzinfo=pytz.utc)],
+    ])
+    def test_next_start_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
-        result = self.session_filter.local_from_utc(ForexSession.TOKYO, UNIX_EPOCH)
+        result = self.session_filter.next_start(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual("1970-01-01 09:00:00+09:00", str(result))
-
-    def test_local_from_utc_given_london_session_returns_expected_datetime(self):
-        # Arrange
-        # Act
-        result = self.session_filter.local_from_utc(ForexSession.LONDON, UNIX_EPOCH)
-
-        # Assert
-        self.assertEqual("1970-01-01 01:00:00+01:00", str(result))
-
-    def test_local_from_utc_given_new_york_session_returns_expected_datetime(self):
-        # Arrange
-        # Act
-        result = self.session_filter.local_from_utc(ForexSession.NEW_YORK, UNIX_EPOCH)
-
-        # Assert
-        self.assertEqual("1969-12-31 19:00:00-05:00", str(result))
-
-    def test_next_start_given_sydney_session_unix_epoch_returns_expected_datetime(self):
-        # Arrange
-        # Act
-        result = self.session_filter.next_start(ForexSession.SYDNEY, UNIX_EPOCH)
-
-        # Assert
-        self.assertEqual(datetime(1970, 1, 1, 21, 0, tzinfo=pytz.utc), result)
-
-    def test_next_start_given_tokyo_session_unix_epoch_returns_expected_datetime(self):
-        # Arrange
-        # Act
-        result = self.session_filter.next_start(ForexSession.TOKYO, UNIX_EPOCH)
-
-        # Assert
-        self.assertEqual(datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), result)
+        self.assertEqual(expected, result)
 
     def test_next_start_on_weekend_returns_expected_datetime_monday(self):
         # Arrange
@@ -100,29 +81,47 @@ class ForexSessionFilterTests(unittest.TestCase):
         # Assert
         self.assertEqual(datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc), result)
 
-    def test_prev_start_given_london_session_unix_epoch_returns_expected_datetime(self):
+    @parameterized.expand([
+        [ForexSession.SYDNEY, datetime(1969, 12, 31, 21, 0, tzinfo=pytz.utc)],
+        [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
+        [ForexSession.LONDON, datetime(1969, 12, 31, 7, 0, tzinfo=pytz.utc)],
+        [ForexSession.NEW_YORK, datetime(1969, 12, 31, 13, 0, tzinfo=pytz.utc)],
+    ])
+    def test_prev_start_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
-        result = self.session_filter.prev_start(ForexSession.LONDON, UNIX_EPOCH)
+        result = self.session_filter.prev_start(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(datetime(1969, 12, 31, 7, 0, tzinfo=pytz.utc), result)
+        self.assertEqual(expected, result)
 
-    def test_prev_start_given_new_york_session_unix_epoch_returns_expected_datetime(self):
+    @parameterized.expand([
+        [ForexSession.SYDNEY, datetime(1970, 1, 1, 6, 0, tzinfo=pytz.utc)],
+        [ForexSession.TOKYO, datetime(1970, 1, 1, 9, 0, tzinfo=pytz.utc)],
+        [ForexSession.LONDON, datetime(1970, 1, 1, 15, 0, tzinfo=pytz.utc)],
+        [ForexSession.NEW_YORK, datetime(1970, 1, 1, 22, 0, tzinfo=pytz.utc)],
+    ])
+    def test_next_end_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
-        result = self.session_filter.prev_start(ForexSession.NEW_YORK, UNIX_EPOCH)
+        result = self.session_filter.next_end(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(datetime(1969, 12, 31, 13, 0, tzinfo=pytz.utc), result)
+        self.assertEqual(expected, result)
 
-    def test_next_end_given_new_york_session_unix_epoch_returns_expected_datetime(self):
+    @parameterized.expand([
+        [ForexSession.SYDNEY, datetime(1969, 12, 31, 6, 0, tzinfo=pytz.utc)],
+        [ForexSession.TOKYO, datetime(1969, 12, 31, 9, 0, tzinfo=pytz.utc)],
+        [ForexSession.LONDON, datetime(1969, 12, 31, 15, 0, tzinfo=pytz.utc)],
+        [ForexSession.NEW_YORK, datetime(1969, 12, 31, 22, 0, tzinfo=pytz.utc)],
+    ])
+    def test_prev_end_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
-        result = self.session_filter.next_end(ForexSession.NEW_YORK, UNIX_EPOCH)
+        result = self.session_filter.prev_end(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(datetime(1970, 1, 1, 22, 0, tzinfo=pytz.utc), result)
+        self.assertEqual(expected, result)
 
 
 class EconomicNewsEventFilterTests(unittest.TestCase):

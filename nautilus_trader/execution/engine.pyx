@@ -39,6 +39,8 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.messages cimport Connect
+from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
@@ -46,7 +48,6 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -252,13 +253,17 @@ cdef class ExecutionEngine:
         """
         Actions to be performed when the engine is started.
         """
-        pass  # Optionally override in subclass
+        cdef ExecutionClient client
+        for client in self._clients.values():
+            client.connect()
 
     cpdef void on_stop(self) except *:
         """
         Actions to be performed when the engine is stopped.
         """
-        pass  # Optionally override in subclass
+        cdef ExecutionClient client
+        for client in self._clients.values():
+            client.disconnect()
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -273,11 +278,6 @@ cdef class ExecutionEngine:
             raise ex  # Do not put trader in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        cdef ExecutionClient client
-        for client in self._clients.values():
-            self._log.info(f"Connecting {client.venue}...")
-            client.connect()
 
         try:
             self.on_start()
@@ -299,11 +299,6 @@ cdef class ExecutionEngine:
             raise ex  # Do not put trader in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        cdef ExecutionClient client
-        for client in self._clients.values():
-            self._log.info(f"Disconnecting {client.venue}...")
-            client.disconnect()
 
         try:
             self.on_stop()
@@ -381,13 +376,13 @@ cdef class ExecutionEngine:
         """
         self.cache.integrity_check()
 
-    cpdef void execute(self, Command command) except *:
+    cpdef void execute(self, VenueCommand command) except *:
         """
         Execute the given command.
 
         Parameters
         ----------
-        command : Command
+        command : VenueCommand
             The command to execute.
 
         """
@@ -428,62 +423,32 @@ cdef class ExecutionEngine:
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, Command command) except *:
+    cdef inline void _execute_command(self, VenueCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        if isinstance(command, Connect):
-            self._handle_connect(command)
-        elif isinstance(command, Disconnect):
-            self._handle_disconnect(command)
-        elif isinstance(command, SubmitOrder):
-            self._handle_submit_order(command)
-        elif isinstance(command, SubmitBracketOrder):
-            self._handle_submit_bracket_order(command)
-        elif isinstance(command, ModifyOrder):
-            self._handle_modify_order(command)
-        elif isinstance(command, CancelOrder):
-            self._handle_cancel_order(command)
-        else:
-            self._log.error(f"Cannot handle unrecognized command, {command}.")
-
-    cdef inline void _handle_connect(self, Connect command) except *:
-        self._log.info("Connecting all clients...")
-
-        cdef ExecutionClient client
-        if command.venue is not None:
-            client = self._clients.get(command.venue)
-            if client is None:
-                self._log.error(f"Cannot handle command "
-                                f"(no client registered for {command.venue}), {command}.")
-            else:
-                client.connect()
-        else:
-            for client in self._clients:
-                client.connect()
-
-    cdef inline void _handle_disconnect(self, Disconnect command) except *:
-        self._log.info("Disconnecting all clients...")
-
-        cdef ExecutionClient client
-        if command.venue is not None:
-            client = self._clients.get(command.venue)
-            if client is None:
-                self._log.error(f"Cannot execute command "
-                                f"(no client registered for {command.venue}), {command}.")
-            else:
-                client.disconnect()
-        else:
-            for client in self._clients:
-                client.disconnect()
-
-    cdef inline void _handle_submit_order(self, SubmitOrder command) except *:
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
             self._log.error(f"Cannot handle command "
                             f"(no client registered for {command.venue}), {command}.")
-            return
+            return  # No client to handle command
 
+        if isinstance(command, Connect):
+            client.connect()
+        elif isinstance(command, Disconnect):
+            client.disconnect()
+        elif isinstance(command, SubmitOrder):
+            self._handle_submit_order(client, command)
+        elif isinstance(command, SubmitBracketOrder):
+            self._handle_submit_bracket_order(client, command)
+        elif isinstance(command, ModifyOrder):
+            self._handle_modify_order(client, command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(client, command)
+        else:
+            self._log.error(f"Cannot handle unrecognized command, {command}.")
+
+    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         # Validate command
         if self.cache.order_exists(command.order.cl_ord_id):
             self._invalidate_order(command.order, f"cl_ord_id already exists")
@@ -499,13 +464,7 @@ cdef class ExecutionEngine:
         # Submit order
         client.submit_order(command)
 
-    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
-        cdef ExecutionClient client = self._clients.get(command.venue)
-        if client is None:
-            self._log.error(f"Cannot handle command "
-                            f"(no client registered for {command.venue}) {command}.")
-            return
-
+    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Validate command
         if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
             self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
@@ -534,13 +493,7 @@ cdef class ExecutionEngine:
         # Submit bracket order
         client.submit_bracket_order(command)
 
-    cdef inline void _handle_modify_order(self, ModifyOrder command) except *:
-        cdef ExecutionClient client = self._clients.get(command.venue)
-        if client is None:
-            self._log.error(f"Cannot handle command "
-                            f"(no client registered for {command.venue}), {command}.")
-            return
-
+    cdef inline void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
             self._log.warning(f"Cannot modify command  "
@@ -549,13 +502,7 @@ cdef class ExecutionEngine:
 
         client.modify_order(command)
 
-    cdef inline void _handle_cancel_order(self, CancelOrder command) except *:
-        cdef ExecutionClient client = self._clients.get(command.venue)
-        if client is None:
-            self._log.error(f"Cannot handle command "
-                            f"(no client registered for {command.venue}), {command}.")
-            return
-
+    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
         if self.cache.is_order_completed(command.cl_ord_id):
             self._log.warning(f"Cannot cancel command "

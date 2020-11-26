@@ -272,9 +272,9 @@ cdef class TickBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type=bar_type,
-            handler=handler,
-            logger=logger,
+            bar_type,
+            handler,
+            logger,
             use_previous_close=False,
         )
 
@@ -315,9 +315,9 @@ cdef class VolumeBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type=bar_type,
-            handler=handler,
-            logger=logger,
+            bar_type,
+            handler,
+            logger,
             use_previous_close=False,
         )
 
@@ -381,9 +381,9 @@ cdef class ValueBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type=bar_type,
-            handler=handler,
-            logger=logger,
+            bar_type,
+            handler,
+            logger,
             use_previous_close=False,
         )
 
@@ -457,9 +457,9 @@ cdef class TimeBarAggregator(BarAggregator):
 
         """
         super().__init__(
-            bar_type=bar_type,
-            handler=handler,
-            logger=logger,
+            bar_type,
+            handler,
+            logger,
             use_previous_close=use_previous_close,
         )
 

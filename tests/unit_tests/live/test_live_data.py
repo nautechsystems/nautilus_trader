@@ -119,6 +119,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
             handler = []
             request = DataRequest(
+                venue=Venue("RANDOM"),
                 data_type=QuoteTick,
                 metadata={
                     "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
@@ -146,8 +147,9 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.start()
 
             response = DataResponse(
+                venue=Venue("BINANCE"),
                 data_type=QuoteTick,
-                metadata={},  # Malformed response anyway
+                metadata={},
                 data=[],
                 correlation_id=self.uuid_factory.generate(),
                 response_id=self.uuid_factory.generate(),

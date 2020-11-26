@@ -26,7 +26,38 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 
 
-cdef class SubmitOrder(Command):
+cdef class VenueCommand(Command):
+    """
+    The base class for all commands relating to a specific venue.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+            self,
+            Venue venue not None,
+            UUID command_id not None,
+            datetime command_timestamp not None,
+    ):
+        """
+        Initialize a new instance of the `VenueCommand` class.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue the command relates to.
+        command_id : UUID
+            The commands identifier.
+        command_timestamp : datetime
+            The commands timestamp.
+
+        """
+        super().__init__(command_id, command_timestamp)
+
+        self.venue = venue
+
+
+cdef class SubmitOrder(VenueCommand):
     """
     Represents a command to submit the given order.
     """
@@ -71,9 +102,8 @@ cdef class SubmitOrder(Command):
 
         """
         Condition.equal(venue, order.symbol.venue, "venue", "order.symbol.venue")
-        super().__init__(command_id, command_timestamp)
+        super().__init__(venue, command_id, command_timestamp)
 
-        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -91,7 +121,7 @@ cdef class SubmitOrder(Command):
                 f"strategy_id={self.strategy_id.value}")
 
 
-cdef class SubmitBracketOrder(Command):
+cdef class SubmitBracketOrder(VenueCommand):
     """
     Represents a command to submit a bracket order consisting of parent and child orders.
     """
@@ -133,9 +163,8 @@ cdef class SubmitBracketOrder(Command):
 
         """
         Condition.equal(venue, bracket_order.entry.symbol.venue, "venue", "bracket_order.entry.symbol.venue")
-        super().__init__(command_id, command_timestamp)
+        super().__init__(venue, command_id, command_timestamp)
 
-        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.strategy_id = strategy_id
@@ -150,7 +179,7 @@ cdef class SubmitBracketOrder(Command):
                 f"id={self.bracket_order.id.value})")
 
 
-cdef class ModifyOrder(Command):
+cdef class ModifyOrder(VenueCommand):
     """
     Represents a command to modify an order with the given modified price.
     """
@@ -189,9 +218,8 @@ cdef class ModifyOrder(Command):
             The command timestamp.
 
         """
-        super().__init__(command_id, command_timestamp)
+        super().__init__(venue, command_id, command_timestamp)
 
-        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id
@@ -208,7 +236,7 @@ cdef class ModifyOrder(Command):
                 f"price={self.price})")
 
 
-cdef class CancelOrder(Command):
+cdef class CancelOrder(VenueCommand):
     """
     Represents a command to cancel an order.
     """
@@ -241,9 +269,8 @@ cdef class CancelOrder(Command):
             The command timestamp.
 
         """
-        super().__init__(command_id, command_timestamp)
+        super().__init__(venue, command_id, command_timestamp)
 
-        self.venue = venue
         self.trader_id = trader_id
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines various order types to be used for trading.
+Defines various order types used for trading.
 """
 
 from decimal import Decimal
@@ -547,6 +547,7 @@ cdef class PassiveOrder(Order):
             event_timestamp=timestamp,
             options=options,
         )
+
         super().__init__(init_event)
 
         self.price = price
