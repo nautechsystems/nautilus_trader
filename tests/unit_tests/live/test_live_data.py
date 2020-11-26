@@ -17,7 +17,7 @@ import asyncio
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
@@ -25,6 +25,7 @@ from nautilus_trader.common.messages import Connect
 from nautilus_trader.common.messages import DataRequest
 from nautilus_trader.common.messages import DataResponse
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.data import LiveDataEngine
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -44,13 +45,12 @@ class LiveDataEngineTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.clock = TestClock()
+        self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock, level_console=LogLevel.DEBUG)
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -62,7 +62,6 @@ class LiveDataEngineTests(unittest.TestCase):
             loop=self.loop,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -73,6 +72,14 @@ class LiveDataEngineTests(unittest.TestCase):
         self.data_engine.dispose()
         self.loop.stop()
         self.loop.close()
+
+    def test_get_event_loop_returns_expected_loop(self):
+        # Arrange
+        # Act
+        loop = self.data_engine.get_event_loop()
+
+        # Assert
+        self.assertEqual(self.loop, loop)
 
     def test_start(self):
         async def run_test():
@@ -112,6 +119,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
             handler = []
             request = DataRequest(
+                venue=Venue("RANDOM"),
                 data_type=QuoteTick,
                 metadata={
                     "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
@@ -139,8 +147,9 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.start()
 
             response = DataResponse(
+                venue=Venue("BINANCE"),
                 data_type=QuoteTick,
-                metadata={},  # Malformed response anyway
+                metadata={},
                 data=[],
                 correlation_id=self.uuid_factory.generate(),
                 response_id=self.uuid_factory.generate(),
@@ -172,3 +181,41 @@ class LiveDataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, self.data_engine.data_qsize())
         self.assertEqual(1, self.data_engine.data_count)
+
+
+class LiveDataClientTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = TestLogger(self.clock, level_console=LogLevel.DEBUG)
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        self.engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.client = LiveDataClient(
+            venue=BINANCE,
+            engine=self.engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    def test_dummy_test(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(True)

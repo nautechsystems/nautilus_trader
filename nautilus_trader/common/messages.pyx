@@ -16,52 +16,17 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.commands cimport VenueCommand
 
 
-cdef class KillSwitch(Command):
-    """
-    Represents a command to aggressively shutdown the platform.
-    """
-
-    def __init__(
-            self,
-            TraderId trader_id not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
-    ):
-        """
-        Initialize a new instance of the `KillSwitch` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader identifier for the command.
-        command_id : UUID
-            The command identifier.
-        command_timestamp : datetime
-            The command timestamp.
-
-        """
-        super().__init__(command_id, command_timestamp)
-
-        self.trader_id = trader_id
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"trader_id={self.trader_id.value}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
-
-
-cdef class Connect(Command):
+cdef class Connect(VenueCommand):
     """
     Represents a command for a service to connect.
     """
 
     def __init__(
             self,
-            Venue venue,  # Can be None
+            Venue venue not None,
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -79,9 +44,7 @@ cdef class Connect(Command):
             The command timestamp.
 
         """
-        super().__init__(command_id, command_timestamp)
-
-        self.venue = venue
+        super().__init__(venue, command_id, command_timestamp)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -90,14 +53,14 @@ cdef class Connect(Command):
                 f"timestamp={self.timestamp})")
 
 
-cdef class Disconnect(Command):
+cdef class Disconnect(VenueCommand):
     """
     Represents a command for a service to disconnect.
     """
 
     def __init__(
             self,
-            Venue venue,  # Can be None
+            Venue venue not None,
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -115,9 +78,7 @@ cdef class Disconnect(Command):
             The command timestamp.
 
         """
-        super().__init__(command_id, command_timestamp)
-
-        self.venue = venue
+        super().__init__(venue, command_id, command_timestamp)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -126,13 +87,14 @@ cdef class Disconnect(Command):
                 f"timestamp={self.timestamp})")
 
 
-cdef class Subscribe(Command):
+cdef class Subscribe(VenueCommand):
     """
     Represents a command to subscribe to data.
     """
 
     def __init__(
             self,
+            Venue venue not None,
             type data_type not None,
             dict metadata not None,
             object handler not None,
@@ -144,6 +106,8 @@ cdef class Subscribe(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         data_type : type
             The data type for the subscription.
         metadata : type
@@ -157,6 +121,7 @@ cdef class Subscribe(Command):
 
         """
         super().__init__(
+            venue,
             command_id,
             command_timestamp,
         )
@@ -165,14 +130,24 @@ cdef class Subscribe(Command):
         self.metadata = metadata
         self.handler = handler
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"venue={self.venue}, "
+                f"data_type={self.data_type}, "
+                f"metadata={self.metadata}, "
+                f"handler={self.handler}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
-cdef class Unsubscribe(Command):
+
+cdef class Unsubscribe(VenueCommand):
     """
     Represents a command to unsubscribe from data.
     """
 
     def __init__(
             self,
+            Venue venue not None,
             type data_type not None,
             dict metadata not None,
             object handler not None,
@@ -184,6 +159,8 @@ cdef class Unsubscribe(Command):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the command.
         data_type : type
             The data type to unsubscribe from.
         metadata : type
@@ -197,6 +174,7 @@ cdef class Unsubscribe(Command):
 
         """
         super().__init__(
+            venue,
             command_id,
             command_timestamp,
         )
@@ -204,6 +182,15 @@ cdef class Unsubscribe(Command):
         self.data_type = data_type
         self.metadata = metadata
         self.handler = handler
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"venue={self.venue}, "
+                f"data_type={self.data_type}, "
+                f"metadata={self.metadata}, "
+                f"handler={self.handler}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
 
 cdef class DataRequest(Request):
@@ -213,6 +200,7 @@ cdef class DataRequest(Request):
 
     def __init__(
             self,
+            Venue venue not None,
             type data_type not None,
             dict metadata not None,
             object callback not None,
@@ -224,6 +212,8 @@ cdef class DataRequest(Request):
 
         Parameters
         ----------
+        venue : Venue
+            The venue for the request.
         data_type : type
             The data type for the request.
         metadata : type
@@ -241,10 +231,19 @@ cdef class DataRequest(Request):
             request_timestamp,
         )
 
+        self.venue = venue
         self.data_type = data_type
         self.metadata = metadata
         self.callback = callback
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"venue={self.venue}, "
+                f"data_type={self.data_type}, "
+                f"metadata={self.metadata}, "
+                f"callback={self.callback}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
 
 cdef class DataResponse(Response):
     """
@@ -253,6 +252,7 @@ cdef class DataResponse(Response):
 
     def __init__(
             self,
+            Venue venue not None,
             type data_type not None,
             dict metadata not None,
             list data not None,
@@ -265,6 +265,8 @@ cdef class DataResponse(Response):
 
         Parameters
         ----------
+        venue : Venue
+            The venue of the response.
         data_type : type
             The data type of the response.
         metadata : dict
@@ -285,6 +287,17 @@ cdef class DataResponse(Response):
             response_timestamp,
         )
 
+        self.venue = venue
         self.data_type = data_type
         self.metadata = metadata
         self.data = data
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"venue={self.venue}, "
+                f"data_type={self.data_type}, "
+                f"metadata={self.metadata}, "
+                f"len_data={len(self.data)}, "
+                f"correlation_id={self.correlation_id}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")

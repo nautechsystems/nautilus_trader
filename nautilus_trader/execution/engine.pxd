@@ -15,8 +15,6 @@
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.messages cimport Connect
-from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -24,10 +22,10 @@ from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport Command
 from nautilus_trader.model.commands cimport ModifyOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport VenueCommand
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -88,20 +86,18 @@ cdef class ExecutionEngine:
     cpdef void dispose(self) except *
     cpdef void load_cache(self) except *
     cpdef void integrity_check(self) except *
-    cpdef void execute(self, Command command) except *
+    cpdef void execute(self, VenueCommand command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, Command command) except *
-    cdef inline void _handle_connect(self, Connect command) except *
-    cdef inline void _handle_disconnect(self, Disconnect command) except *
-    cdef inline void _handle_submit_order(self, SubmitOrder command) except *
-    cdef inline void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cdef inline void _handle_modify_order(self, ModifyOrder command) except *
-    cdef inline void _handle_cancel_order(self, CancelOrder command) except *
+    cdef inline void _execute_command(self, VenueCommand command) except *
+    cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
+    cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
+    cdef inline void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *
+    cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef inline void _invalidate_order(self, Order order, str reason) except *
     cdef inline void _deny_order(self, Order order, str reason) except *
 

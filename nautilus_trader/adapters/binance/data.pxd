@@ -13,19 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.live.data cimport LiveDataClient
 
 
-cdef class LiveExecutionEngine(ExecutionEngine):
-    cdef object _loop
-    cdef object _queue
-    cdef object _task_queue
-    cdef bint _is_running
-
-    cpdef object get_event_loop(self)
-    cpdef int qsize(self) except *
-
-
-cdef class LiveExecutionClient(ExecutionClient):
-    cdef object _loop
+cdef class BinanceDataClient(LiveDataClient):
+    pass

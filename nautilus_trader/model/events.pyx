@@ -94,7 +94,7 @@ cdef class OrderEvent(Event):
     """
     The abstract base class for all order events.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -900,7 +900,7 @@ cdef class PositionEvent(Event):
     """
     The abstract base class for all position events.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(

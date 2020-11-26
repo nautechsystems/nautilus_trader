@@ -150,7 +150,7 @@ class BarTypeTests(unittest.TestCase):
         ["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(Symbol("AUD/USD", Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],
         ["GBP/USD.FXCM-1000-TICK-MID", BarType(Symbol("GBP/USD", Venue("FXCM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],
         ["AAPL.NYSE-1-HOUR-MID", BarType(Symbol("AAPL", Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],
-        ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTC/USDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
+        ["BTCUSDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTCUSDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
     ])
     def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange

@@ -170,14 +170,12 @@ cdef class BacktestEngine:
 
         self.portfolio = Portfolio(
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
             config={'use_previous_close': False},  # Ensures bars match historical data
         )
@@ -186,7 +184,6 @@ cdef class BacktestEngine:
             database=exec_db,
             portfolio=self.portfolio,
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 
@@ -201,7 +198,6 @@ cdef class BacktestEngine:
             config=config,
             fill_model=fill_model,
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 
@@ -210,7 +206,6 @@ cdef class BacktestEngine:
             venue=venue,
             engine=self.data_engine,
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 
@@ -219,7 +214,6 @@ cdef class BacktestEngine:
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 
@@ -234,7 +228,6 @@ cdef class BacktestEngine:
             data_engine=self.data_engine,
             exec_engine=self.exec_engine,
             clock=self.test_clock,
-            uuid_factory=self.uuid_factory,
             logger=self.test_logger,
         )
 

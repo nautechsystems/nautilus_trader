@@ -59,7 +59,6 @@ class ExecutionClientTests(unittest.TestCase):
 
         portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
         portfolio.register_cache(DataCache(self.logger))
@@ -69,7 +68,6 @@ class ExecutionClientTests(unittest.TestCase):
             database=database,
             portfolio=portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 
@@ -80,7 +78,6 @@ class ExecutionClientTests(unittest.TestCase):
             account_id=self.account_id,
             engine=self.exec_engine,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
 

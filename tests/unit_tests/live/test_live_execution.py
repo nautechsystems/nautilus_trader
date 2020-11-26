@@ -18,13 +18,14 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.loaders import InstrumentLoader
-from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.live.execution import LiveExecutionClient
 from nautilus_trader.live.execution import LiveExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
@@ -38,6 +39,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.stubs import TestStubs
 
 
+FXCM = Venue("FXCM")
 AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
@@ -46,7 +48,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.clock = TestClock()
+        self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock)
 
@@ -56,12 +58,11 @@ class ExecutionEngineTests(unittest.TestCase):
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S", "001"),
-            clock=TestClock(),
+            clock=self.clock,
         )
 
         self.portfolio = Portfolio(
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
         self.portfolio.register_cache(DataCache(self.logger))
@@ -78,12 +79,8 @@ class ExecutionEngineTests(unittest.TestCase):
             database=database,
             portfolio=self.portfolio,
             clock=self.clock,
-            uuid_factory=self.uuid_factory,
             logger=self.logger,
         )
-
-        self.cache = self.exec_engine.cache
-        self.exec_engine.process(TestStubs.event_account_state())
 
     def tearDown(self):
         if self.exec_engine.state == ComponentState.RUNNING:
@@ -92,6 +89,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.dispose()
         self.loop.stop()
         self.loop.close()
+
+    def test_get_event_loop_returns_expected_loop(self):
+        # Arrange
+        # Act
+        loop = self.exec_engine.get_event_loop()
+
+        # Assert
+        self.assertEqual(self.loop, loop)
 
     def test_start(self):
         async def run_test():
@@ -173,4 +178,57 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, self.exec_engine.qsize())
-        self.assertEqual(2, self.exec_engine.event_count)
+        self.assertEqual(1, self.exec_engine.event_count)
+
+
+class LiveExecutionClientTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = TestLogger(self.clock)
+
+        self.trader_id = TraderId("TESTER", "000")
+        self.account_id = TestStubs.account_id()
+
+        self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S", "001"),
+            clock=self.clock,
+        )
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.portfolio.register_cache(DataCache(self.logger))
+
+        self.analyzer = PerformanceAnalyzer()
+
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.engine = LiveExecutionEngine(
+            loop=self.loop,
+            database=database,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.client = LiveExecutionClient(
+            venue=FXCM,
+            account_id=self.account_id,
+            engine=self.engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    def test_dummy_test(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(True)

@@ -13,29 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.commands cimport VenueCommand
 
 
-cdef class KillSwitch(Command):
-    cdef readonly TraderId trader_id
-    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
+cdef class Connect(VenueCommand):
+    pass
 
 
-cdef class Connect(Command):
-    cdef readonly Venue venue
-    """The venue for the command.\n\n:returns: `Venue`"""
+cdef class Disconnect(VenueCommand):
+    pass
 
 
-cdef class Disconnect(Command):
-    cdef readonly Venue venue
-    """The venue for the command.\n\n:returns: `Venue`"""
-
-
-cdef class Subscribe(Command):
+cdef class Subscribe(VenueCommand):
     cdef readonly type data_type
     """The subscription data type.\n\n:returns: `type`"""
     cdef readonly dict metadata
@@ -44,7 +36,7 @@ cdef class Subscribe(Command):
     """The handler for the subscription.\n\n:returns: `callable`"""
 
 
-cdef class Unsubscribe(Command):
+cdef class Unsubscribe(VenueCommand):
     cdef readonly type data_type
     """The subscription data type.\n\n:returns: `type`"""
     cdef readonly dict metadata
@@ -54,6 +46,8 @@ cdef class Unsubscribe(Command):
 
 
 cdef class DataRequest(Request):
+    cdef readonly Venue venue
+    """The venue for the request.\n\n:returns: `Venue`"""
     cdef readonly type data_type
     """The request data type.\n\n:returns: `type`"""
     cdef readonly dict metadata
@@ -63,6 +57,8 @@ cdef class DataRequest(Request):
 
 
 cdef class DataResponse(Response):
+    cdef readonly Venue venue
+    """The venue of the response.\n\n:returns: `Venue`"""
     cdef readonly type data_type
     """The response data type.\n\n:returns: `type`"""
     cdef readonly dict metadata

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines various order types to be used for trading.
+Defines various order types used for trading.
 """
 
 from decimal import Decimal
@@ -99,7 +99,7 @@ cdef class Order:
     """
     The abstract base class for all orders.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(self, OrderInitialized event not None):
@@ -461,7 +461,7 @@ cdef class PassiveOrder(Order):
     """
     The abstract base class for all passive orders.
 
-    It should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through its concrete subclasses.
     """
     def __init__(
             self,
@@ -547,6 +547,7 @@ cdef class PassiveOrder(Order):
             event_timestamp=timestamp,
             options=options,
         )
+
         super().__init__(init_event)
 
         self.price = price
