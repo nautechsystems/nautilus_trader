@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import unittest
 
 from nautilus_trader.common.enums import ComponentState
@@ -22,12 +21,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class TradingNodeConfigurationTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
 
     def test_config_with_inmemory_execution_database(self):
         # Arrange
@@ -55,7 +48,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
         # Act
         node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -91,7 +83,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
         # Act
         node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -126,12 +117,7 @@ class TradingNodeOperationTests(unittest.TestCase):
             }
         }
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
         self.node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -141,26 +127,19 @@ class TradingNodeOperationTests(unittest.TestCase):
             self.node.stop()
 
         self.node.dispose()
-        self.loop.stop()
-        self.loop.close()
 
     def test_run(self):
-        async def run_test():
-            # Arrange
-            self.node.run()
+        self.node.run()
 
-            # Act
-
-        self.loop.run_until_complete(run_test())
         # Assert
-        # TODO: Implement TradingNode
+        self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
 
-    # def test_stop(self):
-    #     # Arrange
-    #     self.node.start()
-    #
-    #     # Act
-    #     self.node.stop()
-    #
-    #     # Assert
-    #     self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+    def test_stop(self):
+        # Arrange
+        self.node.run()
+
+        # Act
+        self.node.stop()
+
+        # Assert
+        self.assertEqual(ComponentState.STOPPED, self.node.trader.state)

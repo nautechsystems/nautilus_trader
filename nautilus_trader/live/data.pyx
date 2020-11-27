@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from asyncio import AbstractEventLoop
+from asyncio import CancelledError
 import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
@@ -91,38 +92,42 @@ cdef class LiveDataEngine(DataEngine):
         self._is_running = False
         self._data_queue.put_nowait(None)     # None message pattern
         self._message_queue.put_nowait(None)  # None message pattern
-        # TODO: Engine not responsible for commanding the loop
-        # self._loop.run_until_complete(self._task_data_queue)
-        # self._loop.run_until_complete(self._task_message_queue)
 
     async def _run_data_queue(self):
-        while self._is_running:
-            data = await self._data_queue.get()
-            if data is None:
-                continue
+        try:
+            while self._is_running:
+                data = await self._data_queue.get()
+                if data is None:
+                    continue
 
-            self._handle_data(data)
+                self._handle_data(data)
+        except CancelledError:
+            self._log.warning(f"{self._task_data_queue} cancelled "
+                              f"with {self.data_qsize()} data items on queue.")
 
         self._log.info("Finished processing data queue.")
 
     async def _run_message_queue(self):
         cdef Message message
-        while self._is_running:
-            message = await self._message_queue.get()
-            if message is None:
-                continue
+        try:
+            while self._is_running:
+                message = await self._message_queue.get()
+                if message is None:
+                    continue
 
-            if message.type == MessageType.COMMAND:
-                self._execute_command(message)
-            elif message.type == MessageType.REQUEST:
-                self._handle_request(message)
-            elif message.type == MessageType.RESPONSE:
-                self._handle_response(message)
-            else:
-                self._log.error(f"Cannot handle unrecognized message {message}.")
+                if message.type == MessageType.COMMAND:
+                    self._execute_command(message)
+                elif message.type == MessageType.REQUEST:
+                    self._handle_request(message)
+                elif message.type == MessageType.RESPONSE:
+                    self._handle_response(message)
+                else:
+                    self._log.error(f"Cannot handle unrecognized message {message}.")
+        except CancelledError:
+            self._log.warning(f"{self._task_message_queue} cancelled "
+                              f"with {self.message_qsize()} messages on queue.")
 
         self._log.info("Finished processing message queue.")
-        return
 
     cpdef object get_event_loop(self):
         """

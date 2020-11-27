@@ -13,10 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import time
 import msgpack
 import redis
-from asyncio import AbstractEventLoop
+from signal import SIGINT, SIGTERM
 
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.model.identifiers cimport TraderId
@@ -67,7 +68,6 @@ cdef class TradingNode:
 
     def __init__(
             self,
-            loop not None: AbstractEventLoop,
             list strategies not None,
             dict config not None,
     ):
@@ -76,8 +76,6 @@ cdef class TradingNode:
 
         Parameters
         ----------
-        loop : AbstractEventLoop
-            The event loop for the trading node.
         strategies : list[TradingStrategy]
             The list of strategies to run on the node.
         config : dict
@@ -94,7 +92,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
-        self._loop = loop
+        self._loop = asyncio.get_event_loop()
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -178,7 +176,20 @@ cdef class TradingNode:
         if self._load_strategy_state:
             self.trader.load()
 
+        self._setup_loop()
         self._log.info("Initialized.")
+
+    def _loop_sig_handler(self, sig):
+        self._loop.stop()
+        self._log.warning(f"Received signal {sig!s}, shutting down...")
+        self._loop.remove_signal_handler(SIGTERM)
+        self._loop.add_signal_handler(SIGINT, lambda: None)
+
+    def _setup_loop(self):
+        signals = (SIGTERM, SIGINT)
+        for sig in signals:
+            self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
+        self._log.info(f"Event loop {signals} handling setup.")
 
     def run(self):
         """
@@ -209,8 +220,6 @@ cdef class TradingNode:
         self._data_engine.stop()
         self._exec_engine.stop()
 
-        self._loop.stop()
-
     def dispose(self):
         """
         Dispose of the trading node.
@@ -223,7 +232,6 @@ cdef class TradingNode:
         self.trader.dispose()
         self._data_engine.dispose()
         self._exec_engine.dispose()
-        self._loop.close()
 
         self._log.info("Disposed.")
 
