@@ -21,11 +21,19 @@ TODO: isort currently producing a bad format for cimport component_trigger_to_st
 isort:skip_file
 """
 
+import warnings
+
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTriggerParser
 from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.core.fsm cimport InvalidStateTrigger
 
 
 cdef dict _COMPONENT_STATE_TABLE = {
@@ -78,3 +86,236 @@ cdef class ComponentFSMFactory:
             trigger_parser=ComponentTriggerParser.to_string,
             state_parser=ComponentStateParser.to_string,
         )
+
+
+cdef class Component:
+    """
+    The abstract base class for all system components.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+            self,
+            Clock clock not None,
+            Logger logger not None,
+            str name=None,
+    ):
+        """
+        Initialize a new instance of the `ExecutionEngine` class.
+
+        Parameters
+        ----------
+        clock : Clock
+            The clock for the component.
+        logger : Logger
+            The logger for the component.
+        name : str, optional
+            The customized name for the component. If None is passed then the
+            name will be from `type(self).__name__`.
+
+        """
+        if name is None:
+            name = type(self).__name__
+        else:
+            Condition.valid_string(name, "name")
+
+        self._clock = clock
+        self._uuid_factory = UUIDFactory()
+        self._log = LoggerAdapter(name, logger)
+        self._fsm = ComponentFSMFactory.create()
+
+        self._log.info("Initialized.")
+
+    cdef ComponentState state_c(self) except *:
+        return <ComponentState>self._fsm.state
+
+    cdef str state_string_c(self):
+        return self._fsm.state_string_c()
+
+    @property
+    def state(self):
+        """
+        The components current state.
+
+        Returns
+        -------
+        ComponentState
+
+        """
+        return self.state_c()
+
+    cdef void _change_clock(self, Clock clock) except *:
+        Condition.not_none(clock, "clock")
+
+        self._clock = clock
+
+    cdef void _change_logger(self, Logger logger) except *:
+        Condition.not_none(logger, "logger")
+
+        self._log = LoggerAdapter(self._log.get_logger().name, logger)
+
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void _start(self) except *:
+        # Should override in subclass
+        warnings.warn("_start was called when not overridden")
+
+    cpdef void _stop(self) except *:
+        # Should override in subclass
+        warnings.warn("_stop was called when not overridden")
+
+    cpdef void _resume(self) except *:
+        # Should override in subclass
+        warnings.warn("_resume was called when not overridden")
+
+    cpdef void _reset(self) except *:
+        # Should override in subclass
+        warnings.warn("_reset was called when not overridden")
+
+    cpdef void _dispose(self) except *:
+        # Should override in subclass
+        warnings.warn("_dispose was called when not overridden")
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void start(self) except *:
+        """
+        Start the component.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current strategy state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised in `_start` will be caught, logged, and reraised.
+
+        """
+        self._trigger_fsm(
+            trigger1=ComponentTrigger.START,
+            trigger2=ComponentTrigger.RUNNING,
+            action=self._start,
+
+        )
+
+    cpdef void stop(self) except *:
+        """
+        Stop the component.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised in `_stop` will be caught, logged, and reraised.
+
+        """
+        self._trigger_fsm(
+            trigger1=ComponentTrigger.STOP,
+            trigger2=ComponentTrigger.STOPPED,
+            action=self._stop,
+        )
+
+    cpdef void resume(self) except *:
+        """
+        Resume the component.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised in `_resume` will be caught, logged, and reraised.
+
+        """
+        self._trigger_fsm(
+            trigger1=ComponentTrigger.RESUME,
+            trigger2=ComponentTrigger.RUNNING,
+            action=self._resume,
+        )
+
+    cpdef void reset(self) except *:
+        """
+        Reset the component.
+
+        All stateful values are reset to their initial value.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised in `_reset` will be caught, logged, and reraised.
+
+        """
+        self._trigger_fsm(
+            trigger1=ComponentTrigger.RESET,
+            trigger2=ComponentTrigger.RESET,
+            action=self._reset,
+        )
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the component.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised in `_dispose` will be caught, logged, and reraised.
+
+        """
+        self._trigger_fsm(
+            trigger1=ComponentTrigger.DISPOSE,
+            trigger2=ComponentTrigger.DISPOSED,
+            action=self._dispose,
+        )
+
+# --------------------------------------------------------------------------------------------------
+
+    cdef inline void _trigger_fsm(
+        self,
+        ComponentTrigger trigger1,
+        ComponentTrigger trigger2,
+        action,
+    ) except *:
+        try:
+            self._fsm.trigger(trigger1)
+        except InvalidStateTrigger as ex:
+            self._log.exception(ex)
+            raise ex  # Guards against component being put in an invalid state
+
+        self._log.info(f"state={self._fsm.state_string_c()}...")
+
+        try:
+            action()
+        except Exception as ex:
+            self._log.exception(ex)
+            raise ex
+        finally:
+            self._fsm.trigger(trigger2)
+            self._log.info(f"state={self._fsm.state_string_c()}.")

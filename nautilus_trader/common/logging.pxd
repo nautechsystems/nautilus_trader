@@ -94,8 +94,9 @@ cdef class Logger:
 
 cdef class LoggerAdapter:
     cdef Logger _logger
-    cdef str _component_name
 
+    cdef readonly str component_name
+    """The loggers component name.\n\n:returns: `str`"""
     cdef readonly bint bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
@@ -107,8 +108,8 @@ cdef class LoggerAdapter:
     cpdef void error(self, str message) except *
     cpdef void critical(self, str message) except *
     cpdef void exception(self, ex) except *
-    cdef void _send_to_logger(self, LogLevel level, str message) except *
-    cdef str _format_message(self, str message)
+    cdef inline void _send_to_logger(self, LogLevel level, str message) except *
+    cdef inline str _format_message(self, str message)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *

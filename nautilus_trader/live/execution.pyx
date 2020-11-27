@@ -64,6 +64,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The configuration options.
 
         """
+        if config is None:
+            config = {}
+        config["name"] = "LiveExecEngine"
         super().__init__(
             database,
             portfolio,
@@ -77,7 +80,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._task_queue = None
         self._is_running = False
 
-    cpdef void on_start(self) except *:
+    cpdef void _on_start(self) except *:
         self._log.info("Starting queue processing...")
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
@@ -86,7 +89,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._log.info(f"Scheduled {self._task_queue}")
 
-    cpdef void on_stop(self) except *:
+    cpdef void _on_stop(self) except *:
         self._log.info("Shutting down queue processing...")
         self._is_running = False
         self._queue.put_nowait(None)  # None message pattern

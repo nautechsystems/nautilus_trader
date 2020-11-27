@@ -15,18 +15,12 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.messages cimport Connect
-from nautilus_trader.common.messages cimport Disconnect
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
-from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
@@ -42,11 +36,7 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class DataEngine:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
-    cdef FiniteStateMachine _fsm
+cdef class DataEngine(Component):
     cdef bint _use_previous_close
     cdef dict _clients
     cdef dict _correlation_index
@@ -69,8 +59,6 @@ cdef class DataEngine:
     cdef readonly int response_count
     """The total count of responses received by the engine.\n\n:returns: `int`"""
 
-    cdef ComponentState state_c(self) except *
-
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *
@@ -79,15 +67,11 @@ cdef class DataEngine:
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
-    cpdef void on_start(self) except *
-    cpdef void on_stop(self) except *
+    cpdef void _on_start(self) except *
+    cpdef void _on_stop(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void start(self) except *
-    cpdef void stop(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
     cpdef void execute(self, VenueCommand command) except *
     cpdef void process(self, data) except *
     cpdef void send(self, DataRequest request) except *

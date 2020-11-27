@@ -75,7 +75,7 @@ cdef class LiveDataEngine(DataEngine):
         self._task_message_queue = None
         self._is_running = False
 
-    cpdef void on_start(self) except *:
+    cpdef void _on_start(self) except *:
         self._log.info("Starting queue processing...")
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
@@ -86,7 +86,7 @@ cdef class LiveDataEngine(DataEngine):
         self._log.info(f"Scheduled {self._task_data_queue}")
         self._log.info(f"Scheduled {self._task_message_queue}")
 
-    cpdef void on_stop(self) except *:
+    cpdef void _on_stop(self) except *:
         self._log.info("Shutting down queue processing...")
         self._is_running = False
         self._data_queue.put_nowait(None)     # None message pattern
