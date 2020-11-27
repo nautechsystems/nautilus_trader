@@ -133,13 +133,7 @@ cdef class Pressure(Indicator):
         self.value = buy_pressure - sell_pressure
         self.value_cumulative += self.value
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._atr.reset()
         self._average_volume.reset()
         self.value = 0

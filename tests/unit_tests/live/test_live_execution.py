@@ -142,12 +142,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
             # Act
             self.exec_engine.execute(submit_order)
+            self.exec_engine.stop()
+            await self.exec_engine.shutdown_task()
+
+            # Assert
+            self.assertEqual(0, self.exec_engine.qsize())
+            self.assertEqual(1, self.exec_engine.command_count)
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(0, self.exec_engine.qsize())
-        self.assertEqual(1, self.exec_engine.command_count)
 
     def test_handle_position_opening_with_position_id_none(self):
         async def run_test():
@@ -173,6 +175,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
             # Act
             self.exec_engine.process(event)
+            self.exec_engine.stop()
+            await self.exec_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
 

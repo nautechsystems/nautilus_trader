@@ -128,13 +128,7 @@ cdef class DonchianChannel(Indicator):
         self.lower = min(self._lower_prices)
         self.middle = (self.upper + self.lower) / 2
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._upper_prices.clear()
         self._lower_prices.clear()
 

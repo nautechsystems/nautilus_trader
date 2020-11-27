@@ -73,6 +73,28 @@ class BidAskMinMaxTests(unittest.TestCase):
         self.assertEqual(Price("2.1"), indicator.asks.min_price)
         self.assertEqual(Price("2.1"), indicator.asks.max_price)
 
+    def test_reset(self):
+        # Arrange
+        indicator = BidAskMinMax(self.symbol, timedelta(minutes=5))
+
+        indicator.handle_quote_tick(
+            QuoteTick(
+                self.symbol,
+                Price("0.9"),
+                Price("2.1"),
+                Quantity(1),
+                Quantity(1),
+                datetime(2020, 1, 1, 0, 5, 0, tzinfo=pytz.utc),
+            )
+        )
+
+        # Act
+        indicator.reset()
+
+        # Assert
+        self.assertIsNone(indicator.bids.min_price)
+        self.assertIsNone(indicator.asks.min_price)
+
 
 class WindowedMinMaxPricesTests(unittest.TestCase):
     def test_instantiate(self):

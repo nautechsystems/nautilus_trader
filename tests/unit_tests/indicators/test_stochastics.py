@@ -16,6 +16,7 @@
 import unittest
 
 from nautilus_trader.indicators.stochastics import Stochastics
+from tests.test_kit.stubs import TestStubs
 
 
 class StochasticsTests(unittest.TestCase):
@@ -70,6 +71,20 @@ class StochasticsTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(True, self.stochastics.initialized)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = Stochastics(14, 3)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(66.66666666641994, indicator.value_k)
+        self.assertEqual(66.66666666641994, indicator.value_d)
 
     def test_values_with_one_input_returns_expected_value(self):
         # Arrange

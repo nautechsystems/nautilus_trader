@@ -83,13 +83,15 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 > https://www.jetbrains.com/pycharm/
 
+You could also use Visual Studio Code with a Cython plugin.
+
 [Poetry](https://python-poetry.org/) is the preferred tool for handling all package and dev dependencies.
 
 To install all dependencies and compile the C extensions, run:
 
     poetry install
 
-You can recompile following changes to `.pyx` and `.pxd` files by running:
+Following any changes to `.pyx` and `.pxd` files, you can recompile by running:
 
     python build.py
 

@@ -15,8 +15,13 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.keltner_channel import KeltnerChannel
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class KeltnerChannelTests(unittest.TestCase):
@@ -72,6 +77,19 @@ class KeltnerChannelTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(True, self.kc.initialized)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = KeltnerChannel(10, 2.5, MovingAverageType.EXPONENTIAL, MovingAverageType.SIMPLE)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.0000266666666666, indicator.middle)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

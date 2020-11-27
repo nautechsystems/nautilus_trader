@@ -105,6 +105,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.execute(connect)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -134,6 +136,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.send(request)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -158,6 +162,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.receive(response)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -175,6 +181,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.process(tick)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
 

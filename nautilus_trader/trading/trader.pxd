@@ -15,11 +15,7 @@
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
@@ -27,12 +23,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
-cdef class Trader:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
-    cdef FiniteStateMachine _fsm
-
+cdef class Trader(Component):
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
@@ -45,8 +36,6 @@ cdef class Trader:
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
-    cdef ComponentState state_c(self) except *
-    cdef str state_string_c(self)
     cdef list strategies_c(self)
 
     cpdef list strategy_ids(self)

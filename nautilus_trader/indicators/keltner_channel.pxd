@@ -36,4 +36,3 @@ cdef class KeltnerChannel(Indicator):
 
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low, double close) except *
-    cpdef void reset(self) except *

@@ -15,10 +15,9 @@
 
 import asyncio
 import time
-import threading
 import msgpack
 import redis
-from asyncio import AbstractEventLoop
+from signal import SIGINT, SIGTERM
 
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.model.identifiers cimport TraderId
@@ -55,7 +54,6 @@ cdef class TradingNode:
     cdef LoggerAdapter _log
 
     cdef object _loop
-    cdef object _thread
     cdef LiveExecutionEngine _exec_engine
     cdef LiveDataEngine _data_engine
 
@@ -70,7 +68,6 @@ cdef class TradingNode:
 
     def __init__(
             self,
-            loop not None: AbstractEventLoop,
             list strategies not None,
             dict config not None,
     ):
@@ -79,8 +76,6 @@ cdef class TradingNode:
 
         Parameters
         ----------
-        loop : AbstractEventLoop
-            The event loop for the trading node.
         strategies : list[TradingStrategy]
             The list of strategies to run on the node.
         config : dict
@@ -97,9 +92,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
-        self._loop = loop
-
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
+        self._loop = asyncio.get_event_loop()
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -183,22 +176,32 @@ cdef class TradingNode:
         if self._load_strategy_state:
             self.trader.load()
 
+        self._setup_loop()
         self._log.info("Initialized.")
 
-    def _run_loop(self):
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
+    def _loop_sig_handler(self, sig):
+        self._loop.stop()
+        self._log.warning(f"Received signal {sig!s}, shutting down...")
+        self._loop.remove_signal_handler(SIGTERM)
+        self._loop.add_signal_handler(SIGINT, lambda: None)
 
-    def run(self):
+    def _setup_loop(self):
+        signals = (SIGTERM, SIGINT)
+        for sig in signals:
+            self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
+        self._log.info(f"Event loop {signals} handling setup.")
+
+    async def run(self):
         """
         Start the trading nodes trader.
         """
-        self._thread.start()
         self._data_engine.start()
         self._exec_engine.start()
         self.trader.start()
 
-    def stop(self):
+        await asyncio.gather(self._data_engine.run_task(), self._exec_engine.run_task())
+
+    async def stop(self):
         """
         Stop the trading node.
 
@@ -219,7 +222,7 @@ cdef class TradingNode:
         self._data_engine.stop()
         self._exec_engine.stop()
 
-        self._loop.stop()
+        await asyncio.gather(self._data_engine.shutdown_task(), self._exec_engine.shutdown_task())
 
     def dispose(self):
         """
@@ -233,7 +236,6 @@ cdef class TradingNode:
         self.trader.dispose()
         self._data_engine.dispose()
         self._exec_engine.dispose()
-        self._loop.close()
 
         self._log.info("Disposed.")
 

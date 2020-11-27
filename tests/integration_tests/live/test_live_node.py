@@ -24,80 +24,83 @@ from nautilus_trader.trading.strategy import TradingStrategy
 class TradingNodeConfigurationTests(unittest.TestCase):
 
     def setUp(self):
-        # Fixture Setup
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
 
     def test_config_with_inmemory_execution_database(self):
-        # Arrange
-        config = {
-            "trader": {
-                "name": "tester",
-                "id_tag": "000",
-            },
+        async def run_test():
+            # Arrange
+            config = {
+                "trader": {
+                    "name": "tester",
+                    "id_tag": "000",
+                },
 
-            "logging": {
-                "log_level_console": "INFO",
-                "log_level_file": "DEBUG",
-                "log_level_store": "WARNING",
-            },
+                "logging": {
+                    "log_level_console": "INFO",
+                    "log_level_file": "DEBUG",
+                    "log_level_store": "WARNING",
+                },
 
-            "exec_database": {
-                "type": "in-memory",
-            },
+                "exec_database": {
+                    "type": "in-memory",
+                },
 
-            "strategy": {
-                "load_state": True,
-                "save_state": True,
+                "strategy": {
+                    "load_state": True,
+                    "save_state": True,
+                }
             }
-        }
 
-        # Act
-        node = TradingNode(
-            loop=self.loop,
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+            # Act
+            node = TradingNode(
+                strategies=[TradingStrategy("000")],
+                config=config,
+            )
 
-        # Assert
-        self.assertIsNotNone(node)
+            # Assert
+            self.assertIsNotNone(node)
+
+        self.loop.run_until_complete(run_test())
 
     def test_config_with_redis_execution_database(self):
-        # Arrange
-        config = {
-            "trader": {
-                "name": "tester",
-                "id_tag": "000",
-            },
+        async def run_test():
+            # Arrange
+            config = {
+                "trader": {
+                    "name": "tester",
+                    "id_tag": "000",
+                },
 
-            "logging": {
-                "log_level_console": "INFO",
-                "log_level_file": "DEBUG",
-                "log_level_store": "WARNING",
-            },
+                "logging": {
+                    "log_level_console": "INFO",
+                    "log_level_file": "DEBUG",
+                    "log_level_store": "WARNING",
+                },
 
-            "exec_database": {
-                "type": "redis",
-                "host": "localhost",
-                "port": 6379,
-            },
+                "exec_database": {
+                    "type": "redis",
+                    "host": "localhost",
+                    "port": 6379,
+                },
 
-            "strategy": {
-                "load_state": True,
-                "save_state": True,
+                "strategy": {
+                    "load_state": True,
+                    "save_state": True,
+                }
             }
-        }
 
-        # Act
-        node = TradingNode(
-            loop=self.loop,
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+            # Act
+            node = TradingNode(
+                strategies=[TradingStrategy("000")],
+                config=config,
+            )
 
-        # Assert
-        self.assertIsNotNone(node)
+            # Assert
+            self.assertIsNotNone(node)
+
+        self.loop.run_until_complete(run_test())
 
 
 class TradingNodeOperationTests(unittest.TestCase):
@@ -131,7 +134,6 @@ class TradingNodeOperationTests(unittest.TestCase):
         asyncio.set_event_loop(self.loop)
 
         self.node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -141,23 +143,28 @@ class TradingNodeOperationTests(unittest.TestCase):
             self.node.stop()
 
         self.node.dispose()
-        self.loop.stop()
-        self.loop.close()
 
     # def test_run(self):
-    #     # Arrange
-    #     self.node.run()
+    #     async def run_test():
+    #         # Arrange
+    #         # Act
+    #         await self.node.run()
     #
-    #     # Act
-    #     # Assert
-    #     # TODO: Implement TradingNode
+    #         # Assert
+    #         self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
+    #
+    #     self.loop.run_until_complete(run_test())
     #
     # def test_stop(self):
-    #     # Arrange
-    #     self.node.start()
+    #     async def run_test():
+    #         # Arrange
+    #         # act
+    #         self.node.run()
     #
-    #     # Act
-    #     self.node.stop()
+    #         # Act
+    #         await self.node.stop()
     #
-    #     # Assert
-    #     self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+    #         # Assert
+    #         self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+    #
+    #     self.loop.run_until_complete(run_test())

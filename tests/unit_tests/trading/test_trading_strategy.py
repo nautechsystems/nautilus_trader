@@ -322,6 +322,13 @@ class TradingStrategyTests(unittest.TestCase):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
 
+        try:
+            strategy.start()
+        except RuntimeError:
+            # Normally a bad practice but allows strategy to be put into
+            # the needed state to run the test.
+            pass
+
         # Act
         # Assert
         self.assertRaises(RuntimeError, strategy.stop)
@@ -329,6 +336,20 @@ class TradingStrategyTests(unittest.TestCase):
     def test_resume_when_not_registered_with_trader_raises_runtime_error(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
+
+        try:
+            strategy.start()
+        except RuntimeError:
+            # Normally a bad practice but allows strategy to be put into
+            # the needed state to run the test.
+            pass
+
+        try:
+            strategy.stop()
+        except RuntimeError:
+            # Normally a bad practice but allows strategy to be put into
+            # the needed state to run the test.
+            pass
 
         # Act
         # Assert

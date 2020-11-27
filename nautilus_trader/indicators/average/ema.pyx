@@ -109,10 +109,5 @@ cdef class ExponentialMovingAverage(MovingAverage):
         self._increment_count()
         self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_ma()
+    cdef void _reset_ma(self) except *:
+        pass  # Nothing else to reset

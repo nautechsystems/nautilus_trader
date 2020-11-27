@@ -65,10 +65,8 @@ config = {
 }
 
 
-if __name__ == "__main__":
-
+async def main():
     node = TradingNode(
-        loop=asyncio.get_event_loop(),
         strategies=[strategy],
         config=config,
     )
@@ -78,3 +76,9 @@ if __name__ == "__main__":
     input()
 
     node.stop()
+    node.dispose()
+
+
+if __name__ == "__main__":
+    # Requires Python 3.8
+    asyncio.run(main())

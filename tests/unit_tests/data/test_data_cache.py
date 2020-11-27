@@ -13,12 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from decimal import Decimal
 import unittest
 
 from parameterized import parameterized
-import pytz
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
@@ -190,6 +188,26 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual([tick], result)
 
+    def test_add_quote_ticks_when_already_ticks_does_not_add(self):
+        # Arrange
+        tick = QuoteTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Price("1.00001"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        self.cache.add_quote_ticks([tick])
+        result = self.cache.quote_ticks(tick.symbol)
+
+        # Assert
+        self.assertEqual([tick], result)
+
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
         tick = TradeTick(
@@ -204,6 +222,26 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_trade_ticks([tick])
 
         # Act
+        result = self.cache.trade_ticks(tick.symbol)
+
+        # Assert
+        self.assertEqual([tick], result)
+
+    def test_add_trade_ticks_when_already_ticks_does_not_add(self):
+        # Arrange
+        tick = TradeTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Quantity(10000),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            UNIX_EPOCH,
+        )
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        self.cache.add_trade_ticks([tick])
         result = self.cache.trade_ticks(tick.symbol)
 
         # Assert
@@ -224,6 +262,27 @@ class DataCacheTests(unittest.TestCase):
         self.cache.add_bars(bar_type, [bar])
 
         # Act
+        result = self.cache.bars(bar_type)
+
+        # Assert
+        self.assertTrue([bar], result)
+
+    def test_add_bars_when_already_bars_does_not_add(self):
+        # Arrange
+        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
+        bar = Bar(
+            Price("1.00001"),
+            Price("1.00004"),
+            Price("1.00002"),
+            Price("1.00003"),
+            Quantity(100000),
+            UNIX_EPOCH,
+        )
+
+        self.cache.add_bar(bar_type, bar)
+
+        # Act
+        self.cache.add_bars(bar_type, [bar])
         result = self.cache.bars(bar_type)
 
         # Assert
