@@ -69,8 +69,8 @@ class LiveDataEngineTests(unittest.TestCase):
         if self.data_engine.state == ComponentState.RUNNING:
             self.data_engine.stop()
 
-        for task in asyncio.all_tasks(loop=self.loop):
-            self.loop.run_until_complete(task)
+        # for task in asyncio.all_tasks(loop=self.loop):
+        #     self.loop.run_until_complete(task)
 
         self.data_engine.dispose()
         self.loop.stop()
