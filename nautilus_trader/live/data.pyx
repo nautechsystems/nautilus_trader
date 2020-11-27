@@ -15,6 +15,7 @@
 
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
+from asyncio import Task
 import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
@@ -72,62 +73,92 @@ cdef class LiveDataEngine(DataEngine):
         self._loop = loop
         self._data_queue = asyncio.Queue()
         self._message_queue = asyncio.Queue()
-        self._task_data_queue = None
-        self._task_message_queue = None
         self._is_running = False
 
     cpdef void _on_start(self) except *:
-        self._log.info("Starting queue processing...")
+        self._is_running = True
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
         self._is_running = True
-        self._task_data_queue = self._loop.create_task(self._run_data_queue())
-        self._task_message_queue = self._loop.create_task(self._run_message_queue())
-
-        self._log.info(f"Scheduled {self._task_data_queue}")
-        self._log.info(f"Scheduled {self._task_message_queue}")
+        data_queue_task = self._loop.create_task(self._run_data_queue())
+        message_queue_task = self._loop.create_task(self._run_message_queue())
+        self._task_run = asyncio.gather(data_queue_task, message_queue_task)
+        self._log.info(f"Scheduled {self._task_run}")
 
     cpdef void _on_stop(self) except *:
         self._log.info("Shutting down queue processing...")
         self._is_running = False
         self._data_queue.put_nowait(None)     # None message pattern
         self._message_queue.put_nowait(None)  # None message pattern
+        self._task_shutdown = self._loop.create_task(self._shutdown())
 
     async def _run_data_queue(self):
+        self._log.info("Running data queue processing...")
         try:
             while self._is_running:
                 data = await self._data_queue.get()
                 if data is None:
                     continue
-
                 self._handle_data(data)
         except CancelledError:
-            self._log.warning(f"{self._task_data_queue} cancelled "
-                              f"with {self.data_qsize()} data items on queue.")
-
-        self._log.info("Finished processing data queue.")
+            if data is not None:
+                self._data_queue.put_nowait(data)
+            if self.data_qsize() > 0:
+                self._log.warning(f"Running cancelled "
+                                  f"with {self.data_qsize()} data item(s) on queue.")
 
     async def _run_message_queue(self):
+        self._log.info("Running message queue processing...")
         cdef Message message
         try:
             while self._is_running:
                 message = await self._message_queue.get()
                 if message is None:
                     continue
-
-                if message.type == MessageType.COMMAND:
-                    self._execute_command(message)
-                elif message.type == MessageType.REQUEST:
-                    self._handle_request(message)
-                elif message.type == MessageType.RESPONSE:
-                    self._handle_response(message)
-                else:
-                    self._log.error(f"Cannot handle unrecognized message {message}.")
+                self._handle_message(message)
         except CancelledError:
-            self._log.warning(f"{self._task_message_queue} cancelled "
-                              f"with {self.message_qsize()} messages on queue.")
+            if message is not None:
+                self._message_queue.put_nowait(message)
+            if self.message_qsize() > 0:
+                self._log.warning(f"Running cancelled "
+                                  f"with {self.message_qsize()} message(s) on queue.")
 
-        self._log.info("Finished processing message queue.")
+    cdef inline void _handle_message(self, Message message):
+        if message.type == MessageType.COMMAND:
+            self._execute_command(message)
+        elif message.type == MessageType.REQUEST:
+            self._handle_request(message)
+        elif message.type == MessageType.RESPONSE:
+            self._handle_response(message)
+        else:
+            self._log.error(f"Cannot handle unrecognized message {message}.")
+
+    async def _shutdown(self):
+        self._log.info("Shutting down queue processing...")
+        cdef Message message
+        try:
+            # Timeout to allow _run to finish
+            await asyncio.sleep(0.3)  # Hard coded for now
+
+            while not self._data_queue.empty():
+                data = await self._data_queue.get()
+                if data is None:
+                    continue
+                self._handle_data(data)
+
+            while not self._message_queue.empty():
+                message = await self._message_queue.get()
+                if message is None:
+                    continue
+                self._handle_message(message)
+
+            self._log.info(f"Shutdown complete ("
+                           f"data_qsize={self.data_qsize()}, "
+                           f"message_qsize={self.message_qsize()}).")
+        except CancelledError:
+            self._log.warning(f"Shutdown cancelled ("
+                              f"data_qsize={self.data_qsize()}, "
+                              f"message_qsize={self.message_qsize()}).")
 
     cpdef object get_event_loop(self):
         """
@@ -135,10 +166,32 @@ cdef class LiveDataEngine(DataEngine):
 
         Returns
         -------
-        AbstractEventLoop
+        asyncio.AbstractEventLoop
 
         """
         return self._loop
+
+    cpdef object run_task(self):
+        """
+        Return the internal run task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._task_run
+
+    cpdef object shutdown_task(self):
+        """
+        Return the internal shutdown task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._task_shutdown
 
     cpdef int data_qsize(self) except *:
         """

@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import unittest
 
 from parameterized import parameterized
-import pytz
 
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData

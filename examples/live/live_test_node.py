@@ -80,4 +80,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    # Requires Python 3.8
     asyncio.run(main())

@@ -13,14 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Provides the C enums for the `common` sub-package.
-
-TODO: isort currently producing a bad format for cimport component_trigger_to_string
-
-isort:skip_file
-"""
-
 import warnings
 
 from nautilus_trader.core.correctness cimport Condition
