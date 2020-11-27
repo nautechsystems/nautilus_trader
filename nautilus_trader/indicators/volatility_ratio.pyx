@@ -135,13 +135,7 @@ cdef class VolatilityRatio(Indicator):
             if self._atr_fast.initialized and self._atr_slow.initialized:
                 self._set_initialized(True)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._atr_fast.reset()
         self._atr_slow.reset()
         self.value = 0

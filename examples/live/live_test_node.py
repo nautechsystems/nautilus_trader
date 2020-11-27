@@ -76,6 +76,7 @@ async def main():
     input()
 
     node.stop()
+    node.dispose()
 
 
 if __name__ == "__main__":

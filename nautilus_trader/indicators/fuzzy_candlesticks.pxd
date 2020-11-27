@@ -61,8 +61,8 @@ cdef class FuzzyCandlesticks(Indicator):
         double open_price,
         double high_price,
         double low_price,
-        double close_price)
-    cpdef void reset(self) except *
+        double close_price,
+    )
 
     cdef CandleDirection _fuzzify_direction(self, double open_price, double close_price)
     cdef CandleSize _fuzzify_size(self, double length, double mean_length, double sd_lengths)

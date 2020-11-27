@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -69,8 +70,8 @@ class LiveDataEngineTests(unittest.TestCase):
         if self.data_engine.state == ComponentState.RUNNING:
             self.data_engine.stop()
 
-        # for task in asyncio.all_tasks(loop=self.loop):
-        #     self.loop.run_until_complete(task)
+        for task in asyncio.all_tasks(loop=self.loop):
+            self.loop.run_until_complete(task)
 
         self.data_engine.dispose()
         self.loop.stop()
@@ -92,6 +93,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
+        time.sleep(0.1)
+
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.data_engine.state)
 
@@ -110,6 +113,8 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.execute(connect)
 
         self.loop.run_until_complete(run_test())
+
+        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
@@ -140,6 +145,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
+        time.sleep(0.1)
+
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
         self.assertEqual(1, self.data_engine.request_count)
@@ -164,6 +171,8 @@ class LiveDataEngineTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
+        time.sleep(0.1)
+
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
         self.assertEqual(1, self.data_engine.response_count)
@@ -180,6 +189,8 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.process(tick)
 
         self.loop.run_until_complete(run_test())
+
+        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.data_qsize())

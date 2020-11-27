@@ -137,12 +137,6 @@ cdef class KeltnerPosition(Indicator):
         else:
             self.value = 0
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._kc.reset()
         self.value = 0

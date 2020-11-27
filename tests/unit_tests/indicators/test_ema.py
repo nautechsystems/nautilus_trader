@@ -15,7 +15,13 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.enums import PriceType
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class ExponentialMovingAverageTests(unittest.TestCase):
@@ -72,6 +78,45 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(True, self.ema.initialized)
+
+    def test_handle_quote_tick_updates_indicator(self):
+        # Arrange
+        indicator = ExponentialMovingAverage(10, PriceType.MID)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00002, indicator.value)
+
+    def test_handle_trade_tick_updates_indicator(self):
+        # Arrange
+        indicator = ExponentialMovingAverage(10)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00001, indicator.value)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = ExponentialMovingAverage(10)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00003, indicator.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

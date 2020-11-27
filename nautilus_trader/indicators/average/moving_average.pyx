@@ -76,13 +76,17 @@ cdef class MovingAverage(Indicator):
             if self.count >= self.period:
                 self._set_initialized(True)
 
-    cdef void _reset_ma(self) except *:
+    cdef void _reset(self) except *:
         """
         Reset the indicator.
 
         All stateful values are reset to their initial value.
 
         """
-        self._reset_base()
+        self._reset_ma()
         self.count = 0
         self.value = 0
+
+    cdef void _reset_ma(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")

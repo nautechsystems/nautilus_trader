@@ -15,7 +15,12 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.roc import RateOfChange
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class RateOfChangeTests(unittest.TestCase):
@@ -53,6 +58,19 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(True, self.roc.initialized)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = RateOfChange(3)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(0, indicator.value)
 
     def test_value_with_one_input(self):
         # Arrange

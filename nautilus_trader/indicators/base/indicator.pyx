@@ -53,8 +53,14 @@ cdef class Indicator:
         raise NotImplementedError(f"Cannot handle {repr(bar)}, method not implemented in subclass")
 
     cpdef void reset(self) except *:
-        """Abstract method. Override should call _reset_base()."""
-        raise NotImplemented("method must be implemented in the subclass")
+        """
+        Reset the indicator.
+
+        All stateful values are reset to their initial value.
+        """
+        self._reset()
+        self.has_inputs = False
+        self.initialized = False
 
     cdef str _params_str(self):
         return str(self._params)[1:-1].replace("'", '').strip('()') if self._params else ''
@@ -65,6 +71,6 @@ cdef class Indicator:
     cdef void _set_initialized(self, bint setting) except *:
         self.initialized = setting
 
-    cdef void _reset_base(self) except *:
-        self.has_inputs = False
-        self.initialized = False
+    cdef void _reset(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")

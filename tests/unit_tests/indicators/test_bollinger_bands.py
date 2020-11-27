@@ -15,7 +15,12 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.bollinger_bands import BollingerBands
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class BollingerBandsTests(unittest.TestCase):
@@ -62,6 +67,45 @@ class BollingerBandsTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(True, indicator.initialized)
+
+    def test_handle_quote_tick_updates_indicator(self):
+        # Arrange
+        indicator = BollingerBands(20, 2.0)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.1666916666666667, indicator.middle)
+
+    def test_handle_trade_tick_updates_indicator(self):
+        # Arrange
+        indicator = BollingerBands(20, 2.0)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00001, indicator.middle)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = BollingerBands(20, 2.0)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.0000266666666666, indicator.middle)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

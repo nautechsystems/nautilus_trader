@@ -145,12 +145,6 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         # Calculate AMA
         self.value = self._prior_value + sc * (value - self._prior_value)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_ma()
+    cdef void _reset_ma(self) except *:
         self._efficiency_ratio.reset()
         self._prior_value = 0

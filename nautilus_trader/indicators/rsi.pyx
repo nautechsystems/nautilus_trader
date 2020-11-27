@@ -112,13 +112,7 @@ cdef class RelativeStrengthIndex(Indicator):
         self.value = self._rsi_max - (self._rsi_max / (1 + rs))
         self._last_value = value
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._average_gain.reset()
         self._average_loss.reset()
         self._last_value = 0
