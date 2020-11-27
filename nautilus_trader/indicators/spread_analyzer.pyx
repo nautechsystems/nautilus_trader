@@ -92,13 +92,7 @@ cdef class SpreadAnalyzer(Indicator):
             drop_left=False,
         )
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._spreads.clear()
         self.current = 0
         self.average = 0

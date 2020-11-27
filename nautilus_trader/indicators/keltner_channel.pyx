@@ -132,13 +132,12 @@ cdef class KeltnerChannel(Indicator):
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void reset(self) except *:
+    cdef void _reset(self) except *:
         """
         Reset the indicator.
 
         All stateful values are reset to their initial value.
         """
-        self._reset_base()
         self._ma.reset()
         self._atr.reset()
         self.upper = 0

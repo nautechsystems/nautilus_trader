@@ -15,12 +15,13 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class SimpleMovingAverageTests(unittest.TestCase):
@@ -73,6 +74,45 @@ class SimpleMovingAverageTests(unittest.TestCase):
         self.assertEqual(10, self.sma.count)
         self.assertEqual(5.5, self.sma.value)
 
+    def test_handle_quote_tick_updates_indicator(self):
+        # Arrange
+        indicator = SimpleMovingAverage(10, PriceType.MID)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00002, indicator.value)
+
+    def test_handle_trade_tick_updates_indicator(self):
+        # Arrange
+        indicator = SimpleMovingAverage(10)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00001, indicator.value)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = SimpleMovingAverage(10)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00003, indicator.value)
+
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
         self.sma.update_raw(1.00000)
@@ -107,7 +147,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
         sma_for_ticks2 = SimpleMovingAverage(10, PriceType.MID)
         sma_for_ticks3 = SimpleMovingAverage(10, PriceType.BID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
 
         # Act
         sma_for_ticks1.handle_quote_tick(tick)
@@ -126,7 +166,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Arrange
         sma_for_ticks = SimpleMovingAverage(10)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
 
         # Act
         sma_for_ticks.handle_trade_tick(tick)

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
 
@@ -21,6 +22,8 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     cdef MovingAverage _fast_ma
     cdef MovingAverage _slow_ma
 
+    cdef readonly PriceType price_type
+    """The specified price type for extracting values from quote ticks.\n\n:returns: `PriceType`"""
     cdef readonly int fast_period
     """The fast moving average window period.\n\n:returns: `int`"""
     cdef readonly int slow_period

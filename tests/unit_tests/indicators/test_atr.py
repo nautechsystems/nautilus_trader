@@ -16,7 +16,12 @@
 import sys
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.atr import AverageTrueRange
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class AverageTrueRangeTests(unittest.TestCase):
@@ -58,6 +63,19 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(True, self.atr.initialized)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = AverageTrueRange(10)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(2.999999999997449e-05, indicator.value)
 
     def test_value_with_no_inputs_returns_zero(self):
         # Arrange

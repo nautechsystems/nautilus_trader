@@ -36,4 +36,4 @@ cdef class Indicator:
     cdef str _params_str(self)
     cdef void _set_has_inputs(self, bint setting) except *
     cdef void _set_initialized(self, bint setting) except *
-    cdef void _reset_base(self) except *
+    cdef void _reset(self) except *

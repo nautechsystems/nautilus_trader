@@ -158,13 +158,7 @@ cdef class BollingerBands(Indicator):
         self.middle = self._ma.value
         self.lower = self._ma.value - (self.k * std)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._ma.reset()
         self._prices.clear()
 

@@ -15,7 +15,12 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.keltner_position import KeltnerPosition
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class KeltnerPositionTests(unittest.TestCase):
@@ -64,6 +69,19 @@ class KeltnerPositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(2.5, self.kp.k_multiplier)
 
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = KeltnerPosition(10, 2.5)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(0.0444444444447405, indicator.value)
+
     def test_value_with_one_input_returns_zero(self):
         # Arrange
         self.kp.update_raw(1.00020, 1.00000, 1.00010)
@@ -100,7 +118,7 @@ class KeltnerPositionTests(unittest.TestCase):
             high += 0.00010
             low += 0.00010
             close = high
-            self.kp.update_raw(high=high, low=low, close=close)
+            self.kp.update_raw(high, low, close)
 
         # Act
         # Assert
@@ -115,7 +133,7 @@ class KeltnerPositionTests(unittest.TestCase):
             high -= 0.00010
             low -= 0.00010
             close = low
-            self.kp.update_raw(high=high, low=low, close=close)
+            self.kp.update_raw(high, low, close)
 
         # Act
         # Assert

@@ -123,11 +123,5 @@ cdef class WeightedMovingAverage(MovingAverage):
         else:
             self.value = np.average(self._inputs, weights=self.weights[-len(self._inputs):], axis=0)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_ma()
+    cdef void _reset_ma(self) except *:
         self._inputs.clear()

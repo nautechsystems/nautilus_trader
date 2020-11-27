@@ -111,13 +111,7 @@ cdef class HilbertTransform(Indicator):
         self.value_in_phase = self._in_phase[-1]
         self.value_quad = self._quadrature[-1]
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._inputs.clear()
         self._detrended_prices.clear()
         self._in_phase = deque([0] * self.period, maxlen=self.period)

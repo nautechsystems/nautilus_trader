@@ -42,4 +42,3 @@ cdef class HilbertSignalNoiseRatio(Indicator):
     cdef void _calc_hilbert_transform(self) except *
     cdef double _calc_amplitude(self)
     cdef double _calc_signal_noise_ratio(self)
-    cpdef void reset(self) except *

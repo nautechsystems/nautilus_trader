@@ -109,11 +109,5 @@ cdef class SimpleMovingAverage(MovingAverage):
 
         self.value = fast_mean(list(self._inputs))
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_ma()
+    cdef void _reset_ma(self) except *:
         self._inputs.clear()

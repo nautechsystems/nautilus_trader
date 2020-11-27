@@ -88,12 +88,6 @@ cdef class RateOfChange(Indicator):
         else:
             self.value = (price - self._prices[0]) / self._prices[0]
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._prices.clear()
         self.value = 0

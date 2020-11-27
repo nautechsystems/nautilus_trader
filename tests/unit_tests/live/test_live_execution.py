@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -86,8 +87,8 @@ class ExecutionEngineTests(unittest.TestCase):
         if self.exec_engine.state == ComponentState.RUNNING:
             self.exec_engine.stop()
 
-        # for task in asyncio.all_tasks(loop=self.loop):
-        #     self.loop.run_until_complete(task)
+        for task in asyncio.all_tasks(loop=self.loop):
+            self.loop.run_until_complete(task)
 
         self.exec_engine.dispose()
         self.loop.stop()
@@ -108,6 +109,8 @@ class ExecutionEngineTests(unittest.TestCase):
             self.exec_engine.start()
 
         self.loop.run_until_complete(run_test())
+
+        time.sleep(0.1)
 
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.exec_engine.state)
@@ -148,6 +151,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
+        time.sleep(0.1)
+
         # Assert
         self.assertEqual(0, self.exec_engine.qsize())
         self.assertEqual(1, self.exec_engine.command_count)
@@ -178,6 +183,8 @@ class ExecutionEngineTests(unittest.TestCase):
             self.exec_engine.process(event)
 
         self.loop.run_until_complete(run_test())
+
+        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.exec_engine.qsize())

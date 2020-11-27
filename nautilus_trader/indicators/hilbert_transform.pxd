@@ -34,4 +34,3 @@ cdef class HilbertTransform(Indicator):
 
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double price) except *
-    cpdef void reset(self) except *

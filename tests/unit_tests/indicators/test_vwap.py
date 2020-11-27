@@ -16,9 +16,13 @@
 from datetime import timedelta
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
+from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
@@ -49,6 +53,19 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(True, self.vwap.initialized)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = VolumeWeightedAveragePrice()
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00003, indicator.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

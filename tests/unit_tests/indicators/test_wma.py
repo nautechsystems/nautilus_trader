@@ -15,9 +15,15 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.average.wma import WeightedMovingAverage
+from nautilus_trader.model.enums import PriceType
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class WeightedMovingAverageTests(unittest.TestCase):
@@ -63,6 +69,45 @@ class WeightedMovingAverageTests(unittest.TestCase):
         # Assert
         self.assertEqual(8.0, self.wma_factory.value)
         self.assertEqual(self.w, self.wma_factory.weights)
+
+    def test_handle_quote_tick_updates_indicator(self):
+        # Arrange
+        indicator = WeightedMovingAverage(10, self.w, PriceType.MID)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00002, indicator.value)
+
+    def test_handle_trade_tick_updates_indicator(self):
+        # Arrange
+        indicator = WeightedMovingAverage(10, self.w)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00001, indicator.value)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = WeightedMovingAverage(10, self.w)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(1.00003, indicator.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
