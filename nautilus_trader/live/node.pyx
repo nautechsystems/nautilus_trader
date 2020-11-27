@@ -191,7 +191,7 @@ cdef class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.info(f"Event loop {signals} handling setup.")
 
-    def run(self):
+    async def run(self):
         """
         Start the trading nodes trader.
         """
@@ -199,7 +199,9 @@ cdef class TradingNode:
         self._exec_engine.start()
         self.trader.start()
 
-    def stop(self):
+        await asyncio.gather(self._data_engine.run_task(), self._exec_engine.run_task())
+
+    async def stop(self):
         """
         Stop the trading node.
 
@@ -219,6 +221,8 @@ cdef class TradingNode:
 
         self._data_engine.stop()
         self._exec_engine.stop()
+
+        await asyncio.gather(self._data_engine.shutdown_task(), self._exec_engine.shutdown_task())
 
     def dispose(self):
         """
