@@ -64,23 +64,19 @@ config = {
     }
 }
 
-loop = asyncio.get_event_loop()
 
-node = TradingNode(
-    loop=loop,
-    strategies=[strategy],
-    config=config,
-)
+async def main():
+    node = TradingNode(
+        strategies=[strategy],
+        config=config,
+    )
 
-
-async def run():
     node.run()
-
-
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run())
 
     input()
 
     node.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

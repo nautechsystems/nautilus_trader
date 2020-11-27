@@ -86,6 +86,9 @@ class ExecutionEngineTests(unittest.TestCase):
         if self.exec_engine.state == ComponentState.RUNNING:
             self.exec_engine.stop()
 
+        for task in asyncio.all_tasks(loop=self.loop):
+            self.loop.run_until_complete(task)
+
         self.exec_engine.dispose()
         self.loop.stop()
         self.loop.close()

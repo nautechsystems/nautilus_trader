@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from asyncio import AbstractEventLoop
+from asyncio import CancelledError
 import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
@@ -96,16 +97,20 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     async def _run_queue(self):
         cdef Message message
-        while self._is_running:
-            message = await self._queue.get()
-            if message is None:
-                continue
-            if message.type == MessageType.EVENT:
-                self._handle_event(message)
-            elif message.type == MessageType.COMMAND:
-                self._execute_command(message)
-            else:
-                self._log.error(f"Cannot handle unrecognized message {message}.")
+        try:
+            while self._is_running:
+                message = await self._queue.get()
+                if message is None:
+                    continue
+                if message.type == MessageType.EVENT:
+                    self._handle_event(message)
+                elif message.type == MessageType.COMMAND:
+                    self._execute_command(message)
+                else:
+                    self._log.error(f"Cannot handle unrecognized message {message}.")
+        except CancelledError:
+            self._log.warning(f"{self._task_queue} cancelled "
+                              f"with {self.qsize()} messages on queue.")
 
         self._log.info("Finished processing message queue.")
 
