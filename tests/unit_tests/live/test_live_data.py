@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import time
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -70,9 +69,6 @@ class LiveDataEngineTests(unittest.TestCase):
         if self.data_engine.state == ComponentState.RUNNING:
             self.data_engine.stop()
 
-        for task in asyncio.all_tasks(loop=self.loop):
-            self.loop.run_until_complete(task)
-
         self.data_engine.dispose()
         self.loop.stop()
         self.loop.close()
@@ -93,8 +89,6 @@ class LiveDataEngineTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
-        time.sleep(0.1)
-
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.data_engine.state)
 
@@ -111,10 +105,10 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.execute(connect)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
@@ -142,10 +136,10 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.send(request)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
@@ -168,10 +162,10 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.receive(response)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.message_qsize())
@@ -187,10 +181,10 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.process(tick)
+            self.data_engine.stop()
+            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        time.sleep(0.1)
 
         # Assert
         self.assertEqual(0, self.data_engine.data_qsize())

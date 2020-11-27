@@ -357,58 +357,57 @@ class PortfolioTests(unittest.TestCase):
         # # Assert
         self.assertIsNone(result)
 
-    # TODO: SystemError: /tmp/build/80754af9/python_1598874792229/work/Objects/object.c:741: bad argument to internal function
-    # def test_open_value_when_insufficient_data_for_xrate_returns_none(self):
-    #     # Arrange
-    #     state = AccountState(
-    #         AccountId.from_string("BITMEX-01234-SIMULATED"),
-    #         BTC,
-    #         Money(10., BTC),
-    #         Money(0., BTC),
-    #         Money(0., BTC),
-    #         uuid4(),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     account = Account(state)
-    #
-    #     self.portfolio.register_account(account)
-    #
-    #     order = self.order_factory.market(
-    #         ETHUSD_BITMEX.symbol,
-    #         OrderSide.BUY,
-    #         Quantity(100),
-    #     )
-    #
-    #     fill = TestStubs.event_order_filled(
-    #         order=order,
-    #         instrument=ETHUSD_BITMEX,
-    #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S", "001"),
-    #         fill_price=Price("376.05"),
-    #         xrate=Decimal("0.0378")
-    #     )
-    #
-    #     last_ethusd = QuoteTick(
-    #         ETHUSD_BITMEX.symbol,
-    #         Price("376.05"),
-    #         Price("377.10"),
-    #         Quantity("16"),
-    #         Quantity("25"),
-    #         UNIX_EPOCH,
-    #     )
-    #
-    #     position = Position(fill)
-    #
-    #     self.portfolio.update_position(TestStubs.event_position_opened(position))
-    #     self.data_cache.add_quote_tick(last_ethusd)
-    #     self.portfolio.update_tick(last_ethusd)
-    #
-    #     # Act
-    #     result = self.portfolio.open_value(BITMEX)
-    #
-    #     # Assert
-    #     self.assertEqual(None, result)
+    def test_open_value_when_insufficient_data_for_xrate_returns_none(self):
+        # Arrange
+        state = AccountState(
+            AccountId.from_string("BITMEX-01234-SIMULATED"),
+            BTC,
+            Money(10., BTC),
+            Money(0., BTC),
+            Money(0., BTC),
+            uuid4(),
+            UNIX_EPOCH,
+        )
+
+        account = Account(state)
+
+        self.portfolio.register_account(account)
+
+        order = self.order_factory.market(
+            ETHUSD_BITMEX.symbol,
+            OrderSide.BUY,
+            Quantity(100),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order=order,
+            instrument=ETHUSD_BITMEX,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("376.05"),
+            xrate=Decimal("0.0378")
+        )
+
+        last_ethusd = QuoteTick(
+            ETHUSD_BITMEX.symbol,
+            Price("376.05"),
+            Price("377.10"),
+            Quantity("16"),
+            Quantity("25"),
+            UNIX_EPOCH,
+        )
+
+        position = Position(fill)
+
+        self.portfolio.update_position(TestStubs.event_position_opened(position))
+        self.data_cache.add_quote_tick(last_ethusd)
+        self.portfolio.update_tick(last_ethusd)
+
+        # Act
+        result = self.portfolio.open_value(BITMEX)
+
+        # Assert
+        self.assertEqual(None, result)
 
     def test_opening_several_positions_updates_portfolio(self):
         # Arrange
