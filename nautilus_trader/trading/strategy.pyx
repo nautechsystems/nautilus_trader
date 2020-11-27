@@ -31,25 +31,21 @@ import cython
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
-from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.component cimport ComponentFSMFactory
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -79,7 +75,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class TradingStrategy:
+cdef class TradingStrategy(Component):
     """
     The abstract base class for all trading strategies.
 
@@ -103,9 +99,20 @@ cdef class TradingStrategy:
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        self._fsm = ComponentFSMFactory.create()
+        cdef StrategyId strategy_id = StrategyId(type(self).__name__, order_id_tag)
+        cdef Clock clock = LiveClock()
+        super().__init__(
+            clock=clock,
+            logger=TestLogger(clock, strategy_id.value),
+            name=strategy_id.value,
+        )
+
         self._data_engine = None    # Initialized when registered with the data engine
         self._exec_engine = None    # Initialized when registered with the execution engine
+
+        # Identifiers
+        self.trader_id = None       # Initialized when registered with a trader
+        self.id = strategy_id
 
         # Indicators
         self._indicators = []              # type: [Indicator]
@@ -113,14 +120,10 @@ cdef class TradingStrategy:
         self._indicators_for_trades = {}   # type: {Symbol, [Indicator]}
         self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
 
-        # Identifiers
-        self.trader_id = None      # Initialized when registered with a trader
-        self.id = StrategyId(type(self).__name__, order_id_tag)
-
         # Public components
-        self.uuid_factory = UUIDFactory()
-        self.clock = LiveClock()
-        self.log = LoggerAdapter(self.id.value, TestLogger(self.clock, self.id.value))
+        self.clock = self._clock
+        self.uuid_factory = self._uuid_factory
+        self.log = self._log
 
         self.data = None           # Initialized when registered with the data engine
         self.execution = None      # Initialized when registered with the execution engine
@@ -140,25 +143,7 @@ cdef class TradingStrategy:
         if self.trader_id is None:
             # This guards the case where some components are called which
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("a trader has not been registered")
-
-    cdef ComponentState state_c(self) except *:
-        return <ComponentState>self._fsm.state
-
-    cdef str state_string_c(self):
-        return self._fsm.state_string_c()
-
-    @property
-    def state(self):
-        """
-        The trading strategies current state.
-
-        Returns
-        -------
-        ComponentState
-
-        """
-        return self.state_c()
+            raise RuntimeError("the strategy has not been registered with a trader")
 
     @property
     def registered_indicators(self):
@@ -387,10 +372,10 @@ cdef class TradingStrategy:
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
-            self,
-            TraderId trader_id,
-            Clock clock,
-            Logger logger,
+        self,
+        TraderId trader_id,
+        Clock clock,
+        Logger logger,
     ) except *:
         """
         Register the strategy with a trader.
@@ -414,9 +399,13 @@ cdef class TradingStrategy:
         Condition.not_none(logger, "logger")
 
         self.trader_id = trader_id
-        self.clock = clock
-        self.clock.register_default_handler(self.handle_event)
-        self.log = LoggerAdapter(self.id.value, logger)
+
+        clock.register_default_handler(self.handle_event)
+        self._change_clock(clock)
+        self.clock = self._clock
+
+        self._change_logger(logger)
+        self.log = self._log
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -548,72 +537,14 @@ cdef class TradingStrategy:
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
-    cpdef void start(self) except *:
-        """
-        Start the trading strategy.
-
-        Calls `on_start`.
-
-        Raises
-        ------
-        RuntimeError
-            If strategy is not registered with a trader.
-        InvalidStateTrigger
-            If invalid trigger from current strategy state.
-
-        Warnings
-        --------
-        Exceptions raised in `on_start` will be caught, logged, and reraised.
-
-        """
+    cpdef void _start(self) except *:
         self._check_trader_registered()
+        self.on_start()
 
-        try:
-            self._fsm.trigger(ComponentTrigger.START)
-        except InvalidStateTrigger as ex:
-            self.log.exception(ex)
-            raise ex  # Guards against strategy being put in an invalid state
-
-        self.log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_start()
-        except Exception as ex:
-            self.log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.RUNNING)
-            self.log.info(f"state={self._fsm.state_string_c()}.")
-
-    cpdef void stop(self) except *:
-        """
-        Stop the trading strategy.
-
-        Calls `on_stop`.
-
-        Raises
-        ------
-        RuntimeError
-            If strategy is not registered with a trader.
-        InvalidStateTrigger
-            If invalid trigger from current strategy state.
-
-        Warnings
-        --------
-        Exceptions raised in `on_stop` will be caught, logged, and reraised.
-
-        """
+    cpdef void _stop(self) except *:
         self._check_trader_registered()
-
-        try:
-            self._fsm.trigger(ComponentTrigger.STOP)
-        except InvalidStateTrigger as ex:
-            self.log.exception(ex)
-            raise ex  # Guards against strategy being put in an invalid state
-
-        self.log.info(f"state={self._fsm.state_string_c()}...")
 
         # Clean up clock
         cdef list timer_names = self.clock.timer_names()
@@ -623,80 +554,14 @@ cdef class TradingStrategy:
         for name in timer_names:
             self.log.info(f"Cancelled Timer(name={name}).")
 
-        try:
-            self.on_stop()
-        except Exception as ex:
-            self.log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.STOPPED)
-            self.log.info(f"state={self._fsm.state_string_c()}.")
+        self.on_stop()
 
-    cpdef void resume(self) except *:
-        """
-        Resume the trading strategy.
-
-        Calls `on_resume`.
-
-        Raises
-        ------
-        RuntimeError
-            If strategy is not registered with a trader.
-        InvalidStateTrigger
-            If invalid trigger from current strategy state.
-
-        Warnings
-        --------
-        Exceptions raised in `on_resume` will be caught, logged, and reraised.
-
-        """
+    cpdef void _resume(self) except *:
         self._check_trader_registered()
+        self.on_resume()
 
-        try:
-            self._fsm.trigger(ComponentTrigger.RESUME)
-        except InvalidStateTrigger as ex:
-            self.log.exception(ex)
-            raise ex  # Guards against strategy being put in an invalid state
-
-        self.log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_resume()
-        except Exception as ex:
-            self.log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.RUNNING)
-            self.log.info(f"state={self._fsm.state_string_c()}.")
-
-    cpdef void reset(self) except *:
-        """
-        Reset the trading strategy.
-
-        All stateful values are reset to their initial value, then calls
-        `on_reset`.
-
-        Raises
-        ------
-        RuntimeError
-            If strategy is not registered with a trader.
-        InvalidStateTrigger
-            If invalid trigger from current strategy state.
-
-        Warnings
-        --------
-        Exceptions raised in `on_reset` will be caught, logged, and reraised.
-
-        """
+    cpdef void _reset(self) except *:
         self._check_trader_registered()
-
-        try:
-            self._fsm.trigger(ComponentTrigger.RESET)
-        except InvalidStateTrigger as ex:
-            self.log.exception(ex)
-            raise ex  # Guards against strategy being put in an invalid state
-
-        self.log.info(f"state={self._fsm.state_string_c()}...")
 
         if self.order_factory:
             self.order_factory.reset()
@@ -706,54 +571,13 @@ cdef class TradingStrategy:
         self._indicators_for_trades.clear()
         self._indicators_for_bars.clear()
 
-        try:
-            self.on_reset()
-        except Exception as ex:
-            self.log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-            self.log.info(f"state={self._fsm.state_string_c()}.")
+        self.on_reset()
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the trading strategy.
-
-        Calls `on_dispose`.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-
-        Raises
-        ------
-        RuntimeError
-            If strategy is not registered with a trader.
-        InvalidStateTrigger
-            If invalid trigger from current strategy state.
-
-        Warnings
-        --------
-        Exceptions raised in `on_dispose` will be caught, logged, and reraised.
-
-        """
+    cpdef void _dispose(self) except *:
         self._check_trader_registered()
+        self.on_dispose()
 
-        try:
-            self._fsm.trigger(ComponentTrigger.DISPOSE)
-        except InvalidStateTrigger as ex:
-            self.log.exception(ex)
-            raise ex  # Guards against strategy being put in an invalid state
-
-        self.log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_dispose()
-        except Exception as ex:
-            self.log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.DISPOSED)
-            self.log.info(f"state={self._fsm.state_string_c()}.")
+# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
 
     cpdef dict save(self):
         """

@@ -36,4 +36,3 @@ cdef class HilbertPeriod(Indicator):
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void update_raw(self, double high, double low) except *
     cpdef void _calc_hilbert_transform(self) except *
-    cpdef void reset(self) except *

@@ -17,12 +17,17 @@ import unittest
 
 import numpy as np
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
 from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
 from nautilus_trader.indicators.fuzzy_enum import CandleDirection
 from nautilus_trader.indicators.fuzzy_enum import CandleSize
 from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class FuzzyCandlesticksTests(unittest.TestCase):
@@ -38,31 +43,30 @@ class FuzzyCandlesticksTests(unittest.TestCase):
             CandleSize.MEDIUM,
             CandleBodySize.MEDIUM,
             CandleWickSize.SMALL,
-            CandleWickSize.SMALL)
+            CandleWickSize.SMALL,
+        )
 
         fuzzy_candle2 = FuzzyCandle(
             CandleDirection.BULL,
             CandleSize.MEDIUM,
             CandleBodySize.MEDIUM,
             CandleWickSize.SMALL,
-            CandleWickSize.SMALL)
+            CandleWickSize.SMALL,
+        )
 
         fuzzy_candle3 = FuzzyCandle(
             CandleDirection.BEAR,
             CandleSize.MEDIUM,
             CandleBodySize.MEDIUM,
             CandleWickSize.SMALL,
-            CandleWickSize.SMALL)
+            CandleWickSize.SMALL,
+        )
 
         # Act
-        result1 = fuzzy_candle1.__eq__(fuzzy_candle2)
-        result2 = fuzzy_candle1 == fuzzy_candle2
-        result3 = fuzzy_candle1 == fuzzy_candle3
-
         # Assert
-        self.assertTrue(result1)
-        self.assertTrue(result2)
-        self.assertFalse(result3)
+        self.assertTrue(fuzzy_candle1 == fuzzy_candle1)
+        self.assertTrue(fuzzy_candle1 == fuzzy_candle2)
+        self.assertTrue(fuzzy_candle1 != fuzzy_candle3)
 
     def test_fuzzy_str_and_repr(self):
         # Arrange
@@ -71,7 +75,8 @@ class FuzzyCandlesticksTests(unittest.TestCase):
             CandleSize.MEDIUM,
             CandleBodySize.MEDIUM,
             CandleWickSize.SMALL,
-            CandleWickSize.SMALL)
+            CandleWickSize.SMALL,
+        )
 
         # Act
         # Assert
@@ -96,6 +101,18 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(10, self.fc.period)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
 
     def test_values_with_doji_bars_returns_expected_results(self):
         # Arrange

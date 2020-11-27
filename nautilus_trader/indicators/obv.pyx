@@ -67,10 +67,10 @@ cdef class OnBalanceVolume(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double open_price,
-            double close_price,
-            double volume,
+        self,
+        double open_price,
+        double close_price,
+        double volume,
     ) except *:
         """
         Update the indicator with the given raw values.
@@ -100,12 +100,6 @@ cdef class OnBalanceVolume(Indicator):
             if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
                 self._set_initialized(True)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._obv.clear()
         self.value = 0

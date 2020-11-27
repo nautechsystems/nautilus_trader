@@ -173,13 +173,7 @@ cdef class HilbertSignalNoiseRatio(Indicator):
         cdef double range_squared = np.power(self._range, 2)
         return (10 * np.log(self._amplitude / range_squared)) / np.log(10) + 1.9
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._inputs.clear()
         self._detrended_prices.clear()
         self._in_phase = deque([0] * self.period, maxlen=self.period)

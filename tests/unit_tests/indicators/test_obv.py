@@ -15,7 +15,12 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.obv import OnBalanceVolume
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class OnBalanceVolumeTests(unittest.TestCase):
@@ -57,6 +62,19 @@ class OnBalanceVolumeTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(True, self.obv.initialized)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = OnBalanceVolume(100)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(100000, indicator.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

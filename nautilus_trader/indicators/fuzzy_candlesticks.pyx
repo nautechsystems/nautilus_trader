@@ -343,13 +343,7 @@ cdef class FuzzyCandlesticks(Indicator):
 
         return CandleWickSize.LARGE
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._lengths.clear()
         self._body_percents.clear()
         self._upper_wick_percents.clear()

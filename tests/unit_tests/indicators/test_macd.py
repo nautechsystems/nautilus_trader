@@ -15,7 +15,13 @@
 
 import unittest
 
+from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.macd import MovingAverageConvergenceDivergence
+from nautilus_trader.model.enums import PriceType
+from tests.test_kit.stubs import TestStubs
+
+
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
@@ -65,6 +71,45 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(True, self.macd.initialized)
+
+    def test_handle_quote_tick_updates_indicator(self):
+        # Arrange
+        indicator = MovingAverageConvergenceDivergence(3, 10, price_type=PriceType.MID)
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(0, indicator.value)
+
+    def test_handle_trade_tick_updates_indicator(self):
+        # Arrange
+        indicator = MovingAverageConvergenceDivergence(3, 10)
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+
+        # Act
+        indicator.handle_trade_tick(tick)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(0, indicator.value)
+
+    def test_handle_bar_updates_indicator(self):
+        # Arrange
+        indicator = MovingAverageConvergenceDivergence(3, 10)
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        indicator.handle_bar(bar)
+
+        # Assert
+        self.assertTrue(indicator.has_inputs)
+        self.assertEqual(0, indicator.value)
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange

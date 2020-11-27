@@ -67,14 +67,7 @@ cdef class BidAskMinMax(Indicator):
         self._set_has_inputs(True)
         self._set_initialized(True)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
-
+    cdef void _reset(self) except *:
         # Reset the windows
         self.bids.reset()
         self.asks.reset()

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from asyncio import AbstractEventLoop
+from asyncio import CancelledError
 import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
@@ -64,6 +65,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The configuration options.
 
         """
+        if config is None:
+            config = {}
+        config["name"] = "LiveExecEngine"
         super().__init__(
             database,
             portfolio,
@@ -74,37 +78,60 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._loop = loop
         self._queue = asyncio.Queue()
-        self._task_queue = None
-        self._is_running = False
+        self._is_running = True
 
-    cpdef void on_start(self) except *:
-        self._log.info("Starting queue processing...")
+    cpdef void _on_start(self) except *:
+        self._is_running = True
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
-        self._is_running = True
-        self._task_queue = self._loop.create_task(self._run_queue())
+        self._task_run = self._loop.create_task(self._run())
+        self._log.info(f"Scheduled {self._task_run}")
 
-        self._log.info(f"Scheduled {self._task_queue}")
-
-    cpdef void on_stop(self) except *:
-        self._log.info("Shutting down queue processing...")
+    cpdef void _on_stop(self) except *:
         self._is_running = False
         self._queue.put_nowait(None)  # None message pattern
+        self._task_shutdown = self._loop.create_task(self._shutdown())
 
-    async def _run_queue(self):
+    async def _run(self):
+        self._log.info("Running queue processing...")
         cdef Message message
-        while self._is_running:
-            message = await self._queue.get()
-            if message is None:
-                continue
-            if message.type == MessageType.EVENT:
-                self._handle_event(message)
-            elif message.type == MessageType.COMMAND:
-                self._execute_command(message)
-            else:
-                self._log.error(f"Cannot handle unrecognized message {message}.")
+        try:
+            while self._is_running:
+                message = await self._queue.get()
+                if message is None:
+                    continue
+                self._handle_message(message)
+        except CancelledError:
+            if message is not None:
+                self._queue.put_nowait(message)
+            if self.qsize() > 0:
+                self._log.warning(f"Running cancelled "
+                                  f"with {self.qsize()} message(s) on queue.")
 
-        self._log.info("Finished processing message queue.")
+    async def _shutdown(self):
+        self._log.info("Shutting down queue processing...")
+        cdef Message message
+        try:
+            # Timeout to allow _run to finish
+            await asyncio.sleep(0.3)  # Hard coded for now
+
+            while not self._queue.empty():
+                message = await self._queue.get()
+                if message is None:
+                    continue
+                self._handle_message(message)
+
+            self._log.info(f"Shutdown complete (qsize={self.qsize()}).")
+        except CancelledError:
+            self._log.warning(f"Shutdown cancelled (qsize={self.qsize()}).")
+
+    cdef inline void _handle_message(self, Message message):
+        if message.type == MessageType.EVENT:
+            self._handle_event(message)
+        elif message.type == MessageType.COMMAND:
+            self._execute_command(message)
+        else:
+            self._log.error(f"Cannot handle unrecognized message {message}.")
 
     cpdef object get_event_loop(self):
         """
@@ -116,6 +143,28 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._loop
+
+    cpdef object run_task(self):
+        """
+        Return the internal run task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._task_run
+
+    cpdef object shutdown_task(self):
+        """
+        Return the internal shutdown task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._task_shutdown
 
     cpdef int qsize(self) except *:
         """

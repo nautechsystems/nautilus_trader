@@ -128,13 +128,7 @@ cdef class HullMovingAverage(MovingAverage):
 
         self.value = self._ma3.value
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_ma()
+    cdef void _reset_ma(self) except *:
         self._ma1.reset()
         self._ma2.reset()
         self._ma3.reset()

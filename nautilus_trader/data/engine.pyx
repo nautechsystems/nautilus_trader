@@ -31,25 +31,21 @@ the engines `execute`, `process`, `send` and `receive` methods.
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.messages cimport Connect
 from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
-from nautilus_trader.common.component cimport ComponentFSMFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport REQ
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -74,7 +70,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
-cdef class DataEngine:
+cdef class DataEngine(Component):
     """
     Provides a high-performance data engine for managing many `DataClient`
     instances, for the asynchronous ingest of data.
@@ -102,14 +98,10 @@ cdef class DataEngine:
             The configuration options.
 
         """
+        super().__init__(clock, logger)
+
         if config is None:
             config = {}
-
-        # Core components
-        self._clock = clock
-        self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(type(self).__name__, logger)
-        self._fsm = ComponentFSMFactory.create()
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}              # type: {Venue, DataClient}
@@ -134,23 +126,7 @@ cdef class DataEngine:
         self.request_count = 0
         self.response_count = 0
 
-        self._log.info("Initialized.")
         self._log.info(f"use_previous_close={self._use_previous_close}")
-
-    cdef ComponentState state_c(self) except *:
-        return <ComponentState>self._fsm.state
-
-    @property
-    def state(self):
-        """
-        The data engines current state.
-
-        Returns
-        -------
-        ComponentState
-
-        """
-        return self.state_c()
 
     @property
     def registered_venues(self):
@@ -270,65 +246,55 @@ cdef class DataEngine:
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
-    cpdef void on_start(self) except *:
-        """
-        Actions to be performed when the engine is started.
-        """
+    cpdef void _on_start(self) except *:
+        pass  # Optionally override in subclass
+
+    cpdef void _on_stop(self) except *:
+        pass  # Optionally override in subclass
+
+# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+
+    cpdef void _start(self) except *:
         cdef DataClient client
         for client in self._clients.values():
             client.connect()
 
-    cpdef void on_stop(self) except *:
-        """
-        Actions to be performed when the engine is stopped.
-        """
+        self._on_start()
+
+    cpdef void _stop(self) except *:
         cdef DataClient client
         for client in self._clients.values():
             client.disconnect()
 
+        self._on_stop()
+
+    cpdef void _resume(self) except *:
+        pass  # Do nothing else
+
+    cpdef void _reset(self) except *:
+        cdef DataClient client
+        for client in self._clients.values():
+            client.reset()
+
+        self.cache.reset()
+        self._correlation_index.clear()
+        self._instrument_handlers.clear()
+        self._quote_tick_handlers.clear()
+        self._trade_tick_handlers.clear()
+        self._bar_handlers.clear()
+        self._bar_aggregators.clear()
+        self._clock.cancel_timers()
+        self.command_count = 0
+        self.data_count = 0
+        self.request_count = 0
+        self.response_count = 0
+
+    cpdef void _dispose(self) except *:
+        cdef DataClient client
+        for client in self._clients.values():
+            client.dispose()
+
 # -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void start(self) except *:
-        """
-        Start the data engine.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.START)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex  # Do not put trader in an invalid state
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_start()
-        except Exception as ex:
-            self._log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.RUNNING)
-            self._log.info(f"state={self._fsm.state_string_c()}.")
-
-    cpdef void stop(self) except *:
-        """
-        Stop the data engine.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.STOP)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex  # Do not put trader in an invalid state
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_stop()
-        except Exception as ex:
-            self._log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.STOPPED)
-            self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void execute(self, VenueCommand command) except *:
         """
@@ -385,64 +351,6 @@ cdef class DataEngine:
         Condition.not_none(response, "response")
 
         self._handle_response(response)
-
-    cpdef void reset(self) except *:
-        """
-        Reset the class to its initial state.
-
-        All stateful values are reset to their initial value.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.RESET)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        cdef DataClient client
-        for client in self._clients.values():
-            client.reset()
-
-        self.cache.reset()
-        self._correlation_index.clear()
-        self._instrument_handlers.clear()
-        self._quote_tick_handlers.clear()
-        self._trade_tick_handlers.clear()
-        self._bar_handlers.clear()
-        self._bar_aggregators.clear()
-        self._clock.cancel_timers()
-        self.command_count = 0
-        self.data_count = 0
-        self.request_count = 0
-        self.response_count = 0
-
-        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self._log.info(f"state={self._fsm.state_string_c()}.")
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose the data engine
-
-        All registered data clients are disposed.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.DISPOSE)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        cdef DataClient client
-        for client in self._clients.values():
-            client.dispose()
-
-        self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self._log.info(f"state={self._fsm.state_string_c()}.")
 
     cpdef void update_instruments(self, Venue venue) except *:
         """

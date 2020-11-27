@@ -19,6 +19,9 @@ from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class MovingAverageConvergenceDivergence(Indicator):
@@ -32,6 +35,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             int fast_period,
             int slow_period,
             ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+            PriceType price_type=PriceType.UNDEFINED,
     ):
         """
         Initialize a new instance of the `MovingAverageConvergenceDivergence` class.
@@ -44,6 +48,8 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             The period for the slow moving average (> 0 & > fast_sma).
         ma_type : MovingAverageType
             The moving average type for the calculations.
+        price_type : PriceType
+            The specified price type for extracting values from quote ticks.
 
         Raises
         ------
@@ -70,7 +76,36 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
         self.slow_period = slow_period
         self._fast_ma = MovingAverageFactory.create(fast_period, ma_type)
         self._slow_ma = MovingAverageFactory.create(slow_period, ma_type)
+        self.price_type = price_type
         self.value = 0
+
+    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+        """
+        Update the indicator with the given quote tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The update tick to handle.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self.update_raw(tick.extract_price(self.price_type).as_double())
+
+    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+        """
+        Update the indicator with the given trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The update tick to handle.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        self.update_raw(tick.price.as_double())
 
     cpdef void handle_bar(self, Bar bar) except *:
         """
@@ -106,13 +141,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
             if self._fast_ma.initialized and self._slow_ma.initialized:
                 self._set_initialized(True)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful values are reset to their initial value.
-        """
-        self._reset_base()
+    cdef void _reset(self) except *:
         self._fast_ma.reset()
         self._slow_ma.reset()
         self.value = 0

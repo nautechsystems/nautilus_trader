@@ -21,6 +21,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
+from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -40,6 +41,18 @@ class SpreadAnalyzerTests(unittest.TestCase):
         self.assertEqual(0, analyzer.current)
         self.assertEqual(0, analyzer.average)
         self.assertEqual(False, analyzer.initialized)
+
+    def test_handle_ticks_initializes_indicator(self):
+        # Arrange
+        analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1)  # Only one tick
+        tick = TestStubs.quote_tick_5decimal()
+
+        # Act
+        analyzer.handle_quote_tick(tick)
+        analyzer.handle_quote_tick(tick)
+
+        # Assert
+        self.assertTrue(analyzer.initialized)
 
     def test_update_with_incorrect_tick_raises_exception(self):
         # Arrange
