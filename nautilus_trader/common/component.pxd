@@ -13,7 +13,54 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
+from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
+from nautilus_trader.common.logging cimport LoggerAdapter
+
+
 cdef class ComponentFSMFactory:
 
     @staticmethod
     cdef create()
+
+
+cdef class Component:
+    cdef Clock _clock
+    cdef UUIDFactory _uuid_factory
+    cdef LoggerAdapter _log
+    cdef FiniteStateMachine _fsm
+
+    cdef ComponentState state_c(self) except *
+    cdef str state_string_c(self)
+
+    cdef void _change_clock(self, Clock clock) except *
+    cdef void _change_logger(self, Logger logger) except *
+
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void _start(self) except *
+    cpdef void _stop(self) except *
+    cpdef void _resume(self) except *
+    cpdef void _reset(self) except *
+    cpdef void _dispose(self) except *
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void start(self) except *
+    cpdef void stop(self) except *
+    cpdef void resume(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
+
+# --------------------------------------------------------------------------------------------------
+
+    cdef inline void _trigger_fsm(
+        self,
+        ComponentTrigger trigger1,
+        ComponentTrigger trigger2,
+        action,
+    ) except *

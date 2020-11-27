@@ -348,7 +348,7 @@ cdef class LoggerAdapter:
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
-        self._component_name = component_name
+        self.component_name = component_name
         self.bypassed = logger.bypass_logging
 
     cpdef Logger get_logger(self):
@@ -469,17 +469,18 @@ cdef class LoggerAdapter:
 
         self.error(f"{ex_string}{ stack_trace_lines}")
 
-    cdef void _send_to_logger(self, LogLevel level, str message) except *:
+    cdef inline void _send_to_logger(self, LogLevel level, str message) except *:
         if not self.bypassed:
             self._logger.log(LogMessage(
                 self._logger.clock.utc_now(),
                 level,
                 self._format_message(message),
-                thread_id=threading.current_thread().ident))
+                thread_id=threading.current_thread().ident),
+            )
 
-    cdef str _format_message(self, str message):
+    cdef inline str _format_message(self, str message):
         # Add the components name to the front of the log message
-        return f"{self._component_name}: {message}"
+        return f"{self.component_name}: {message}"
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *:

@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import time
-import threading
 import msgpack
 import redis
 from asyncio import AbstractEventLoop
@@ -55,7 +53,6 @@ cdef class TradingNode:
     cdef LoggerAdapter _log
 
     cdef object _loop
-    cdef object _thread
     cdef LiveExecutionEngine _exec_engine
     cdef LiveDataEngine _data_engine
 
@@ -98,8 +95,6 @@ cdef class TradingNode:
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
         self._loop = loop
-
-        self._thread = threading.Thread(target=self._run_loop, daemon=True)
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -185,15 +180,10 @@ cdef class TradingNode:
 
         self._log.info("Initialized.")
 
-    def _run_loop(self):
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
-
     def run(self):
         """
         Start the trading nodes trader.
         """
-        self._thread.start()
         self._data_engine.start()
         self._exec_engine.start()
         self.trader.start()

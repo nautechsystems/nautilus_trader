@@ -144,14 +144,17 @@ class TradingNodeOperationTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    # def test_run(self):
-    #     # Arrange
-    #     self.node.run()
-    #
-    #     # Act
-    #     # Assert
-    #     # TODO: Implement TradingNode
-    #
+    def test_run(self):
+        async def run_test():
+            # Arrange
+            self.node.run()
+
+            # Act
+
+        self.loop.run_until_complete(run_test())
+        # Assert
+        # TODO: Implement TradingNode
+
     # def test_stop(self):
     #     # Arrange
     #     self.node.start()

@@ -30,18 +30,15 @@ Alternative implementations can be written on top which just need to override
 the engines `execute` and `process` methods.
 """
 
-from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.component cimport ComponentFSMFactory
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.messages cimport Connect
 from nautilus_trader.common.messages cimport Disconnect
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
@@ -75,7 +72,7 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef class ExecutionEngine:
+cdef class ExecutionEngine(Component):
     """
     Provides a high-performance execution engine for the management of many
     `ExecutionClient` instances, and the asynchronous ingest of trading related
@@ -109,12 +106,7 @@ cdef class ExecutionEngine:
         """
         if config is None:
             config = {}
-
-        # Core components
-        self._clock = clock
-        self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter("ExecEngine", logger)
-        self._fsm = ComponentFSMFactory.create()
+        super().__init__(clock, logger, name=config.get("name", "ExecEngine"))
 
         self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
         self._clients = {}     # type: {Venue, ExecutionClient}
@@ -130,21 +122,6 @@ cdef class ExecutionEngine:
         # Counters
         self.command_count = 0
         self.event_count = 0
-
-    cdef ComponentState state_c(self):
-        return <ComponentState>self._fsm.state
-
-    @property
-    def state(self):
-        """
-        The execution engines current state.
-
-        Returns
-        -------
-        ComponentState
-
-        """
-        return self.state_c()
 
     @property
     def registered_venues(self):
@@ -249,112 +226,44 @@ cdef class ExecutionEngine:
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
-    cpdef void on_start(self) except *:
-        """
-        Actions to be performed when the engine is started.
-        """
+    cpdef void _on_start(self) except *:
+        pass  # Optionally override in subclass
+
+    cpdef void _on_stop(self) except *:
+        pass  # Optionally override in subclass
+
+# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+
+    cpdef void _start(self) except *:
         cdef ExecutionClient client
         for client in self._clients.values():
             client.connect()
 
-    cpdef void on_stop(self) except *:
-        """
-        Actions to be performed when the engine is stopped.
-        """
-        cdef ExecutionClient client
-        for client in self._clients.values():
-            client.disconnect()
+        self._on_start()
 
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void start(self) except *:
-        """
-        Start the execution engine.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.START)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex  # Do not put trader in an invalid state
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_start()
-        except Exception as ex:
-            self._log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.RUNNING)
-            self._log.info(f"state={self._fsm.state_string_c()}.")
-
-    cpdef void stop(self) except *:
-        """
-        Stop the execution engine.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.STOP)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex  # Do not put trader in an invalid state
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
-        try:
-            self.on_stop()
-        except Exception as ex:
-            self._log.exception(ex)
-            raise ex
-        finally:
-            self._fsm.trigger(ComponentTrigger.STOPPED)
-            self._log.info(f"state={self._fsm.state_string_c()}.")
-
-    cpdef void reset(self) except *:
-        """
-        Reset the execution engine.
-
-        All stateful values are reset to their initial value.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.RESET)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
+    cpdef void _reset(self) except *:
         for client in self._clients.values():
             client.reset()
+
         self.cache.reset()
         self._pos_id_generator.reset()
 
         self.command_count = 0
         self.event_count = 0
 
-        self._fsm.trigger(ComponentTrigger.RESET)  # State changes to initialized
-        self._log.info(f"state={self._fsm.state_string_c()}.")
+    cpdef void _stop(self) except *:
+        cdef ExecutionClient client
+        for client in self._clients.values():
+            client.disconnect()
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose all execution clients.
+        self._on_stop()
 
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        try:
-            self._fsm.trigger(ComponentTrigger.DISPOSE)
-        except InvalidStateTrigger as ex:
-            self._log.exception(ex)
-            raise ex
-
-        self._log.info(f"state={self._fsm.state_string_c()}...")
-
+    cpdef void _dispose(self) except *:
         cdef ExecutionClient client
         for client in self._clients.values():
             client.dispose()
 
-        self._fsm.trigger(ComponentTrigger.DISPOSED)
-        self._log.info(f"state={self._fsm.state_string_c()}.")
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *:
         """
