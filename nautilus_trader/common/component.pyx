@@ -120,6 +120,7 @@ cdef class Component:
         else:
             Condition.valid_string(name, "name")
 
+        self._component_name = name
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(name, logger)
@@ -153,7 +154,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *:
         Condition.not_none(logger, "logger")
 
-        self._log = LoggerAdapter(self._log.get_logger().name, logger)
+        self._log = LoggerAdapter(self._component_name, logger)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -196,7 +197,7 @@ cdef class Component:
 
         """
         self._trigger_fsm(
-            trigger1=ComponentTrigger.START,
+            trigger1=ComponentTrigger.START,  # -> STARTING
             trigger2=ComponentTrigger.RUNNING,
             action=self._start,
 
@@ -219,7 +220,7 @@ cdef class Component:
 
         """
         self._trigger_fsm(
-            trigger1=ComponentTrigger.STOP,
+            trigger1=ComponentTrigger.STOP,  # -> STOPPING
             trigger2=ComponentTrigger.STOPPED,
             action=self._stop,
         )
@@ -241,7 +242,7 @@ cdef class Component:
 
         """
         self._trigger_fsm(
-            trigger1=ComponentTrigger.RESUME,
+            trigger1=ComponentTrigger.RESUME,  # -> RESUMING
             trigger2=ComponentTrigger.RUNNING,
             action=self._resume,
         )
@@ -265,7 +266,7 @@ cdef class Component:
 
         """
         self._trigger_fsm(
-            trigger1=ComponentTrigger.RESET,
+            trigger1=ComponentTrigger.RESET,  # -> RESETTING
             trigger2=ComponentTrigger.RESET,
             action=self._reset,
         )
@@ -290,7 +291,7 @@ cdef class Component:
 
         """
         self._trigger_fsm(
-            trigger1=ComponentTrigger.DISPOSE,
+            trigger1=ComponentTrigger.DISPOSE,  # -> DISPOSING
             trigger2=ComponentTrigger.DISPOSED,
             action=self._dispose,
         )

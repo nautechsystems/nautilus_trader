@@ -29,6 +29,7 @@ cdef class ComponentFSMFactory:
 
 
 cdef class Component:
+    cdef str _component_name
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
