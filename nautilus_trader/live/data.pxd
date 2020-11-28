@@ -23,12 +23,10 @@ cdef class LiveDataEngine(DataEngine):
     cdef object _data_queue
     cdef object _message_queue
     cdef object _task_run
-    cdef object _task_shutdown
     cdef bint _is_running
 
     cpdef object get_event_loop(self)
     cpdef object run_task(self)
-    cpdef object shutdown_task(self)
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *
     cdef inline void _handle_message(self, Message message)

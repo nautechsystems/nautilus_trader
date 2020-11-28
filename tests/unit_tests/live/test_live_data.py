@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
 import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -66,9 +67,6 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
     def tearDown(self):
-        if self.data_engine.state == ComponentState.RUNNING:
-            self.data_engine.stop()
-
         self.data_engine.dispose()
         self.loop.stop()
         self.loop.close()
@@ -86,11 +84,15 @@ class LiveDataEngineTests(unittest.TestCase):
             # Arrange
             # Act
             self.data_engine.start()
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(ComponentState.RUNNING, self.data_engine.state)
+
+            # Tear Down
+            self.data_engine.stop()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(ComponentState.RUNNING, self.data_engine.state)
 
     def test_execute_command_processes_message(self):
         async def run_test():
@@ -105,14 +107,16 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.execute(connect)
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(0, self.data_engine.message_qsize())
+            self.assertEqual(1, self.data_engine.command_count)
+
+            # Tear Down
             self.data_engine.stop()
-            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(0, self.data_engine.message_qsize())
-        self.assertEqual(1, self.data_engine.command_count)
 
     def test_send_request_processes_message(self):
         async def run_test():
@@ -136,14 +140,16 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.send(request)
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(0, self.data_engine.message_qsize())
+            self.assertEqual(1, self.data_engine.request_count)
+
+            # Tear Down
             self.data_engine.stop()
-            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(0, self.data_engine.message_qsize())
-        self.assertEqual(1, self.data_engine.request_count)
 
     def test_receive_response_processes_message(self):
         async def run_test():
@@ -162,14 +168,16 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.receive(response)
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(0, self.data_engine.message_qsize())
+            self.assertEqual(1, self.data_engine.response_count)
+
+            # Tear Down
             self.data_engine.stop()
-            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(0, self.data_engine.message_qsize())
-        self.assertEqual(1, self.data_engine.response_count)
 
     def test_process_data_processes_data(self):
         async def run_test():
@@ -181,14 +189,16 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Act
             self.data_engine.process(tick)
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(0, self.data_engine.data_qsize())
+            self.assertEqual(1, self.data_engine.data_count)
+
+            # Tear Down
             self.data_engine.stop()
-            await self.data_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(0, self.data_engine.data_qsize())
-        self.assertEqual(1, self.data_engine.data_count)
 
 
 class LiveDataClientTests(unittest.TestCase):
