@@ -29,12 +29,27 @@ from nautilus_trader.common.messages import Unsubscribe
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.bar import BarData
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.commands import VenueCommand
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 BITMEX = Venue("BITMEX")
@@ -157,6 +172,22 @@ class DataEngineTests(unittest.TestCase):
         self.assertEqual(0, self.data_engine.request_count)
         self.assertEqual(0, self.data_engine.response_count)
 
+    def test_stop_and_resume(self):
+        # Arrange
+        self.data_engine.start()
+
+        # Act
+        self.data_engine.stop()
+        self.data_engine.resume()
+        self.data_engine.stop()
+        self.data_engine.reset()
+
+        # Assert
+        self.assertEqual(0, self.data_engine.command_count)
+        self.assertEqual(0, self.data_engine.data_count)
+        self.assertEqual(0, self.data_engine.request_count)
+        self.assertEqual(0, self.data_engine.response_count)
+
     def test_dispose(self):
         # Arrange
         self.data_engine.reset()
@@ -185,6 +216,22 @@ class DataEngineTests(unittest.TestCase):
         # Act
         # Assert
         self.assertRaises(InvalidStateTrigger, self.data_engine.dispose)
+
+    def test_execute_unrecognized_message_logs_and_does_nothing(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        command = VenueCommand(
+            venue=BINANCE,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(command)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
 
     def test_execute_connect_when_no_data_client_registered_does_nothing(self):
         # Arrange
@@ -237,10 +284,160 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
 
+    def test_send_data_request_when_data_type_unrecognized_logs_and_does_nothing(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        request = DataRequest(
+            venue=BINANCE,
+            data_type=str,  # str data type is invalid
+            metadata={
+                "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
+                "FromDateTime": None,
+                "ToDateTime": None,
+                "Limit": 1000,
+            },
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            request_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.send(request)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.request_count)
+
+    def test_send_data_request_with_duplicate_ids_logs_and_does_not_handle_second(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        uuid = self.uuid_factory.generate()  # We'll use this as a duplicate
+
+        request1 = DataRequest(
+            venue=BINANCE,
+            data_type=QuoteTick,  # str data type is invalid
+            metadata={
+                "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
+                "FromDateTime": None,
+                "ToDateTime": None,
+                "Limit": 1000,
+            },
+            callback=handler.append,
+            request_id=uuid,  # Duplicate
+            request_timestamp=self.clock.utc_now(),
+        )
+
+        request2 = DataRequest(
+            venue=BINANCE,
+            data_type=QuoteTick,  # str data type is invalid
+            metadata={
+                "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
+                "FromDateTime": None,
+                "ToDateTime": None,
+                "Limit": 1000,
+            },
+            callback=handler.append,
+            request_id=uuid,  # Duplicate
+            request_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.send(request1)
+        self.data_engine.send(request2)
+
+        # Assert
+        self.assertEqual(2, self.data_engine.request_count)
+
+    def test_execute_subscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=str,  # str data type is invalid
+            metadata={},  # Invalid anyway
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_execute_subscribe_when_already_subscribed_does_not_add_and_logs(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual(2, self.data_engine.command_count)
+
+    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        handler = []
+        unsubscribe = Unsubscribe(
+            venue=BINANCE,
+            data_type=str,  # str data type is invalid
+            metadata={},  # Invalid anyway
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_execute_unsubscribe_when_not_subscribed_logs_and_does_nothing(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        unsubscribe = Unsubscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
     def test_receive_response_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         response = DataResponse(
-            venue=Venue("BINANCE"),
+            venue=BINANCE,
             data_type=QuoteTick,
             metadata={},
             data=[],
@@ -310,6 +507,15 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
 
+    def test_process_unrecognized_data_type_logs_and_does_nothing(self):
+        # Arrange
+        # Act
+        self.data_engine.process("DATA!")  # Invalid
+
+        # Assert
+        # Already received 3 instruments
+        self.assertEqual(4, self.data_engine.data_count)
+
     def test_process_data_places_data_on_queue(self):
         # Arrange
         tick = TestStubs.trade_tick_5decimal()
@@ -321,38 +527,298 @@ class DataEngineTests(unittest.TestCase):
         # Already received 3 instruments
         self.assertEqual(4, self.data_engine.data_count)
 
-    def test_execute_subscribe_with_unknown_datatype_logs_and_returns(self):
+    def test_process_instrument_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
         handler = []
         subscribe = Subscribe(
-            venue=Venue("FXCM"),
-            data_type=str,
-            metadata={},
+            venue=BINANCE,
+            data_type=Instrument,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
-        # Act
         self.data_engine.execute(subscribe)
 
-        # Assert
-        self.assertEqual(1, self.data_engine.command_count)  # No exception raised
+        # Act
+        self.data_engine.process(ETHUSDT_BINANCE)
 
-    def test_execute_unsubscribe_with_unknown_datatype_logs_and_returns(self):
+        # Assert
+        self.assertEqual([ETHUSDT_BINANCE], handler)
+
+    def test_process_instrument_when_subscribers_then_sends_to_registered_handlers(self):
         # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler1 = []
+        subscribe1 = Subscribe(
+            venue=BINANCE,
+            data_type=Instrument,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler1.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        handler2 = []
+        subscribe2 = Subscribe(
+            venue=BINANCE,
+            data_type=Instrument,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler2.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        # Act
+        self.data_engine.process(ETHUSDT_BINANCE)
+
+        # Assert
+        self.assertEqual([ETHUSDT_BINANCE], handler1)
+        self.assertEqual([ETHUSDT_BINANCE], handler2)
+
+    def test_process_quote_tick_when_subscriber_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
         handler = []
-        subscribe = Unsubscribe(
-            venue=Venue("FXCM"),
-            data_type=str,
-            metadata={},
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
 
-        # Act
         self.data_engine.execute(subscribe)
 
+        tick = QuoteTick(
+            ETHUSDT_BINANCE.symbol,
+            Price("100.003"),
+            Price("100.003"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
         # Assert
-        self.assertEqual(1, self.data_engine.command_count)  # No exception raised
+        self.assertEqual([tick], handler)
+
+    def test_process_quote_tick_when_subscribers_then_sends_to_registered_handlers(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler1 = []
+        subscribe1 = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler1.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        handler2 = []
+        subscribe2 = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler2.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        tick = QuoteTick(
+            ETHUSDT_BINANCE.symbol,
+            Price("100.003"),
+            Price("100.003"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        self.assertEqual([tick], handler1)
+        self.assertEqual([tick], handler2)
+
+    def test_process_trade_tick_when_subscriber_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=TradeTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        tick = TradeTick(
+            ETHUSDT_BINANCE.symbol,
+            Price("1050.00000"),
+            Quantity(100),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        self.assertEqual([tick], handler)
+
+    def test_process_trade_tick_when_subscribers_then_sends_to_registered_handlers(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler1 = []
+        subscribe1 = Subscribe(
+            venue=BINANCE,
+            data_type=TradeTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler1.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        handler2 = []
+        subscribe2 = Subscribe(
+            venue=BINANCE,
+            data_type=TradeTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler2.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        tick = TradeTick(
+            ETHUSDT_BINANCE.symbol,
+            Price("1050.00000"),
+            Quantity(100),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.data_engine.process(tick)
+
+        # Assert
+        self.assertEqual([tick], handler1)
+        self.assertEqual([tick], handler2)
+
+    def test_process_bar_when_subscriber_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+
+        handler = ObjectStorer()
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=Bar,
+            metadata={"BarType": bar_type},
+            handler=handler.store_2,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        bar = Bar(
+            Price("1051.00000"),
+            Price("1055.00000"),
+            Price("1050.00000"),
+            Price("1052.00000"),
+            Quantity(100),
+            UNIX_EPOCH,
+        )
+
+        data = BarData(bar_type, bar)
+
+        # Act
+        self.data_engine.process(data)
+
+        # Assert
+        self.assertEqual([(bar_type, bar)], handler.get_store())
+
+    def test_process_bar_when_subscribers_then_sends_to_registered_handlers(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+
+        handler1 = ObjectStorer()
+        subscribe1 = Subscribe(
+            venue=BINANCE,
+            data_type=Bar,
+            metadata={"BarType": bar_type},
+            handler=handler1.store_2,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        handler2 = ObjectStorer()
+        subscribe2 = Subscribe(
+            venue=BINANCE,
+            data_type=Bar,
+            metadata={"BarType": bar_type},
+            handler=handler2.store_2,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        bar = Bar(
+            Price("1051.00000"),
+            Price("1055.00000"),
+            Price("1050.00000"),
+            Price("1052.00000"),
+            Quantity(100),
+            UNIX_EPOCH,
+        )
+
+        data = BarData(bar_type, bar)
+
+        # Act
+        self.data_engine.process(data)
+
+        # Assert
+        self.assertEqual([(bar_type, bar)], handler1.get_store())
+        self.assertEqual([(bar_type, bar)], handler2.get_store())

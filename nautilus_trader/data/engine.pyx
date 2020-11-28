@@ -513,15 +513,16 @@ cdef class DataEngine(Component):
             handler: callable,
     ) except *:
         # client already checked
-        # calidate message data
+        # validate message data
         Condition.not_none(bar_type, "bar_type")
         Condition.callable(handler, "handler")
 
         self._add_bar_handler(bar_type, handler)
 
-        if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
-            # Aggregation not started
-            self._start_bar_aggregator(client, bar_type)
+        if bar_type.is_internal_aggregation:
+            if bar_type not in self._bar_aggregators:
+                # Aggregation not started
+                self._start_bar_aggregator(client, bar_type)
         else:
             # External aggregation
             client.subscribe_bars(bar_type)
@@ -658,7 +659,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         else:
-            self._log.error(f"Cannot handle unrecognized data type {data}.")
+            self._log.error(f"Cannot handle unrecognized data of type {type(data)}, {data}.")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
@@ -666,7 +667,7 @@ cdef class DataEngine(Component):
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
         if instrument_handlers:
             for handler in instrument_handlers:
-                handler.handle(instrument)
+                handler(instrument)
 
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *:
         self.cache.add_quote_tick(tick)

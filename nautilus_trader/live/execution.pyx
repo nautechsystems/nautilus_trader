@@ -98,23 +98,21 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             while self._is_running:
                 message = await self._queue.get()
-                if message is None:
-                    continue
-                self._handle_message(message)
+                if message is None:  # Sentinel message
+                    continue  # Returns to the top of the loop to check is_running
+                if message.type == MessageType.EVENT:
+                    self._handle_event(message)
+                elif message.type == MessageType.COMMAND:
+                    self._execute_command(message)
+                else:
+                    self._log.error(f"Cannot handle unrecognized message {message}.")
         except CancelledError:
             if self.qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.qsize()} message(s) on queue.")
+            return
 
         self._log.info(f"Message queue processing stopped (qsize={self.qsize()}).")
-
-    cdef inline void _handle_message(self, Message message):
-        if message.type == MessageType.EVENT:
-            self._handle_event(message)
-        elif message.type == MessageType.COMMAND:
-            self._execute_command(message)
-        else:
-            self._log.error(f"Cannot handle unrecognized message {message}.")
 
     cpdef object get_event_loop(self):
         """
