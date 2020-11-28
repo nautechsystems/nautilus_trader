@@ -21,7 +21,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -156,24 +155,18 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertIn(strategy.id, self.exec_engine.registered_strategies)
 
-    def test_start_in_invalid_state_raises_invalid_state_trigger(self):
-        # Arrange
-        self.exec_engine.dispose()
-
-        # Act
-        # Assert
-        self.assertRaises(InvalidStateTrigger, self.exec_engine.start)
-
     def test_integrity_check_calls_check_on_cache(self):
         # Arrange
-        self.exec_engine.dispose()
-
         # Act
+        self.exec_engine.integrity_check()
+
         # Assert
-        self.assertRaises(InvalidStateTrigger, self.exec_engine.start)
+        self.assertTrue(True)  # No exceptions raised
 
     def test_submit_order(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -209,6 +202,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_handle_order_fill_event(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -260,6 +255,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_handle_position_opening_with_position_id_none(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -311,6 +308,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_add_to_existing_position_on_order_fill(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -382,6 +381,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_close_position_on_order_fill(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),
@@ -459,6 +460,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register_trader(
             TraderId("TESTER", "000"),
@@ -559,6 +562,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register_trader(
             TraderId("TESTER", "000"),
@@ -677,6 +682,8 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_flip_position_on_opposite_filled_same_position(self):
         # Arrange
+        self.exec_engine.start()
+
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register_trader(
             TraderId("TESTER", "000"),

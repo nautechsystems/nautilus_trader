@@ -103,6 +103,7 @@ cdef class LiveDataEngine(DataEngine):
             if self.data_qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.data_qsize()} data item(s) on queue.")
+            return
 
         self._log.info(f"Data queue processing stopped (qsize={self.data_qsize()}).")
 
@@ -112,25 +113,23 @@ cdef class LiveDataEngine(DataEngine):
         try:
             while self._is_running:
                 message = await self._message_queue.get()
-                if message is None:
-                    continue
-                self._handle_message(message)
+                if message is None:  # Sentinel message
+                    continue  # Returns to the top of the loop to check is_running
+                if message.type == MessageType.COMMAND:
+                    self._execute_command(message)
+                elif message.type == MessageType.REQUEST:
+                    self._handle_request(message)
+                elif message.type == MessageType.RESPONSE:
+                    self._handle_response(message)
+                else:
+                    self._log.error(f"Cannot handle unrecognized message {message}.")
         except CancelledError:
             if self.message_qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.message_qsize()} message(s) on queue.")
+                return
 
         self._log.info(f"Message queue processing stopped (qsize={self.message_qsize()}).")
-
-    cdef inline void _handle_message(self, Message message):
-        if message.type == MessageType.COMMAND:
-            self._execute_command(message)
-        elif message.type == MessageType.REQUEST:
-            self._handle_request(message)
-        elif message.type == MessageType.RESPONSE:
-            self._handle_response(message)
-        else:
-            self._log.error(f"Cannot handle unrecognized message {message}.")
 
     cpdef object get_event_loop(self):
         """

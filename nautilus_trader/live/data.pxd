@@ -29,7 +29,6 @@ cdef class LiveDataEngine(DataEngine):
     cpdef object run_task(self)
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *
-    cdef inline void _handle_message(self, Message message)
 
 
 cdef class LiveDataClient(DataClient):
