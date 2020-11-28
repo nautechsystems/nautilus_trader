@@ -15,7 +15,6 @@
 
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
-from asyncio import Task
 import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
@@ -86,14 +85,14 @@ cdef class LiveDataEngine(DataEngine):
         self._log.info(f"Scheduled {self._task_run}")
 
     cpdef void _on_stop(self) except *:
-        self._log.info("Shutting down queue processing...")
         self._is_running = False
-        self._data_queue.put_nowait(None)     # None message pattern
-        self._message_queue.put_nowait(None)  # None message pattern
-        self._task_shutdown = self._loop.create_task(self._shutdown())
+        self._data_queue.put_nowait(None)     # Sentinel message pattern
+        self._message_queue.put_nowait(None)  # Sentinel message pattern
+        self._log.info(f"Sentinel message placed on data queue.")
+        self._log.info(f"Sentinel message placed on message queue.")
 
     async def _run_data_queue(self):
-        self._log.info("Running data queue processing...")
+        self._log.info(f"Data queue processing starting (qsize={self.data_qsize()})...")
         try:
             while self._is_running:
                 data = await self._data_queue.get()
@@ -101,14 +100,14 @@ cdef class LiveDataEngine(DataEngine):
                     continue
                 self._handle_data(data)
         except CancelledError:
-            if data is not None:
-                self._data_queue.put_nowait(data)
             if self.data_qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.data_qsize()} data item(s) on queue.")
 
+        self._log.info(f"Data queue processing stopped (qsize={self.data_qsize()}).")
+
     async def _run_message_queue(self):
-        self._log.info("Running message queue processing...")
+        self._log.info(f"Message queue processing starting (qsize={self.message_qsize()})...")
         cdef Message message
         try:
             while self._is_running:
@@ -117,11 +116,11 @@ cdef class LiveDataEngine(DataEngine):
                     continue
                 self._handle_message(message)
         except CancelledError:
-            if message is not None:
-                self._message_queue.put_nowait(message)
             if self.message_qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.message_qsize()} message(s) on queue.")
+
+        self._log.info(f"Message queue processing stopped (qsize={self.message_qsize()}).")
 
     cdef inline void _handle_message(self, Message message):
         if message.type == MessageType.COMMAND:
@@ -132,33 +131,6 @@ cdef class LiveDataEngine(DataEngine):
             self._handle_response(message)
         else:
             self._log.error(f"Cannot handle unrecognized message {message}.")
-
-    async def _shutdown(self):
-        self._log.info("Shutting down queue processing...")
-        cdef Message message
-        try:
-            # Timeout to allow _run to finish
-            await asyncio.sleep(0.3)  # Hard coded for now
-
-            while not self._data_queue.empty():
-                data = await self._data_queue.get()
-                if data is None:
-                    continue
-                self._handle_data(data)
-
-            while not self._message_queue.empty():
-                message = await self._message_queue.get()
-                if message is None:
-                    continue
-                self._handle_message(message)
-
-            self._log.info(f"Shutdown complete ("
-                           f"data_qsize={self.data_qsize()}, "
-                           f"message_qsize={self.message_qsize()}).")
-        except CancelledError:
-            self._log.warning(f"Shutdown cancelled ("
-                              f"data_qsize={self.data_qsize()}, "
-                              f"message_qsize={self.message_qsize()}).")
 
     cpdef object get_event_loop(self):
         """
@@ -181,17 +153,6 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         return self._task_run
-
-    cpdef object shutdown_task(self):
-        """
-        Return the internal shutdown task for the engine.
-
-        Returns
-        -------
-        asyncio.Task
-
-        """
-        return self._task_shutdown
 
     cpdef int data_qsize(self) except *:
         """

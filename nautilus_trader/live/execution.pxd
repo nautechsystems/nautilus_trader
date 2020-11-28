@@ -22,12 +22,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
     cdef object _queue
     cdef object _task_run
-    cdef object _task_shutdown
     cdef bint _is_running
 
     cpdef object get_event_loop(self)
     cpdef object run_task(self)
-    cpdef object shutdown_task(self)
     cpdef int qsize(self) except *
     cdef inline void _handle_message(self, Message message)
 

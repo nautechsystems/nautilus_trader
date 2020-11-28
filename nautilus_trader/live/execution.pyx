@@ -89,11 +89,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
     cpdef void _on_stop(self) except *:
         self._is_running = False
-        self._queue.put_nowait(None)  # None message pattern
-        self._task_shutdown = self._loop.create_task(self._shutdown())
+        self._queue.put_nowait(None)  # Sentinel message pattern
+        self._log.info(f"Sentinel message placed on message queue.")
 
     async def _run(self):
-        self._log.info("Running queue processing...")
+        self._log.info(f"Message queue processing starting (qsize={self.qsize()})...")
         cdef Message message
         try:
             while self._is_running:
@@ -102,28 +102,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                     continue
                 self._handle_message(message)
         except CancelledError:
-            if message is not None:
-                self._queue.put_nowait(message)
             if self.qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.qsize()} message(s) on queue.")
 
-    async def _shutdown(self):
-        self._log.info("Shutting down queue processing...")
-        cdef Message message
-        try:
-            # Timeout to allow _run to finish
-            await asyncio.sleep(0.3)  # Hard coded for now
-
-            while not self._queue.empty():
-                message = await self._queue.get()
-                if message is None:
-                    continue
-                self._handle_message(message)
-
-            self._log.info(f"Shutdown complete (qsize={self.qsize()}).")
-        except CancelledError:
-            self._log.warning(f"Shutdown cancelled (qsize={self.qsize()}).")
+        self._log.info(f"Message queue processing stopped (qsize={self.qsize()}).")
 
     cdef inline void _handle_message(self, Message message):
         if message.type == MessageType.EVENT:
@@ -154,17 +137,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._task_run
-
-    cpdef object shutdown_task(self):
-        """
-        Return the internal shutdown task for the engine.
-
-        Returns
-        -------
-        asyncio.Task
-
-        """
-        return self._task_shutdown
 
     cpdef int qsize(self) except *:
         """

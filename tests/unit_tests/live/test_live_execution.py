@@ -83,9 +83,6 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
     def tearDown(self):
-        if self.exec_engine.state == ComponentState.RUNNING:
-            self.exec_engine.stop()
-
         self.exec_engine.dispose()
         self.loop.stop()
         self.loop.close()
@@ -103,11 +100,15 @@ class ExecutionEngineTests(unittest.TestCase):
             # Arrange
             # Act
             self.exec_engine.start()
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(ComponentState.RUNNING, self.exec_engine.state)
+
+            # Tear Down
+            self.exec_engine.stop()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(ComponentState.RUNNING, self.exec_engine.state)
 
     def test_execute_command_places_command_on_queue(self):
         async def run_test():
@@ -142,12 +143,14 @@ class ExecutionEngineTests(unittest.TestCase):
 
             # Act
             self.exec_engine.execute(submit_order)
-            self.exec_engine.stop()
-            await self.exec_engine.shutdown_task()
+            await asyncio.sleep(0.1)
 
             # Assert
             self.assertEqual(0, self.exec_engine.qsize())
             self.assertEqual(1, self.exec_engine.command_count)
+
+            # Tear Down
+            self.exec_engine.stop()
 
         self.loop.run_until_complete(run_test())
 
@@ -175,14 +178,16 @@ class ExecutionEngineTests(unittest.TestCase):
 
             # Act
             self.exec_engine.process(event)
+            await asyncio.sleep(0.1)
+
+            # Assert
+            self.assertEqual(0, self.exec_engine.qsize())
+            self.assertEqual(1, self.exec_engine.event_count)
+
+            # Tear Down
             self.exec_engine.stop()
-            await self.exec_engine.shutdown_task()
 
         self.loop.run_until_complete(run_test())
-
-        # Assert
-        self.assertEqual(0, self.exec_engine.qsize())
-        self.assertEqual(1, self.exec_engine.event_count)
 
 
 class LiveExecutionClientTests(unittest.TestCase):
