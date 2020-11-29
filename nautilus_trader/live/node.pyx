@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import time
 import msgpack
 import redis
+from asyncio import AbstractEventLoop
 from signal import SIGINT, SIGTERM
 
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
@@ -68,6 +68,7 @@ cdef class TradingNode:
 
     def __init__(
             self,
+            loop not None: AbstractEventLoop,
             list strategies not None,
             dict config not None,
     ):
@@ -76,8 +77,10 @@ cdef class TradingNode:
 
         Parameters
         ----------
+        loop : AbstractEventLoop
+            The event loop for the trading node.
         strategies : list[TradingStrategy]
-            The list of strategies to run on the node.
+            The list of strategies to run on the trading node.
         config : dict
             The configuration for the trading node.
 
@@ -92,7 +95,7 @@ cdef class TradingNode:
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
-        self._loop = asyncio.get_event_loop()
+        self._loop = loop
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -181,7 +184,7 @@ cdef class TradingNode:
 
     def _loop_sig_handler(self, sig):
         self._loop.stop()
-        self._log.warning(f"Received signal {sig!s}, shutting down...")
+        self._log.warning(f"Received {sig!s}, shutting down...")
         self._loop.remove_signal_handler(SIGTERM)
         self._loop.add_signal_handler(SIGINT, lambda: None)
 
@@ -191,22 +194,42 @@ cdef class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.info(f"Event loop {signals} handling setup.")
 
-    async def run(self):
+    def start(self):
         """
-        Start the trading nodes trader.
+        Start the trading node.
         """
+        self._log.info("Starting...")
+        if self._loop.is_running():
+            self._loop.create_task(self._run())
+        else:
+            self._loop.run_until_complete(self._run())
+
+    def stop(self):
+        """
+        Stop the trading node.
+        """
+        self._log.info("Stopping...")
+        if self._loop.is_running():
+            self._loop.create_task(self._shutdown())
+        else:
+            self._loop.run_until_complete(self._shutdown())
+
+        self._log.info(f"loop.is_running={self._loop.is_running()}")
+
+    async def _run(self):
+        self._log.info(f"loop.is_running={self._loop.is_running()}")
         self._data_engine.start()
         self._exec_engine.start()
         self.trader.start()
 
-        await asyncio.gather(self._data_engine.run_task(), self._exec_engine.run_task())
-
-    async def stop(self):
+    async def _shutdown(self):
         """
         Stop the trading node.
 
         After the specified check residuals delay the internal `Trader`
-        residuals will be checked. If save strategy is specified then strategy
+        residuals will be checked.
+
+        If save strategy is specified then strategy
         states will then be saved.
 
         """
@@ -222,22 +245,27 @@ cdef class TradingNode:
         self._data_engine.stop()
         self._exec_engine.stop()
 
-        await asyncio.gather(self._data_engine.shutdown_task(), self._exec_engine.shutdown_task())
-
-    def dispose(self):
+    cpdef void dispose(self) except *:
         """
         Dispose of the trading node.
 
         This method is idempotent and irreversible. No other methods should be
         called after disposal.
         """
-        self._log.info("Disposing resources...")
+        self._log.info("Disposing...")
 
         self.trader.dispose()
         self._data_engine.dispose()
         self._exec_engine.dispose()
 
+        try:
+            self._loop.stop()
+            self._loop.close()
+        except RuntimeError as ex:
+            self._log.exception(ex)
+
         self._log.info("Disposed.")
+        time.sleep(1)  # Allow final logs to print to console
 
     cdef void _log_header(self) except *:
         nautilus_header(self._log)

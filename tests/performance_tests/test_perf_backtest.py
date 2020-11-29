@@ -201,3 +201,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 18/11/20  4377984 function calls (4352279 primitive calls) in 5.908 seconds (performance check)
         # 25/11/20  4394122 function calls (4363978 primitive calls) in 6.212 seconds (performance check)
         # 27/11/20  4294514 function calls (4268761 primitive calls) in 5.822 seconds (remove redundant methods)
+        # 29/11/20  4374015 function calls (4348306 primitive calls) in 5.753 seconds (performance check)

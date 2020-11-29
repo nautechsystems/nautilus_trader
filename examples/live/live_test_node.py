@@ -17,13 +17,14 @@
 import asyncio
 from decimal import Decimal
 
+from examples.strategies.ema_cross_simple import EMACross
+from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.live.node import TradingNode
-from examples.strategies.ema_cross_simple import EMACross
+
 
 try:
     import uvloop
@@ -65,20 +66,26 @@ config = {
 }
 
 
-async def main():
+def main():
+    loop = asyncio.get_event_loop()
     node = TradingNode(
+        loop=loop,
         strategies=[strategy],
         config=config,
     )
 
-    node.run()
+    input()
+
+    node.start()
 
     input()
 
     node.stop()
+
+    input()
+
     node.dispose()
 
 
 if __name__ == "__main__":
-    # Requires Python 3.8
-    asyncio.run(main())
+    main()
