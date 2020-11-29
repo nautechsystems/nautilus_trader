@@ -527,6 +527,59 @@ class DataEngineTests(unittest.TestCase):
         # Already received 3 instruments
         self.assertEqual(4, self.data_engine.data_count)
 
+    def test_execute_subscribe_instrument_then_adds_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=Instrument,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_instruments)
+
+    def test_execute_unsubscribe_instrument_then_removes_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=Instrument,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            venue=BINANCE,
+            data_type=Instrument,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_instruments)
+
     def test_process_instrument_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -582,8 +635,61 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(ETHUSDT_BINANCE)
 
         # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_instruments)
         self.assertEqual([ETHUSDT_BINANCE], handler1)
         self.assertEqual([ETHUSDT_BINANCE], handler2)
+
+    def test_execute_subscribe_for_quote_ticks(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_quote_ticks)
+
+    def test_execute_unsubscribe_for_quote_ticks(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_quote_ticks)
 
     def test_process_quote_tick_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
@@ -615,6 +721,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(tick)
 
         # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_quote_ticks)
         self.assertEqual([tick], handler)
 
     def test_process_quote_tick_when_subscribers_then_sends_to_registered_handlers(self):
@@ -658,8 +765,62 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(tick)
 
         # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_quote_ticks)
         self.assertEqual([tick], handler1)
         self.assertEqual([tick], handler2)
+
+    def test_subscribe_trade_tick_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=TradeTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_trade_ticks)
+
+    def test_unsubscribe_trade_tick_then_unsubscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=TradeTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            venue=BINANCE,
+            data_type=TradeTick,
+            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_trade_ticks)
 
     def test_process_trade_tick_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
@@ -736,6 +897,65 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([tick], handler1)
         self.assertEqual([tick], handler2)
+
+    def test_subscribe_bar_type_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+
+        handler = ObjectStorer()
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=Bar,
+            metadata={"BarType": bar_type},
+            handler=handler.store_2,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual([bar_type], self.data_engine.subscribed_bars)
+
+    def test_unsubscribe_bar_type_then_unsubscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+
+        handler = ObjectStorer()
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=Bar,
+            metadata={"BarType": bar_type},
+            handler=handler.store_2,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            venue=BINANCE,
+            data_type=Bar,
+            metadata={"BarType": bar_type},
+            handler=handler.store_2,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual([], self.data_engine.subscribed_bars)
 
     def test_process_bar_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
