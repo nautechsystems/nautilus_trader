@@ -32,7 +32,6 @@ from nautilus_trader.live.data cimport LiveDataEngine
 from nautilus_trader.live.execution cimport LiveExecutionEngine
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
 from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -50,7 +49,6 @@ cdef class TradingNode:
     """
     cdef LiveClock _clock
     cdef UUIDFactory _uuid_factory
-    cdef LiveLogger _logger
     cdef LoggerAdapter _log
 
     cdef object _loop
@@ -88,10 +86,10 @@ cdef class TradingNode:
         if strategies is None:
             strategies = []
 
-        config_trader = config["trader"]
-        config_log = config["logging"]
-        config_exec_db = config["exec_database"]
-        config_strategy = config["strategy"]
+        cdef dict config_trader = config["trader"]
+        cdef dict config_log = config["logging"]
+        cdef dict config_exec_db = config["exec_database"]
+        cdef dict config_strategy = config["strategy"]
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
@@ -104,7 +102,7 @@ cdef class TradingNode:
         )
 
         # Setup logging
-        self._logger = LiveLogger(
+        cdef LiveLogger logger = LiveLogger(
             clock=self._clock,
             name=self.trader_id.value,
             level_console=LogLevelParser.from_string(config_log.get("log_level_console")),
@@ -115,35 +113,31 @@ cdef class TradingNode:
             log_file_path=config_log.get("log_file_path", ""),
         )
 
-        self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
+        self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=logger)
         self._log_header()
         self._log.info("Building...")
 
-        # Serializers
-        command_serializer = MsgPackCommandSerializer()
-        event_serializer = MsgPackEventSerializer()
-        header_serializer = MsgPackDictionarySerializer()
-
         self.portfolio = Portfolio(
             clock=self._clock,
-            logger=self._logger,
+            logger=logger,
         )
 
         self._data_engine = LiveDataEngine(
             loop=self._loop,
             portfolio=self.portfolio,
             clock=self._clock,
-            logger=self._logger,
+            logger=logger,
         )
 
+        self.portfolio.register_cache(self._data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         if config_exec_db["type"] == "redis":
             exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
-                logger=self._logger,
-                command_serializer=command_serializer,
-                event_serializer=event_serializer,
+                logger=logger,
+                command_serializer=MsgPackCommandSerializer(),
+                event_serializer=MsgPackEventSerializer(),
                 config={
                     "host": config_exec_db["host"],
                     "port": config_exec_db["port"],
@@ -152,7 +146,7 @@ cdef class TradingNode:
         else:
             exec_db = BypassExecutionDatabase(
                 trader_id=self.trader_id,
-                logger=self._logger,
+                logger=logger,
             )
 
         self._exec_engine = LiveExecutionEngine(
@@ -160,8 +154,12 @@ cdef class TradingNode:
             database=exec_db,
             portfolio=self.portfolio,
             clock=self._clock,
-            logger=self._logger,
+            logger=logger,
         )
+
+        self._exec_engine.load_cache()
+
+        # TODO: Build and register clients here
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -169,7 +167,7 @@ cdef class TradingNode:
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
-            logger=self._logger,
+            logger=logger,
         )
 
         self._check_residuals_delay = 2.0  # Hard coded delay to await system spool up (refactor)
@@ -180,7 +178,7 @@ cdef class TradingNode:
             self.trader.load()
 
         self._setup_loop()
-        self._log.info("Initialized.")
+        self._log.info("state=INITIALIZED.")
 
     def _loop_sig_handler(self, sig):
         self._loop.stop()
@@ -198,23 +196,28 @@ cdef class TradingNode:
         """
         Start the trading node.
         """
-        self._log.info("Starting...")
+        self._log.info("state=STARTING...")
+
         if self._loop.is_running():
             self._loop.create_task(self._run())
         else:
             self._loop.run_until_complete(self._run())
 
+        self._log.info("state=RUNNING.")
+
     def stop(self):
         """
         Stop the trading node.
         """
-        self._log.info("Stopping...")
+        self._log.info("state=STOPPING...")
+
         if self._loop.is_running():
             self._loop.create_task(self._shutdown())
         else:
             self._loop.run_until_complete(self._shutdown())
 
         self._log.info(f"loop.is_running={self._loop.is_running()}")
+        self._log.info("state=STOPPED.")
 
     async def _run(self):
         self._log.info(f"loop.is_running={self._loop.is_running()}")
@@ -252,7 +255,7 @@ cdef class TradingNode:
         This method is idempotent and irreversible. No other methods should be
         called after disposal.
         """
-        self._log.info("Disposing...")
+        self._log.info("state=DISPOSING...")
 
         self.trader.dispose()
         self._data_engine.dispose()
@@ -264,13 +267,13 @@ cdef class TradingNode:
         except RuntimeError as ex:
             self._log.exception(ex)
 
-        self._log.info("Disposed.")
+        self._log.info("state=DISPOSED.")
         time.sleep(1)  # Allow final logs to print to console
 
     cdef void _log_header(self) except *:
         nautilus_header(self._log)
-        if uvloop_version:
-            self._log.info(f"uvloop {uvloop_version}")
         self._log.info(f"redis {redis.__version__}")
         self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
+        if uvloop_version:
+            self._log.info(f"uvloop {uvloop_version}")
         self._log.info("=================================================================")

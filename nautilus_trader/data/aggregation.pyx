@@ -102,9 +102,10 @@ cdef class BarBuilder:
             self._high = price
             self._low = price
             self.initialized = True
-        else:
-            self._high = max(self._high, price)
-            self._low = min(self._low, price)
+        elif price > self._high:
+            self._high = price
+        elif price < self._low:
+            self._low = price
 
         self._close = price
         self.volume += size
