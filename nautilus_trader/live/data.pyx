@@ -96,8 +96,8 @@ cdef class LiveDataEngine(DataEngine):
         try:
             while self._is_running:
                 data = await self._data_queue.get()
-                if data is None:
-                    continue
+                if data is None:  # Sentinel message
+                    continue      # Returns to the top to check `self._is_running`
                 self._handle_data(data)
         except CancelledError:
             if self.data_qsize() > 0:
@@ -114,7 +114,7 @@ cdef class LiveDataEngine(DataEngine):
             while self._is_running:
                 message = await self._message_queue.get()
                 if message is None:  # Sentinel message
-                    continue  # Returns to the top of the loop to check is_running
+                    continue         # Returns to the top to check `self._is_running`
                 if message.type == MessageType.COMMAND:
                     self._execute_command(message)
                 elif message.type == MessageType.REQUEST:
@@ -142,7 +142,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._loop
 
-    cpdef object run_task(self):
+    cpdef object get_run_task(self):
         """
         Return the internal run task for the engine.
 
