@@ -99,7 +99,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             while self._is_running:
                 message = await self._queue.get()
                 if message is None:  # Sentinel message
-                    continue  # Returns to the top of the loop to check is_running
+                    continue         # Returns to the top to check `self._is_running`
                 if message.type == MessageType.EVENT:
                     self._handle_event(message)
                 elif message.type == MessageType.COMMAND:
@@ -125,7 +125,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._loop
 
-    cpdef object run_task(self):
+    cpdef object get_run_task(self):
         """
         Return the internal run task for the engine.
 

@@ -118,7 +118,7 @@ cdef class Component:
         self._log = LoggerAdapter(name, logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._log.info("Initialized.")
+        self._log.info(f"state={self._fsm.state_string_c()}...")
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state

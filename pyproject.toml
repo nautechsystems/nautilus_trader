@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.92.4"
+version = "1.92.5"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -74,6 +74,10 @@ docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first"
+filterwarnings = [
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
 
 # TODO (move .coveragerc here once we're on coverage 5.x)
 
