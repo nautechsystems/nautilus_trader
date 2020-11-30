@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Message
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 
@@ -25,7 +24,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef bint _is_running
 
     cpdef object get_event_loop(self)
-    cpdef object run_task(self)
+    cpdef object get_run_task(self)
     cpdef int qsize(self) except *
 
 

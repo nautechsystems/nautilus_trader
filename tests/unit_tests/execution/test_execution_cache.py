@@ -485,7 +485,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_account(account)
 
         # Assert
-        self.assertTrue(True)  # Did not raise exception
+        self.assertTrue(True)  # No exceptions raised
 
     def test_delete_strategy(self):
         # Arrange

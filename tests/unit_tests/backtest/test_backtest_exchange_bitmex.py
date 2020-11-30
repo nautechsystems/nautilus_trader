@@ -125,6 +125,19 @@ class BinanceSimulatedMarketTests(unittest.TestCase):
         self.data_engine.start()
         self.exec_engine.start()
 
+    def test_repr(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual("SimulatedExchange(BITMEX)", repr(self.exchange))
+
+    def test_check_residuals(self):
+        # Arrange
+        # Act
+        self.exchange.check_residuals()
+        # Assert
+        self.assertTrue(True)  # No exceptions raised
+
     def test_commission_maker_taker_order(self):
         # Arrange
         self.strategy.start()
