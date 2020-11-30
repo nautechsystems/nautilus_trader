@@ -119,11 +119,6 @@ cdef class TradingNode:
         self._log_header()
         self._log.info("Building...")
 
-        # Serializers
-        command_serializer = MsgPackCommandSerializer()
-        event_serializer = MsgPackEventSerializer()
-        header_serializer = MsgPackDictionarySerializer()
-
         self.portfolio = Portfolio(
             clock=self._clock,
             logger=self._logger,
@@ -136,14 +131,15 @@ cdef class TradingNode:
             logger=self._logger,
         )
 
+        self.portfolio.register_cache(self._data_engine.cache)
         self.analyzer = PerformanceAnalyzer()
 
         if config_exec_db["type"] == "redis":
             exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
-                command_serializer=command_serializer,
-                event_serializer=event_serializer,
+                command_serializer=MsgPackCommandSerializer(),
+                event_serializer=MsgPackEventSerializer(),
                 config={
                     "host": config_exec_db["host"],
                     "port": config_exec_db["port"],
@@ -162,6 +158,10 @@ cdef class TradingNode:
             clock=self._clock,
             logger=self._logger,
         )
+
+        self._exec_engine.load_cache()
+
+        # TODO: Build and register clients here
 
         self.trader = Trader(
             trader_id=self.trader_id,
