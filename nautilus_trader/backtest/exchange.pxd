@@ -92,7 +92,6 @@ cdef class SimulatedExchange:
     cpdef void load_module(self, SimulationModule module) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-    cpdef datetime time_now(self)
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, Tick tick) except *
     cdef inline void _process_quote_tick(self, QuoteTick tick) except *

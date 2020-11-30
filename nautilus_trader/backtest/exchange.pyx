@@ -237,17 +237,6 @@ cdef class SimulatedExchange:
 
         self._log.info("Reset.")
 
-    cpdef datetime time_now(self):
-        """
-        Return the current time for the execution client.
-
-        Returns
-        -------
-        datetime
-
-        """
-        return self._clock.utc_now()
-
     cpdef void change_fill_model(self, FillModel fill_model) except *:
         """
         Set the fill model to be the given model.
