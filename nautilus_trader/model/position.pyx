@@ -40,7 +40,7 @@ cdef class Position:
             The order fill event which opened the position.
 
         """
-        self._events = []  # type: [OrderFilled]
+        self._events = []  # type: list[OrderFilled]
         self._buy_quantity = Decimal()
         self._sell_quantity = Decimal()
 

@@ -141,17 +141,17 @@ cdef class SimulatedExchange:
         self.modules = []
 
         self.instruments = instruments
-        self._market_bids = {}  # type: {Symbol, Price}
-        self._market_asks = {}  # type: {Symbol, Price}
+        self._market_bids = {}          # type: dict[Symbol, Price]
+        self._market_asks = {}          # type: dict[Symbol, Price]
         self._slippages = self._get_tick_sizes()
 
-        self._working_orders = {}       # type: {ClientOrderId, Order}
-        self._position_index = {}       # type: {ClientOrderId, PositionId}
-        self._child_orders = {}         # type: {ClientOrderId, [Order]}
-        self._oco_orders = {}           # type: {ClientOrderId, ClientOrderId}
-        self._position_oco_orders = {}  # type: {PositionId, [ClientOrderId]}
-        self._symbol_pos_count = {}     # type: {Symbol, int}
-        self._symbol_ord_count = {}     # type: {Symbol, int}
+        self._working_orders = {}       # type: dict[ClientOrderId, Order]
+        self._position_index = {}       # type: dict[ClientOrderId, PositionId]
+        self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
+        self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
+        self._position_oco_orders = {}  # type: dict[PositionId, list[ClientOrderId]]
+        self._symbol_pos_count = {}     # type: dict[Symbol, int]
+        self._symbol_ord_count = {}     # type: dict[Symbol, int]
         self._executions_count = 0
 
     def __repr__(self) -> str:
@@ -523,7 +523,7 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef inline object _get_tick_sizes(self):
-        cdef dict slippage_index = {}  # type: {Symbol, Decimal}
+        cdef dict slippage_index = {}  # type: dict[Symbol, Decimal]
 
         for symbol, instrument in self.instruments.items():
             slippage_index[symbol] = instrument.tick_size

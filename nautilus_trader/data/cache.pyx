@@ -71,10 +71,10 @@ cdef class DataCache(DataCacheFacade):
         Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Cached data
-        self._instruments = {}  # type: {Symbol, Instrument}
-        self._quote_ticks = {}  # type: {Symbol, [QuoteTick]}
-        self._trade_ticks = {}  # type: {Symbol, [TradeTick]}
-        self._bars = {}         # type: {BarType, [Bar]}
+        self._instruments = {}  # type: dict[Symbol, Instrument]
+        self._quote_ticks = {}  # type: dict[Symbol, list[QuoteTick]]
+        self._trade_ticks = {}  # type: dict[Symbol, list[TradeTick]]
+        self._bars = {}         # type: dict[BarType, list[Bar]]
 
         self._log.info("Initialized.")
 

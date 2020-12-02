@@ -146,7 +146,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         cdef Instrument instrument
         cdef Price bid
         cdef Price ask
-        cdef dict mid_prices = {}  # type: {Symbol, Decimal}
+        cdef dict mid_prices = {}  # type: dict[Symbol, Decimal]
         for position in open_positions:
             instrument = self._exchange.instruments[position.symbol]
             if instrument.asset_class != AssetClass.FX:

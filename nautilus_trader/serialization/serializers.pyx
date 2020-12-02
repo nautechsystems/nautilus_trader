@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgpack
-
 from cpython.datetime cimport datetime
+
+import msgpack
 
 from nautilus_trader.common.cache cimport IdentifierCache
 from nautilus_trader.core.cache cimport ObjectCache
@@ -403,7 +403,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         """
         Condition.not_empty(command_bytes, "command_bytes")
 
-        cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: {str, bytes}
+        cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: dict[str, bytes]
 
         cdef str command_type = unpacked[TYPE]
         cdef UUID command_id = UUID.from_string_c(unpacked[ID])
@@ -617,7 +617,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         """
         Condition.not_empty(event_bytes, "event_bytes")
 
-        cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: {str, bytes}
+        cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: dict[str, bytes]
 
         cdef str event_type = unpacked[TYPE]
         cdef UUID event_id = UUID.from_string_c(unpacked[ID])

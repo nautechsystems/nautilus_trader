@@ -89,7 +89,7 @@ cdef class ExchangeRateCalculator:
         elif price_type == PriceType.MID:
             calculation_quotes = {
                 s: (bid_quotes[s] + ask_quotes[s]) / Decimal(2) for s in bid_quotes
-            }  # type: {str, Decimal}
+            }  # type: dict[str, Decimal]
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type "
                              f"{PriceTypeParser.to_string(price_type)}")
