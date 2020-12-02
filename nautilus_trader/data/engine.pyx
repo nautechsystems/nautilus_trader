@@ -104,17 +104,17 @@ cdef class DataEngine(Component):
             config = {}
 
         self._use_previous_close = config.get("use_previous_close", True)
-        self._clients = {}              # type: {Venue, DataClient}
-        self._correlation_index = {}    # type: {UUID, callable}
+        self._clients = {}              # type: dict[Venue, DataClient]
+        self._correlation_index = {}    # type: dict[UUID, callable]
 
         # Handlers
-        self._instrument_handlers = {}  # type: {Symbol, [callable]}
-        self._quote_tick_handlers = {}  # type: {Symbol, [callable]}
-        self._trade_tick_handlers = {}  # type: {Symbol, [callable]}
-        self._bar_handlers = {}         # type: {BarType, [callable]}
+        self._instrument_handlers = {}  # type: dict[Symbol, list[callable]]
+        self._quote_tick_handlers = {}  # type: dict[Symbol, list[callable]]
+        self._trade_tick_handlers = {}  # type: dict[Symbol, list[callable]]
+        self._bar_handlers = {}         # type: dict[BarType, list[callable]]
 
         # Aggregators
-        self._bar_aggregators = {}      # type: {BarType, BarAggregator}
+        self._bar_aggregators = {}      # type: dict[BarType, BarAggregator]
 
         # Public components
         self.portfolio = portfolio
@@ -851,7 +851,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._instrument_handlers:
-            self._instrument_handlers[symbol] = []  # type: [callable]
+            self._instrument_handlers[symbol] = []  # type: list[callable]
             self._log.info(f"Subscribed to {symbol} <Instrument> data.")
 
         # Add handler for subscriber
@@ -864,7 +864,7 @@ cdef class DataEngine(Component):
     cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._quote_tick_handlers:
             # Setup handlers
-            self._quote_tick_handlers[symbol] = []  # type: [callable]
+            self._quote_tick_handlers[symbol] = []  # type: list[callable]
             self._log.info(f"Subscribed to {symbol} <QuoteTick> data.")
 
         # Add handler for subscriber
@@ -877,7 +877,7 @@ cdef class DataEngine(Component):
     cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._trade_tick_handlers:
             # Setup handlers
-            self._trade_tick_handlers[symbol] = []  # type: [callable]
+            self._trade_tick_handlers[symbol] = []  # type: list[callable]
             self._log.info(f"Subscribed to {symbol} <TradeTick> data.")
 
         # Add handler for subscriber
@@ -890,7 +890,7 @@ cdef class DataEngine(Component):
     cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *:
         if bar_type not in self._bar_handlers:
             # Setup handlers
-            self._bar_handlers[bar_type] = []  # type: [callable]
+            self._bar_handlers[bar_type] = []  # type: list[callable]
             self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
         # Add handler for subscriber

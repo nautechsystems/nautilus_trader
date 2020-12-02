@@ -254,7 +254,7 @@ cdef class TestTimer(Timer):
         """
         Condition.not_none(to_time, "to_time")
 
-        cdef list events = []  # type: [TimeEvent]
+        cdef list events = []  # type: list[TimeEvent]
         while not self.expired and to_time >= self.next_time:
             events.append(self.pop_event(self._uuid_factory.generate()))
             self.iterate_next_time(self.next_time)

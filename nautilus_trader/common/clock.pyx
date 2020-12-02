@@ -40,8 +40,8 @@ cdef class Clock:
         Initialize a new instance of the `Clock` class.
         """
         self._uuid_factory = UUIDFactory()
-        self._timers = {}    # type: {str, Timer}
-        self._handlers = {}  # type: {str, callable}
+        self._timers = {}    # type: dict[str, Timer]
+        self._handlers = {}  # type: dict[str, callable]
         self._stack = None
         self._default_handler = None
         self.is_test_clock = False

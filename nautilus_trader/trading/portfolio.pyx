@@ -122,14 +122,14 @@ cdef class Portfolio(PortfolioFacade):
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._data = None  # Initialized when cache registered
 
-        self._ticks = {}                   # type: {Symbol: QuoteTick}
-        self._accounts = {}                # type: {Venue: Account}
-        self._orders_working = {}          # type: {Venue: {Order}}
-        self._positions_open = {}          # type: {Venue: {Position}}
-        self._positions_closed = {}        # type: {Venue: {Position}}
-        self._net_positions = {}           # type: {Symbol: Decimal}
-        self._unrealized_pnls_symbol = {}  # type: {Symbol: Money}
-        self._unrealized_pnls_venue = {}   # type: {Venue: Money}
+        self._ticks = {}                   # type: dict[Symbol: QuoteTick]
+        self._accounts = {}                # type: dict[Venue: Account]
+        self._orders_working = {}          # type: dict[Venue: set[Order]]
+        self._positions_open = {}          # type: dict[Venue: set[Position]]
+        self._positions_closed = {}        # type: dict[Venue: set[Position]]
+        self._net_positions = {}           # type: dict[Symbol: Decimal]
+        self._unrealized_pnls_symbol = {}  # type: dict[Symbol: Money]
+        self._unrealized_pnls_venue = {}   # type: dict[Venue: Money]
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -269,6 +269,7 @@ cdef class Portfolio(PortfolioFacade):
                 positions_open = self._positions_open.get(position.symbol.venue, set())
                 positions_open.add(position)
                 self._positions_open[position.symbol.venue] = positions_open
+                self._update_net_position(position.symbol, positions_open)
                 self._log.debug(f"Added open {position}")
                 open_count += 1
             elif position.is_closed_c():
@@ -463,11 +464,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(venue, "venue")
-
-        if self._data is None:
-            self._log.error(f"Cannot calculate order margin "
-                            f"(no data cache registered).")
-            return None
+        Condition.not_none(self._data, "self._data")
 
         cdef Account account = self._accounts.get(venue)
         if account is None:
@@ -492,11 +489,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(venue, "venue")
-
-        if self._data is None:
-            self._log.error(f"Cannot calculate position margin "
-                            f"(no data cache registered).")
-            return None
+        Condition.not_none(self._data, "self._data")
 
         cdef Account account = self._accounts.get(venue)
         if account is None:
@@ -521,11 +514,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(venue, "venue")
-
-        if self._data is None:
-            self._log.error(f"Cannot calculate unrealized PNL "
-                            f"(no data cache registered).")
-            return None
+        Condition.not_none(self._data, "self._data")
 
         cdef Money unrealized_pnl = self._unrealized_pnls_venue.get(venue)
 
@@ -576,11 +565,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(symbol, "symbol")
-
-        if self._data is None:
-            self._log.error(f"Cannot calculate unrealized PNL "
-                            f"(no data cache registered).")
-            return None
+        Condition.not_none(self._data, "self._data")
 
         cdef Money pnl = self._unrealized_pnls_symbol.get(symbol)
         if pnl is not None:
@@ -606,11 +591,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(venue, "venue")
-
-        if self._data is None:
-            self._log.error(f"Cannot calculate open value "
-                            f"(no data cache registered).")
-            return None
+        Condition.not_none(self._data, "self._data")
 
         cdef Account account = self._accounts.get(venue)
         if account is None:

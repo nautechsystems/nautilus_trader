@@ -59,27 +59,27 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._database = database
 
         # Cached objects
-        self._cached_accounts = {}            # type: {AccountId, Account}
-        self._cached_orders = {}              # type: {ClientOrderId, Order}
-        self._cached_positions = {}           # type: {PositionId, Position}
+        self._cached_accounts = {}            # type: dict[AccountId, Account]
+        self._cached_orders = {}              # type: dict[ClientOrderId, Order]
+        self._cached_positions = {}           # type: dict[PositionId, Position]
 
         # Cached indexes
-        self._index_venue_account = {}        # type: {Venue, AccountId}
-        self._index_order_position = {}       # type: {ClientOrderId, PositionId}
-        self._index_order_strategy = {}       # type: {ClientOrderId, StrategyId}
-        self._index_position_strategy = {}    # type: {PositionId, StrategyId}
-        self._index_position_orders = {}      # type: {PositionId, {ClientOrderId}}
-        self._index_symbol_orders = {}        # type: {Symbol, {ClientOrderId}}
-        self._index_symbol_positions = {}     # type: {Symbol, {PositionId}}
-        self._index_strategy_orders = {}      # type: {StrategyId, {ClientOrderId}}
-        self._index_strategy_positions = {}   # type: {StrategyId, {PositionId}}
-        self._index_orders = set()            # type: {ClientOrderId}
-        self._index_orders_working = set()    # type: {ClientOrderId}
-        self._index_orders_completed = set()  # type: {ClientOrderId}
-        self._index_positions = set()         # type: {PositionId}
-        self._index_positions_open = set()    # type: {PositionId}
-        self._index_positions_closed = set()  # type: {PositionId}
-        self._index_strategies = set()        # type: {StrategyId}
+        self._index_venue_account = {}        # type: dict[Venue, AccountId]
+        self._index_order_position = {}       # type: dict[ClientOrderId, PositionId]
+        self._index_order_strategy = {}       # type: dict[ClientOrderId, StrategyId]
+        self._index_position_strategy = {}    # type: dict[PositionId, StrategyId]
+        self._index_position_orders = {}      # type: dict[PositionId, set[ClientOrderId]]
+        self._index_symbol_orders = {}        # type: dict[Symbol, set[ClientOrderId]]
+        self._index_symbol_positions = {}     # type: dict[Symbol, set[PositionId]]
+        self._index_strategy_orders = {}      # type: dict[StrategyId, set[ClientOrderId]]
+        self._index_strategy_positions = {}   # type: dict[StrategyId, set[PositionId]]
+        self._index_orders = set()            # type: set[ClientOrderId]
+        self._index_orders_working = set()    # type: set[ClientOrderId]
+        self._index_orders_completed = set()  # type: set[ClientOrderId]
+        self._index_positions = set()         # type: set[PositionId]
+        self._index_positions_open = set()    # type: set[PositionId]
+        self._index_positions_closed = set()  # type: set[PositionId]
+        self._index_strategies = set()        # type: set[StrategyId]
 
         self._log.info("Initialized.")
 
@@ -213,7 +213,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             # 7- Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
-    cpdef void load_strategy(self, TradingStrategy strategy):
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
         Load the state dictionary for the given strategy from the execution cache.
 

@@ -63,12 +63,12 @@ cdef class BacktestDataContainer:
         """
         Initialize a new instance of the `BacktestDataContainer` class.
         """
-        self.symbols = set()   # type: {Instrument}
-        self.instruments = {}  # type: {Symbol, Instrument}
-        self.quote_ticks = {}  # type: {Symbol, pd.DataFrame}
-        self.trade_ticks = {}  # type: {Symbol, pd.DataFrame}
-        self.bars_bid = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
-        self.bars_ask = {}     # type: {Symbol, {BarAggregation, pd.DataFrame}}
+        self.symbols = set()   # type: set[Instrument]
+        self.instruments = {}  # type: dict[Symbol, Instrument]
+        self.quote_ticks = {}  # type: dict[Symbol, pd.DataFrame]
+        self.trade_ticks = {}  # type: dict[Symbol, pd.DataFrame]
+        self.bars_bid = {}     # type: dict[Symbol, dict[BarAggregation, pd.DataFrame]]
+        self.bars_ask = {}     # type: dict[Symbol, dict[BarAggregation, pd.DataFrame]]
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -196,8 +196,8 @@ cdef class BacktestDataContainer:
             Condition.true(symbol in self.instruments, f"symbol in self.instruments")
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
-        cdef dict shapes = {}  # type: {BarAggregation, tuple}
-        cdef dict indexs = {}  # type: {BarAggregation, DatetimeIndex}
+        cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
+        cdef dict indexs = {}  # type: dict[BarAggregation, DatetimeIndex]
         for symbol, data in self.bars_bid.items():
             for aggregation, dataframe in data.items():
                 if aggregation not in shapes:
