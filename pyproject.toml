@@ -35,7 +35,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.6.1"
 ccxt = "^1.38.74"
-cython = "3.0a6"
+cython = "^0.29.21"
 empyrical = "^0.5.5"
 # `importlib.metadata` is in the Python stdlib from 3.8 onwards
 importlib-metadata = { version = "^1.2.0", python = "<3.8" }
