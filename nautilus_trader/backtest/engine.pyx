@@ -372,7 +372,7 @@ cdef class BacktestEngine:
     cdef void _advance_time(self, datetime timestamp) except *:
         cdef TradingStrategy strategy
         cdef TimeEventHandler event_handler
-        cdef list time_events = []  # type: [TimeEventHandler]
+        cdef list time_events = []  # type: list[TimeEventHandler]
         for strategy in self.trader.strategies_c():
             time_events += strategy.clock.advance_time(timestamp)
         for event_handler in sorted(time_events):

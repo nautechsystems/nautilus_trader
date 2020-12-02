@@ -115,10 +115,10 @@ cdef class TradingStrategy(Component):
         self.id = strategy_id
 
         # Indicators
-        self._indicators = []              # type: [Indicator]
-        self._indicators_for_quotes = {}   # type: {Symbol, [Indicator]}
-        self._indicators_for_trades = {}   # type: {Symbol, [Indicator]}
-        self._indicators_for_bars = {}     # type: {BarType, [Indicator]}
+        self._indicators = []              # type: list[Indicator]
+        self._indicators_for_quotes = {}   # type: dict[Symbol, list[Indicator]]
+        self._indicators_for_trades = {}   # type: dict[Symbol, list[Indicator]]
+        self._indicators_for_bars = {}     # type: dict[BarType, list[Indicator]]
 
         # Public components
         self.clock = self._clock
@@ -472,7 +472,7 @@ cdef class TradingStrategy(Component):
             self._indicators.append(indicator)
 
         if symbol not in self._indicators_for_quotes:
-            self._indicators_for_quotes[symbol] = []  # type: [Indicator]
+            self._indicators_for_quotes[symbol] = []  # type: list[Indicator]
 
         if indicator not in self._indicators_for_quotes[symbol]:
             self._indicators_for_quotes[symbol].append(indicator)
@@ -501,7 +501,7 @@ cdef class TradingStrategy(Component):
             self._indicators.append(indicator)
 
         if symbol not in self._indicators_for_trades:
-            self._indicators_for_trades[symbol] = []  # type: [Indicator]
+            self._indicators_for_trades[symbol] = []  # type: list[Indicator]
 
         if indicator not in self._indicators_for_trades[symbol]:
             self._indicators_for_trades[symbol].append(indicator)
@@ -529,7 +529,7 @@ cdef class TradingStrategy(Component):
             self._indicators.append(indicator)
 
         if bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[bar_type] = []  # type: [Indicator]
+            self._indicators_for_bars[bar_type] = []  # type: list[Indicator]
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)

@@ -19,7 +19,6 @@ Defines various order types used for trading.
 
 from decimal import Decimal
 from cpython.datetime cimport datetime
-from typing import Dict
 
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -112,8 +111,8 @@ cdef class Order:
             The order initialized event.
 
         """
-        self._events = [event]    # type: [OrderEvent]
-        self._execution_ids = []  # type: [ExecutionId]
+        self._events = [event]    # type: list[OrderEvent]
+        self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
