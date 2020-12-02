@@ -122,14 +122,14 @@ cdef class Portfolio(PortfolioFacade):
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._data = None  # Initialized when cache registered
 
-        self._ticks = {}                   # type: {Symbol: QuoteTick}
-        self._accounts = {}                # type: {Venue: Account}
-        self._orders_working = {}          # type: {Venue: {Order}}
-        self._positions_open = {}          # type: {Venue: {Position}}
-        self._positions_closed = {}        # type: {Venue: {Position}}
-        self._net_positions = {}           # type: {Symbol: Decimal}
-        self._unrealized_pnls_symbol = {}  # type: {Symbol: Money}
-        self._unrealized_pnls_venue = {}   # type: {Venue: Money}
+        self._ticks = {}                   # type: dict[Symbol: QuoteTick]
+        self._accounts = {}                # type: dict[Venue: Account]
+        self._orders_working = {}          # type: dict[Venue: set[Order]]
+        self._positions_open = {}          # type: dict[Venue: set[Position]]
+        self._positions_closed = {}        # type: dict[Venue: set[Position]]
+        self._net_positions = {}           # type: dict[Symbol: Decimal]
+        self._unrealized_pnls_symbol = {}  # type: dict[Symbol: Money]
+        self._unrealized_pnls_venue = {}   # type: dict[Venue: Money]
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

@@ -109,10 +109,10 @@ cdef class ExecutionEngine(Component):
         super().__init__(clock, logger)
 
         self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
-        self._clients = {}     # type: {Venue, ExecutionClient}
+        self._clients = {}     # type: dict[Venue, ExecutionClient]
 
         # Handlers
-        self._strategies = {}  # type: {StrategyId, TradingStrategy}
+        self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
 
         # Public components
         self.trader_id = database.trader_id
