@@ -39,6 +39,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.trading.portfolio import PortfolioFacade
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -53,6 +54,97 @@ USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
 BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
 BTCUSD_BITMEX = InstrumentLoader.xbtusd_bitmex(leverage=Decimal("10.0"))
 ETHUSD_BITMEX = InstrumentLoader.ethusd_bitmex(leverage=Decimal("10.0"))
+
+
+class PortfolioFacadeTests(unittest.TestCase):
+
+    def test_account_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.account, FXCM)
+
+    def test_order_margin_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.order_margin, FXCM)
+
+    def test_position_margin_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.position_margin, FXCM)
+
+    def test_unrealized_pnl_for_venue_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.unrealized_pnl_for_venue, FXCM)
+
+    def test_unrealized_pnl_for_symbol_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.unrealized_pnl_for_symbol, BTCUSDT_BINANCE.symbol)
+
+    def test_open_value_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.open_value, BITMEX)
+
+    def test_net_position_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.net_position, GBPUSD_FXCM.symbol)
+
+    def test_is_net_long_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.is_net_long, GBPUSD_FXCM.symbol)
+
+    def test_is_net_short_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.is_net_short, GBPUSD_FXCM.symbol)
+
+    def test_is_flat_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.is_flat, GBPUSD_FXCM.symbol)
+
+    def test_is_completely_flat_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.is_completely_flat)
 
 
 class PortfolioTests(unittest.TestCase):
@@ -163,6 +255,146 @@ class PortfolioTests(unittest.TestCase):
         # Act
         # Assert
         self.assertIsNone(self.portfolio.open_value(FXCM))
+
+    def test_update_tick(self):
+        # Arrange
+        tick = TestStubs.quote_tick_5decimal(GBPUSD_FXCM.symbol)
+
+        # Act
+        self.portfolio.update_tick(tick)
+
+        # Assert
+        self.assertIsNone(self.portfolio.unrealized_pnl_for_symbol(GBPUSD_FXCM.symbol))
+
+    def test_update_orders_working(self):
+        # Arrange
+        self.portfolio.register_account(self.account)
+
+        # Create two working orders
+        order1 = self.order_factory.stop_market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity("10.5"),
+            Price("25000.00"),
+        )
+
+        order2 = self.order_factory.stop_market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity("10.5"),
+            Price("25000.00"),
+        )
+
+        filled1 = TestStubs.event_order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("25000.00"),
+        )
+
+        filled2 = TestStubs.event_order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-2"),
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("25000.00"),
+        )
+
+        # Push state to WORKING
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1))
+        order1.apply(filled1)
+
+        # Push state to WORKING
+        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(filled2)
+
+        # Update the last quote
+        last = QuoteTick(
+            BTCUSDT_BINANCE.symbol,
+            Price("25001.00"),
+            Price("25002.00"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.portfolio.update_tick(last)
+        self.portfolio.update_orders_working({order1, order2})
+
+        # Assert
+        self.assertEqual(Money(0, BTC), self.portfolio.order_margin(BINANCE))
+
+    def test_update_positions(self):
+        # Arrange
+        self.portfolio.register_account(self.account)
+
+        # Create a closed position
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity("10.50000000"),
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.SELL,
+            Quantity("10.50000000"),
+        )
+
+        filled1 = TestStubs.event_order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("25000.00"),
+        )
+
+        filled2 = TestStubs.event_order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("25000.00"),
+        )
+
+        position1 = Position(filled1)
+        position1.apply(filled2)
+
+        order3 = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity("10.00000000"),
+        )
+
+        filled3 = TestStubs.event_order_filled(
+            order3,
+            instrument=BTCUSDT_BINANCE,
+            strategy_id=StrategyId("S", "1"),
+            fill_price=Price("25000.00"),
+        )
+
+        position2 = Position(filled3)
+
+        # Update the last quote
+        last = QuoteTick(
+            BTCUSDT_BINANCE.symbol,
+            Price("25001.00"),
+            Price("25002.00"),
+            Quantity(1),
+            Quantity(1),
+            UNIX_EPOCH,
+        )
+
+        # Act
+        self.portfolio.update_positions({position1, position2})
+        self.portfolio.update_tick(last)
+
+        # Assert
+        self.assertTrue(self.portfolio.is_net_long(BTCUSDT_BINANCE.symbol))
 
     def test_opening_one_long_position_updates_portfolio(self):
         # Arrange

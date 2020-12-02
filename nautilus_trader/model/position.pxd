@@ -29,7 +29,6 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class Position:

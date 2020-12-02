@@ -475,7 +475,7 @@ cdef class PassiveOrder(Order):
             datetime expire_time,  # Can be None
             UUID init_id not None,
             datetime timestamp not None,
-            dict options not None: Dict[str, str],
+            dict options not None,
     ):
         """
         Initialize a new instance of the `PassiveOrder` class.

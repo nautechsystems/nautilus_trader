@@ -22,10 +22,40 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.sizing import FixedRiskSizer
+from nautilus_trader.trading.sizing import PositionSizer
 from tests.test_kit.stubs import TestStubs
 
 
 USDJPY = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+
+
+class PositionSizerTests(unittest.TestCase):
+
+    def test_update_instrument(self):
+        # Arrange
+        sizer = PositionSizer(USDJPY)
+
+        # Act
+        sizer.update_instrument(USDJPY)
+
+        # Assert
+        self.assertTrue(True)  # No exceptions raised
+
+    def test_calculate_raises_not_implemented_exception(self):
+        # Arrange
+        sizer = PositionSizer(USDJPY)
+
+        # Act
+        # Assert
+        self.assertRaises(
+            NotImplementedError,
+            sizer.calculate,
+            Price("1.00100"),
+            Price("1.00000"),
+            Money(1000000, USD),
+            Decimal("0.001"),
+            Decimal(1000),
+        )
 
 
 class FixedRiskSizerTests(unittest.TestCase):
@@ -33,6 +63,54 @@ class FixedRiskSizerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.sizer = FixedRiskSizer(USDJPY)
+
+    def test_calculate_with_zero_equity_returns_quantity_zero(self):
+        # Arrange
+        equity = Money(0, USD)  # No equity
+
+        # Act
+        result = self.sizer.calculate(
+            entry=Price("1.00100"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 0.1%
+            unit_batch_size=Decimal(1000),
+        )
+
+        # Assert
+        self.assertEqual(Quantity(0), result)
+
+    def test_calculate_with_zero_exchange_rate_returns_quantity_zero(self):
+        # Arrange
+        equity = Money(0, USD)  # No equity
+
+        # Act
+        result = self.sizer.calculate(
+            entry=Price("1.00100"),
+            stop_loss=Price("1.00000"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 0.1%
+            exchange_rate=Decimal("0"),
+        )
+
+        # Assert
+        self.assertEqual(Quantity(0), result)
+
+    def test_calculate_with_zero_risk_returns_quantity_zero(self):
+        # Arrange
+        equity = Money(0, USD)  # No equity
+
+        # Act
+        result = self.sizer.calculate(
+            entry=Price("1.00100"),
+            stop_loss=Price("1.00100"),
+            equity=equity,
+            risk=Decimal("0.001"),  # 0.1%
+            exchange_rate=Decimal("0"),
+        )
+
+        # Assert
+        self.assertEqual(Quantity(0), result)
 
     def test_calculate_single_unit_size(self):
         # Arrange

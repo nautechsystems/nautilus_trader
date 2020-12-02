@@ -213,7 +213,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             # 7- Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
-    cpdef void load_strategy(self, TradingStrategy strategy):
+    cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
         Load the state dictionary for the given strategy from the execution cache.
 
