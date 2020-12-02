@@ -43,7 +43,7 @@ Options.fast_fail = True  # Abort compilation on first error
 Options.warning_errors = True  # Treat compiler warnings as errors
 
 CYTHON_COMPILER_DIRECTIVES = {
-    "language_level": "3",
+    # language_level now Python 3.x by default
     "cdivision": True,  # If division is as per C with no check for zero (35% speed up)
     "embedsignature": True,  # If docstrings should be embedded into C signatures
     # If we're profiling, turn on line tracing
