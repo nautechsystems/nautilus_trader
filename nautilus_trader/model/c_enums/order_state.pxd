@@ -33,7 +33,7 @@ cpdef enum OrderState:
 cdef class OrderStateParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderState from_string(str value)
+    cdef OrderState from_str(str value)

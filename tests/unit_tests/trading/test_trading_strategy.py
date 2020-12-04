@@ -302,7 +302,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = TradingStrategy("000")
-        event = TestStubs.event_account_state(AccountId.from_string("SIM-000-SIMULATED"))
+        event = TestStubs.event_account_state(AccountId.from_str("SIM-000-SIMULATED"))
 
         # Act
         strategy.on_event(event)
@@ -666,7 +666,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        event = TestStubs.event_account_state(AccountId.from_string("TEST-000-SIMULATED"))
+        event = TestStubs.event_account_state(AccountId.from_str("TEST-000-SIMULATED"))
 
         # Act
         # Assert
@@ -1161,7 +1161,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.subscribe_instrument(AUDUSD_FXCM.symbol)
 
         # Assert
-        self.assertEqual([Symbol('AUD/USD', Venue('FXCM'))], self.data_engine.subscribed_instruments)
+        self.assertEqual([Symbol("AUD/USD", Venue("FXCM"))], self.data_engine.subscribed_instruments)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_instrument(self):
@@ -1203,7 +1203,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.subscribe_quote_ticks(AUDUSD_FXCM.symbol)
 
         # Assert
-        self.assertEqual([Symbol('AUD/USD', Venue('FXCM'))], self.data_engine.subscribed_quote_ticks)
+        self.assertEqual([Symbol("AUD/USD", Venue("FXCM"))], self.data_engine.subscribed_quote_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_quote_ticks(self):
@@ -1245,7 +1245,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.subscribe_trade_ticks(AUDUSD_FXCM.symbol)
 
         # Assert
-        self.assertEqual([Symbol('AUD/USD', Venue('FXCM'))], self.data_engine.subscribed_trade_ticks)
+        self.assertEqual([Symbol("AUD/USD", Venue("FXCM"))], self.data_engine.subscribed_trade_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_trade_ticks(self):

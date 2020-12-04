@@ -106,13 +106,13 @@ cdef class BarSpecification:
         return hash((self.step, self.aggregation, self.price_type))
 
     def __str__(self) -> str:
-        return f"{self.step}-{BarAggregationParser.to_string(self.aggregation)}-{PriceTypeParser.to_string(self.price_type)}"
+        return f"{self.step}-{BarAggregationParser.to_str(self.aggregation)}-{PriceTypeParser.to_str(self.price_type)}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
     @staticmethod
-    cdef BarSpecification from_string_c(str value):
+    cdef BarSpecification from_str_c(str value):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=2)
@@ -122,12 +122,12 @@ cdef class BarSpecification:
 
         return BarSpecification(
             int(pieces[0]),
-            BarAggregationParser.from_string(pieces[1]),
-            PriceTypeParser.from_string(pieces[2]),
+            BarAggregationParser.from_str(pieces[1]),
+            PriceTypeParser.from_str(pieces[2]),
         )
 
     @staticmethod
-    def from_string(str value) -> BarSpecification:
+    def from_str(str value) -> BarSpecification:
         """
         Return a bar specification parsed from the given string.
 
@@ -150,7 +150,7 @@ cdef class BarSpecification:
             If value is not a valid string.
 
         """
-        return BarSpecification.from_string_c(value)
+        return BarSpecification.from_str_c(value)
 
     cpdef bint is_time_aggregated(self) except *:
         """
@@ -240,7 +240,7 @@ cdef class BarType:
         return f"{type(self).__name__}({self}, is_internal_aggregation={self.is_internal_aggregation})"
 
     @staticmethod
-    cdef BarType from_string_c(str value, bint is_internal_aggregation=True):
+    cdef BarType from_str_c(str value, bint is_internal_aggregation=True):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -248,17 +248,17 @@ cdef class BarType:
         if len(pieces) != 4:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
-        cdef Symbol symbol = Symbol.from_string_c(pieces[0])
+        cdef Symbol symbol = Symbol.from_str_c(pieces[0])
         cdef BarSpecification bar_spec = BarSpecification(
             int(pieces[1]),
-            BarAggregationParser.from_string(pieces[2]),
-            PriceTypeParser.from_string(pieces[3]),
+            BarAggregationParser.from_str(pieces[2]),
+            PriceTypeParser.from_str(pieces[3]),
         )
 
         return BarType(symbol, bar_spec, is_internal_aggregation)
 
     @staticmethod
-    def from_string(str value, bint is_internal_aggregation=False) -> BarType:
+    def from_str(str value, bint is_internal_aggregation=False) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -279,7 +279,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_string_c(value, is_internal_aggregation)
+        return BarType.from_str_c(value, is_internal_aggregation)
 
 
 cdef class Bar:

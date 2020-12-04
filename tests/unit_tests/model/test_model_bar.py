@@ -64,11 +64,11 @@ class BarSpecificationTests(unittest.TestCase):
         ["-1-TICK-MID"],
         ["1-TICK_MID"],
     ])
-    def test_from_string_given_various_invalid_strings_raises_value_error(self, value):
+    def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarSpecification.from_string, value)
+        self.assertRaises(ValueError, BarSpecification.from_str, value)
 
     @parameterized.expand([
         ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
@@ -77,10 +77,10 @@ class BarSpecificationTests(unittest.TestCase):
         ["10000-VALUE_IMBALANCE-MID", BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID)],
 
     ])
-    def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
+    def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
-        spec = BarSpecification.from_string(value)
+        spec = BarSpecification.from_str(value)
 
         # Assert
         self.assertEqual(spec, expected)
@@ -109,8 +109,8 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_equality(self):
         # Arrange
-        symbol1 = Symbol("AUD/USD", Venue('FXCM'))
-        symbol2 = Symbol("GBP/USD", Venue('FXCM'))
+        symbol1 = Symbol("AUD/USD", Venue("FXCM"))
+        symbol2 = Symbol("GBP/USD", Venue("FXCM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
@@ -124,7 +124,7 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue("FXCM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
 
@@ -138,22 +138,22 @@ class BarTypeTests(unittest.TestCase):
         ["AUD/USD"],
         ["AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
     ])
-    def test_from_string_given_various_invalid_strings_raises_value_error(self, value):
+    def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarType.from_string, value)
+        self.assertRaises(ValueError, BarType.from_str, value)
 
     @parameterized.expand([
         ["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(Symbol("AUD/USD", Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],
         ["GBP/USD.FXCM-1000-TICK-MID", BarType(Symbol("GBP/USD", Venue("FXCM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],
         ["AAPL.NYSE-1-HOUR-MID", BarType(Symbol("AAPL", Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],
-        ["BTCUSDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTCUSDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
+        ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTC/USDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
     ])
-    def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
+    def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
-        bar_type = BarType.from_string(value, is_internal_aggregation=True)
+        bar_type = BarType.from_str(value, is_internal_aggregation=True)
 
         # Assert
         self.assertEqual(bar_type, expected)
@@ -297,7 +297,7 @@ class BarDataTests(unittest.TestCase):
 
     def test_str_repr(self):
         # Arrange
-        symbol = Symbol("GBP/USD", Venue('FXCM'))
+        symbol = Symbol("GBP/USD", Venue("FXCM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         bar = Bar(

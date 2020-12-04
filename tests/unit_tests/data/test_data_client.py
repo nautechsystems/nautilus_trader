@@ -36,7 +36,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 FXCM = Venue("FXCM")
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol('AUD/USD', FXCM))
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", FXCM))
 
 
 class DataClientTests(unittest.TestCase):

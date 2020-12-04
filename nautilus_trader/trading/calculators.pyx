@@ -92,7 +92,7 @@ cdef class ExchangeRateCalculator:
             }  # type: dict[str, Decimal]
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type "
-                             f"{PriceTypeParser.to_string(price_type)}")
+                             f"{PriceTypeParser.to_str(price_type)}")
 
         cdef str symbol
         cdef tuple pieces
@@ -203,20 +203,20 @@ cdef class RolloverInterestCalculator:
 
         """
         self._rate_data = {
-            'AUD': data.loc[data['LOCATION'] == 'AUS'],
-            'CAD': data.loc[data['LOCATION'] == 'CAN'],
-            'CHF': data.loc[data['LOCATION'] == 'CHE'],
-            'EUR': data.loc[data['LOCATION'] == 'EA19'],
-            'USD': data.loc[data['LOCATION'] == 'USA'],
-            'JPY': data.loc[data['LOCATION'] == 'JPN'],
-            'NZD': data.loc[data['LOCATION'] == 'NZL'],
-            'GBP': data.loc[data['LOCATION'] == 'GBR'],
-            'RUB': data.loc[data['LOCATION'] == 'RUS'],
-            'NOK': data.loc[data['LOCATION'] == 'NOR'],
-            'CNY': data.loc[data['LOCATION'] == 'CHN'],
-            'CNH': data.loc[data['LOCATION'] == 'CHN'],
-            'MXN': data.loc[data['LOCATION'] == 'MEX'],
-            'ZAR': data.loc[data['LOCATION'] == 'ZAF'],
+            "AUD": data.loc[data["LOCATION"] == "AUS"],
+            "CAD": data.loc[data["LOCATION"] == "CAN"],
+            "CHF": data.loc[data["LOCATION"] == "CHE"],
+            "EUR": data.loc[data["LOCATION"] == "EA19"],
+            "USD": data.loc[data["LOCATION"] == "USA"],
+            "JPY": data.loc[data["LOCATION"] == "JPN"],
+            "NZD": data.loc[data["LOCATION"] == "NZL"],
+            "GBP": data.loc[data["LOCATION"] == "GBR"],
+            "RUB": data.loc[data["LOCATION"] == "RUS"],
+            "NOK": data.loc[data["LOCATION"] == "NOR"],
+            "CNY": data.loc[data["LOCATION"] == "CHN"],
+            "CNH": data.loc[data["LOCATION"] == "CHN"],
+            "MXN": data.loc[data["LOCATION"] == "MEX"],
+            "ZAR": data.loc[data["LOCATION"] == "ZAF"],
         }
 
     cpdef object get_rate_data(self):

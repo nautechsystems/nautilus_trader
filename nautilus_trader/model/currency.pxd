@@ -58,4 +58,4 @@ cdef class Currency:
     """The general type of the currency.\n\n:returns: `CurrencyType`"""
 
     @staticmethod
-    cdef Currency from_string_c(str code)
+    cdef Currency from_str_c(str code)

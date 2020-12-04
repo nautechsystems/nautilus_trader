@@ -19,7 +19,7 @@ from cpython.datetime cimport datetime
 cdef class ObjectParser:
 
     @staticmethod
-    cdef str datetime_to_string(datetime dt)
+    cdef str datetime_to_str(datetime dt)
 
     @staticmethod
     cdef datetime string_to_datetime(str dt_string)

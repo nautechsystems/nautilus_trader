@@ -16,31 +16,31 @@
 cdef class AccountTypeParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
-            return 'SIMULATED'
+            return "SIMULATED"
         elif value == 2:
-            return 'DEMO'
+            return "DEMO"
         elif value == 3:
-            return 'REAL'
+            return "REAL"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
-    cdef AccountType from_string(str value):
-        if value == 'SIMULATED':
+    cdef AccountType from_str(str value):
+        if value == "SIMULATED":
             return AccountType.SIMULATED
-        elif value == 'DEMO':
+        elif value == "DEMO":
             return AccountType.DEMO
-        elif value == 'REAL':
+        elif value == "REAL":
             return AccountType.REAL
         else:
             return AccountType.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return AccountTypeParser.to_string(value)
+    def to_str_py(int value):
+        return AccountTypeParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return AccountTypeParser.from_string(value)
+    def from_str_py(str value):
+        return AccountTypeParser.from_str(value)

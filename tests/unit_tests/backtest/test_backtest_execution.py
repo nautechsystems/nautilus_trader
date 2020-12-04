@@ -59,7 +59,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.logger = TestLogger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
-        self.account_id = AccountId.from_string("BINANCE-000-SIMULATED")
+        self.account_id = AccountId.from_str("BINANCE-000-SIMULATED")
 
         self.portfolio = Portfolio(
             clock=self.clock,

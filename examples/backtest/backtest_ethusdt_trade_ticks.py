@@ -38,8 +38,8 @@ from tests.test_kit.data_provider import TestDataProvider
 
 if __name__ == "__main__":
     # Setup trading instruments
-    exchange = Venue('BINANCE')
-    symbol = Symbol('ETHUSDT', exchange)
+    exchange = Venue("BINANCE")
+    symbol = Symbol("ETH/USDT", exchange)
     ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
     # Setup data container
@@ -103,7 +103,7 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
-        print(engine.trader.generate_account_report(AccountId.from_string("BINANCE-000-SIMULATED")))
+        print(engine.trader.generate_account_report(AccountId.from_str("BINANCE-000-SIMULATED")))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

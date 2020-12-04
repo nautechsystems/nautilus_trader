@@ -21,18 +21,18 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 class SerializationFunctionTests(unittest.TestCase):
 
-    def test_convert_datetime_to_string_from_none(self):
+    def test_convert_datetime_to_str_from_none(self):
         # Arrange
         # Act
-        result = ObjectParser.datetime_to_string_py(None)
+        result = ObjectParser.datetime_to_str_py(None)
 
         # Assert
         self.assertEqual("None", result)
 
-    def test_convert_datetime_to_string(self):
+    def test_convert_datetime_to_str(self):
         # Arrange
         # Act
-        result = ObjectParser.datetime_to_string_py(UNIX_EPOCH)
+        result = ObjectParser.datetime_to_str_py(UNIX_EPOCH)
 
         # Assert
         self.assertEqual("0", result)

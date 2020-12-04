@@ -232,7 +232,7 @@ cdef class ModifyOrder(VenueCommand):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
-                f"quantity={self.quantity.to_string()}, "
+                f"quantity={self.quantity.to_str()}, "
                 f"price={self.price})")
 
 

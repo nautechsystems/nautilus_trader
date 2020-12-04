@@ -16,7 +16,7 @@
 cdef class ComponentTriggerParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'START'
         elif value == 2:
@@ -37,7 +37,7 @@ cdef class ComponentTriggerParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef ComponentTrigger from_string(str value):
+    cdef ComponentTrigger from_str(str value):
         if value == 'START':
             return ComponentTrigger.START
         elif value == 'RUNNING':
@@ -58,9 +58,9 @@ cdef class ComponentTriggerParser:
             return ComponentTrigger.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return ComponentTriggerParser.to_string(value)
+    def to_str_py(int value):
+        return ComponentTriggerParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return ComponentTriggerParser.from_string(value)
+    def from_str_py(str value):
+        return ComponentTriggerParser.from_str(value)

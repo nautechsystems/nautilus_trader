@@ -34,7 +34,7 @@ cpdef enum BarAggregation:
 cdef class BarAggregationParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef BarAggregation from_string(str value)
+    cdef BarAggregation from_str(str value)

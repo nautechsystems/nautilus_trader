@@ -16,27 +16,27 @@
 cdef class LiquiditySideParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
-            return 'MAKER'
+            return "MAKER"
         elif value == 2:
-            return 'TAKER'
+            return "TAKER"
         else:
-            return 'NONE'
+            return "NONE"
 
     @staticmethod
-    cdef LiquiditySide from_string(str value):
-        if value == 'MAKER':
+    cdef LiquiditySide from_str(str value):
+        if value == "MAKER":
             return LiquiditySide.MAKER
-        elif value == 'TAKER':
+        elif value == "TAKER":
             return LiquiditySide.TAKER
         else:
             return LiquiditySide.NONE
 
     @staticmethod
-    def to_string_py(int value):
-        return LiquiditySideParser.to_string(value)
+    def to_str_py(int value):
+        return LiquiditySideParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return LiquiditySideParser.from_string(value)
+    def from_str_py(str value):
+        return LiquiditySideParser.from_str(value)

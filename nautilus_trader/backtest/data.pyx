@@ -344,7 +344,7 @@ cdef class BacktestDataProducer(DataClient):
                 quote_wrangler.pre_process(symbol_counter)
                 quote_tick_frames.append(quote_wrangler.processed_data)
 
-                execution_resolution = BarAggregationParser.to_string(quote_wrangler.resolution)
+                execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
                 self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {symbol} quote tick rows in "
                                f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
                 del quote_wrangler  # Dump processing artifact
@@ -362,7 +362,7 @@ cdef class BacktestDataProducer(DataClient):
                 trade_wrangler.pre_process(symbol_counter)
                 trade_tick_frames.append(trade_wrangler.processed_data)
 
-                execution_resolution = BarAggregationParser.to_string(BarAggregation.TICK)
+                execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
                 self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {symbol} trade tick rows in "
                                f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
                 del trade_wrangler  # Dump processing artifact
@@ -552,7 +552,7 @@ cdef class BacktestDataProducer(DataClient):
             self._symbol_index[self._trade_symbols[index]],
             Price(self._trade_prices[index]),
             Quantity(self._trade_sizes[index]),
-            MakerParser.from_string(self._trade_makers[index]),
+            MakerParser.from_str(self._trade_makers[index]),
             TradeMatchId(self._trade_match_ids[index]),
             self._trade_timestamps[index],
         )
