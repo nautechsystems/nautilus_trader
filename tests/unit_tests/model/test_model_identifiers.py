@@ -152,9 +152,9 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_equality(self):
         # Arrange
-        symbol1 = Symbol("AUD/USD", Venue('FXCM'))
+        symbol1 = Symbol("AUD/USD", Venue("FXCM"))
         symbol2 = Symbol("AUD/USD", Venue('IDEAL_PRO'))
-        symbol3 = Symbol("GBP/USD", Venue('FXCM'))
+        symbol3 = Symbol("GBP/USD", Venue("FXCM"))
 
         # Act
         # Assert
@@ -164,7 +164,7 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_str(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue("FXCM"))
 
         # Act
         # Assert
@@ -172,7 +172,7 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_repr(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue("FXCM"))
 
         # Act
         # Assert
@@ -180,7 +180,7 @@ class IdentifierTests(unittest.TestCase):
 
     def test_parse_symbol_from_str(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue("FXCM"))
 
         # Act
         result = Symbol.from_str(symbol.value)
@@ -235,8 +235,8 @@ class IdentifierTests(unittest.TestCase):
     def test_account_identifier(self):
         # Arrange
         # Act
-        account_id1 = AccountId('FXCM', "02851908", AccountType.DEMO)
-        account_id2 = AccountId('FXCM', "09999999", AccountType.DEMO)
+        account_id1 = AccountId("FXCM", "02851908", AccountType.DEMO)
+        account_id2 = AccountId("FXCM", "09999999", AccountType.DEMO)
 
         # Assert
         self.assertEqual(account_id1, account_id1)

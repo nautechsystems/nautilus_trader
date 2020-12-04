@@ -607,7 +607,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(32.09968966, USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.98003629764065335753176042"), position.avg_open)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19 ETHUSDT.BINANCE)", repr(position))
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)", repr(position))
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
@@ -699,7 +699,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money(-415.27137481, USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTCUSDT.BINANCE)", repr(position))
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
 
     def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):
         # Arrange

@@ -396,7 +396,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         account_event2 = self.strategy.object_storer.get_store()[6]
         account_event3 = self.strategy.object_storer.get_store()[10]
 
-        account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
+        account = self.exec_engine.cache.account_for_venue(Venue("FXCM"))
 
         # Assert
         self.assertEqual(Money(180.01, JPY), account_event1.commission)

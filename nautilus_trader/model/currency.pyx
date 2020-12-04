@@ -18,67 +18,67 @@ from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 
 # Crypto currencies
-BTC = Currency('BTC', precision=8, currency_type=CurrencyType.CRYPTO)
-ETH = Currency('ETH', precision=8, currency_type=CurrencyType.CRYPTO)
-USDT = Currency('USDT', precision=8, currency_type=CurrencyType.CRYPTO)
-XRP = Currency('XRP', precision=8, currency_type=CurrencyType.CRYPTO)
-BCH = Currency('BCH', precision=2, currency_type=CurrencyType.CRYPTO)
-BNB = Currency('BNB', precision=4, currency_type=CurrencyType.CRYPTO)
-DOT = Currency('DOT', precision=4, currency_type=CurrencyType.CRYPTO)
-LINK = Currency('LINK', precision=4, currency_type=CurrencyType.CRYPTO)
-LTC = Currency('LTC', precision=2, currency_type=CurrencyType.CRYPTO)
+BTC = Currency("BTC", precision=8, currency_type=CurrencyType.CRYPTO)
+ETH = Currency("ETH", precision=8, currency_type=CurrencyType.CRYPTO)
+USDT = Currency("USDT", precision=8, currency_type=CurrencyType.CRYPTO)
+XRP = Currency("XRP", precision=8, currency_type=CurrencyType.CRYPTO)
+BCH = Currency("BCH", precision=2, currency_type=CurrencyType.CRYPTO)
+BNB = Currency("BNB", precision=4, currency_type=CurrencyType.CRYPTO)
+DOT = Currency("DOT", precision=4, currency_type=CurrencyType.CRYPTO)
+LINK = Currency("LINK", precision=4, currency_type=CurrencyType.CRYPTO)
+LTC = Currency("LTC", precision=2, currency_type=CurrencyType.CRYPTO)
 
 # Fiat currencies
-AUD = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-CAD = Currency('CAD', precision=2, currency_type=CurrencyType.FIAT)
-CHF = Currency('CHF', precision=2, currency_type=CurrencyType.FIAT)
-CNY = Currency('CNY', precision=2, currency_type=CurrencyType.FIAT)
-CNH = Currency('CNH', precision=2, currency_type=CurrencyType.FIAT)
-CZK = Currency('CZK', precision=2, currency_type=CurrencyType.FIAT)
-EUR = Currency('EUR', precision=2, currency_type=CurrencyType.FIAT)
-GBP = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
-HKD = Currency('HKD', precision=2, currency_type=CurrencyType.FIAT)
-JPY = Currency('JPY', precision=2, currency_type=CurrencyType.FIAT)
-MXN = Currency('MXN', precision=2, currency_type=CurrencyType.FIAT)
-NOK = Currency('NOK', precision=2, currency_type=CurrencyType.FIAT)
-NZD = Currency('NZD', precision=2, currency_type=CurrencyType.FIAT)
-RUB = Currency('RUB', precision=2, currency_type=CurrencyType.FIAT)
-SEK = Currency('SEK', precision=2, currency_type=CurrencyType.FIAT)
-TRY = Currency('TRY', precision=2, currency_type=CurrencyType.FIAT)
-SGD = Currency('SGD', precision=2, currency_type=CurrencyType.FIAT)
-USD = Currency('USD', precision=2, currency_type=CurrencyType.FIAT)
-ZAR = Currency('ZAR', precision=2, currency_type=CurrencyType.FIAT)
+AUD = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+CAD = Currency("CAD", precision=2, currency_type=CurrencyType.FIAT)
+CHF = Currency("CHF", precision=2, currency_type=CurrencyType.FIAT)
+CNY = Currency("CNY", precision=2, currency_type=CurrencyType.FIAT)
+CNH = Currency("CNH", precision=2, currency_type=CurrencyType.FIAT)
+CZK = Currency("CZK", precision=2, currency_type=CurrencyType.FIAT)
+EUR = Currency("EUR", precision=2, currency_type=CurrencyType.FIAT)
+GBP = Currency("GBP", precision=2, currency_type=CurrencyType.FIAT)
+HKD = Currency("HKD", precision=2, currency_type=CurrencyType.FIAT)
+JPY = Currency("JPY", precision=2, currency_type=CurrencyType.FIAT)
+MXN = Currency("MXN", precision=2, currency_type=CurrencyType.FIAT)
+NOK = Currency("NOK", precision=2, currency_type=CurrencyType.FIAT)
+NZD = Currency("NZD", precision=2, currency_type=CurrencyType.FIAT)
+RUB = Currency("RUB", precision=2, currency_type=CurrencyType.FIAT)
+SEK = Currency("SEK", precision=2, currency_type=CurrencyType.FIAT)
+TRY = Currency("TRY", precision=2, currency_type=CurrencyType.FIAT)
+SGD = Currency("SGD", precision=2, currency_type=CurrencyType.FIAT)
+USD = Currency("USD", precision=2, currency_type=CurrencyType.FIAT)
+ZAR = Currency("ZAR", precision=2, currency_type=CurrencyType.FIAT)
 
 
 cdef dict _CURRENCY_TABLE = {
-    'BTC': BTC,
-    'ETH': ETH,
-    'XRP': XRP,
-    'BCH': BCH,
-    'BNB': BNB,
-    'DOT': DOT,
-    'LINK': LINK,
-    'LTC': LTC,
-    'USDT': USDT,
-    'AUD': AUD,
-    'CAD': CAD,
-    'CHF': CHF,
-    'CNY': CNY,
-    'CNH': CNH,
-    'CZK': CZK,
-    'EUR': EUR,
-    'GBP': GBP,
-    'HKD': HKD,
-    'JPY': JPY,
-    'MXN': MXN,
-    'NOK': NOK,
-    'NZD': NZD,
-    'RUB': RUB,
-    'SEK': SEK,
-    'TRY': TRY,
-    'SGD': SGD,
-    'USD': USD,
-    'ZAR': ZAR,
+    "BTC": BTC,
+    "ETH": ETH,
+    "XRP": XRP,
+    "BCH": BCH,
+    "BNB": BNB,
+    "DOT": DOT,
+    "LINK": LINK,
+    "LTC": LTC,
+    "USDT": USDT,
+    "AUD": AUD,
+    "CAD": CAD,
+    "CHF": CHF,
+    "CNY": CNY,
+    "CNH": CNH,
+    "CZK": CZK,
+    "EUR": EUR,
+    "GBP": GBP,
+    "HKD": HKD,
+    "JPY": JPY,
+    "MXN": MXN,
+    "NOK": NOK,
+    "NZD": NZD,
+    "RUB": RUB,
+    "SEK": SEK,
+    "TRY": TRY,
+    "SGD": SGD,
+    "USD": USD,
+    "ZAR": ZAR,
 }
 
 

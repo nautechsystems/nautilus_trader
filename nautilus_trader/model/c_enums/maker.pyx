@@ -18,17 +18,17 @@ cdef class MakerParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'BUYER'
+            return "BUYER"
         elif value == 2:
-            return 'SELLER'
+            return "SELLER"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef Maker from_str(str value):
-        if value == 'BUYER':
+        if value == "BUYER":
             return Maker.BUYER
-        elif value == 'SELLER':
+        elif value == "SELLER":
             return Maker.SELLER
         else:
             return Maker.UNDEFINED

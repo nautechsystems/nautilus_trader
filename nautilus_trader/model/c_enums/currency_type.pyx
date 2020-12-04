@@ -18,17 +18,17 @@ cdef class CurrencyTypeParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'CRYPTO'
+            return "CRYPTO"
         elif value == 2:
-            return 'FIAT'
+            return "FIAT"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef CurrencyType from_str(str value):
-        if value == 'CRYPTO':
+        if value == "CRYPTO":
             return CurrencyType.CRYPTO
-        elif value == 'FIAT':
+        elif value == "FIAT":
             return CurrencyType.FIAT
         else:
             return CurrencyType.UNDEFINED

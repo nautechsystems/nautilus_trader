@@ -109,8 +109,8 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_equality(self):
         # Arrange
-        symbol1 = Symbol("AUD/USD", Venue('FXCM'))
-        symbol2 = Symbol("GBP/USD", Venue('FXCM'))
+        symbol1 = Symbol("AUD/USD", Venue("FXCM"))
+        symbol2 = Symbol("GBP/USD", Venue("FXCM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
@@ -124,7 +124,7 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue('FXCM'))
+        symbol = Symbol("AUD/USD", Venue("FXCM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
 
@@ -148,7 +148,7 @@ class BarTypeTests(unittest.TestCase):
         ["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(Symbol("AUD/USD", Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],
         ["GBP/USD.FXCM-1000-TICK-MID", BarType(Symbol("GBP/USD", Venue("FXCM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],
         ["AAPL.NYSE-1-HOUR-MID", BarType(Symbol("AAPL", Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],
-        ["BTCUSDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTCUSDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
+        ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTC/USDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
     ])
     def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
@@ -297,7 +297,7 @@ class BarDataTests(unittest.TestCase):
 
     def test_str_repr(self):
         # Arrange
-        symbol = Symbol("GBP/USD", Venue('FXCM'))
+        symbol = Symbol("GBP/USD", Venue("FXCM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         bar = Bar(
