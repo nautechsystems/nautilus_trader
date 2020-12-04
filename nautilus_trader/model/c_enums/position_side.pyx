@@ -16,31 +16,31 @@
 cdef class PositionSideParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
-            return 'FLAT'
+            return "FLAT"
         elif value == 2:
-            return 'LONG'
+            return "LONG"
         elif value == 3:
-            return 'SHORT'
+            return "SHORT"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
-    cdef PositionSide from_string(str value):
-        if value == 'FLAT':
+    cdef PositionSide from_str(str value):
+        if value == "FLAT":
             return PositionSide.FLAT
-        elif value == 'LONG':
+        elif value == "LONG":
             return PositionSide.LONG
-        elif value == 'SHORT':
+        elif value == "SHORT":
             return PositionSide.SHORT
         else:
             return PositionSide.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return PositionSideParser.to_string(value)
+    def to_str_py(int value):
+        return PositionSideParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return PositionSideParser.from_string(value)
+    def from_str_py(str value):
+        return PositionSideParser.from_str(value)

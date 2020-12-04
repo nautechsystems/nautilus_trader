@@ -16,39 +16,39 @@
 cdef class AssetClassParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
-            return 'CRYPTO'
+            return "CRYPTO"
         elif value == 2:
-            return 'FX'
+            return "FX"
         elif value == 3:
-            return 'EQUITY'
+            return "EQUITY"
         elif value == 4:
-            return 'COMMODITY'
+            return "COMMODITY"
         elif value == 5:
-            return 'BOND'
+            return "BOND"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
-    cdef AssetClass from_string(str value):
-        if value == 'CRYPTO':
+    cdef AssetClass from_str(str value):
+        if value == "CRYPTO":
             return AssetClass.CRYPTO
-        elif value == 'FX':
+        elif value == "FX":
             return AssetClass.FX
-        elif value == 'EQUITY':
+        elif value == "EQUITY":
             return AssetClass.EQUITY
-        elif value == 'COMMODITY':
+        elif value == "COMMODITY":
             return AssetClass.COMMODITY
-        elif value == 'BOND':
+        elif value == "BOND":
             return AssetClass.BOND
         else:
             return AssetClass.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return AssetClassParser.to_string(value)
+    def to_str_py(int value):
+        return AssetClassParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return AssetClassParser.from_string(value)
+    def from_str_py(str value):
+        return AssetClassParser.from_str(value)

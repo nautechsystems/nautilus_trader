@@ -155,6 +155,7 @@ cdef class PerformanceAnalyzer:
     cpdef object get_daily_returns(self):
         """
         Return the returns data.
+
         Returns
         -------
         pd.Series
@@ -164,6 +165,7 @@ cdef class PerformanceAnalyzer:
     cpdef object get_realized_pnls(self):
         """
         Return the returns data.
+
         Returns
         -------
         pd.Series
@@ -323,19 +325,22 @@ cdef class PerformanceAnalyzer:
 
     cpdef double annual_return(self) except *:
         """
-        Determines the mean annual growth rate of returns. This is equivalent
-        to the compound annual growth rate.
+        Return the mean annual growth rate of returns.
 
         Returns
         -------
         double
+
+        Notes
+        -----
+        This is equivalent to the compound annual growth rate.
 
         """
         return annual_return(returns=self._daily_returns)
 
     cpdef double cum_return(self) except *:
         """
-        Get the cumulative return for the portfolio.
+        Return the cumulative return for the portfolio.
 
         Returns
         -------
@@ -346,7 +351,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double max_drawdown_return(self) except *:
         """
-        Get the maximum return drawdown for the portfolio.
+        Return the maximum return drawdown for the portfolio.
 
         Returns
         -------
@@ -357,7 +362,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double annual_volatility(self) except *:
         """
-        Get the annual volatility for the portfolio.
+        Return the annual volatility for the portfolio.
 
         Returns
         -------
@@ -368,7 +373,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double sharpe_ratio(self) except *:
         """
-        Get the sharpe ratio for the portfolio.
+        Return the sharpe ratio for the portfolio.
 
         Returns
         -------
@@ -379,7 +384,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double calmar_ratio(self) except *:
         """
-        Get the calmar ratio for the portfolio.
+        Return the calmar ratio for the portfolio.
 
         Returns
         -------
@@ -390,7 +395,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double sortino_ratio(self) except *:
         """
-        Get the sortino ratio for the portfolio.
+        Return the sortino ratio for the portfolio.
 
         Returns
         -------
@@ -401,7 +406,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double omega_ratio(self) except *:
         """
-        Get the omega ratio for the portfolio.
+        Return the omega ratio for the portfolio.
 
         Returns
         -------
@@ -412,7 +417,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double stability_of_timeseries(self) except *:
         """
-        Get the stability of time series for the portfolio.
+        Return the stability of time series for the portfolio.
 
         Returns
         -------
@@ -423,7 +428,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double returns_mean(self) except *:
         """
-        Get the returns mean for the portfolio.
+        Return the returns mean for the portfolio.
 
         Returns
         -------
@@ -434,7 +439,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double returns_variance(self) except *:
         """
-        Get the returns variance for the portfolio.
+        Return the returns variance for the portfolio.
 
         Returns
         -------
@@ -445,7 +450,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double returns_skew(self) except *:
         """
-        Get the returns skew for the portfolio.
+        Return the returns skew for the portfolio.
 
         Returns
         -------
@@ -456,7 +461,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double returns_kurtosis(self) except *:
         """
-        Get the returns kurtosis for the portfolio.
+        Return the returns kurtosis for the portfolio.
 
         Returns
         -------
@@ -467,7 +472,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double returns_tail_ratio(self) except *:
         """
-        Get the returns tail ratio for the portfolio.
+        Return the returns tail ratio for the portfolio.
 
         Returns
         -------
@@ -478,7 +483,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double alpha(self) except *:
         """
-        Get the alpha for the portfolio.
+        Return the alpha for the portfolio.
 
         Returns
         -------
@@ -489,7 +494,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double beta(self) except *:
         """
-        Get the beta for the portfolio.
+        Return the beta for the portfolio.
 
         Returns
         -------

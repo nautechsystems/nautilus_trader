@@ -34,9 +34,9 @@ class CurrencyTests(unittest.TestCase):
 
     def test_currency_equality(self):
         # Arrange
-        currency1 = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-        currency2 = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-        currency3 = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
+        currency1 = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+        currency2 = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+        currency3 = Currency("GBP", precision=2, currency_type=CurrencyType.FIAT)
 
         # Act
         # Assert
@@ -46,7 +46,7 @@ class CurrencyTests(unittest.TestCase):
 
     def test_currency_hash(self):
         # Arrange
-        currency = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
+        currency = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
 
         # Act
         # Assert
@@ -55,17 +55,17 @@ class CurrencyTests(unittest.TestCase):
 
     def test_str_repr(self):
         # Arrange
-        currency = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
+        currency = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
 
         # Act
         # Assert
         self.assertEqual("AUD", str(currency))
         self.assertEqual("Currency(code=AUD, precision=2, type=FIAT)", repr(currency))
 
-    def test_from_string_given_unknown_code_returns_none(self):
+    def test_from_str_given_unknown_code_returns_none(self):
         # Arrange
         # Act
-        result = Currency.from_string("SOME_CURRENCY")
+        result = Currency.from_str("SOME_CURRENCY")
 
         # Assert
         self.assertIsNone(result)
@@ -76,10 +76,10 @@ class CurrencyTests(unittest.TestCase):
         ["BTC", BTC],
         ["ETH", ETH],
     ])
-    def test_from_string(self, string, expected):
+    def test_from_str(self, string, expected):
         # Arrange
         # Act
-        result = Currency.from_string(string)
+        result = Currency.from_str(string)
 
         # Assert
         self.assertEqual(expected, result)

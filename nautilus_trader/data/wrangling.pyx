@@ -326,7 +326,7 @@ cdef class TradeTickDataWrangler:
             symbol=self.instrument.symbol,
             price=Price(values[0]),
             size=Quantity(values[1]),
-            maker=MakerParser.from_string(values[2]),
+            maker=MakerParser.from_str(values[2]),
             match_id=TradeMatchId(values[3]),
             timestamp=timestamp,
         )

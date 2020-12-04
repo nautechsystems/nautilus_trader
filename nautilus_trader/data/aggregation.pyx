@@ -515,7 +515,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(f"Aggregation not a time, "
-                             f"was {BarAggregationParser.to_string(self.bar_type.spec.aggregation)}")
+                             f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}")
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -532,7 +532,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Design time error
             raise ValueError(f"Aggregation not time range, "
-                             f"was {BarAggregationParser.to_string(aggregation)}")
+                             f"was {BarAggregationParser.to_str(aggregation)}")
 
     cpdef void _set_build_timer(self) except *:
         cdef str timer_name = str(self.bar_type)

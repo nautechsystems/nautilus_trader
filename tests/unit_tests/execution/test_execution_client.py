@@ -42,8 +42,8 @@ from tests.test_kit.stubs import TestStubs
 
 
 FXCM = Venue("FXCM")
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol('USD/JPY', FXCM))
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol('AUD/USD', FXCM))
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", FXCM))
+AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", FXCM))
 
 
 class ExecutionClientTests(unittest.TestCase):

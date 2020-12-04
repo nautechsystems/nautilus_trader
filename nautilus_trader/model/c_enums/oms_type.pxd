@@ -23,7 +23,7 @@ cpdef enum OMSType:
 cdef class OMSTypeParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef OMSType from_string(str value)
+    cdef OMSType from_str(str value)

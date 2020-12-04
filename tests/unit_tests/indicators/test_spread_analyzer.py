@@ -25,8 +25,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-USDJPY_FXCM = Symbol('USD/JPY', Venue('FXCM'))
-AUDUSD_FXCM = Symbol('AUD/USD', Venue('FXCM'))
+USDJPY_FXCM = Symbol("USD/JPY", Venue("FXCM"))
+AUDUSD_FXCM = Symbol("AUD/USD", Venue("FXCM"))
 
 
 class SpreadAnalyzerTests(unittest.TestCase):

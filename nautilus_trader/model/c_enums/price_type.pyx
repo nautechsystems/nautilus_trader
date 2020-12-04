@@ -16,35 +16,35 @@
 cdef class PriceTypeParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
-            return 'BID'
+            return "BID"
         elif value == 2:
-            return 'ASK'
+            return "ASK"
         elif value == 3:
-            return 'MID'
+            return "MID"
         elif value == 4:
-            return 'LAST'
+            return "LAST"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
-    cdef PriceType from_string(str value):
-        if value == 'BID':
+    cdef PriceType from_str(str value):
+        if value == "BID":
             return PriceType.BID
-        elif value == 'ASK':
+        elif value == "ASK":
             return PriceType.ASK
-        elif value == 'MID':
+        elif value == "MID":
             return PriceType.MID
-        elif value == 'LAST':
+        elif value == "LAST":
             return PriceType.LAST
         else:
             return PriceType.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return PriceTypeParser.to_string(value)
+    def to_str_py(int value):
+        return PriceTypeParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return PriceTypeParser.from_string(value)
+    def from_str_py(str value):
+        return PriceTypeParser.from_str(value)

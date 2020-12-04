@@ -21,8 +21,8 @@ from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.message import Response
-from nautilus_trader.core.message import message_type_from_string
-from nautilus_trader.core.message import message_type_to_string
+from nautilus_trader.core.message import message_type_from_str
+from nautilus_trader.core.message import message_type_to_str
 from nautilus_trader.core.uuid import uuid4
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -112,10 +112,10 @@ class MessageTests(unittest.TestCase):
         [MessageType.REQUEST, "REQUEST"],
         [MessageType.RESPONSE, "RESPONSE"],
     ])
-    def test_message_type_to_string(self, msg_type, expected):
+    def test_message_type_to_str(self, msg_type, expected):
         # Arrange
         # Act
-        result = message_type_to_string(msg_type)
+        result = message_type_to_str(msg_type)
 
         # Assert
         self.assertEqual(expected, result)
@@ -129,10 +129,10 @@ class MessageTests(unittest.TestCase):
         ["REQUEST", MessageType.REQUEST],
         ["RESPONSE", MessageType.RESPONSE],
     ])
-    def test_message_type_from_string(self, string, expected):
+    def test_message_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = message_type_from_string(string)
+        result = message_type_from_str(string)
 
         # Assert
         self.assertEqual(expected, result)

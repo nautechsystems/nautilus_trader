@@ -23,7 +23,7 @@ cpdef enum LiquiditySide:
 cdef class LiquiditySideParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef LiquiditySide from_string(str value)
+    cdef LiquiditySide from_str(str value)

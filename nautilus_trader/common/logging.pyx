@@ -60,7 +60,7 @@ RES = "[RES]"
 cdef class LogLevelParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return "VRB"
         elif value == 2:
@@ -79,7 +79,7 @@ cdef class LogLevelParser:
             return "UNDEFINED"
 
     @staticmethod
-    cdef LogLevel from_string(str value):
+    cdef LogLevel from_str(str value):
         if value == "VRB":
             return LogLevel.VERBOSE
         elif value == "DBG":
@@ -98,12 +98,12 @@ cdef class LogLevelParser:
             return LogLevel.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return LogLevelParser.to_string(value)
+    def to_str_py(int value):
+        return LogLevelParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return LogLevelParser.from_string(value)
+    def from_str_py(str value):
+        return LogLevelParser.from_str(value)
 
 
 cdef class LogMessage:
@@ -146,7 +146,7 @@ cdef class LogMessage:
         str
 
         """
-        return LogLevelParser.to_string(self.level)
+        return LogLevelParser.to_str(self.level)
 
     cdef str as_string(self):
         """
@@ -157,7 +157,7 @@ cdef class LogMessage:
         str
 
         """
-        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{LogLevelParser.to_string(self.level)}] {self.text}"
+        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{LogLevelParser.to_str(self.level)}] {self.text}"
 
 
 cdef class Logger:

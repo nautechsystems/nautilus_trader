@@ -28,9 +28,11 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
@@ -53,9 +55,10 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+XBTUSD_BITMEX = InstrumentLoader.xbtusd_bitmex()
 
 
-class FXCMSimulatedMarketTests(unittest.TestCase):
+class ExchangeTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -129,11 +132,25 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.data_engine.start()
         self.exec_engine.start()
 
+    def test_repr(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertEqual("SimulatedExchange(FXCM)", repr(self.exchange))
+
+    def test_check_residuals(self):
+        # Arrange
+        # Act
+        self.exchange.check_residuals()
+        # Assert
+        self.assertTrue(True)  # No exceptions raised
+
     def test_submit_market_order(self):
         # Arrange
         self.strategy.start()
 
-        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))  # Prepare market
+        # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))
         order = self.strategy.order_factory.market(
             USDJPY_FXCM.symbol,
             OrderSide.BUY,
@@ -396,7 +413,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         account_event2 = self.strategy.object_storer.get_store()[6]
         account_event3 = self.strategy.object_storer.get_store()[10]
 
-        account = self.exec_engine.cache.account_for_venue(Venue('FXCM'))
+        account = self.exec_engine.cache.account_for_venue(Venue("FXCM"))
 
         # Assert
         self.assertEqual(Money(180.01, JPY), account_event1.commission)
@@ -516,7 +533,7 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         )
 
         # Act 2
-        self.strategy.submit_order(order_reduce, position_id=PositionId("B-USD/JPY-1"))
+        self.strategy.submit_order(order_reduce, PositionId("B-USD/JPY-1"))
 
         # Assert
         position_open = self.strategy.execution.positions_open()[0]
@@ -524,3 +541,132 @@ class FXCMSimulatedMarketTests(unittest.TestCase):
         self.assertEqual(PositionSide.SHORT, position_open.side)
         self.assertEqual(Quantity(50000), position_open.quantity)
         self.assertEqual(Money(1000380.02, JPY), position_closed.realized_pnl)
+
+
+class BitmexExchangeTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.strategies = [MockStrategy(TestStubs.bartype_btcusdt_binance_1min_bid())]
+
+        self.clock = TestClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = TestLogger(self.clock)
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+            config={'use_previous_close': False},  # To correctly reproduce historical data bars
+        )
+        self.data_engine.cache.add_instrument(XBTUSD_BITMEX)
+        self.portfolio.register_cache(self.data_engine.cache)
+
+        self.analyzer = PerformanceAnalyzer()
+
+        self.trader_id = TraderId("TESTER", "000")
+        self.account_id = AccountId("BITMEX", "001", AccountType.SIMULATED)
+
+        exec_db = BypassExecutionDatabase(
+            trader_id=self.trader_id,
+            logger=self.logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            database=exec_db,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.config = BacktestConfig()
+        self.exchange = SimulatedExchange(
+            venue=Venue("BITMEX"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
+            exec_cache=self.exec_engine.cache,
+            instruments={XBTUSD_BITMEX.symbol: XBTUSD_BITMEX},
+            config=self.config,
+            fill_model=FillModel(),
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            account_id=self.account_id,
+            engine=self.exec_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
+
+        self.strategy = MockStrategy(bar_type=TestStubs.bartype_btcusdt_binance_1min_bid())
+        self.strategy.register_trader(
+            self.trader_id,
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(self.strategy)
+        self.exec_engine.register_strategy(self.strategy)
+        self.data_engine.start()
+        self.exec_engine.start()
+
+    def test_commission_maker_taker_order(self):
+        # Arrange
+        self.strategy.start()
+
+        quote1 = QuoteTick(
+            XBTUSD_BITMEX.symbol,
+            Price("11493.70"),
+            Price("11493.75"),
+            Quantity(1500000),
+            Quantity(1500000),
+            UNIX_EPOCH,
+        )
+
+        self.exchange.process_tick(quote1)  # Prepare market
+        self.portfolio.update_tick(quote1)
+
+        order_market = self.strategy.order_factory.market(
+            XBTUSD_BITMEX.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order_limit = self.strategy.order_factory.limit(
+            XBTUSD_BITMEX.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("11493.65"),
+        )
+
+        # Act
+        self.strategy.submit_order(order_market)
+        self.strategy.submit_order(order_limit)
+
+        quote2 = QuoteTick(
+            XBTUSD_BITMEX.symbol,
+            Price("11493.60"),
+            Price("11493.64"),
+            Quantity(1500000),
+            Quantity(1500000),
+            UNIX_EPOCH,
+        )
+
+        self.exchange.process_tick(quote2)  # Fill the limit order
+        self.portfolio.update_tick(quote2)
+
+        # Assert
+        self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[2].liquidity_side)
+        self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[7].liquidity_side)
+        self.assertEqual(Money(0.00652529, BTC), self.strategy.object_storer.get_store()[2].commission)
+        self.assertEqual(Money(-0.00217511, BTC), self.strategy.object_storer.get_store()[7].commission)

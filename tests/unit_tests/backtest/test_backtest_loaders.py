@@ -30,23 +30,23 @@ class BacktestLoadersTests(unittest.TestCase):
         loader = InstrumentLoader()
 
         # Act
-        instrument = loader.default_fx_ccy(Symbol("AUD/USD", Venue('FXCM')))
+        instrument = loader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
 
         # Assert
-        self.assertEqual(Symbol("AUD/USD", Venue('FXCM')), instrument.symbol)
+        self.assertEqual(Symbol("AUD/USD", Venue("FXCM")), instrument.symbol)
         self.assertEqual(5, instrument.price_precision)
         self.assertEqual(Decimal("0.00001"), instrument.tick_size)
-        self.assertEqual(Currency(code='USD', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)
+        self.assertEqual(Currency(code="USD", precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)
 
     def test_default_fx_with_3_dp_returns_expected_instrument(self):
         # Arrange
         loader = InstrumentLoader()
 
         # Act
-        instrument = loader.default_fx_ccy(Symbol("USD/JPY", Venue('FXCM')))
+        instrument = loader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
 
         # Assert
-        self.assertEqual(Symbol("USD/JPY", Venue('FXCM')), instrument.symbol)
+        self.assertEqual(Symbol("USD/JPY", Venue("FXCM")), instrument.symbol)
         self.assertEqual(3, instrument.price_precision)
         self.assertEqual(Decimal("0.001"), instrument.tick_size)
         self.assertEqual(Currency(code='JPY', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)

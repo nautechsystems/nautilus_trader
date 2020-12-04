@@ -16,71 +16,71 @@
 cdef class BarAggregationParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
-            return 'TICK'
+            return "TICK"
         elif value == 2:
-            return 'TICK_IMBALANCE'
+            return "TICK_IMBALANCE"
         elif value == 3:
-            return 'TICK_RUNS'
+            return "TICK_RUNS"
         elif value == 4:
-            return 'VOLUME'
+            return "VOLUME"
         elif value == 5:
-            return 'VOLUME_IMBALANCE'
+            return "VOLUME_IMBALANCE"
         elif value == 6:
-            return 'VOLUME_RUNS'
+            return "VOLUME_RUNS"
         elif value == 7:
-            return 'VALUE'
+            return "VALUE"
         elif value == 8:
-            return 'VALUE_IMBALANCE'
+            return "VALUE_IMBALANCE"
         elif value == 9:
-            return 'VALUE_RUNS'
+            return "VALUE_RUNS"
         elif value == 10:
-            return 'SECOND'
+            return "SECOND"
         elif value == 11:
-            return 'MINUTE'
+            return "MINUTE"
         elif value == 12:
-            return 'HOUR'
+            return "HOUR"
         elif value == 13:
-            return 'DAY'
+            return "DAY"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
-    cdef BarAggregation from_string(str value):
-        if value == 'TICK':
+    cdef BarAggregation from_str(str value):
+        if value == "TICK":
             return BarAggregation.TICK
-        elif value == 'TICK_IMBALANCE':
+        elif value == "TICK_IMBALANCE":
             return BarAggregation.TICK_IMBALANCE
-        elif value == 'TICK_RUNS':
+        elif value == "TICK_RUNS":
             return BarAggregation.TICK_RUNS
-        elif value == 'VOLUME':
+        elif value == "VOLUME":
             return BarAggregation.VOLUME
-        elif value == 'VOLUME_IMBALANCE':
+        elif value == "VOLUME_IMBALANCE":
             return BarAggregation.VOLUME_IMBALANCE
-        elif value == 'VOLUME_RUNS':
+        elif value == "VOLUME_RUNS":
             return BarAggregation.VOLUME_RUNS
-        elif value == 'VALUE':
+        elif value == "VALUE":
             return BarAggregation.VALUE
-        elif value == 'VALUE_IMBALANCE':
+        elif value == "VALUE_IMBALANCE":
             return BarAggregation.VALUE_IMBALANCE
-        elif value == 'VALUE_RUNS':
+        elif value == "VALUE_RUNS":
             return BarAggregation.VALUE_RUNS
-        elif value == 'SECOND':
+        elif value == "SECOND":
             return BarAggregation.SECOND
-        elif value == 'MINUTE':
+        elif value == "MINUTE":
             return BarAggregation.MINUTE
-        elif value == 'HOUR':
+        elif value == "HOUR":
             return BarAggregation.HOUR
-        elif value == 'DAY':
+        elif value == "DAY":
             return BarAggregation.DAY
         else:
             return BarAggregation.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return BarAggregationParser.to_string(value)
+    def to_str_py(int value):
+        return BarAggregationParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return BarAggregationParser.from_string(value)
+    def from_str_py(str value):
+        return BarAggregationParser.from_str(value)

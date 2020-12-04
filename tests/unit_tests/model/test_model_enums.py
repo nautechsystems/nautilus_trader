@@ -55,10 +55,10 @@ class AccountTypeTests(unittest.TestCase):
         [AccountType.DEMO, "DEMO"],
         [AccountType.REAL, "REAL"],
     ])
-    def test_account_type_to_string(self, enum, expected):
+    def test_account_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = AccountTypeParser.to_string_py(enum)
+        result = AccountTypeParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -70,10 +70,10 @@ class AccountTypeTests(unittest.TestCase):
         ["DEMO", AccountType.DEMO],
         ["REAL", AccountType.REAL],
     ])
-    def test_account_type_from_string(self, string, expected):
+    def test_account_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = AccountTypeParser.from_string_py(string)
+        result = AccountTypeParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -89,10 +89,10 @@ class AssetClassTests(unittest.TestCase):
         [AssetClass.COMMODITY, "COMMODITY"],
         [AssetClass.BOND, "BOND"],
     ])
-    def test_asset_class_to_string(self, enum, expected):
+    def test_asset_class_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = AssetClassParser.to_string_py(enum)
+        result = AssetClassParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -106,10 +106,10 @@ class AssetClassTests(unittest.TestCase):
         ["COMMODITY", AssetClass.COMMODITY],
         ["BOND", AssetClass.BOND],
     ])
-    def test_asset_class_from_string(self, string, expected):
+    def test_asset_class_from_str(self, string, expected):
         # Arrange
         # Act
-        result = AssetClassParser.from_string_py(string)
+        result = AssetClassParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -126,10 +126,10 @@ class AssetTypeTests(unittest.TestCase):
         [AssetType.CFD, "CFD"],
         [AssetType.OPTION, "OPTION"],
     ])
-    def test_asset_type_to_string(self, enum, expected):
+    def test_asset_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = AssetTypeParser.to_string_py(enum)
+        result = AssetTypeParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -144,10 +144,10 @@ class AssetTypeTests(unittest.TestCase):
         ["CFD", AssetType.CFD],
         ["OPTION", AssetType.OPTION],
     ])
-    def test_asset_type_from_string(self, string, expected):
+    def test_asset_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = AssetTypeParser.from_string_py(string)
+        result = AssetTypeParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -171,10 +171,10 @@ class BarAggregationTests(unittest.TestCase):
         [BarAggregation.HOUR, "HOUR"],
         [BarAggregation.DAY, "DAY"],
     ])
-    def test_bar_aggregation_to_string(self, enum, expected):
+    def test_bar_aggregation_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = BarAggregationParser.to_string_py(enum)
+        result = BarAggregationParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -196,10 +196,10 @@ class BarAggregationTests(unittest.TestCase):
         ["HOUR", BarAggregation.HOUR],
         ["DAY", BarAggregation.DAY],
     ])
-    def test_bar_aggregation_from_string(self, string, expected):
+    def test_bar_aggregation_from_str(self, string, expected):
         # Arrange
         # Act
-        result = BarAggregationParser.from_string_py(string)
+        result = BarAggregationParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -212,10 +212,10 @@ class CurrencyTypeTests(unittest.TestCase):
         [CurrencyType.CRYPTO, "CRYPTO"],
         [CurrencyType.FIAT, "FIAT"],
     ])
-    def test_currency_type_to_string(self, enum, expected):
+    def test_currency_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = CurrencyTypeParser.to_string_py(enum)
+        result = CurrencyTypeParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -226,10 +226,10 @@ class CurrencyTypeTests(unittest.TestCase):
         ["CRYPTO", CurrencyType.CRYPTO],
         ["FIAT", CurrencyType.FIAT],
     ])
-    def test_currency_type_from_string(self, string, expected):
+    def test_currency_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = CurrencyTypeParser.from_string_py(string)
+        result = CurrencyTypeParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -242,10 +242,10 @@ class LiquiditySideTests(unittest.TestCase):
         [LiquiditySide.MAKER, "MAKER"],
         [LiquiditySide.TAKER, "TAKER"],
     ])
-    def test_liquidity_side_to_string(self, enum, expected):
+    def test_liquidity_side_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = LiquiditySideParser.to_string_py(enum)
+        result = LiquiditySideParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -256,10 +256,10 @@ class LiquiditySideTests(unittest.TestCase):
         ["MAKER", LiquiditySide.MAKER],
         ["TAKER", LiquiditySide.TAKER],
     ])
-    def test_liquidity_side_from_string(self, string, expected):
+    def test_liquidity_side_from_str(self, string, expected):
         # Arrange
         # Act
-        result = LiquiditySideParser.from_string_py(string)
+        result = LiquiditySideParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -272,10 +272,10 @@ class MakerTests(unittest.TestCase):
         [Maker.BUYER, "BUYER"],
         [Maker.SELLER, "SELLER"],
     ])
-    def test_maker_to_string(self, enum, expected):
+    def test_maker_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = MakerParser.to_string_py(enum)
+        result = MakerParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -286,10 +286,10 @@ class MakerTests(unittest.TestCase):
         ["BUYER", Maker.BUYER],
         ["SELLER", Maker.SELLER],
     ])
-    def test_maker_from_string(self, string, expected):
+    def test_maker_from_str(self, string, expected):
         # Arrange
         # Act
-        result = MakerParser.from_string_py(string)
+        result = MakerParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -302,10 +302,10 @@ class OMSTypeTests(unittest.TestCase):
         [OMSType.NETTING, "NETTING"],
         [OMSType.HEDGING, "HEDGING"],
     ])
-    def test_oms_type_to_string(self, enum, expected):
+    def test_oms_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OMSTypeParser.to_string_py(enum)
+        result = OMSTypeParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -316,10 +316,10 @@ class OMSTypeTests(unittest.TestCase):
         ["NETTING", OMSType.NETTING],
         ["HEDGING", OMSType.HEDGING],
     ])
-    def test_oms_type_from_string(self, string, expected):
+    def test_oms_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = OMSTypeParser.from_string_py(string)
+        result = OMSTypeParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -332,10 +332,10 @@ class OrderSideTests(unittest.TestCase):
         [OrderSide.BUY, "BUY"],
         [OrderSide.SELL, "SELL"],
     ])
-    def test_order_side_to_string(self, enum, expected):
+    def test_order_side_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderSideParser.to_string_py(enum)
+        result = OrderSideParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -346,10 +346,10 @@ class OrderSideTests(unittest.TestCase):
         ["BUY", OrderSide.BUY],
         ["SELL", OrderSide.SELL],
     ])
-    def test_order_side_from_string(self, string, expected):
+    def test_order_side_from_str(self, string, expected):
         # Arrange
         # Act
-        result = OrderSideParser.from_string_py(string)
+        result = OrderSideParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -372,10 +372,10 @@ class OrderStateTests(unittest.TestCase):
         [OrderState.FILLED, "FILLED"],
         [OrderState.OVER_FILLED, "OVER_FILLED"],
     ])
-    def test_order_state_to_string(self, enum, expected):
+    def test_order_state_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderStateParser.to_string_py(enum)
+        result = OrderStateParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -396,10 +396,10 @@ class OrderStateTests(unittest.TestCase):
         ["FILLED", OrderState.FILLED],
         ["OVER_FILLED", OrderState.OVER_FILLED],
     ])
-    def test_order_state_from_string(self, string, expected):
+    def test_order_state_from_str(self, string, expected):
         # Arrange
         # Act
-        result = OrderStateParser.from_string_py(string)
+        result = OrderStateParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -413,10 +413,10 @@ class OrderTypeTests(unittest.TestCase):
         [OrderType.LIMIT, "LIMIT"],
         [OrderType.STOP_MARKET, "STOP_MARKET"],
     ])
-    def test_order_type_to_string(self, enum, expected):
+    def test_order_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderTypeParser.to_string_py(enum)
+        result = OrderTypeParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -428,10 +428,10 @@ class OrderTypeTests(unittest.TestCase):
         ["LIMIT", OrderType.LIMIT],
         ["STOP_MARKET", OrderType.STOP_MARKET],
     ])
-    def test_order_type_from_string(self, string, expected):
+    def test_order_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = OrderTypeParser.from_string_py(string)
+        result = OrderTypeParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -445,10 +445,10 @@ class PositionSideTests(unittest.TestCase):
         [PositionSide.LONG, "LONG"],
         [PositionSide.SHORT, "SHORT"],
     ])
-    def test_position_side_to_string(self, enum, expected):
+    def test_position_side_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = PositionSideParser.to_string_py(enum)
+        result = PositionSideParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -460,10 +460,10 @@ class PositionSideTests(unittest.TestCase):
         ["LONG", PositionSide.LONG],
         ["SHORT", PositionSide.SHORT],
     ])
-    def test_position_side_from_string(self, string, expected):
+    def test_position_side_from_str(self, string, expected):
         # Arrange
         # Act
-        result = PositionSideParser.from_string_py(string)
+        result = PositionSideParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -478,10 +478,10 @@ class PriceTypeTests(unittest.TestCase):
         [PriceType.MID, "MID"],
         [PriceType.LAST, "LAST"],
     ])
-    def test_price_type_to_string(self, enum, expected):
+    def test_price_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = PriceTypeParser.to_string_py(enum)
+        result = PriceTypeParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -493,10 +493,10 @@ class PriceTypeTests(unittest.TestCase):
         ["MID", PriceType.MID],
         ["LAST", PriceType.LAST],
     ])
-    def test_price_type_from_string(self, string, expected):
+    def test_price_type_from_str(self, string, expected):
         # Arrange
         # Act
-        result = PriceTypeParser.from_string_py(string)
+        result = PriceTypeParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -512,10 +512,10 @@ class TimeInForceTests(unittest.TestCase):
         [TimeInForce.FOC, "FOC"],
         [TimeInForce.GTD, "GTD"],
     ])
-    def test_time_in_force_to_string(self, enum, expected):
+    def test_time_in_force_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = TimeInForceParser.to_string_py(enum)
+        result = TimeInForceParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -529,10 +529,10 @@ class TimeInForceTests(unittest.TestCase):
         ["FOC", TimeInForce.FOC],
         ["GTD", TimeInForce.GTD],
     ])
-    def test_time_in_force_from_string(self, string, expected):
+    def test_time_in_force_from_str(self, string, expected):
         # Arrange
         # Act
-        result = TimeInForceParser.from_string_py(string)
+        result = TimeInForceParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)

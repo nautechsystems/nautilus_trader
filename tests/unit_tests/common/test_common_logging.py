@@ -36,10 +36,10 @@ class LogLevelParserTests(unittest.TestCase):
         [LogLevel.CRITICAL, "CRT"],
         [LogLevel.FATAL, "FTL"],
     ])
-    def test_log_level_to_string(self, enum, expected):
+    def test_log_level_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = LogLevelParser.to_string_py(enum)
+        result = LogLevelParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -54,10 +54,10 @@ class LogLevelParserTests(unittest.TestCase):
         ["CRT", LogLevel.CRITICAL],
         ["FTL", LogLevel.FATAL],
     ])
-    def test_log_level_from_string(self, string, expected):
+    def test_log_level_from_str(self, string, expected):
         # Arrange
         # Act
-        result = LogLevelParser.from_string_py(string)
+        result = LogLevelParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)

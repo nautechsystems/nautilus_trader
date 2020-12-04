@@ -447,6 +447,6 @@ cdef class Instrument:
             commission: Decimal = notional * self.taker_fee
         else:
             raise RuntimeError(f"invalid LiquiditySide, "
-                               f"was {LiquiditySideParser.to_string(liquidity_side)}")
+                               f"was {LiquiditySideParser.to_str(liquidity_side)}")
 
         return Money(commission, self.settlement_currency)  # Currently not handling quanto settlement

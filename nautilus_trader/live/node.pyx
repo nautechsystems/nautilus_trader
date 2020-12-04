@@ -105,9 +105,9 @@ cdef class TradingNode:
         cdef LiveLogger logger = LiveLogger(
             clock=self._clock,
             name=self.trader_id.value,
-            level_console=LogLevelParser.from_string(config_log.get("log_level_console")),
-            level_file=LogLevelParser.from_string(config_log.get("log_level_file")),
-            level_store=LogLevelParser.from_string(config_log.get("log_level_store")),
+            level_console=LogLevelParser.from_str(config_log.get("log_level_console")),
+            level_file=LogLevelParser.from_str(config_log.get("log_level_file")),
+            level_store=LogLevelParser.from_str(config_log.get("log_level_store")),
             log_thread=config_log.get("log_thread_id", True),
             log_to_file=config_log.get("log_to_file", False),
             log_file_path=config_log.get("log_file_path", ""),

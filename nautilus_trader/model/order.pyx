@@ -116,8 +116,8 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderState.INITIALIZED,
-            trigger_parser=OrderStateParser.to_string,  # order_state_to_string correct here
-            state_parser=OrderStateParser.to_string,
+            trigger_parser=OrderStateParser.to_str,  # order_state_to_str correct here
+            state_parser=OrderStateParser.to_str,
         )
 
         self.cl_ord_id = event.cl_ord_id
@@ -556,9 +556,9 @@ cdef class PassiveOrder(Order):
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
-        return (f"{OrderSideParser.to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
-                f"{OrderTypeParser.to_string(self.type)} @ {self.price} "
-                f"{TimeInForceParser.to_string(self.time_in_force)}{expire_time}")
+        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.symbol} "
+                f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
+                f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
     cdef void _modified(self, OrderModified event) except *:
         self.id = event.order_id
@@ -696,9 +696,9 @@ cdef class MarketOrder(Order):
         )
 
     cdef str status_string_c(self):
-        return (f"{OrderSideParser.to_string(self.side)} {self.quantity.to_string()} {self.symbol} "
-                f"{OrderTypeParser.to_string(self.type)} "
-                f"{TimeInForceParser.to_string(self.time_in_force)}")
+        return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.symbol} "
+                f"{OrderTypeParser.to_str(self.type)} "
+                f"{TimeInForceParser.to_str(self.time_in_force)}")
 
     cdef void _modified(self, OrderModified event) except *:
         raise NotImplemented("Cannot modify a market order")

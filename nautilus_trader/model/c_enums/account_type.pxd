@@ -24,7 +24,7 @@ cpdef enum AccountType:
 cdef class AccountTypeParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef AccountType from_string(str value)
+    cdef AccountType from_str(str value)

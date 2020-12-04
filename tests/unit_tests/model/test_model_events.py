@@ -83,7 +83,7 @@ class EventTests(unittest.TestCase):
         event = OrderInitialized(
             cl_ord_id=ClientOrderId("O-2020872378423"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTCUSD", Exchange("BINANCE")),
+            symbol=Symbol("BTC/USD", Exchange("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -191,7 +191,7 @@ class EventTests(unittest.TestCase):
             account_id=AccountId("SIM", "000", AccountType.SIMULATED),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
-            symbol=Symbol("BTCUSDT", Exchange("BINANCE")),
+            symbol=Symbol("BTC/USDT", Exchange("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -205,10 +205,10 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderWorking(account_id=SIM-000-SIMULATED, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, BUY 0.561000 BTCUSDT.BINANCE LIMIT @ 21015.00 DAY, "
+                         f"order_id=123456, BUY 0.561000 BTC/USDT.BINANCE LIMIT @ 21015.00 DAY, "
                          f"id={uuid})", str(event))
         self.assertEqual(f"OrderWorking(account_id=SIM-000-SIMULATED, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, BUY 0.561000 BTCUSDT.BINANCE LIMIT @ 21015.00 DAY, "
+                         f"order_id=123456, BUY 0.561000 BTC/USDT.BINANCE LIMIT @ 21015.00 DAY, "
                          f"id={uuid})", repr(event))
 
     def test_order_cancel_reject(self):
@@ -298,7 +298,7 @@ class EventTests(unittest.TestCase):
             execution_id=ExecutionId("1"),
             position_id=PositionId("2"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTCUSDT", Exchange("BINANCE")),
+            symbol=Symbol("BTC/USDT", Exchange("BINANCE")),
             order_side=OrderSide.BUY,
             fill_qty=Quantity("0.561000"),
             cum_qty=Quantity("0.561000"),
@@ -317,11 +317,11 @@ class EventTests(unittest.TestCase):
         # Act
         self.assertEqual(f"OrderFilled(account_id=SIM-000-SIMULATED, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                         f"symbol=BTCUSDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
+                         f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                          f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                          f"commission=12.20000000 USDT, id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderFilled(account_id=SIM-000-SIMULATED, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
-                         f"symbol=BTCUSDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
+                         f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                          f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
                          f"commission=12.20000000 USDT, id={uuid})", repr(event))  # noqa
