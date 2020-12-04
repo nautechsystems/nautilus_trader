@@ -18,33 +18,33 @@ cdef class AssetTypeParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'SPOT'
+            return "SPOT"
         elif value == 2:
-            return 'SWAP'
+            return "SWAP"
         elif value == 3:
-            return 'FUTURE'
+            return "FUTURE"
         elif value == 4:
-            return 'FORWARD'
+            return "FORWARD"
         elif value == 5:
-            return 'CFD'
+            return "CFD"
         elif value == 6:
-            return 'OPTION'
+            return "OPTION"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef AssetType from_str(str value):
-        if value == 'SPOT':
+        if value == "SPOT":
             return AssetType.SPOT
-        elif value == 'SWAP':
+        elif value == "SWAP":
             return AssetType.SWAP
-        elif value == 'FUTURE':
+        elif value == "FUTURE":
             return AssetType.FUTURE
-        elif value == 'FORWARD':
+        elif value == "FORWARD":
             return AssetType.FORWARD
-        elif value == 'CFD':
+        elif value == "CFD":
             return AssetType.CFD
-        elif value == 'OPTION':
+        elif value == "OPTION":
             return AssetType.OPTION
         else:
             return AssetType.UNDEFINED

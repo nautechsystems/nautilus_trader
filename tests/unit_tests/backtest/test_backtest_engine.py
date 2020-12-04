@@ -13,18 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
 import unittest
+
+import pandas as pd
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -79,3 +84,10 @@ class BacktestEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(7999, self.engine.iteration)
+
+    def test_load_module(self):
+        # Arrange
+        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
+        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+
+        self.engine.load_module(Venue("FXCM"), fx_rollover_interest)

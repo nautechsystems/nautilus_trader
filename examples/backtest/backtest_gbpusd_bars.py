@@ -41,7 +41,7 @@ from tests.test_kit.data_provider import TestDataProvider
 
 if __name__ == "__main__":
     # Setup trading instruments
-    symbol = Symbol('GBP/USD', Venue('SIM'))
+    symbol = Symbol("GBP/USD", Venue("SIM"))
     GBPUSD = InstrumentLoader.default_fx_ccy(symbol)
 
     # Setup data container
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    engine.load_module(Venue('SIM'), fx_rollover_interest)
+    engine.load_module(Venue("SIM"), fx_rollover_interest)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

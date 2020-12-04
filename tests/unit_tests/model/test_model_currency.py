@@ -34,9 +34,9 @@ class CurrencyTests(unittest.TestCase):
 
     def test_currency_equality(self):
         # Arrange
-        currency1 = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-        currency2 = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
-        currency3 = Currency('GBP', precision=2, currency_type=CurrencyType.FIAT)
+        currency1 = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+        currency2 = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
+        currency3 = Currency("GBP", precision=2, currency_type=CurrencyType.FIAT)
 
         # Act
         # Assert
@@ -46,7 +46,7 @@ class CurrencyTests(unittest.TestCase):
 
     def test_currency_hash(self):
         # Arrange
-        currency = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
+        currency = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
 
         # Act
         # Assert
@@ -55,7 +55,7 @@ class CurrencyTests(unittest.TestCase):
 
     def test_str_repr(self):
         # Arrange
-        currency = Currency('AUD', precision=2, currency_type=CurrencyType.FIAT)
+        currency = Currency("AUD", precision=2, currency_type=CurrencyType.FIAT)
 
         # Act
         # Assert

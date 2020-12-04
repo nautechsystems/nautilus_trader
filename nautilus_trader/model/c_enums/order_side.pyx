@@ -18,17 +18,17 @@ cdef class OrderSideParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'BUY'
+            return "BUY"
         elif value == 2:
-            return 'SELL'
+            return "SELL"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef OrderSide from_str(str value):
-        if value == 'BUY':
+        if value == "BUY":
             return OrderSide.BUY
-        elif value == 'SELL':
+        elif value == "SELL":
             return OrderSide.SELL
         else:
             return OrderSide.UNDEFINED

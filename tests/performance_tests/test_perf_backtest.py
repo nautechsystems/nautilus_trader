@@ -164,7 +164,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        engine.load_module(Venue('FXCM'), fx_rollover_interest)
+        engine.load_module(Venue("FXCM"), fx_rollover_interest)
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)

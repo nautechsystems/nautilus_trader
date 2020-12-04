@@ -45,7 +45,7 @@ cdef class BinanceDataClient(LiveDataClient):
 
         """
         super().__init__(
-            Venue('BINANCE'),
+            Venue("BINANCE"),
             engine,
             clock,
             logger,

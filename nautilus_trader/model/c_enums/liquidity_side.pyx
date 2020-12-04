@@ -18,17 +18,17 @@ cdef class LiquiditySideParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'MAKER'
+            return "MAKER"
         elif value == 2:
-            return 'TAKER'
+            return "TAKER"
         else:
-            return 'NONE'
+            return "NONE"
 
     @staticmethod
     cdef LiquiditySide from_str(str value):
-        if value == 'MAKER':
+        if value == "MAKER":
             return LiquiditySide.MAKER
-        elif value == 'TAKER':
+        elif value == "TAKER":
             return LiquiditySide.TAKER
         else:
             return LiquiditySide.NONE

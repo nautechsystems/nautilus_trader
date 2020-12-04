@@ -18,21 +18,21 @@ cdef class AccountTypeParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'SIMULATED'
+            return "SIMULATED"
         elif value == 2:
-            return 'DEMO'
+            return "DEMO"
         elif value == 3:
-            return 'REAL'
+            return "REAL"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef AccountType from_str(str value):
-        if value == 'SIMULATED':
+        if value == "SIMULATED":
             return AccountType.SIMULATED
-        elif value == 'DEMO':
+        elif value == "DEMO":
             return AccountType.DEMO
-        elif value == 'REAL':
+        elif value == "REAL":
             return AccountType.REAL
         else:
             return AccountType.UNDEFINED

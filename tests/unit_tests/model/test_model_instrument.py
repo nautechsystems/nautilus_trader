@@ -57,8 +57,8 @@ class InstrumentTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("Instrument('BTCUSDT.BINANCE')", str(BTCUSDT_BINANCE))
-        self.assertEqual("Instrument('BTCUSDT.BINANCE')", repr(BTCUSDT_BINANCE))
+        self.assertEqual("Instrument('BTC/USDT.BINANCE')", str(BTCUSDT_BINANCE))
+        self.assertEqual("Instrument('BTC/USDT.BINANCE')", repr(BTCUSDT_BINANCE))
 
     def test_hash(self):
         # Arrange

@@ -34,7 +34,7 @@ except ImportError:
 
 
 strategy = EMACross(
-    symbol=Symbol("ETHUSDT", Venue("BINANCE")),
+    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
     bar_spec=BarSpecification(200, BarAggregation.TICK, PriceType.LAST),
     fast_ema=10,
     slow_ema=20,
