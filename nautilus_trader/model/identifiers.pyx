@@ -79,6 +79,7 @@ cdef class Identifier:
 cdef class Symbol(Identifier):
     """
     Represents the symbol for a financial market tradeable instrument.
+
     The code and venue combination identifier value must be unique at the
     fund level.
     """
@@ -137,6 +138,7 @@ cdef class Symbol(Identifier):
 cdef class Venue(Identifier):
     """
     Represents a trading venue for a financial market tradeable instrument.
+
     The identifier value must be unique at the fund level.
     """
 
@@ -161,6 +163,7 @@ cdef class Venue(Identifier):
 cdef class Exchange(Venue):
     """
     Represents an exchange that financial market instruments are traded on.
+
     The identifier value must be unique at the fund level.
     """
 
@@ -230,8 +233,9 @@ cdef class IdTag(Identifier):
 
 cdef class TraderId(Identifier):
     """
-    Represents a valid trader identifier. The name and tag combination
-    identifier value must be unique at the fund level.
+    Represents a valid trader identifier.
+
+    The name and tag combination identifier value must be unique at the fund level.
     """
 
     def __init__(self, str name, str tag):
@@ -303,8 +307,9 @@ cdef StrategyId _NULL_STRATEGY_ID = StrategyId.from_str_c(_NULL_STRATEGY_ID_STR)
 
 cdef class StrategyId(Identifier):
     """
-    Represents a valid strategy identifier. The name and tag combination
-    must be unique at the trader level.
+    Represents a valid strategy identifier.
+
+    The name and tag combination must be unique at the trader level.
     """
 
     def __init__(self, str name, str tag):
@@ -358,9 +363,9 @@ cdef class StrategyId(Identifier):
     @staticmethod
     def from_str(value: str) -> StrategyId:
         """
-        Return a strategy identifier parsed from the given string value. Must be
-        correctly formatted with two valid strings either side of a hyphen.
+        Return a strategy identifier parsed from the given string value.
 
+        Must be correctly formatted with two valid strings either side of a hyphen.
         Is is expected a strategy identifier is the class name of the strategy with
         an order_id tag number separated by a hyphen.
 
@@ -416,8 +421,9 @@ cdef class Issuer(Identifier):
 
 cdef class AccountId(Identifier):
     """
-    Represents a valid account identifier. The issuer and identifier
-    combination must be unique at the fund level.
+    Represents a valid account identifier.
+
+    The issuer and identifier combination must be unique at the fund level.
     """
 
     def __init__(
@@ -493,8 +499,9 @@ cdef class AccountId(Identifier):
 
 cdef class BracketOrderId(Identifier):
     """
-    Represents a valid bracket order identifier. The identifier value must be
-    unique at the fund level.
+    Represents a valid bracket order identifier.
+
+    The identifier value must be unique at the fund level.
     """
 
     def __init__(self, str value):
@@ -518,8 +525,9 @@ cdef class BracketOrderId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     """
-    Represents a valid client order identifier. The identifier value must be
-    unique at the fund level.
+    Represents a valid client order identifier.
+
+    The identifier value must be unique at the fund level.
     """
 
     def __init__(self, str value):
@@ -543,8 +551,9 @@ cdef class ClientOrderId(Identifier):
 
 cdef class ClientOrderLinkId(Identifier):
     """
-    Represents a valid client order link identifier. The identifier value must
-    be unique at the fund level.
+    Represents a valid client order link identifier.
+
+    The identifier value must be unique at the fund level.
     """
 
     def __init__(self, str value):
