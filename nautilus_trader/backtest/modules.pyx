@@ -198,9 +198,9 @@ cdef class FXRolloverInterestModule(SimulationModule):
             The logger to log to.
 
         """
-        account_balance_starting = self._exchange.starting_capital.to_string()
+        account_balance_starting = self._exchange.starting_capital.to_str()
         account_starting_length = len(account_balance_starting)
-        rollover_total = self._rollover_total.to_string() if self._rollover_total is not None else "0"
+        rollover_total = self._rollover_total.to_str() if self._rollover_total is not None else "0"
         rollover_interest = pad_string(rollover_total, account_starting_length)
         log.info(f"Rollover interest (total):  {rollover_interest}")
 

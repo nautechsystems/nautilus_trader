@@ -86,7 +86,7 @@ cdef class AccountState(Event):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balance={self.balance.to_string()}, "
+                f"balance={self.balance.to_str()}, "
                 f"id={self.id})")
 
 
@@ -540,9 +540,9 @@ cdef class OrderWorking(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"{OrderSideParser.to_string(self.order_side)} {self.quantity.to_string()} "
-                f"{self.symbol} {OrderTypeParser.to_string(self.order_type)} @ "
-                f"{self.price} {TimeInForceParser.to_string(self.time_in_force)}{expire_time}, "
+                f"{OrderSideParser.to_str(self.order_side)} {self.quantity.to_str()} "
+                f"{self.symbol} {OrderTypeParser.to_str(self.order_type)} @ "
+                f"{self.price} {TimeInForceParser.to_str(self.time_in_force)}{expire_time}, "
                 f"id={self.id})")
 
 
@@ -721,7 +721,7 @@ cdef class OrderModified(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_order_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"qty={self.quantity.to_string()}, "
+                f"qty={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"id={self.id})")
 
@@ -886,13 +886,13 @@ cdef class OrderFilled(OrderEvent):
                 f"position_id={self.position_id}, "
                 f"strategy_id={self.strategy_id}, "
                 f"symbol={self.symbol}, "
-                f"side={OrderSideParser.to_string(self.order_side)}"
-                f"-{LiquiditySideParser.to_string(self.liquidity_side)}, "
-                f"fill_qty={self.fill_qty.to_string()}, "
+                f"side={OrderSideParser.to_str(self.order_side)}"
+                f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
+                f"fill_qty={self.fill_qty.to_str()}, "
                 f"fill_price={self.fill_price} {self.quote_currency.code}, "
-                f"cum_qty={self.cum_qty.to_string()}, "
-                f"leaves_qty={self.leaves_qty.to_string()}, "
-                f"commission={self.commission.to_string()}, "
+                f"cum_qty={self.cum_qty.to_str()}, "
+                f"leaves_qty={self.leaves_qty.to_str()}, "
+                f"commission={self.commission.to_str()}, "
                 f"id={self.id})")
 
 
@@ -970,7 +970,7 @@ cdef class PositionOpened(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
-                f"entry={OrderSideParser.to_string(self.position.entry)}, "
+                f"entry={OrderSideParser.to_str(self.position.entry)}, "
                 f"avg_open={round(self.position.avg_open, 5)}, "
                 f"{self.position.status_string_c()}, "
                 f"id={self.id})")
@@ -1021,11 +1021,11 @@ cdef class PositionModified(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
-                f"entry={OrderSideParser.to_string(self.position.entry)}, "
+                f"entry={OrderSideParser.to_str(self.position.entry)}, "
                 f"avg_open={self.position.avg_open}, "
                 f"realized_points={self.position.realized_points}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string()}, "
+                f"realized_pnl={self.position.realized_pnl.to_str()}, "
                 f"{self.position.status_string_c()}, "
                 f"id={self.id})")
 
@@ -1076,11 +1076,11 @@ cdef class PositionClosed(PositionEvent):
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
-                f"entry={OrderSideParser.to_string(self.position.entry)}, "
+                f"entry={OrderSideParser.to_str(self.position.entry)}, "
                 f"duration={duration}, "
                 f"avg_open={self.position.avg_open}, "
                 f"avg_close={self.position.avg_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_string()}, "
+                f"realized_pnl={self.position.realized_pnl.to_str()}, "
                 f"id={self.id})")

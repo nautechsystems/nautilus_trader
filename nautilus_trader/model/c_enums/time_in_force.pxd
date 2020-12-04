@@ -26,7 +26,7 @@ cpdef enum TimeInForce:
 cdef class TimeInForceParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef TimeInForce from_string(str value)
+    cdef TimeInForce from_str(str value)

@@ -16,7 +16,7 @@
 cdef class OrderSideParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'BUY'
         elif value == 2:
@@ -25,7 +25,7 @@ cdef class OrderSideParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef OrderSide from_string(str value):
+    cdef OrderSide from_str(str value):
         if value == 'BUY':
             return OrderSide.BUY
         elif value == 'SELL':
@@ -34,9 +34,9 @@ cdef class OrderSideParser:
             return OrderSide.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return OrderSideParser.to_string(value)
+    def to_str_py(int value):
+        return OrderSideParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return OrderSideParser.from_string(value)
+    def from_str_py(str value):
+        return OrderSideParser.from_str(value)

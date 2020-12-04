@@ -64,11 +64,11 @@ class BarSpecificationTests(unittest.TestCase):
         ["-1-TICK-MID"],
         ["1-TICK_MID"],
     ])
-    def test_from_string_given_various_invalid_strings_raises_value_error(self, value):
+    def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarSpecification.from_string, value)
+        self.assertRaises(ValueError, BarSpecification.from_str, value)
 
     @parameterized.expand([
         ["1-MINUTE-BID", BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)],
@@ -77,10 +77,10 @@ class BarSpecificationTests(unittest.TestCase):
         ["10000-VALUE_IMBALANCE-MID", BarSpecification(10000, BarAggregation.VALUE_IMBALANCE, PriceType.MID)],
 
     ])
-    def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
+    def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
-        spec = BarSpecification.from_string(value)
+        spec = BarSpecification.from_str(value)
 
         # Assert
         self.assertEqual(spec, expected)
@@ -138,11 +138,11 @@ class BarTypeTests(unittest.TestCase):
         ["AUD/USD"],
         ["AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
     ])
-    def test_from_string_given_various_invalid_strings_raises_value_error(self, value):
+    def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, BarType.from_string, value)
+        self.assertRaises(ValueError, BarType.from_str, value)
 
     @parameterized.expand([
         ["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(Symbol("AUD/USD", Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],
@@ -150,10 +150,10 @@ class BarTypeTests(unittest.TestCase):
         ["AAPL.NYSE-1-HOUR-MID", BarType(Symbol("AAPL", Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],
         ["BTCUSDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTCUSDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
     ])
-    def test_from_string_given_various_valid_string_returns_expected_specification(self, value, expected):
+    def test_from_str_given_various_valid_string_returns_expected_specification(self, value, expected):
         # Arrange
         # Act
-        bar_type = BarType.from_string(value, is_internal_aggregation=True)
+        bar_type = BarType.from_str(value, is_internal_aggregation=True)
 
         # Assert
         self.assertEqual(bar_type, expected)

@@ -559,11 +559,11 @@ class QuantityTests(unittest.TestCase):
         [Quantity("2523000"), "2,523,000"],
         [Quantity("100000000"), "100,000,000"],
     ])
-    def test_str_and_to_string(self, value, expected):
+    def test_str_and_to_str(self, value, expected):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(expected, Quantity(value).to_string())
+        self.assertEqual(expected, Quantity(value).to_str())
 
     def test_str_repr(self):
         # Arrange
@@ -663,7 +663,7 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual(expected3, result3)
         self.assertEqual(expected4, result4)
 
-    def test_from_string_with_no_decimal(self):
+    def test_from_str_with_no_decimal(self):
         # Arrange
         # Act
         money = Money(1, USD)
@@ -679,8 +679,8 @@ class MoneyTests(unittest.TestCase):
         result2 = Money(5005.556666, USD)
 
         # Assert
-        self.assertEqual("1,000.33 USD", result1.to_string())
-        self.assertEqual("5,005.56 USD", result2.to_string())
+        self.assertEqual("1,000.33 USD", result1.to_str())
+        self.assertEqual("5,005.56 USD", result2.to_str())
 
     def test_hash(self):
         # Arrange
@@ -702,7 +702,7 @@ class MoneyTests(unittest.TestCase):
         self.assertEqual("0.00", str(money0))
         self.assertEqual("1.00", str(money1))
         self.assertEqual("1000000.00", str(money2))
-        self.assertEqual("1,000,000.00 USD", money2.to_string())
+        self.assertEqual("1,000,000.00 USD", money2.to_str())
 
     def test_repr(self):
         # Arrange

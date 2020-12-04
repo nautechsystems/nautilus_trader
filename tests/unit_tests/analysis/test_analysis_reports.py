@@ -56,7 +56,7 @@ class ReportProviderTests(unittest.TestCase):
     def test_generate_accounts_report_with_initial_account_state_returns_expected(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("BITMEX-1513111-SIMULATED"),
+            AccountId.from_str("BITMEX-1513111-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),

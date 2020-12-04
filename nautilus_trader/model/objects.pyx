@@ -49,9 +49,9 @@ cdef class BaseDecimal:
     """
     The abstract base class for all domain objects.
 
-    This class should not be used directly, but through its concrete subclasses.
-
     Represents a decimal number with a specified precision.
+
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
@@ -312,9 +312,9 @@ cdef class Quantity(BaseDecimal):
         # Post-condition
         Condition.true(self._value >= 0, f"quantity not negative, was {self._value}")
 
-    cpdef str to_string(self):
+    cpdef str to_str(self):
         """
-        The formatted string representation of the quantity.
+        Return the formatted string representation of the quantity.
 
         Returns
         -------
@@ -437,9 +437,9 @@ cdef class Money(BaseDecimal):
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self._value}', {self.currency})"
 
-    cpdef str to_string(self):
+    cpdef str to_str(self):
         """
-        The formatted string representation of the money.
+        Return the formatted string representation of the money.
 
         Returns
         -------

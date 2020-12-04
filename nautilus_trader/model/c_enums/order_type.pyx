@@ -16,7 +16,7 @@
 cdef class OrderTypeParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'MARKET'
         elif value == 2:
@@ -27,7 +27,7 @@ cdef class OrderTypeParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef OrderType from_string(str value):
+    cdef OrderType from_str(str value):
         if value == 'MARKET':
             return OrderType.MARKET
         elif value == 'LIMIT':
@@ -38,9 +38,9 @@ cdef class OrderTypeParser:
             return OrderType.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return OrderTypeParser.to_string(value)
+    def to_str_py(int value):
+        return OrderTypeParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return OrderTypeParser.from_string(value)
+    def from_str_py(str value):
+        return OrderTypeParser.from_str(value)

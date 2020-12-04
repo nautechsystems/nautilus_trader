@@ -25,7 +25,7 @@ cpdef enum PriceType:
 cdef class PriceTypeParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef PriceType from_string(str value)
+    cdef PriceType from_str(str value)

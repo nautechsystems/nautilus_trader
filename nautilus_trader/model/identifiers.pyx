@@ -107,14 +107,14 @@ cdef class Symbol(Identifier):
         self.venue = venue
 
     @staticmethod
-    cdef Symbol from_string_c(str value):
+    cdef Symbol from_str_c(str value):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('.')
         return Symbol(pieces[0], Venue(pieces[2]))
 
     @staticmethod
-    def from_string(value: str) -> Symbol:
+    def from_str(value: str) -> Symbol:
         """
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period.
@@ -131,7 +131,7 @@ cdef class Symbol(Identifier):
         Symbol
 
         """
-        return Symbol.from_string_c(value)
+        return Symbol.from_str_c(value)
 
 
 cdef class Venue(Identifier):
@@ -264,7 +264,7 @@ cdef class TraderId(Identifier):
         self.tag = IdTag(tag)
 
     @staticmethod
-    cdef TraderId from_string_c(str value):
+    cdef TraderId from_str_c(str value):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
@@ -275,7 +275,7 @@ cdef class TraderId(Identifier):
         return TraderId(name=pieces[0], tag=pieces[2])
 
     @staticmethod
-    def from_string(value: str) -> TraderId:
+    def from_str(value: str) -> TraderId:
         """
         Return a trader identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
@@ -295,11 +295,11 @@ cdef class TraderId(Identifier):
         TraderId
 
         """
-        return TraderId.from_string_c(value)
+        return TraderId.from_str_c(value)
 
 
 cdef str _NULL_STRATEGY_ID_STR = "S-NULL"
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId.from_string_c(_NULL_STRATEGY_ID_STR)
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId.from_str_c(_NULL_STRATEGY_ID_STR)
 
 cdef class StrategyId(Identifier):
     """
@@ -345,7 +345,7 @@ cdef class StrategyId(Identifier):
         return self.value != _NULL_STRATEGY_ID_STR
 
     @staticmethod
-    cdef StrategyId from_string_c(str value):
+    cdef StrategyId from_str_c(str value):
         Condition.valid_string(value, "value")
 
         cdef tuple pieces = value.partition('-')
@@ -356,7 +356,7 @@ cdef class StrategyId(Identifier):
         return StrategyId(name=pieces[0], tag=pieces[2])
 
     @staticmethod
-    def from_string(value: str) -> StrategyId:
+    def from_str(value: str) -> StrategyId:
         """
         Return a strategy identifier parsed from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
@@ -376,7 +376,7 @@ cdef class StrategyId(Identifier):
         StrategyId
 
         """
-        return StrategyId.from_string_c(value)
+        return StrategyId.from_str_c(value)
 
     @staticmethod
     def null():
@@ -446,7 +446,7 @@ cdef class AccountId(Identifier):
             If identifier is not a valid string.
 
         """
-        super().__init__(f"{issuer}-{identifier}-{AccountTypeParser.to_string(account_type)}")
+        super().__init__(f"{issuer}-{identifier}-{AccountTypeParser.to_str(account_type)}")
 
         self.issuer = Issuer(issuer)
         self.identifier = Identifier(identifier)
@@ -456,7 +456,7 @@ cdef class AccountId(Identifier):
         return Venue(self.issuer.value)
 
     @staticmethod
-    cdef AccountId from_string_c(str value):
+    cdef AccountId from_str_c(str value):
         Condition.valid_string(value, "value")
 
         cdef list pieces = value.split('-', maxsplit=2)
@@ -467,11 +467,11 @@ cdef class AccountId(Identifier):
         return AccountId(
             issuer=pieces[0],
             identifier=pieces[1],
-            account_type=AccountTypeParser.from_string(pieces[2]),
+            account_type=AccountTypeParser.from_str(pieces[2]),
         )
 
     @staticmethod
-    def from_string(value: str) -> AccountId:
+    def from_str(value: str) -> AccountId:
         """
         Return an account identifier from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
@@ -488,7 +488,7 @@ cdef class AccountId(Identifier):
         AccountId
 
         """
-        return AccountId.from_string_c(value)
+        return AccountId.from_str_c(value)
 
 
 cdef class BracketOrderId(Identifier):

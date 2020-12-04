@@ -700,7 +700,7 @@ cdef class SimulatedExchange:
             else:
                 self._fill_order(order, market_bid, LiquiditySide.TAKER)
         else:
-            raise RuntimeError(f"Invalid order side, was {OrderSideParser.to_string(order.side)}")
+            raise RuntimeError(f"Invalid order side, was {OrderSideParser.to_str(order.side)}")
 
     cdef inline void _process_limit_order(self, LimitOrder order, Price market_bid, Price market_ask) except *:
         if order.side == OrderSide.BUY:

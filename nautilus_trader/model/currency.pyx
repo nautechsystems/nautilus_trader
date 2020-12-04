@@ -140,14 +140,14 @@ cdef class Currency:
         return (f"{type(self).__name__}("
                 f"code={self.code}, "
                 f"precision={self.precision}, "
-                f"type={CurrencyTypeParser.to_string(self.currency_type)})")
+                f"type={CurrencyTypeParser.to_str(self.currency_type)})")
 
     @staticmethod
-    cdef Currency from_string_c(str code):
+    cdef Currency from_str_c(str code):
         return _CURRENCY_TABLE.get(code)
 
     @staticmethod
-    def from_string(str code):
+    def from_str(str code):
         """
         Parse a currency from the given string (if found).
 

@@ -30,7 +30,7 @@ class FiniteStateMachineTests(unittest.TestCase):
         self.fsm = FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.INITIALIZED,
-            state_parser=ComponentStateParser.to_string_py,  # Calls python function wrapper
+            state_parser=ComponentStateParser.to_str_py,  # Calls python function wrapper
         )
 
     def test_fsm_initialization(self):

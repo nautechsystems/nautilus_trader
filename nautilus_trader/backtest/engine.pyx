@@ -484,7 +484,7 @@ cdef class BacktestEngine:
         if self.exchange.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
         else:
-            self.log.info(f"Account balance (starting): {self.config.starting_capital.to_string()}")
+            self.log.info(f"Account balance (starting): {self.config.starting_capital.to_str()}")
         self.log.info("=================================================================")
 
     cdef void _backtest_footer(
@@ -510,10 +510,10 @@ cdef class BacktestEngine:
         self.log.info(f"Total positions: {self.exec_engine.cache.positions_total_count():,}")
         if self.exchange.frozen_account:
             self.log.warning(f"ACCOUNT FROZEN")
-        account_balance_starting = self.config.starting_capital.to_string()
+        account_balance_starting = self.config.starting_capital.to_str()
         account_starting_length = len(account_balance_starting)
-        account_balance_ending = pad_string(self.exchange.account_balance.to_string(), account_starting_length)
-        commissions_total = pad_string(self.exchange.total_commissions.to_string(), account_starting_length)
+        account_balance_ending = pad_string(self.exchange.account_balance.to_str(), account_starting_length)
+        commissions_total = pad_string(self.exchange.total_commissions.to_str(), account_starting_length)
         self.log.info(f"Account balance (starting): {account_balance_starting}")
         self.log.info(f"Account balance (ending):   {account_balance_ending}")
         self.log.info(f"Commissions (total):        {commissions_total}")

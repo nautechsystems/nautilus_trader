@@ -16,7 +16,7 @@
 cdef class AssetTypeParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'SPOT'
         elif value == 2:
@@ -33,7 +33,7 @@ cdef class AssetTypeParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef AssetType from_string(str value):
+    cdef AssetType from_str(str value):
         if value == 'SPOT':
             return AssetType.SPOT
         elif value == 'SWAP':
@@ -50,9 +50,9 @@ cdef class AssetTypeParser:
             return AssetType.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return AssetTypeParser.to_string(value)
+    def to_str_py(int value):
+        return AssetTypeParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return AssetTypeParser.from_string(value)
+    def from_str_py(str value):
+        return AssetTypeParser.from_str(value)

@@ -742,7 +742,7 @@ cdef class Portfolio(PortfolioFacade):
             account.update_order_margin(order_margin)
 
             self._log.info(f"Updated {venue} order initial margin to "
-                           f"{order_margin.to_string()}")
+                           f"{order_margin.to_str()}")
 
     cdef inline void _update_position_margin(self, Venue venue):
         cdef Account account = self._accounts.get(venue)
@@ -801,7 +801,7 @@ cdef class Portfolio(PortfolioFacade):
             account.update_position_margin(position_margin)
 
             self._log.info(f"Updated {venue} position maintenance margin to "
-                           f"{position_margin.to_string()}")
+                           f"{position_margin.to_str()}")
 
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)
@@ -877,7 +877,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.ask
             else:
                 raise RuntimeError(f"invalid PositionSide, "
-                                   f"was {PositionSideParser.to_string(position.side)}")
+                                   f"was {PositionSideParser.to_str(position.side)}")
         else:
             trade_tick = self._data.trade_tick(position.symbol)
             return trade_tick.price if trade_tick is not None else None

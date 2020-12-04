@@ -30,7 +30,7 @@ cdef class Symbol(Identifier):
     """The symbol venue.\n\n:returns: `Venue`"""
 
     @staticmethod
-    cdef Symbol from_string_c(str value)
+    cdef Symbol from_str_c(str value)
 
 
 cdef class Venue(Identifier):
@@ -56,7 +56,7 @@ cdef class TraderId(Identifier):
     """The order identifier tag of the trader.\n\n:returns: `IdTag`"""
 
     @staticmethod
-    cdef TraderId from_string_c(str value)
+    cdef TraderId from_str_c(str value)
 
 
 cdef class StrategyId(Identifier):
@@ -71,7 +71,7 @@ cdef class StrategyId(Identifier):
     cdef inline bint not_null(self) except *
 
     @staticmethod
-    cdef StrategyId from_string_c(str value)
+    cdef StrategyId from_str_c(str value)
 
 
 cdef class Issuer(Identifier):
@@ -89,7 +89,7 @@ cdef class AccountId(Identifier):
     cdef Venue issuer_as_venue(self)
 
     @staticmethod
-    cdef AccountId from_string_c(str value)
+    cdef AccountId from_str_c(str value)
 
 
 cdef class BracketOrderId(Identifier):

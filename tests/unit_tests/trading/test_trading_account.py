@@ -45,7 +45,7 @@ class AccountTests(unittest.TestCase):
         )
 
         state = AccountState(
-            AccountId.from_string("BITMEX-1513111-SIMULATED"),
+            AccountId.from_str("BITMEX-1513111-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -62,7 +62,7 @@ class AccountTests(unittest.TestCase):
     def test_queries_when_no_portfolio_returns_none(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("BITMEX-1513111-SIMULATED"),
+            AccountId.from_str("BITMEX-1513111-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -87,7 +87,7 @@ class AccountTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(AccountId.from_string("BITMEX-1513111-SIMULATED"), self.account.id)
+        self.assertEqual(AccountId.from_str("BITMEX-1513111-SIMULATED"), self.account.id)
         self.assertEqual(BTC, self.account.currency)
         self.assertEqual(Money(10, BTC), self.account.balance())
         self.assertEqual(UNIX_EPOCH, self.account.last_event.timestamp)
@@ -95,7 +95,7 @@ class AccountTests(unittest.TestCase):
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event = AccountState(
-            AccountId.from_string("BITMEX-1513111-SIMULATED"),
+            AccountId.from_str("BITMEX-1513111-SIMULATED"),
             BTC,
             Money(9.5, BTC),
             Money(0., BTC),

@@ -23,7 +23,7 @@ cpdef enum OrderSide:
 cdef class OrderSideParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderSide from_string(str value)
+    cdef OrderSide from_str(str value)

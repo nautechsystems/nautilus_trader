@@ -16,7 +16,7 @@
 cdef class BarAggregationParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'TICK'
         elif value == 2:
@@ -47,7 +47,7 @@ cdef class BarAggregationParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef BarAggregation from_string(str value):
+    cdef BarAggregation from_str(str value):
         if value == 'TICK':
             return BarAggregation.TICK
         elif value == 'TICK_IMBALANCE':
@@ -78,9 +78,9 @@ cdef class BarAggregationParser:
             return BarAggregation.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return BarAggregationParser.to_string(value)
+    def to_str_py(int value):
+        return BarAggregationParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return BarAggregationParser.from_string(value)
+    def from_str_py(str value):
+        return BarAggregationParser.from_str(value)

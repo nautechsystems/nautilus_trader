@@ -16,7 +16,7 @@
 cdef class OMSTypeParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'NETTING'
         elif value == 2:
@@ -25,7 +25,7 @@ cdef class OMSTypeParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef OMSType from_string(str value):
+    cdef OMSType from_str(str value):
         if value == 'NETTING':
             return OMSType.NETTING
         elif value == 'HEDGING':
@@ -34,9 +34,9 @@ cdef class OMSTypeParser:
             return OMSType.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return OMSTypeParser.to_string(value)
+    def to_str_py(int value):
+        return OMSTypeParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return OMSTypeParser.from_string(value)
+    def from_str_py(str value):
+        return OMSTypeParser.from_str(value)

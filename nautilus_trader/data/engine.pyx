@@ -822,7 +822,7 @@ cdef class DataEngine(Component):
             )
         else:
             raise RuntimeError(f"Cannot start aggregator "
-                               f"(BarAggregation.{BarAggregationParser.to_string(bar_type.spec.aggregation)} "
+                               f"(BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
                                f"not currently supported in this version)")
 
         # Add aggregator

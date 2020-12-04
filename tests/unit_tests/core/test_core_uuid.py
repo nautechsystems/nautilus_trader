@@ -32,11 +32,11 @@ class UUIDTests(unittest.TestCase):
         [""],
         ["12345678-1234-5678-1234-567812345678-99"]
     ])
-    def test_from_string_with_invalid_strings_raises_exception(self, value):
+    def test_from_str_with_invalid_strings_raises_exception(self, value):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, UUID.from_string, value)
+        self.assertRaises(ValueError, UUID.from_str, value)
 
     def test_instantiate_with_valid_bytes(self):
         # Arrange

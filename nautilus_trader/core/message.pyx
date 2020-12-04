@@ -20,7 +20,7 @@ from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.core.uuid cimport UUID
 
 
-cpdef str message_type_to_string(int value):
+cpdef str message_type_to_str(int value):
     """
     Covert a C enum int to a message type string.
 
@@ -50,7 +50,7 @@ cpdef str message_type_to_string(int value):
         return 'UNDEFINED'
 
 
-cpdef MessageType message_type_from_string(str value):
+cpdef MessageType message_type_from_str(str value):
     """
     Parse a string to a message type.
 
