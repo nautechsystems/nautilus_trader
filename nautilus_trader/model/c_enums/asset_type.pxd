@@ -27,7 +27,7 @@ cpdef enum AssetType:
 cdef class AssetTypeParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef AssetType from_string(str value)
+    cdef AssetType from_str(str value)

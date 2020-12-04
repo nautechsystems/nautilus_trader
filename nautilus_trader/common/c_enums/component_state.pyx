@@ -16,7 +16,7 @@
 cdef class ComponentStateParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'INITIALIZED'
         elif value == 2:
@@ -41,7 +41,7 @@ cdef class ComponentStateParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef ComponentState from_string(str value):
+    cdef ComponentState from_str(str value):
         if value == 'INITIALIZED':
             return ComponentState.INITIALIZED
         elif value == 'STARTING':
@@ -66,9 +66,9 @@ cdef class ComponentStateParser:
             return ComponentState.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return ComponentStateParser.to_string(value)
+    def to_str_py(int value):
+        return ComponentStateParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return ComponentStateParser.from_string(value)
+    def from_str_py(str value):
+        return ComponentStateParser.from_str(value)

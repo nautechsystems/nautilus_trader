@@ -26,7 +26,7 @@ cdef str NONE = str(None)
 cdef class ObjectParser:
 
     @staticmethod
-    cdef str datetime_to_string(datetime dt):
+    cdef str datetime_to_str(datetime dt):
         return NONE if dt is None else str(to_posix_ms(dt))
 
     @staticmethod
@@ -38,7 +38,7 @@ cdef class ObjectParser:
         return None if time_string == NONE else from_posix_ms(long(time_string))
 
     @staticmethod
-    def datetime_to_string_py(datetime dt):
+    def datetime_to_str_py(datetime dt):
         """
         Return the converted ISO8601 string from the given datetime, can return a 'None' string.
 
@@ -52,7 +52,7 @@ cdef class ObjectParser:
         str
 
         """
-        return ObjectParser.datetime_to_string(dt)
+        return ObjectParser.datetime_to_str(dt)
 
     @staticmethod
     def string_to_datetime_py(str dt_string):

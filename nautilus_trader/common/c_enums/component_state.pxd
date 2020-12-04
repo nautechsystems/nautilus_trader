@@ -31,7 +31,7 @@ cpdef enum ComponentState:
 cdef class ComponentStateParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef ComponentState from_string(str value)
+    cdef ComponentState from_str(str value)

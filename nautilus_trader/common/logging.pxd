@@ -42,10 +42,10 @@ cpdef enum LogLevel:
 cdef class LogLevelParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef LogLevel from_string(str value)
+    cdef LogLevel from_str(str value)
 
 
 cdef class LogMessage:

@@ -108,7 +108,7 @@ cdef class UUID:
         return self.value
 
     @staticmethod
-    cdef UUID from_string_c(str value):
+    cdef UUID from_str_c(str value):
         Condition.not_none(value, "value")
 
         cdef hex_str = value.replace('-', '')
@@ -118,7 +118,7 @@ cdef class UUID:
         return UUID(bytes.fromhex(hex_str))
 
     @staticmethod
-    def from_string(str value):
+    def from_str(str value):
         """
         Create a UUID parsed from the given hexadecimal UUID string value.
 
@@ -137,7 +137,7 @@ cdef class UUID:
             If value is badly formed (length != 32).
 
         """
-        return UUID.from_string_c(value)
+        return UUID.from_str_c(value)
 
     @property
     def bytes(self):

@@ -92,7 +92,7 @@ cdef class ExchangeRateCalculator:
             }  # type: dict[str, Decimal]
         else:
             raise ValueError(f"Cannot calculate exchange rate for price type "
-                             f"{PriceTypeParser.to_string(price_type)}")
+                             f"{PriceTypeParser.to_str(price_type)}")
 
         cdef str symbol
         cdef tuple pieces

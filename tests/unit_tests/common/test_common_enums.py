@@ -38,10 +38,10 @@ class ComponentStateTests(unittest.TestCase):
         [ComponentState.DISPOSED, "DISPOSED"],
         [ComponentState.FAULTED, "FAULTED"],
     ])
-    def test_component_state_to_string(self, enum, expected):
+    def test_component_state_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = ComponentStateParser.to_string_py(enum)
+        result = ComponentStateParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -60,10 +60,10 @@ class ComponentStateTests(unittest.TestCase):
         ["DISPOSED", ComponentState.DISPOSED],
         ["FAULTED", ComponentState.FAULTED],
     ])
-    def test_component_state_from_string(self, string, expected):
+    def test_component_state_from_str(self, string, expected):
         # Arrange
         # Act
-        result = ComponentStateParser.from_string_py(string)
+        result = ComponentStateParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)
@@ -82,10 +82,10 @@ class ComponentTriggerTests(unittest.TestCase):
         [ComponentTrigger.DISPOSE, "DISPOSE"],
         [ComponentTrigger.DISPOSED, "DISPOSED"],
     ])
-    def test_component_trigger_to_string(self, enum, expected):
+    def test_component_trigger_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = ComponentTriggerParser.to_string_py(enum)
+        result = ComponentTriggerParser.to_str_py(enum)
 
         # Assert
         self.assertEqual(expected, result)
@@ -102,10 +102,10 @@ class ComponentTriggerTests(unittest.TestCase):
         ["DISPOSE", ComponentTrigger.DISPOSE],
         ["DISPOSED", ComponentTrigger.DISPOSED],
     ])
-    def test_component_trigger_from_string(self, string, expected):
+    def test_component_trigger_from_str(self, string, expected):
         # Arrange
         # Act
-        result = ComponentTriggerParser.from_string_py(string)
+        result = ComponentTriggerParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)

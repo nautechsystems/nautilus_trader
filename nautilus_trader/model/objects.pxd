@@ -35,7 +35,7 @@ cdef class BaseDecimal:
 
 
 cdef class Quantity(BaseDecimal):
-    cpdef str to_string(self)
+    cpdef str to_str(self)
 
 
 cdef class Price(BaseDecimal):
@@ -46,4 +46,4 @@ cdef class Money(BaseDecimal):
     cdef readonly Currency currency
     """The currency of the money.\n\n:returns: `Currency`"""
 
-    cpdef str to_string(self)
+    cpdef str to_str(self)

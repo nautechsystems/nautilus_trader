@@ -160,7 +160,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         state = AccountState(
-            AccountId.from_string("BINANCE-1513111-SIMULATED"),
+            AccountId.from_str("BINANCE-1513111-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -487,7 +487,7 @@ class PortfolioTests(unittest.TestCase):
     def test_opening_one_position_when_account_in_different_base(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("BITMEX-01234-SIMULATED"),
+            AccountId.from_str("BITMEX-01234-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -552,7 +552,7 @@ class PortfolioTests(unittest.TestCase):
     def test_unrealized_pnl_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("BITMEX-01234-SIMULATED"),
+            AccountId.from_str("BITMEX-01234-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -592,7 +592,7 @@ class PortfolioTests(unittest.TestCase):
     def test_open_value_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("BITMEX-01234-SIMULATED"),
+            AccountId.from_str("BITMEX-01234-SIMULATED"),
             BTC,
             Money(10., BTC),
             Money(0., BTC),
@@ -644,7 +644,7 @@ class PortfolioTests(unittest.TestCase):
     def test_opening_several_positions_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("FXCM-01234-SIMULATED"),
+            AccountId.from_str("FXCM-01234-SIMULATED"),
             USD,
             Money(1000000, USD),
             Money(0., USD),
@@ -731,7 +731,7 @@ class PortfolioTests(unittest.TestCase):
     def test_modifying_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("FXCM-01234-SIMULATED"),
+            AccountId.from_str("FXCM-01234-SIMULATED"),
             USD,
             Money(1000000, USD),
             Money(0., USD),
@@ -803,7 +803,7 @@ class PortfolioTests(unittest.TestCase):
     def test_closing_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("FXCM-01234-SIMULATED"),
+            AccountId.from_str("FXCM-01234-SIMULATED"),
             USD,
             Money(1000000, USD),
             Money(0., USD),
@@ -867,7 +867,7 @@ class PortfolioTests(unittest.TestCase):
     def test_several_positions_with_different_symbols_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId.from_string("FXCM-01234-SIMULATED"),
+            AccountId.from_str("FXCM-01234-SIMULATED"),
             USD,
             Money(1000000, USD),
             Money(0., USD),

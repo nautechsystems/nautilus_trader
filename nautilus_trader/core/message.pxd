@@ -28,8 +28,8 @@ cpdef enum MessageType:
     RESPONSE = 6
 
 
-cpdef str message_type_to_string(int value)
-cpdef MessageType message_type_from_string(str value)
+cpdef str message_type_to_str(int value)
+cpdef MessageType message_type_from_str(str value)
 
 
 cdef class Message:

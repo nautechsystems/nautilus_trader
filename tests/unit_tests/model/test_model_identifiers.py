@@ -120,7 +120,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertFalse(result3)
         self.assertTrue(result4)
 
-    def test_identifier_to_string(self):
+    def test_identifier_to_str(self):
         # Arrange
         identifier = Identifier("some-id")
 
@@ -178,12 +178,12 @@ class IdentifierTests(unittest.TestCase):
         # Assert
         self.assertEqual("Symbol('AUD/USD.FXCM')", repr(symbol))
 
-    def test_parse_symbol_from_string(self):
+    def test_parse_symbol_from_str(self):
         # Arrange
         symbol = Symbol("AUD/USD", Venue('FXCM'))
 
         # Act
-        result = Symbol.from_string(symbol.value)
+        result = Symbol.from_str(symbol.value)
 
         # Assert
         self.assertEqual(symbol, result)
@@ -192,19 +192,19 @@ class IdentifierTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, AccountId.from_string, "BAD_STRING")
+        self.assertRaises(ValueError, AccountId.from_str, "BAD_STRING")
 
     def test_strategy_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, StrategyId.from_string, "BAD_STRING")
+        self.assertRaises(ValueError, StrategyId.from_str, "BAD_STRING")
 
     def test_trader_id_given_malformed_string_raises_value_error(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(ValueError, TraderId.from_string, "BAD_STRING")
+        self.assertRaises(ValueError, TraderId.from_str, "BAD_STRING")
 
     def test_trader_identifier(self):
         # Arrange
@@ -217,7 +217,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(trader_id1, trader_id2)
         self.assertEqual("TESTER-000", trader_id1.value)
         self.assertEqual("TESTER", trader_id1.name)
-        self.assertEqual(trader_id1, TraderId.from_string("TESTER-000"))
+        self.assertEqual(trader_id1, TraderId.from_str("TESTER-000"))
 
     def test_strategy_identifier(self):
         # Arrange
@@ -230,7 +230,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertEqual(strategy_id1, strategy_id1)
         self.assertNotEqual(strategy_id1, strategy_id2)
         self.assertEqual("S", strategy_id1.name)
-        self.assertEqual(strategy_id2, StrategyId.from_string('SCALPER-01'))
+        self.assertEqual(strategy_id2, StrategyId.from_str('SCALPER-01'))
 
     def test_account_identifier(self):
         # Arrange
@@ -243,7 +243,7 @@ class IdentifierTests(unittest.TestCase):
         self.assertNotEqual(account_id1, account_id2)
         self.assertEqual("FXCM-02851908-DEMO", account_id1.value)
         self.assertEqual(Issuer("FXCM"), account_id1.issuer)
-        self.assertEqual(account_id1, AccountId.from_string("FXCM-02851908-DEMO"))
+        self.assertEqual(account_id1, AccountId.from_str("FXCM-02851908-DEMO"))
 
     def test_position_identifier(self):
         # Arrange

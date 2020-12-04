@@ -23,7 +23,7 @@ cpdef enum CurrencyType:
 cdef class CurrencyTypeParser:
 
     @staticmethod
-    cdef str to_string(int value)
+    cdef str to_str(int value)
 
     @staticmethod
-    cdef CurrencyType from_string(str value)
+    cdef CurrencyType from_str(str value)

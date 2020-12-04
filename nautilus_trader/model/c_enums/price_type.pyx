@@ -16,7 +16,7 @@
 cdef class PriceTypeParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'BID'
         elif value == 2:
@@ -29,7 +29,7 @@ cdef class PriceTypeParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef PriceType from_string(str value):
+    cdef PriceType from_str(str value):
         if value == 'BID':
             return PriceType.BID
         elif value == 'ASK':
@@ -42,9 +42,9 @@ cdef class PriceTypeParser:
             return PriceType.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return PriceTypeParser.to_string(value)
+    def to_str_py(int value):
+        return PriceTypeParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return PriceTypeParser.from_string(value)
+    def from_str_py(str value):
+        return PriceTypeParser.from_str(value)

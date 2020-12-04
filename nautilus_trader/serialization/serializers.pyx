@@ -178,7 +178,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
         """
         super().__init__()
 
-        self.symbol_cache = ObjectCache(Symbol, Symbol.from_string_c)
+        self.symbol_cache = ObjectCache(Symbol, Symbol.from_str_c)
 
     cpdef bytes serialize(self, Order order):  # Can be None
         """
@@ -201,18 +201,18 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             ID: order.cl_ord_id.value,
             STRATEGY_ID: order.strategy_id.value,
             SYMBOL: order.symbol.value,
-            ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_string(order.side)),
-            ORDER_TYPE: self.convert_snake_to_camel(OrderTypeParser.to_string(order.type)),
+            ORDER_SIDE: self.convert_snake_to_camel(OrderSideParser.to_str(order.side)),
+            ORDER_TYPE: self.convert_snake_to_camel(OrderTypeParser.to_str(order.type)),
             QUANTITY: str(order.quantity),
-            TIME_IN_FORCE: TimeInForceParser.to_string(order.time_in_force),
+            TIME_IN_FORCE: TimeInForceParser.to_str(order.time_in_force),
             INIT_ID: order.init_id.value,
-            TIMESTAMP: ObjectParser.datetime_to_string(order.timestamp),
+            TIMESTAMP: ObjectParser.datetime_to_str(order.timestamp),
         }
 
         if isinstance(order, PassiveOrder):
             package[PRICE] = str(order.price)
             if order.expire_time is not None:
-                package[EXPIRE_TIME] = ObjectParser.datetime_to_string(order.expire_time)
+                package[EXPIRE_TIME] = ObjectParser.datetime_to_str(order.expire_time)
 
         if isinstance(order, LimitOrder):
             package[POST_ONLY] = order.is_post_only
@@ -247,13 +247,13 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
             return None  # Null order
 
         cdef ClientOrderId cl_ord_id = ClientOrderId(unpacked[ID])
-        cdef StrategyId strategy_id = StrategyId.from_string_c(unpacked[STRATEGY_ID])
+        cdef StrategyId strategy_id = StrategyId.from_str_c(unpacked[STRATEGY_ID])
         cdef Symbol symbol = self.symbol_cache.get(unpacked[SYMBOL])
-        cdef OrderSide order_side = OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
-        cdef OrderType order_type = OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
+        cdef OrderSide order_side = OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE]))
+        cdef OrderType order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
         cdef Quantity quantity = Quantity(unpacked[QUANTITY])
-        cdef TimeInForce time_in_force = TimeInForceParser.from_string(unpacked[TIME_IN_FORCE])
-        cdef UUID init_id = UUID.from_string_c(unpacked[INIT_ID])
+        cdef TimeInForce time_in_force = TimeInForceParser.from_str(unpacked[TIME_IN_FORCE])
+        cdef UUID init_id = UUID.from_str_c(unpacked[INIT_ID])
         cdef datetime timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
         if order_type == OrderType.MARKET:
@@ -302,7 +302,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 timestamp=timestamp,
             )
 
-        raise ValueError(f"Invalid order_type, was {OrderTypeParser.to_string(order_type)}")
+        raise ValueError(f"Invalid order_type, was {OrderTypeParser.to_str(order_type)}")
 
 
 cdef class MsgPackCommandSerializer(CommandSerializer):
@@ -345,7 +345,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict package = {
             TYPE: type(command).__name__,
             ID: command.id.value,
-            TIMESTAMP: ObjectParser.datetime_to_string(command.timestamp),
+            TIMESTAMP: ObjectParser.datetime_to_str(command.timestamp),
         }
 
         if isinstance(command, SubmitOrder):
@@ -406,7 +406,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(command_bytes)  # type: dict[str, bytes]
 
         cdef str command_type = unpacked[TYPE]
-        cdef UUID command_id = UUID.from_string_c(unpacked[ID])
+        cdef UUID command_id = UUID.from_str_c(unpacked[ID])
         cdef datetime command_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
         if command_type == SubmitOrder.__name__:
@@ -495,7 +495,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict package = {
             TYPE: type(event).__name__,
             ID: event.id.value,
-            TIMESTAMP: ObjectParser.datetime_to_string(event.timestamp),
+            TIMESTAMP: ObjectParser.datetime_to_str(event.timestamp),
         }
 
         if isinstance(event, AccountState):
@@ -509,15 +509,15 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
-            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_string(event.order_type))
+            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
+            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
-            package[TIME_IN_FORCE] = TimeInForceParser.to_string(event.time_in_force)
+            package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
             package[OPTIONS] = MsgPackSerializer.serialize(event.options)
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[SUBMITTED_TIME] = ObjectParser.datetime_to_string(event.submitted_time)
+            package[SUBMITTED_TIME] = ObjectParser.datetime_to_str(event.submitted_time)
         elif isinstance(event, OrderInvalid):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[REASON] = event.reason
@@ -528,47 +528,47 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[ACCEPTED_TIME] = ObjectParser.datetime_to_string(event.accepted_time)
+            package[ACCEPTED_TIME] = ObjectParser.datetime_to_str(event.accepted_time)
         elif isinstance(event, OrderRejected):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIME] = ObjectParser.datetime_to_string(event.rejected_time)
+            package[REJECTED_TIME] = ObjectParser.datetime_to_str(event.rejected_time)
             package[REASON] = event.reason
         elif isinstance(event, OrderWorking):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[ORDER_ID] = event.order_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
-            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_string(event.order_type))
+            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
+            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
-            package[TIME_IN_FORCE] = TimeInForceParser.to_string(event.time_in_force)
-            package[EXPIRE_TIME] = ObjectParser.datetime_to_string(event.expire_time)
-            package[WORKING_TIME] = ObjectParser.datetime_to_string(event.working_time)
+            package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
+            package[EXPIRE_TIME] = ObjectParser.datetime_to_str(event.expire_time)
+            package[WORKING_TIME] = ObjectParser.datetime_to_str(event.working_time)
         elif isinstance(event, OrderCancelReject):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[REJECTED_TIME] = ObjectParser.datetime_to_string(event.rejected_time)
+            package[REJECTED_TIME] = ObjectParser.datetime_to_str(event.rejected_time)
             package[RESPONSE_TO] = event.response_to
             package[REASON] = event.reason
         elif isinstance(event, OrderCancelled):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
-            package[CANCELLED_TIME] = ObjectParser.datetime_to_string(event.cancelled_time)
+            package[CANCELLED_TIME] = ObjectParser.datetime_to_str(event.cancelled_time)
         elif isinstance(event, OrderModified):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[MODIFIED_TIME] = ObjectParser.datetime_to_string(event.modified_time)
+            package[MODIFIED_TIME] = ObjectParser.datetime_to_str(event.modified_time)
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
         elif isinstance(event, OrderExpired):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[EXPIRED_TIME] = ObjectParser.datetime_to_string(event.expired_time)
+            package[EXPIRED_TIME] = ObjectParser.datetime_to_str(event.expired_time)
         elif isinstance(event, OrderFilled):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -577,7 +577,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[POSITION_ID] = event.position_id.value
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_string(event.order_side))
+            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
             package[FILL_QUANTITY] = str(event.fill_qty)
             package[FILL_PRICE] = str(event.fill_price)
             package[CUM_QUANTITY] = str(event.cum_qty)
@@ -587,8 +587,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[IS_INVERSE] = event.is_inverse
             package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
-            package[LIQUIDITY_SIDE] = LiquiditySideParser.to_string(event.liquidity_side)
-            package[EXECUTION_TIME] = ObjectParser.datetime_to_string(event.execution_time)
+            package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
+            package[EXECUTION_TIME] = ObjectParser.datetime_to_str(event.execution_time)
         else:
             raise RuntimeError("Cannot serialize event (unrecognized event.")
 
@@ -620,12 +620,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef dict unpacked = MsgPackSerializer.deserialize(event_bytes)  # type: dict[str, bytes]
 
         cdef str event_type = unpacked[TYPE]
-        cdef UUID event_id = UUID.from_string_c(unpacked[ID])
+        cdef UUID event_id = UUID.from_str_c(unpacked[ID])
         cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
         cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = Currency.from_string_c(unpacked[CURRENCY])
+            currency = Currency.from_str_c(unpacked[CURRENCY])
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 currency,
@@ -640,10 +640,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
                 Quantity(unpacked[QUANTITY]),
-                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE]),
+                TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
                 event_id,
                 event_timestamp,
                 MsgPackSerializer.deserialize(unpacked[OPTIONS]),
@@ -693,12 +693,12 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
-                Symbol.from_string_c(unpacked[SYMBOL]),
-                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                OrderTypeParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                Symbol.from_str_c(unpacked[SYMBOL]),
+                OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
                 Quantity(unpacked[QUANTITY]),
                 Price(unpacked[PRICE]),
-                TimeInForceParser.from_string(unpacked[TIME_IN_FORCE]),
+                TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
                 ObjectParser.string_to_datetime(unpacked[EXPIRE_TIME]),
                 ObjectParser.string_to_datetime(unpacked[WORKING_TIME]),
                 event_id,
@@ -744,7 +744,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp,
             )
         elif event_type == OrderFilled.__name__:
-            commission_currency = Currency.from_string_c(unpacked[COMMISSION_CURRENCY])
+            commission_currency = Currency.from_str_c(unpacked[COMMISSION_CURRENCY])
             return OrderFilled(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
@@ -753,16 +753,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 PositionId(unpacked[POSITION_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
-                OrderSideParser.from_string(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
+                OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
                 Quantity(unpacked[FILL_QUANTITY]),
                 Quantity(unpacked[CUM_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
                 Price(unpacked[FILL_PRICE]),
-                Currency.from_string_c(unpacked[QUOTE_CURRENCY]),
-                Currency.from_string_c(unpacked[SETTLEMENT_CURRENCY]),
+                Currency.from_str_c(unpacked[QUOTE_CURRENCY]),
+                Currency.from_str_c(unpacked[SETTLEMENT_CURRENCY]),
                 unpacked[IS_INVERSE],
                 Money(unpacked[COMMISSION], commission_currency),
-                LiquiditySideParser.from_string(unpacked[LIQUIDITY_SIDE]),
+                LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),
                 ObjectParser.string_to_datetime(unpacked[EXECUTION_TIME]),
                 event_id,
                 event_timestamp,

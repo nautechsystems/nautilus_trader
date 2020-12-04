@@ -16,7 +16,7 @@
 cdef class OrderStateParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'INITIALIZED'
         elif value == 2:
@@ -45,7 +45,7 @@ cdef class OrderStateParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef OrderState from_string(str value):
+    cdef OrderState from_str(str value):
         if value == 'INITIALIZED':
             return OrderState.INITIALIZED
         elif value == 'INVALID':
@@ -74,9 +74,9 @@ cdef class OrderStateParser:
             return OrderState.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return OrderStateParser.to_string(value)
+    def to_str_py(int value):
+        return OrderStateParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return OrderStateParser.from_string(value)
+    def from_str_py(str value):
+        return OrderStateParser.from_str(value)

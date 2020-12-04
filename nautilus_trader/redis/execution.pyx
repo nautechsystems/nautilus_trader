@@ -131,7 +131,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef AccountId account_id
         cdef Account account
         for key_bytes in account_keys:
-            account_id = AccountId.from_string_c(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            account_id = AccountId.from_str_c(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
             account = self.load_account(account_id)
 
             if account is not None:

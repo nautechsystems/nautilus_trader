@@ -31,7 +31,7 @@ cdef class BarSpecification:
     """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
     @staticmethod
-    cdef BarSpecification from_string_c(str value)
+    cdef BarSpecification from_str_c(str value)
     cpdef bint is_time_aggregated(self) except *
     cpdef bint is_threshold_aggregated(self) except *
     cpdef bint is_information_aggregated(self) except *
@@ -46,7 +46,7 @@ cdef class BarType:
     """If bar aggregation is internal to the platform.\n\n:returns: `bint`"""
 
     @staticmethod
-    cdef BarType from_string_c(str value, bint is_internal_aggregation=*)
+    cdef BarType from_str_c(str value, bint is_internal_aggregation=*)
 
 
 cdef class Bar:

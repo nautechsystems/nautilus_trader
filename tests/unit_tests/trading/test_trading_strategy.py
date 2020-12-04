@@ -302,7 +302,7 @@ class TradingStrategyTests(unittest.TestCase):
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = TradingStrategy("000")
-        event = TestStubs.event_account_state(AccountId.from_string("SIM-000-SIMULATED"))
+        event = TestStubs.event_account_state(AccountId.from_str("SIM-000-SIMULATED"))
 
         # Act
         strategy.on_event(event)
@@ -666,7 +666,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        event = TestStubs.event_account_state(AccountId.from_string("TEST-000-SIMULATED"))
+        event = TestStubs.event_account_state(AccountId.from_str("TEST-000-SIMULATED"))
 
         # Act
         # Assert

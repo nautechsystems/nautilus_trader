@@ -146,7 +146,7 @@ cdef class QuoteTick(Tick):
         elif price_type == PriceType.ASK:
             return self.ask
         else:
-            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_string(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
 
     cpdef Quantity extract_volume(self, PriceType price_type):
         """
@@ -169,7 +169,7 @@ cdef class QuoteTick(Tick):
         elif price_type == PriceType.ASK:
             return self.ask_size
         else:
-            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_string(price_type)}")
+            raise ValueError(f"Cannot extract with PriceType {PriceTypeParser.to_str(price_type)}")
 
     @staticmethod
     cdef QuoteTick from_serializable_string_c(Symbol symbol, str values):
@@ -276,7 +276,7 @@ cdef class TradeTick(Tick):
         return (f"{self.symbol},"
                 f"{self.price},"
                 f"{self.size},"
-                f"{MakerParser.to_string(self.maker)},"
+                f"{MakerParser.to_str(self.maker)},"
                 f"{self.match_id},"
                 f"{format_iso8601(self.timestamp)}")
 
@@ -297,7 +297,7 @@ cdef class TradeTick(Tick):
             symbol,
             Price(pieces[0]),
             Quantity(pieces[1]),
-            MakerParser.from_string(pieces[2]),
+            MakerParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
             from_posix_ms(long(pieces[4])),
         )
@@ -337,6 +337,6 @@ cdef class TradeTick(Tick):
         """
         return (f"{self.price},"
                 f"{self.size},"
-                f"{MakerParser.to_string(self.maker)},"
+                f"{MakerParser.to_str(self.maker)},"
                 f"{self.match_id},"
                 f"{to_posix_ms(self.timestamp)}")

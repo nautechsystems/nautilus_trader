@@ -16,7 +16,7 @@
 cdef class MakerParser:
 
     @staticmethod
-    cdef str to_string(int value):
+    cdef str to_str(int value):
         if value == 1:
             return 'BUYER'
         elif value == 2:
@@ -25,7 +25,7 @@ cdef class MakerParser:
             return 'UNDEFINED'
 
     @staticmethod
-    cdef Maker from_string(str value):
+    cdef Maker from_str(str value):
         if value == 'BUYER':
             return Maker.BUYER
         elif value == 'SELLER':
@@ -34,9 +34,9 @@ cdef class MakerParser:
             return Maker.UNDEFINED
 
     @staticmethod
-    def to_string_py(int value):
-        return MakerParser.to_string(value)
+    def to_str_py(int value):
+        return MakerParser.to_str(value)
 
     @staticmethod
-    def from_string_py(str value):
-        return MakerParser.from_string(value)
+    def from_str_py(str value):
+        return MakerParser.from_str(value)

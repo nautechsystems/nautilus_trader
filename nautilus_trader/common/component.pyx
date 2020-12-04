@@ -75,8 +75,8 @@ cdef class ComponentFSMFactory:
         return FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
             initial_state=ComponentState.INITIALIZED,
-            trigger_parser=ComponentTriggerParser.to_string,
-            state_parser=ComponentStateParser.to_string,
+            trigger_parser=ComponentTriggerParser.to_str,
+            state_parser=ComponentStateParser.to_str,
         )
 
 
