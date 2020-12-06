@@ -18,41 +18,41 @@ cdef class ComponentTriggerParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'START'
+            return "START"
         elif value == 2:
-            return 'RUNNING'
+            return "RUNNING"
         elif value == 3:
-            return 'STOP'
+            return "STOP"
         elif value == 4:
-            return 'STOPPED'
+            return "STOPPED"
         elif value == 5:
-            return 'RESUME'
+            return "RESUME"
         elif value == 6:
-            return 'RESET'
+            return "RESET"
         elif value == 7:
-            return 'DISPOSE'
+            return "DISPOSE"
         elif value == 8:
-            return 'DISPOSED'
+            return "DISPOSED"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef ComponentTrigger from_str(str value):
-        if value == 'START':
+        if value == "START":
             return ComponentTrigger.START
-        elif value == 'RUNNING':
+        elif value == "RUNNING":
             return ComponentTrigger.RUNNING
-        elif value == 'STOP':
+        elif value == "STOP":
             return ComponentTrigger.STOP
-        elif value == 'STOPPED':
+        elif value == "STOPPED":
             return ComponentTrigger.STOPPED
-        elif value == 'RESUME':
+        elif value == "RESUME":
             return ComponentTrigger.RESUME
-        elif value == 'RESET':
+        elif value == "RESET":
             return ComponentTrigger.RESET
-        elif value == 'DISPOSE':
+        elif value == "DISPOSE":
             return ComponentTrigger.DISPOSE
-        elif value == 'DISPOSED':
+        elif value == "DISPOSED":
             return ComponentTrigger.DISPOSED
         else:
             return ComponentTrigger.UNDEFINED

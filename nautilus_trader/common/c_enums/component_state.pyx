@@ -18,49 +18,49 @@ cdef class ComponentStateParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return 'INITIALIZED'
+            return "INITIALIZED"
         elif value == 2:
-            return 'STARTING'
+            return "STARTING"
         elif value == 3:
-            return 'RUNNING'
+            return "RUNNING"
         elif value == 4:
-            return 'STOPPING'
+            return "STOPPING"
         elif value == 5:
-            return 'STOPPED'
+            return "STOPPED"
         elif value == 6:
-            return 'RESUMING'
+            return "RESUMING"
         elif value == 7:
-            return 'RESETTING'
+            return "RESETTING"
         elif value == 8:
-            return 'DISPOSING'
+            return "DISPOSING"
         elif value == 9:
-            return 'DISPOSED'
+            return "DISPOSED"
         elif value == 10:
-            return 'FAULTED'
+            return "FAULTED"
         else:
-            return 'UNDEFINED'
+            return "UNDEFINED"
 
     @staticmethod
     cdef ComponentState from_str(str value):
-        if value == 'INITIALIZED':
+        if value == "INITIALIZED":
             return ComponentState.INITIALIZED
-        elif value == 'STARTING':
+        elif value == "STARTING":
             return ComponentState.STARTING
-        elif value == 'RUNNING':
+        elif value == "RUNNING":
             return ComponentState.RUNNING
-        elif value == 'STOPPING':
+        elif value == "STOPPING":
             return ComponentState.STOPPING
-        elif value == 'STOPPED':
+        elif value == "STOPPED":
             return ComponentState.STOPPED
-        elif value == 'RESUMING':
+        elif value == "RESUMING":
             return ComponentState.RESUMING
-        elif value == 'RESETTING':
+        elif value == "RESETTING":
             return ComponentState.RESETTING
-        elif value == 'DISPOSING':
+        elif value == "DISPOSING":
             return ComponentState.DISPOSING
-        elif value == 'DISPOSED':
+        elif value == "DISPOSED":
             return ComponentState.DISPOSED
-        elif value == 'FAULTED':
+        elif value == "FAULTED":
             return ComponentState.FAULTED
         else:
             return ComponentState.UNDEFINED

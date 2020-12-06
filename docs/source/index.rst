@@ -89,6 +89,7 @@ Index
     api_reference/data
     api_reference/execution
     api_reference/indicators
+    api_reference/live
     api_reference/model
     api_reference/postgres
     api_reference/redis
