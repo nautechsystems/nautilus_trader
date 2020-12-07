@@ -564,6 +564,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
     cpdef void check_residuals(self) except *:
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        self._log.debug("Checking residuals...")
+
         # Check for any residual active orders and log warnings if any are found
         for order in self.orders_working():
             self._log.warning(f"Residual {order}")
