@@ -157,6 +157,17 @@ cdef class SimulatedExchange:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
 
+    cpdef dict get_working_orders(self):
+        """
+        Return the working orders inside the exchange.
+
+        Returns
+        -------
+        dict[ClientOrderId, Order]
+
+        """
+        return self._working_orders.copy()
+
     cpdef void register_client(self, BacktestExecClient client) except *:
         """
         Register the given execution client with the simulated exchange.
@@ -802,9 +813,9 @@ cdef class SimulatedExchange:
 
     cdef inline void _auction_sell_order(self, PassiveOrder order, Price market) except *:
         if order.type == OrderType.STOP_MARKET:
-            self._auction_buy_stop_order(order, market)
+            self._auction_sell_stop_order(order, market)
         elif order.type == OrderType.LIMIT:
-            self._auction_buy_limit_order(order, market)
+            self._auction_sell_limit_order(order, market)
         else:
             raise RuntimeError("invalid order type")
 
@@ -873,7 +884,7 @@ cdef class SimulatedExchange:
         cdef OrderFilled filled = OrderFilled(
             self.account.id,
             order.cl_ord_id,
-            order.id,
+            order.id if order.id is not None else self._generate_order_id(order.symbol),
             self._generate_execution_id(),
             position_id,
             StrategyId.null_c(),
