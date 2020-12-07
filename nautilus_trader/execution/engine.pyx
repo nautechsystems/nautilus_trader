@@ -596,7 +596,7 @@ cdef class ExecutionEngine(Component):
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.fill_qty - position.quantity)
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity(position.quantity - fill.fill_qty)
+            difference = Quantity(abs(position.quantity - fill.fill_qty))
 
         # Split commission between two positions
         fill_percent1 = position.quantity / fill.fill_qty
