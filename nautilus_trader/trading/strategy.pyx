@@ -869,8 +869,7 @@ cdef class TradingStrategy(Component):
         datetime to_datetime=None,
     ) except *:
         """
-        Request historical quote ticks for the given parameters from the data
-        engine.
+        Request historical quote ticks for the given parameters.
 
         Parameters
         ----------
@@ -915,8 +914,7 @@ cdef class TradingStrategy(Component):
         datetime to_datetime=None,
     ) except *:
         """
-        Request historical trade ticks for the given parameters from the data
-        engine.
+        Request historical trade ticks for the given parameters.
 
         Parameters
         ----------
@@ -961,7 +959,7 @@ cdef class TradingStrategy(Component):
         datetime to_datetime=None,
     ) except *:
         """
-        Request historical bars for the given parameters from the data engine.
+        Request historical bars for the given parameters.
 
         Parameters
         ----------

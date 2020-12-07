@@ -133,7 +133,7 @@ cdef class Subscribe(VenueCommand):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self.venue}, "
-                f"data_type={self.data_type}, "
+                f"data_type={self.data_type.__name__}, "
                 f"metadata={self.metadata}, "
                 f"handler={self.handler}, "
                 f"id={self.id}, "
@@ -186,7 +186,7 @@ cdef class Unsubscribe(VenueCommand):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self.venue}, "
-                f"data_type={self.data_type}, "
+                f"data_type={self.data_type.__name__}, "
                 f"metadata={self.metadata}, "
                 f"handler={self.handler}, "
                 f"id={self.id}, "
@@ -239,7 +239,7 @@ cdef class DataRequest(Request):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self.venue}, "
-                f"data_type={self.data_type}, "
+                f"data_type={self.data_type.__name__}, "
                 f"metadata={self.metadata}, "
                 f"callback={self.callback}, "
                 f"id={self.id}, "
@@ -295,7 +295,7 @@ cdef class DataResponse(Response):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self.venue}, "
-                f"data_type={self.data_type}, "
+                f"data_type={self.data_type.__name__}, "
                 f"metadata={self.metadata}, "
                 f"len_data={len(self.data)}, "
                 f"correlation_id={self.correlation_id}, "

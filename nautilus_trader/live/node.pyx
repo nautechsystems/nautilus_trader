@@ -19,6 +19,7 @@ import redis
 from asyncio import AbstractEventLoop
 from signal import SIGINT, SIGTERM
 
+from nautilus_trader.adapters.binance.data cimport BinanceDataClient
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
@@ -90,6 +91,7 @@ cdef class TradingNode:
         cdef dict config_log = config["logging"]
         cdef dict config_exec_db = config["exec_database"]
         cdef dict config_strategy = config["strategy"]
+        cdef dict config_data_clients = config["data_clients"]
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
@@ -158,8 +160,7 @@ cdef class TradingNode:
         )
 
         self._exec_engine.load_cache()
-
-        # TODO: Build and register clients here
+        self._setup_data_clients(config_data_clients, logger)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -269,6 +270,18 @@ cdef class TradingNode:
 
         self._log.info("state=DISPOSED.")
         time.sleep(1)  # Allow final logs to print to console
+
+    cdef void _setup_data_clients(self, dict config, logger):
+        # TODO: DataClientFactory
+        for key, value in config.items():
+            client = BinanceDataClient(
+                credentials={},
+                engine=self._data_engine,
+                clock=self._clock,
+                logger=logger,
+            )
+
+            self._data_engine.register_client(client)
 
     cdef void _log_header(self) except *:
         nautilus_header(self._log)
