@@ -88,12 +88,14 @@ cdef class SimulatedExchange:
     cdef dict _symbol_ord_count
     cdef int _executions_count
 
+    cpdef dict get_working_orders(self)
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void load_module(self, SimulationModule module) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, Tick tick) except *
+
     cdef inline void _process_quote_tick(self, QuoteTick tick) except *
     cdef inline void _process_trade_tick(self, TradeTick tick) except *
 
