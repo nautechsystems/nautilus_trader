@@ -26,6 +26,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -680,7 +681,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(1, self.cache.positions_open_count())
         self.assertEqual(1, self.cache.positions_closed_count())
 
-    def test_flip_position_on_opposite_filled_same_position(self):
+    def test_flip_position_on_opposite_filled_same_position_sell(self):
         # Arrange
         self.exec_engine.start()
 
@@ -741,9 +742,87 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, position_id))
 
         position_id_flipped = PositionId("P-000-AUD/USD.FXCM-1F")
-        #  order_id_flipped = ClientOrderId(order2.cl_ord_id.value + 'F')
 
         # Assert
+        position_flipped = self.cache.position(position_id_flipped)
+        self.assertEqual(-50000, position_flipped.relative_quantity)
+        self.assertTrue(self.cache.position_exists(position_id))
+        self.assertTrue(self.cache.position_exists(position_id_flipped))
+        self.assertTrue(self.cache.is_position_closed(position_id))
+        self.assertTrue(self.cache.is_position_open(position_id_flipped))
+        self.assertIn(position_id, self.cache.position_ids())
+        self.assertIn(position_id, self.cache.position_ids(strategy_id=strategy.id))
+        self.assertIn(position_id_flipped, self.cache.position_ids())
+        self.assertIn(position_id_flipped, self.cache.position_ids(strategy_id=strategy.id))
+        self.assertEqual(2, self.cache.positions_total_count())
+        self.assertEqual(1, self.cache.positions_open_count())
+        self.assertEqual(1, self.cache.positions_closed_count())
+
+    def test_flip_position_on_opposite_filled_same_position_buy(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(150000),
+        )
+
+        submit_order1 = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order1,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        position_id = PositionId("P-000-AUD/USD.FXCM-1")
+
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_FXCM, position_id))
+
+        submit_order2 = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            position_id,
+            order2,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_FXCM, position_id))
+
+        position_id_flipped = PositionId("P-000-AUD/USD.FXCM-1F")
+
+        # Assert
+        position_flipped = self.cache.position(position_id_flipped)
+        self.assertEqual(50000, position_flipped.relative_quantity)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))

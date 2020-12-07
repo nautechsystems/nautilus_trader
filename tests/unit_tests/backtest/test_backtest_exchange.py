@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
 from decimal import Decimal
 import unittest
 
@@ -28,24 +29,31 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.commands import CancelOrder
+from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.stubs import TestStubs
@@ -78,6 +86,7 @@ class ExchangeTests(unittest.TestCase):
             config={'use_previous_close': False},  # To correctly reproduce historical data bars
         )
 
+        self.data_engine.cache.add_instrument(AUDUSD_FXCM)
         self.data_engine.cache.add_instrument(USDJPY_FXCM)
         self.portfolio.register_cache(self.data_engine.cache)
 
@@ -97,12 +106,17 @@ class ExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        instruments = {
+            AUDUSD_FXCM.symbol: AUDUSD_FXCM,
+            USDJPY_FXCM.symbol: USDJPY_FXCM,
+        }
+
         self.exchange = SimulatedExchange(
             venue=FXCM,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             exec_cache=self.exec_engine.cache,
-            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
+            instruments=instruments,
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=self.clock,
@@ -145,6 +159,61 @@ class ExchangeTests(unittest.TestCase):
         self.exchange.check_residuals()
         # Assert
         self.assertTrue(True)  # No exceptions raised
+
+    def test_check_residuals_with_working_and_oco_orders(self):
+        # Arrange
+        # Prepare market
+        tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        entry1 = self.strategy.order_factory.limit(
+            USDJPY_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("90.000"),
+        )
+
+        entry2 = self.strategy.order_factory.limit(
+            USDJPY_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("89.900"),
+        )
+
+        bracket1 = self.strategy.order_factory.bracket(
+            entry_order=entry1,
+            stop_loss=Price("89.900"),
+            take_profit=Price("91.000"),
+        )
+
+        bracket2 = self.strategy.order_factory.bracket(
+            entry_order=entry2,
+            stop_loss=Price("89.800"),
+        )
+
+        self.strategy.submit_bracket_order(bracket1)
+        self.strategy.submit_bracket_order(bracket2)
+
+        tick2 = QuoteTick(
+            USDJPY_FXCM.symbol,
+            Price("89.998"),
+            Price("89.999"),
+            Quantity(100000),
+            Quantity(100000),
+            UNIX_EPOCH,
+        )
+
+        self.exchange.process_tick(tick2)
+
+        # Act
+        self.exchange.check_residuals()
+
+        # Assert
+        self.assertEqual(3, len(self.exchange.get_working_orders()))
+        self.assertIn(bracket1.stop_loss, self.exchange.get_working_orders().values())
+        self.assertIn(bracket1.take_profit, self.exchange.get_working_orders().values())
+        self.assertIn(entry2, self.exchange.get_working_orders().values())
 
     def test_get_working_orders_when_no_orders_returns_empty_dict(self):
         # Arrange
@@ -304,6 +373,42 @@ class ExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(0, len(self.exchange.get_working_orders()))
 
+    def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
+        # Arrange
+        command = CancelOrder(
+            venue=FXCM,
+            trader_id=self.trader_id,
+            account_id=self.account_id,
+            cl_ord_id=ClientOrderId("O-123456"),
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        self.exchange.handle_cancel_order(command)
+
+        # Assert
+        self.assertEqual(2, self.exec_engine.event_count)
+
+    def test_modify_stop_order_when_order_does_not_exist(self):
+        # Arrange
+        command = ModifyOrder(
+            venue=FXCM,
+            trader_id=self.trader_id,
+            account_id=self.account_id,
+            cl_ord_id=ClientOrderId("O-123456"),
+            quantity=Quantity(100000),
+            price=Price("1.00000"),
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        self.exchange.handle_modify_order(command)
+
+        # Assert
+        self.assertEqual(2, self.exec_engine.event_count)
+
     def test_modify_stop_order(self):
         # Arrange
         # Prepare market
@@ -326,6 +431,39 @@ class ExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertEqual(Price("96.714"), order.price)
+
+    def test_expire_order(self):
+        # Arrange
+        # Prepare market
+        tick1 = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
+        self.data_engine.process(tick1)
+        self.exchange.process_tick(tick1)
+
+        order = self.strategy.order_factory.stop_market(
+            USDJPY_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("96.711"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        self.strategy.submit_order(order)
+
+        tick2 = QuoteTick(
+            USDJPY_FXCM.symbol,
+            Price("96.709"),
+            Price("96.710"),
+            Quantity(100000),
+            Quantity(100000),
+            UNIX_EPOCH + timedelta(minutes=1),
+        )
+
+        # Act
+        self.exchange.process_tick(tick2)
+
+        # Assert
+        self.assertEqual(0, len(self.exchange.get_working_orders()))
 
     def test_modify_bracket_order_working_stop_loss(self):
         # Arrange
@@ -426,7 +564,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(Money(90.00, JPY), account_event3.commission)
         self.assertTrue(Money(999995.00, USD), account.balance())
 
-    def test_process_tick_fills_buy_stop_order(self):
+    def test_process_quote_tick_fills_buy_stop_order(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
@@ -469,7 +607,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price("96.711"), order.avg_price)
 
-    def test_process_tick_fills_buy_limit_order(self):
+    def test_process_quote_tick_fills_buy_limit_order(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
@@ -512,7 +650,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price("90.001"), order.avg_price)
 
-    def test_process_tick_fills_sell_stop_order(self):
+    def test_process_quote_tick_fills_sell_stop_order(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
@@ -545,7 +683,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price("90.000"), order.avg_price)
 
-    def test_process_tick_fills_sell_limit_order(self):
+    def test_process_quote_tick_fills_sell_limit_order(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
@@ -578,7 +716,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Price("90.100"), order.avg_price)
 
-    def test_process_tick_fills_buy_limit_entry_with_bracket(self):
+    def test_process_quote_tick_fills_buy_limit_entry_with_bracket(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
@@ -615,7 +753,7 @@ class ExchangeTests(unittest.TestCase):
         self.assertEqual(1, len(self.exchange.get_working_orders()))
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
 
-    def test_process_tick_fills_sell_limit_entry_with_bracket(self):
+    def test_process_quote_tick_fills_sell_limit_entry_with_bracket(self):
         # Arrange
         # Prepare market
         tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
@@ -648,6 +786,64 @@ class ExchangeTests(unittest.TestCase):
         )
 
         self.exchange.process_tick(tick2)
+
+        # Assert
+        self.assertEqual(2, len(self.exchange.get_working_orders()))  # SL and TP
+        self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
+        self.assertIn(bracket.take_profit, self.exchange.get_working_orders().values())
+
+    def test_process_trade_tick_fills_buy_limit_entry_with_bracket(self):
+        # Arrange
+        # Prepare market
+        tick1 = TradeTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00000"),
+            Quantity(100000),
+            Maker.BUYER,
+            TradeMatchId("123456789"),
+            UNIX_EPOCH,
+        )
+
+        tick2 = TradeTick(
+            AUDUSD_FXCM.symbol,
+            Price("1.00001"),
+            Quantity(100000),
+            Maker.SELLER,
+            TradeMatchId("123456790"),
+            UNIX_EPOCH,
+        )
+
+        self.data_engine.process(tick1)
+        self.data_engine.process(tick2)
+        self.exchange.process_tick(tick1)
+        self.exchange.process_tick(tick2)
+
+        entry = self.strategy.order_factory.limit(
+            AUDUSD_FXCM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("0.99900"),
+        )
+
+        bracket = self.strategy.order_factory.bracket(
+            entry_order=entry,
+            stop_loss=Price("0.99800"),
+            take_profit=Price("1.100"),
+        )
+
+        self.strategy.submit_bracket_order(bracket)
+
+        # Act
+        tick3 = TradeTick(
+            AUDUSD_FXCM.symbol,
+            Price("0.99899"),
+            Quantity(100000),
+            Maker.SELLER,
+            TradeMatchId("123456789"),
+            UNIX_EPOCH,
+        )
+
+        self.exchange.process_tick(tick3)
 
         # Assert
         self.assertEqual(2, len(self.exchange.get_working_orders()))  # SL and TP

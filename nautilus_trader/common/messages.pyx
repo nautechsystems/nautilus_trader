@@ -97,7 +97,7 @@ cdef class Subscribe(VenueCommand):
             Venue venue not None,
             type data_type not None,
             dict metadata not None,
-            object handler not None,
+            handler not None: callable,
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -150,7 +150,7 @@ cdef class Unsubscribe(VenueCommand):
             Venue venue not None,
             type data_type not None,
             dict metadata not None,
-            object handler not None,
+            handler not None: callable,
             UUID command_id not None,
             datetime command_timestamp not None,
     ):
@@ -203,7 +203,7 @@ cdef class DataRequest(Request):
             Venue venue not None,
             type data_type not None,
             dict metadata not None,
-            object callback not None,
+            callback not None: callable,
             UUID request_id not None,
             datetime request_timestamp not None,
     ):

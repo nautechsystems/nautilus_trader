@@ -64,7 +64,6 @@ from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
@@ -210,6 +209,8 @@ cdef class SimulatedExchange:
         """
         Check for any residual objects and log warnings if any are found.
         """
+        self._log.debug("Checking residuals...")
+
         for order_list in self._child_orders.values():
             for order in order_list:
                 self._log.warning(f"Residual child-order {order}")
@@ -276,15 +277,31 @@ cdef class SimulatedExchange:
 
         self._clock.set_time(tick.timestamp)
 
+        cdef Symbol symbol = tick.symbol
+
+        # Update market bid and ask
+        cdef Price bid
+        cdef Price ask
         if isinstance(tick, QuoteTick):
-            self._process_quote_tick(tick)
-        else:
-            self._process_trade_tick(tick)
-
-    cdef inline void _process_quote_tick(self, QuoteTick tick) except *:
-        cdef Symbol symbol = tick.symbol
-        self._market_bids[symbol] = tick.bid
-        self._market_asks[symbol] = tick.ask
+            bid = tick.bid
+            ask = tick.ask
+            self._market_bids[symbol] = bid
+            self._market_asks[symbol] = ask
+        else:  # TradeTick
+            if tick.maker == Maker.BUYER:  # TAKER hit the bid
+                bid = tick.price
+                ask = self._market_asks.get(symbol)
+                if ask is None:
+                    ask = bid
+                self._market_bids[symbol] = bid
+            elif tick.maker == Maker.SELLER:  # TAKER lifted the offer
+                ask = tick.price
+                bid = self._market_bids.get(symbol)
+                if bid is None:
+                    bid = ask
+                self._market_asks[symbol] = ask
+            else:
+                raise RuntimeError("invalid maker")
 
         cdef datetime now = self._clock.utc_now()
 
@@ -305,54 +322,16 @@ cdef class SimulatedExchange:
 
             # Check for order fill
             if order.side == OrderSide.BUY:
-                self._auction_buy_order(order, tick.ask)
+                self._auction_buy_order(order, ask)
             elif order.side == OrderSide.SELL:
-                self._auction_sell_order(order, tick.bid)
+                self._auction_sell_order(order, bid)
             else:
                 raise RuntimeError("invalid order side")
 
             # Check for order expiry
             if order.expire_time and now >= order.expire_time:
                 self._working_orders.pop(order.cl_ord_id, None)
-
-    cdef inline void _process_trade_tick(self, TradeTick tick) except *:
-        cdef Symbol symbol = tick.symbol
-
-        if tick.maker == Maker.BUYER:  # TAKER hit the bid
-            self._market_bids[symbol] = tick.price
-        elif tick.maker == Maker.SELLER:  # TAKER lifted the offer
-            self._market_asks[symbol] = tick.price
-        else:
-            raise RuntimeError("invalid maker")
-
-        cdef datetime now = self._clock.utc_now()
-
-        # Iterate through modules
-        cdef SimulationModule module
-        for module in self.modules:
-            module.process(tick, now)
-
-        cdef Order order
-        cdef Instrument instrument
-        for order in self._working_orders.copy().values():  # Copy dict for safe loop
-            if order.symbol != tick.symbol:
-                continue  # Order is for a different symbol
-            if not order.is_working_c():
-                continue  # Orders state has changed since the loop started
-
-            instrument = self.instruments[order.symbol]
-
-            # Check for order fill
-            if order.side == OrderSide.BUY:
-                self._auction_buy_order(order, tick.ask)
-            elif order.side == OrderSide.SELL:
-                self._auction_sell_order(order, tick.bid)
-            else:
-                raise RuntimeError("invalid order side")
-
-            # Check for order expiry
-            if order.expire_time and now >= order.expire_time:
-                self._working_orders.pop(order.cl_ord_id, None)
+                self._expire_order(order)
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
