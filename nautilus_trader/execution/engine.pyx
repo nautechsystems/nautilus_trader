@@ -504,8 +504,8 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process event, "
-                            f"({repr(strategy_id)} not found), {event},.")
+            self._log.error(f"Cannot process event "
+                            f"(strategy identifier not found), {event}.")
             return  # Cannot process event further
 
         self._send_to_strategy(event, strategy_id)
@@ -596,7 +596,7 @@ cdef class ExecutionEngine(Component):
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.fill_qty - position.quantity)
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity(position.quantity - fill.fill_qty)
+            difference = Quantity(abs(position.quantity - fill.fill_qty))
 
         # Split commission between two positions
         fill_percent1 = position.quantity / fill.fill_qty
