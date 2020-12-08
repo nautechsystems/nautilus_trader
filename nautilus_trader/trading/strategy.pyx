@@ -1323,7 +1323,7 @@ cdef class TradingStrategy(Component):
     @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        Handle the given list of ticks by handling each tick individually.
+        Handle the given tick data by handling each tick individually.
 
         Parameters
         ----------
@@ -1390,7 +1390,7 @@ cdef class TradingStrategy(Component):
     @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
         """
-        Handle the given list of ticks by handling each tick individually.
+        Handle the given tick data by handling each tick individually.
 
         Parameters
         ----------
@@ -1418,7 +1418,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """
-        Handle the given bar type and bar.
+        Handle the given bar data.
 
         Calls `on_bar` if `strategy.state` is `RUNNING`.
 
@@ -1460,7 +1460,7 @@ cdef class TradingStrategy(Component):
     @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        Handle the given bar type and bars by handling each bar individually.
+        Handle the given bar data by handling each bar individually.
 
         Parameters
         ----------
@@ -1516,7 +1516,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void handle_event(self, Event event) except *:
         """
-        Hand the given event.
+        Handle the given event.
 
         Calls `on_event` if `strategy.state` is `RUNNING`.
 
