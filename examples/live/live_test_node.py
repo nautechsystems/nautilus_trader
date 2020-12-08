@@ -33,18 +33,12 @@ except ImportError:
     pass
 
 
-strategy = EMACross(
-    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=BarSpecification(200, BarAggregation.TICK, PriceType.LAST),
-    fast_ema=10,
-    slow_ema=20,
-    trade_size=Decimal(0.1),
-)
-
+# The configuration dictionary can come from anywhere such as a JSON or YAML
+# file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",
-        "id_tag": "001",
+        "name": "TESTER",  # Not sent beyond system boundary
+        "id_tag": "001",   # Used to ensure orders are unique for this trader
     },
 
     "logging": {
@@ -60,17 +54,47 @@ config = {
     },
 
     "strategy": {
-        "load_state": True,
-        "save_state": True,
+        "load_state": True,  # Strategy state is loaded from the database on start
+        "save_state": True,  # Strategy state is saved to the database on shutdown
+    },
+
+    "data_clients": {
+        "ccxt-binance": {
+            "api_key": "BINANCE_API_KEY",        # value is the environment variable name
+            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
+        },
+    },
+
+    "exec_clients": {
+        "ccxt-binance": {
+            "api_key": "BINANCE_API_KEY",        # value is the environment variable name
+            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
+        },
     }
 }
 
 
+# Instantiate your strategies to pass into the trading node. You could add
+# custom options into the configuration file or even use another configuration
+# file.
+strategy = EMACross(
+    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
+    bar_spec=BarSpecification(200, BarAggregation.TICK, PriceType.LAST),
+    fast_ema=10,
+    slow_ema=20,
+    trade_size=Decimal(0.1),
+)
+
+
+# For this example the input() calls will enable control of the trading node
+# through one sequence of start, stop and dispose.
+# It is only necessary to pass a single event loop into the trading node, all
+# asyncio functionality is handled 'under the hood' for you.
 def main():
     loop = asyncio.get_event_loop()
     node = TradingNode(
         loop=loop,
-        strategies=[strategy],
+        strategies=[strategy],  # A list of strategies
         config=config,
     )
 

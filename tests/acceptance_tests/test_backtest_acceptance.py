@@ -20,7 +20,7 @@ import unittest
 import pandas as pd
 
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -73,16 +73,18 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            venue=self.venue,
-            oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
             config=config,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.load_module(Venue("FXCM"), fx_rollover_interest)
+        self.engine.add_exchange(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
+            modules=[fx_rollover_interest]
+        )
 
     def tearDown(self):
         self.engine.dispose()
@@ -191,16 +193,18 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            venue=self.venue,
-            oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
             config=config,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.load_module(Venue("FXCM"), fx_rollover_interest)
+        self.engine.add_exchange(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
+            modules=[fx_rollover_interest],
+        )
 
     def tearDown(self):
         self.engine.dispose()
@@ -254,16 +258,18 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            venue=self.venue,
-            oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
             config=config,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        self.engine.load_module(Venue("FXCM"), fx_rollover_interest)
+        self.engine.add_exchange(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
+            modules=[fx_rollover_interest],
+        )
 
     def tearDown(self):
         self.engine.dispose()
@@ -335,10 +341,13 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
+            config=config,
+        )
+
+        self.engine.add_exchange(
             venue=self.venue,
             oms_type=OMSType.NETTING,
             generate_position_ids=True,
-            config=config,
         )
 
     def tearDown(self):

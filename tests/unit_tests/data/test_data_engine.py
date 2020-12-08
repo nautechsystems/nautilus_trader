@@ -15,8 +15,7 @@
 
 import unittest
 
-from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.data import BacktestDataProducer
+from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
@@ -80,23 +79,19 @@ class DataEngineTests(unittest.TestCase):
 
         self.portfolio.register_cache(self.data_engine.cache)
 
-        binance_data = BacktestDataContainer()
-        binance_data.add_instrument(BTCUSDT_BINANCE)
-        binance_data.add_instrument(ETHUSDT_BINANCE)
-
-        self.binance_client = BacktestDataProducer(
-            data=binance_data,
+        self.binance_client = BacktestDataClient(
+            instruments={
+                BTCUSDT_BINANCE.symbol: BTCUSDT_BINANCE,
+                ETHUSDT_BINANCE.symbol: ETHUSDT_BINANCE,
+            },
             venue=BINANCE,
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
         )
 
-        fxcm_data = BacktestDataContainer()
-        fxcm_data.add_instrument(XBTUSD_BITMEX)
-
-        self.bitmex_client = BacktestDataProducer(
-            data=fxcm_data,
+        self.bitmex_client = BacktestDataClient(
+            instruments={XBTUSD_BITMEX.symbol: XBTUSD_BITMEX},
             venue=BITMEX,
             engine=self.data_engine,
             clock=self.clock,
@@ -461,7 +456,7 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
-        self.assertEqual(3, self.data_engine.data_count)
+        self.assertEqual(0, self.data_engine.data_count)
 
     def test_update_instruments_all_sends_request_to_self(self):
         # Arrange
@@ -473,7 +468,7 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, self.data_engine.request_count)
-        self.assertEqual(3, self.data_engine.data_count)
+        self.assertEqual(0, self.data_engine.data_count)
 
     def test_execute_connect_given_specified_venue_with_data_client(self):
         # Arrange
@@ -513,8 +508,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process("DATA!")  # Invalid
 
         # Assert
-        # Already received 3 instruments
-        self.assertEqual(4, self.data_engine.data_count)
+        self.assertEqual(1, self.data_engine.data_count)
 
     def test_process_data_places_data_on_queue(self):
         # Arrange
@@ -524,8 +518,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.process(tick)
 
         # Assert
-        # Already received 3 instruments
-        self.assertEqual(4, self.data_engine.data_count)
+        self.assertEqual(1, self.data_engine.data_count)
 
     def test_execute_subscribe_instrument_then_adds_handler(self):
         # Arrange

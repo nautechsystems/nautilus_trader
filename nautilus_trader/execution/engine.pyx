@@ -241,6 +241,13 @@ cdef class ExecutionEngine(Component):
 
         self._on_start()
 
+    cpdef void _stop(self) except *:
+        cdef ExecutionClient client
+        for client in self._clients.values():
+            client.disconnect()
+
+        self._on_stop()
+
     cpdef void _reset(self) except *:
         for client in self._clients.values():
             client.reset()
@@ -250,13 +257,6 @@ cdef class ExecutionEngine(Component):
 
         self.command_count = 0
         self.event_count = 0
-
-    cpdef void _stop(self) except *:
-        cdef ExecutionClient client
-        for client in self._clients.values():
-            client.disconnect()
-
-        self._on_stop()
 
     cpdef void _dispose(self) except *:
         cdef ExecutionClient client

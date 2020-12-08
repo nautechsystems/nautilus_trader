@@ -12,25 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.objects cimport Money
-
-
-cdef class BacktestConfig:
-    cdef readonly int tick_capacity
-    cdef readonly int bar_capacity
-    cdef readonly str exec_db_type
-    cdef readonly bint exec_db_flush
-    cdef readonly bint frozen_accounts
-    cdef readonly Money starting_capital
-    cdef readonly Currency account_currency
-    cdef readonly str short_term_interest_csv_path
-    cdef readonly bint bypass_logging
-    cdef readonly int level_console
-    cdef readonly int level_file
-    cdef readonly int level_store
-    cdef readonly bint console_prints
-    cdef readonly bint log_thread
-    cdef readonly bint log_to_file
-    cdef readonly str log_file_path

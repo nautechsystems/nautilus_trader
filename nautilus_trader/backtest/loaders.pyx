@@ -233,40 +233,6 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def ethxbt_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
-        """
-        Return the BitMEX ETHXBT perpetual contract for backtesting.
-        """
-        return Instrument(
-            symbol=Symbol("ETH/XBT", Venue("BITMEX")),
-            asset_class=AssetClass.CRYPTO,
-            asset_type=AssetType.SWAP,
-            base_currency=ETH,
-            quote_currency=BTC,
-            settlement_currency=BTC,
-            is_inverse=True,
-            price_precision=5,
-            size_precision=3,
-            tick_size=Decimal("0.00001"),
-            multiplier=Decimal("0.00001"),
-            leverage=leverage,
-            lot_size=Quantity("1"),
-            max_quantity=Quantity(""),
-            min_quantity=Quantity(1),
-            max_notional=None,
-            min_notional=Money(1.00, USD),
-            max_price=Price("10.00"),
-            min_price=Price("0.05"),
-            margin_initial=Decimal("1.00"),
-            margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("-0.00025"),
-            taker_fee=Decimal("0.00075"),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal(),
-            timestamp=UNIX_EPOCH,
-        )
-
-    @staticmethod
     def default_fx_ccy(Symbol symbol) -> Instrument:
         """
         Return a default FX currency pair instrument from the given symbol.

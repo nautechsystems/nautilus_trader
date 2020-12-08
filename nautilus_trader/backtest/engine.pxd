@@ -18,60 +18,61 @@ from cpython.datetime cimport timedelta
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.config cimport BacktestConfig
-from nautilus_trader.backtest.data cimport BacktestDataProducer
-from nautilus_trader.backtest.exchange cimport SimulatedExchange
-from nautilus_trader.backtest.execution cimport BacktestExecClient
+from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.modules cimport SimulationModule
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class BacktestEngine:
-    cdef readonly Clock clock
-    cdef readonly Clock test_clock
-    cdef readonly UUIDFactory uuid_factory
-    cdef readonly BacktestConfig config
-    cdef readonly DataEngine data_engine
-    cdef readonly ExecutionEngine exec_engine
-    cdef readonly SimulatedExchange exchange
-    cdef readonly BacktestDataProducer data_client
-    cdef readonly BacktestExecClient exec_client
-    cdef readonly LoggerAdapter log
-    cdef readonly Logger logger
-    cdef readonly Logger test_logger
-    cdef readonly TraderId trader_id
-    cdef readonly AccountId account_id
-    cdef readonly Portfolio portfolio
-    cdef readonly PerformanceAnalyzer analyzer
+    cdef Clock _clock
+    cdef Clock _test_clock
+    cdef UUIDFactory _uuid_factory
+    cdef BacktestConfig _config
+    cdef DataEngine _data_engine
+    cdef ExecutionEngine _exec_engine
+    cdef BacktestDataProducer _data_producer
+    cdef LoggerAdapter _log
+    cdef Logger _logger
+    cdef Logger _test_logger
+    cdef dict _exchanges
+
     cdef readonly Trader trader
     cdef readonly datetime created_time
     cdef readonly timedelta time_to_initialize
     cdef readonly int iteration
+    cdef readonly Portfolio portfolio
+    cdef readonly PerformanceAnalyzer analyzer
 
-    cpdef void load_module(self, Venue venue, SimulationModule module)
+    cpdef void add_exchange(
+        self,
+        Venue venue,
+        OMSType oms_type,
+        bint generate_position_ids=*,
+        FillModel fill_model=*,
+        list modules=*,
+    ) except *
+    cpdef void print_log_store(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
+    cpdef void change_fill_model(self, Venue venue, FillModel model) except *
     cpdef void run(
         self,
         datetime start=*,
         datetime stop=*,
-        FillModel fill_model=*,
         list strategies=*,
         bint print_log_store=*,
     ) except *
+
     cdef void _advance_time(self, datetime timestamp) except *
-    cpdef list get_log_store(self)
-    cpdef void print_log_store(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
     cdef void _backtest_memory(self) except *
     cdef void _backtest_header(
         self,

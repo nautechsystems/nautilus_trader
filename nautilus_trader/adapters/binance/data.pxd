@@ -17,4 +17,6 @@ from nautilus_trader.live.data cimport LiveDataClient
 
 
 cdef class BinanceDataClient(LiveDataClient):
-    pass
+    cdef object _config
+    cdef object _client
+    cdef bint _is_connected

@@ -15,35 +15,19 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.backtest.data_container cimport BacktestDataContainer
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class BacktestDataContainer:
-    cdef readonly set symbols
-    cdef readonly dict instruments
-    cdef readonly dict quote_ticks
-    cdef readonly dict trade_ticks
-    cdef readonly dict bars_bid
-    cdef readonly dict bars_ask
-
-    cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void add_quote_ticks(self, Symbol symbol, data) except *
-    cpdef void add_trade_ticks(self, Symbol symbol, data) except *
-    cpdef void add_bars(self, Symbol symbol, BarAggregation aggregation, PriceType price_type, data) except *
-    cpdef void check_integrity(self) except *
-    cpdef bint has_quote_data(self, Symbol symbol) except *
-    cpdef bint has_trade_data(self, Symbol symbol) except *
-    cpdef long total_data_size(self)
-
-
-cdef class BacktestDataProducer(DataClient):
+cdef class BacktestDataProducer:
+    cdef Clock _clock
+    cdef LoggerAdapter _log
+    cdef DataEngine _data_engine
     cdef BacktestDataContainer _data
     cdef object _quote_tick_data
     cdef object _trade_tick_data

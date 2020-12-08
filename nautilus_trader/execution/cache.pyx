@@ -364,13 +364,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
         self._log.debug(f"Added Order(id={order.cl_ord_id.value}{position_id_str}).")
 
-        if position_id.is_null():
-            return  # Do not index the NULL id
-
-        self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)
-
         # Update database
         self._database.add_order(order)  # Logs
+
+        if position_id.is_null():
+            return  # Do not index the NULL id
+        self.add_position_id(position_id, order.cl_ord_id, order.strategy_id)
 
     cpdef void add_position_id(self, PositionId position_id, ClientOrderId cl_ord_id, StrategyId strategy_id) except *:
         """

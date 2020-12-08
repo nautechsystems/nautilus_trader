@@ -129,7 +129,7 @@ cdef class Trader(Component):
 
     cpdef void _start(self) except *:
         if not self._strategies:
-            self._log.error(f"No strategies loaded).")
+            self._log.error(f"No strategies loaded.")
             return
 
         cdef TradingStrategy strategy
@@ -174,11 +174,14 @@ cdef class Trader(Component):
             If strategies contains a type other than TradingStrategy.
 
         """
-        Condition.not_empty(strategies, "strategies")
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
         if self._fsm.state == ComponentState.RUNNING:
             self._log.error("Cannot re-initialize the strategies of a running trader.")
+            return
+
+        if len(strategies) == 0:
+            self._log.warning(f"No strategies to initialize.")
             return
 
         self._log.info(f"Initializing strategies...")

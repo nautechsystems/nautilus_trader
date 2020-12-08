@@ -268,9 +268,6 @@ cdef class DataEngine(Component):
 
         self._on_stop()
 
-    cpdef void _resume(self) except *:
-        pass  # Do nothing else
-
     cpdef void _reset(self) except *:
         cdef DataClient client
         for client in self._clients.values():
