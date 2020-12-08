@@ -42,6 +42,7 @@ cdef class EMACross(TradingStrategy):
     # Backing fields are necessary
     cdef Symbol symbol
     cdef BarType bar_type
+    cdef object trade_size
     cdef ExponentialMovingAverage fast_ema
     cdef ExponentialMovingAverage slow_ema
 

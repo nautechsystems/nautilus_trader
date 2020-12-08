@@ -24,7 +24,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
@@ -59,11 +59,14 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
+            config=config,
+        )
+
+        engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             fill_model=FillModel(),
-            config=config,
         )
 
         start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
@@ -114,11 +117,13 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=[strategy],
+            config=config,
+        )
+
+        engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            config=config,
-            fill_model=None,
         )
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -154,17 +159,18 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine = BacktestEngine(
             data=data,
             strategies=[strategy],
-            venue=Venue("FXCM"),
-            oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
             config=config,
-            fill_model=None,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        engine.load_module(Venue("FXCM"), fx_rollover_interest)
+        engine.add_exchange(
+            venue=Venue("FXCM"),
+            oms_type=OMSType.HEDGING,
+            generate_position_ids=True,
+            modules=[fx_rollover_interest],
+        )
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
         stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -202,3 +208,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 25/11/20  4394122 function calls (4363978 primitive calls) in 6.212 seconds (performance check)
         # 27/11/20  4294514 function calls (4268761 primitive calls) in 5.822 seconds (remove redundant methods)
         # 29/11/20  4374015 function calls (4348306 primitive calls) in 5.753 seconds (performance check)
+        # 09/12/20  4294769 function calls (4268911 primitive calls) in 5.858 seconds (performance check)

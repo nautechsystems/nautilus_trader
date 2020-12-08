@@ -14,10 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-This module provides components relating to data for backtesting.
-
-A `BacktestDataContainer` is a convenient container for holding and organizing
-backtest related data - which can be passed to one or more `BacktestDataEngine`(s).
+This module provides a data producer for backtesting.
 """
 
 import gc
@@ -28,246 +25,25 @@ import pandas as pd
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
-from pandas import DatetimeIndex
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.maker cimport MakerParser
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class BacktestDataContainer:
-    """
-    Provides a container for backtest data.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the `BacktestDataContainer` class.
-        """
-        self.symbols = set()   # type: set[Instrument]
-        self.instruments = {}  # type: dict[Symbol, Instrument]
-        self.quote_ticks = {}  # type: dict[Symbol, pd.DataFrame]
-        self.trade_ticks = {}  # type: dict[Symbol, pd.DataFrame]
-        self.bars_bid = {}     # type: dict[Symbol, dict[BarAggregation, pd.DataFrame]]
-        self.bars_ask = {}     # type: dict[Symbol, dict[BarAggregation, pd.DataFrame]]
-
-    cpdef void add_instrument(self, Instrument instrument) except *:
-        """
-        Add the instrument to the container.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument to add.
-
-        """
-        Condition.not_none(instrument, "instrument")
-
-        self.instruments[instrument.symbol] = instrument
-        self.instruments = dict(sorted(self.instruments.items()))
-
-    cpdef void add_quote_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
-        """
-        Add the quote tick data to the container.
-
-        The format of the dataframe is expected to be a DateTimeIndex (times are
-        assumed to be UTC, and are converted to tz-aware in pre-processing).
-
-        With index column named 'timestamp', and 'bid', 'ask' data columns.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the quote tick data.
-        data : pd.DataFrame
-            The quote tick data to add.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(data, "data")
-        Condition.type(data, pd.DataFrame, "data")
-
-        self.symbols.add(symbol)
-        self.quote_ticks[symbol] = data
-        self.quote_ticks = dict(sorted(self.quote_ticks.items()))
-
-    cpdef void add_trade_ticks(self, Symbol symbol, data: pd.DataFrame) except *:
-        """
-        Add the trade tick data to the container.
-
-        The format of the dataframe is expected to be a DateTimeIndex (times are
-        assumed to be UTC, and are converted to tz-aware in pre-processing).
-
-        With index column named 'timestamp', and 'trade_id', 'price', 'quantity',
-        'buyer_maker' data columns.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the trade tick data.
-        data : pd.DataFrame
-            The trade tick data to add.
-
-        Returns
-        -------
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(data, "data")
-        Condition.type(data, pd.DataFrame, "data")
-
-        self.symbols.add(symbol)
-        self.trade_ticks[symbol] = data
-        self.trade_ticks = dict(sorted(self.trade_ticks.items()))
-
-    cpdef void add_bars(
-            self,
-            Symbol symbol,
-            BarAggregation aggregation,
-            PriceType price_type,
-            data: pd.DataFrame
-    ) except *:
-        """
-        Add the bar data to the container.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the bar data.
-        aggregation : BarAggregation
-            The bar aggregation of the data.
-        price_type : PriceType
-            The price type of the data.
-        data : pd.DataFrame
-            The bar data to add.
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(data, "data")
-        Condition.true(price_type != PriceType.LAST, "price_type != PriceType.LAST")
-
-        self.symbols.add(symbol)
-
-        if price_type == PriceType.BID:
-            if symbol not in self.bars_bid:
-                self.bars_bid[symbol] = {}
-                self.bars_bid = dict(sorted(self.bars_bid.items()))
-            self.bars_bid[symbol][aggregation] = data
-            self.bars_bid[symbol] = dict(sorted(self.bars_bid[symbol].items()))
-
-        if price_type == PriceType.ASK:
-            if symbol not in self.bars_ask:
-                self.bars_ask[symbol] = {}
-                self.bars_ask = dict(sorted(self.bars_ask.items()))
-            self.bars_ask[symbol][aggregation] = data
-            self.bars_ask[symbol] = dict(sorted(self.bars_ask[symbol].items()))
-
-    cpdef void check_integrity(self) except *:
-        """
-        Check the integrity of the data inside the container.
-
-        Raises
-        ------
-        ValueError
-            If any integrity check fails.
-
-        """
-        # Check there is the needed instrument for each data symbol
-        for symbol in self.symbols:
-            Condition.true(symbol in self.instruments, f"symbol in self.instruments")
-
-        # Check that all bar DataFrames for each symbol are of the same shape and index
-        cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
-        cdef dict indexs = {}  # type: dict[BarAggregation, DatetimeIndex]
-        for symbol, data in self.bars_bid.items():
-            for aggregation, dataframe in data.items():
-                if aggregation not in shapes:
-                    shapes[aggregation] = dataframe.shape
-                if aggregation not in indexs:
-                    indexs[aggregation] = dataframe.index
-                if dataframe.shape != shapes[aggregation]:
-                    raise RuntimeError(f"{dataframe} bid ask shape is not equal.")
-                if not all(dataframe.index == indexs[aggregation]):
-                    raise RuntimeError(f"{dataframe} bid ask index is not equal.")
-        for symbol, data in self.bars_ask.items():
-            for aggregation, dataframe in data.items():
-                if dataframe.shape != shapes[aggregation]:
-                    raise RuntimeError(f"{dataframe} bid ask shape is not equal.")
-                if not all(dataframe.index == indexs[aggregation]):
-                    raise RuntimeError(f"{dataframe} bid ask index is not equal.")
-
-    cpdef bint has_quote_data(self, Symbol symbol) except *:
-        """
-        If the container has quote data for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The query symbol.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-        return symbol in self.quote_ticks or symbol in self.bars_bid
-
-    cpdef bint has_trade_data(self, Symbol symbol) except *:
-        """
-        If the container has trade data for the given symbol.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The query symbol.
-
-        Returns
-        -------
-        bool
-
-        """
-        Condition.not_none(symbol, "symbol")
-        return symbol in self.trade_ticks
-
-    cpdef long total_data_size(self):
-        """
-        Return the total memory size of the data in the container.
-
-        Returns
-        -------
-        long
-            The total bytes.
-
-        """
-        cdef long size = 0
-        size += get_size_of(self.quote_ticks)
-        size += get_size_of(self.trade_ticks)
-        size += get_size_of(self.bars_bid)
-        size += get_size_of(self.bars_ask)
-        return size
-
-
-cdef class BacktestDataProducer(DataClient):
+cdef class BacktestDataProducer:
     """
     Provides an implementation of `DataClient` which produces data for backtesting.
     """
@@ -275,7 +51,6 @@ cdef class BacktestDataProducer(DataClient):
     def __init__(
             self,
             BacktestDataContainer data not None,
-            Venue venue not None,
             DataEngine engine not None,
             Clock clock not None,
             Logger logger not None,
@@ -283,8 +58,8 @@ cdef class BacktestDataProducer(DataClient):
         """
         Initialize a new instance of the `BacktestDataProducer` class.
 
-        venue : Venue
-            The venue the producer provides data for.
+        data : BacktestDataContainer
+            The data for the producer.
         engine : DataEngine
             The data engine to connect to the producer.
         clock : Clock
@@ -293,14 +68,9 @@ cdef class BacktestDataProducer(DataClient):
             The logger for the component.
 
         """
-        super().__init__(
-            venue,
-            engine,
-            clock,
-            logger,
-        )
-
-        self._is_connected = False
+        self._clock = clock
+        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._data_engine = engine
 
         # Check data integrity
         data.check_integrity()
@@ -311,7 +81,7 @@ cdef class BacktestDataProducer(DataClient):
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
-            self._engine.process(instrument)
+            self._data_engine.process(instrument)
 
         # Prepare data
         self._quote_tick_data = pd.DataFrame()
@@ -450,7 +220,7 @@ cdef class BacktestDataProducer(DataClient):
 
         # Prepare instruments
         for instrument in self._data.instruments.values():
-            self._engine.process(instrument)
+            self._data_engine.process(instrument)
 
         # Calculate data size
         cdef long total_size = 0
@@ -575,41 +345,13 @@ cdef class BacktestDataProducer(DataClient):
             if self._next_quote_tick is None:
                 self.has_tick_data = False
 
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef bint is_connected(self) except *:
-        """
-        Return a value indicating whether the client is connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
-
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
-        self._is_connected = True
-        self._log.debug(f"Connected.")
-
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
-        self._is_connected = False
-        self._log.debug(f"Disconnected.")
-
     cpdef void reset(self) except *:
         """
-        Reset the data client.
+        Reset the data producer.
 
         All stateful values are reset to their initial value.
         """
-        self._log.debug(f"Resetting...")
+        self._log.info(f"Resetting...")
 
         self._quote_symbols = None
         self._quote_bids = None
@@ -632,147 +374,3 @@ cdef class BacktestDataProducer(DataClient):
         self.has_tick_data = False
 
         self._log.info("Reset.")
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the data client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        pass  # Nothing to dispose
-
-# -- REQUESTS --------------------------------------------------------------------------------------
-
-    cpdef void request_quote_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,  # Can be None
-            datetime to_datetime,    # Can be None
-            int limit,
-            UUID correlation_id,
-    ) except *:
-        Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        if not self._is_connected:
-            self._log.error(f"Cannot request quote ticks for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void request_trade_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,  # Can be None
-            datetime to_datetime,    # Can be None
-            int limit,
-            UUID correlation_id,
-    ) except *:
-        Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        if not self._is_connected:
-            self._log.error(f"Cannot request trade ticks for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,  # Can be None
-            datetime to_datetime,    # Can be None
-            int limit,
-            UUID correlation_id,
-    ) except *:
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        if not self._is_connected:
-            self._log.error(f"Cannot request bars for {bar_type} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        if not self._is_connected:
-            self._log.error(f"Cannot request instrument for {symbol} (not connected).")
-            return
-
-        cdef Instrument instrument = self._data.instruments.get(symbol)
-
-        if instrument is None:
-            self._log.warning(f"No instrument found for {symbol}.")
-            return
-
-        self._handle_instruments([instrument], correlation_id)
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
-        self._handle_instruments(list(self._data.instruments.values()), correlation_id)
-
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
-
-    cpdef void subscribe_instrument(self, Symbol symbol) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot subscribe to instrument for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot subscribe to quote ticks for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot subscribe to trade ticks for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void subscribe_bars(self, BarType bar_type) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot subscribe to bars for {bar_type} (not connected).")
-            return
-
-        self._log.error(f"Cannot subscribe to externally aggregated bars "
-                        f"(backtesting only supports internal aggregation at this stage).")
-
-    cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot unsubscribe from instrument for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot unsubscribe from quote ticks for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot unsubscribe from trade ticks for {symbol} (not connected).")
-            return
-
-        # Do nothing else for backtest
-
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
-        if not self._is_connected:
-            self._log.error(f"Cannot unsubscribe from bars {bar_type} (not connected).")
-            return
-
-        self._log.error(f"Cannot unsubscribe from externally aggregated bars "
-                        f"(backtesting only supports internal aggregation at this stage).")

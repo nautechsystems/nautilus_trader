@@ -513,7 +513,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
             package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
-            package[OPTIONS] = MsgPackSerializer.serialize(event.options)
+            if len(event.options) > 0:
+                package[OPTIONS] = MsgPackSerializer.serialize(event.options)
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
@@ -636,6 +637,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp,
             )
         elif event_type == OrderInitialized.__name__:
+            options = unpacked.get(OPTIONS)
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
@@ -646,7 +648,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
                 event_id,
                 event_timestamp,
-                MsgPackSerializer.deserialize(unpacked[OPTIONS]),
+                MsgPackSerializer.deserialize(options) if options else {},
             )
         elif event_type == OrderSubmitted.__name__:
             return OrderSubmitted(

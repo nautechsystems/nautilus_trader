@@ -40,7 +40,7 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
-from nautilus_trader.common.logging cimport TestLogger
+from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
@@ -103,7 +103,7 @@ cdef class TradingStrategy(Component):
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,
-            logger=TestLogger(clock, strategy_id.value),
+            logger=LiveLogger(clock, strategy_id.value),
             name=strategy_id.value,
         )
 
@@ -372,10 +372,10 @@ cdef class TradingStrategy(Component):
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
-        self,
-        TraderId trader_id,
-        Clock clock,
-        Logger logger,
+            self,
+            TraderId trader_id,
+            Clock clock,
+            Logger logger,
     ) except *:
         """
         Register the strategy with a trader.
@@ -869,8 +869,7 @@ cdef class TradingStrategy(Component):
         datetime to_datetime=None,
     ) except *:
         """
-        Request historical quote ticks for the given parameters from the data
-        engine.
+        Request historical quote ticks for the given parameters.
 
         Parameters
         ----------
@@ -915,8 +914,7 @@ cdef class TradingStrategy(Component):
         datetime to_datetime=None,
     ) except *:
         """
-        Request historical trade ticks for the given parameters from the data
-        engine.
+        Request historical trade ticks for the given parameters.
 
         Parameters
         ----------
@@ -961,7 +959,7 @@ cdef class TradingStrategy(Component):
         datetime to_datetime=None,
     ) except *:
         """
-        Request historical bars for the given parameters from the data engine.
+        Request historical bars for the given parameters.
 
         Parameters
         ----------
@@ -1325,7 +1323,7 @@ cdef class TradingStrategy(Component):
     @cython.wraparound(False)
     cpdef void handle_quote_ticks(self, list ticks) except *:
         """
-        Handle the given list of ticks by handling each tick individually.
+        Handle the given tick data by handling each tick individually.
 
         Parameters
         ----------
@@ -1392,7 +1390,7 @@ cdef class TradingStrategy(Component):
     @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks) except *:
         """
-        Handle the given list of ticks by handling each tick individually.
+        Handle the given tick data by handling each tick individually.
 
         Parameters
         ----------
@@ -1420,7 +1418,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void handle_bar(self, BarType bar_type, Bar bar, bint is_historical=False) except *:
         """
-        Handle the given bar type and bar.
+        Handle the given bar data.
 
         Calls `on_bar` if `strategy.state` is `RUNNING`.
 
@@ -1462,7 +1460,7 @@ cdef class TradingStrategy(Component):
     @cython.wraparound(False)
     cpdef void handle_bars(self, BarType bar_type, list bars) except *:
         """
-        Handle the given bar type and bars by handling each bar individually.
+        Handle the given bar data by handling each bar individually.
 
         Parameters
         ----------
@@ -1518,7 +1516,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void handle_event(self, Event event) except *:
         """
-        Hand the given event.
+        Handle the given event.
 
         Calls `on_event` if `strategy.state` is `RUNNING`.
 

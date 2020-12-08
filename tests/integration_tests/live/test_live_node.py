@@ -51,7 +51,10 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             "strategy": {
                 "load_state": True,
                 "save_state": True,
-            }
+            },
+
+            "data_clients": {},
+            "exec_clients": {},
         }
 
         # Act
@@ -87,7 +90,10 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             "strategy": {
                 "load_state": True,
                 "save_state": True,
-            }
+            },
+
+            "data_clients": {},
+            "exec_clients": {},
         }
 
         # Act
@@ -128,7 +134,10 @@ class TradingNodeOperationTests(unittest.TestCase):
             "strategy": {
                 "load_state": True,
                 "save_state": True,
-            }
+            },
+
+            "data_clients": {},
+            "exec_clients": {},
         }
 
         self.node = TradingNode(

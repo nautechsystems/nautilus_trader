@@ -71,9 +71,9 @@ We recommend you setup a virtual environment to isolate the dependencies.
 
 To install the latest package from PyPI, run:
 
-    pip install nautilus_trader
+    pip install -U nautilus_trader
 
-To install from source using _pip_, run:
+Alternatively, to install from source using _pip_, run:
 
     pip install .
 
@@ -85,7 +85,7 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 You could also use Visual Studio Code with a Cython plugin.
 
-[Poetry](https://python-poetry.org/) is the preferred tool for handling all package and dev dependencies.
+)[Poetry](https://python-poetry.org/ is the preferred tool for handling all package and dev dependencies.
 
 To install all dependencies and compile the C extensions, run:
 

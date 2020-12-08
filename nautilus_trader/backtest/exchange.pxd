@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport LimitOrder
@@ -86,6 +87,7 @@ cdef class SimulatedExchange:
 
     cpdef dict get_working_orders(self)
     cpdef void register_client(self, BacktestExecClient client) except *
+    cpdef void add_instrument(self, Instrument instrument) except *
     cpdef void load_module(self, SimulationModule module) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *

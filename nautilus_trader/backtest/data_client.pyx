@@ -13,73 +13,65 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+This module provides a data producer for backtesting.
+"""
+
 from cpython.datetime cimport datetime
 
-import ccxt
-
-from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.live.data cimport LiveDataClient
-from nautilus_trader.live.data cimport LiveDataEngine
+from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class BinanceDataClient(LiveDataClient):
+cdef class BacktestDataClient(DataClient):
     """
-    Provides a data client for the `Binance` exchange.
+    Provides an implementation of `DataClient` which produces data for backtesting.
     """
 
     def __init__(
             self,
-            dict credentials,
-            LiveDataEngine engine,
-            LiveClock clock,
-            Logger logger,
+            dict instruments not None,
+            Venue venue not None,
+            DataEngine engine not None,
+            Clock clock not None,
+            Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BinanceDataClient` class.
+        Initialize a new instance of the `BacktestDataProducer` class.
 
-        Parameters
-        ----------
-        credentials : dict[str, str]
-            The API credentials to use for the client.
-        engine : LiveDataEngine
-            The live data engine for the client.
-        clock : LiveClock
-            The clock for the client.
+        venue : Venue
+            The venue the producer provides data for.
+        engine : DataEngine
+            The data engine to connect to the producer.
+        clock : Clock
+            The clock for the component.
         logger : Logger
-            The logger for the client.
+            The logger for the component.
 
         """
-        Condition.not_none(credentials, "credentials")
         super().__init__(
-            Venue("BINANCE"),
+            venue,
             engine,
             clock,
             logger,
         )
 
-        cdef dict config = {}
-        config["apiKey"] = credentials.get("api_key")
-        config["secret"] = credentials.get("secret")
-        config["timeout"] = 10000
-        config["enableRateLimit"] = True
-
+        self._instruments = instruments
         self._is_connected = False
-        self._config = config
-        self._client = ccxt.binance(config=config)
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}"
+# -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef bint is_connected(self) except *:
         """
-        If the client is connected.
+        Return a value indicating whether the client is connected.
 
         Returns
         -------
@@ -93,39 +85,41 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Connect the client.
         """
-        self._log.debug("Connecting...")
+        self._log.debug(f"Connecting...")
 
-        self._client.load_markets()
-
-        # TODO: Asynchronously request all instruments
-        # instruments = self._client.markets
-
-        # Simulates a socket style connection and ensures markets are loaded
         self._is_connected = True
 
-        self._log.info("Connected.")
+        self._log.info(f"Connected.")
 
     cpdef void disconnect(self) except *:
         """
         Disconnect the client.
         """
-        self._log.debug("Disconnecting...")
+        self._log.debug(f"Disconnecting...")
 
         self._is_connected = False
 
-        self._log.info("Disconnected.")
+        self._log.info(f"Disconnected.")
 
     cpdef void reset(self) except *:
         """
-        Reset the client.
+        Reset the data client.
+
+        All stateful values are reset to their initial value.
         """
-        self._client = ccxt.binance(config=self._config)
+        self._log.debug(f"Resetting...")
+
+        self._log.info("Reset.")
 
     cpdef void dispose(self) except *:
         """
-        Dispose the client.
+        Dispose of the data client.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
         """
-        pass  # Nothing to dispose yet
+        # Nothing to dispose
+        self._log.info(f"Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -141,7 +135,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to instrument for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -155,7 +153,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to quote ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -169,7 +171,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to trade ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -183,7 +189,12 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to bars for {bar_type} (not connected).")
+            return
+
+        self._log.error(f"Cannot subscribe to externally aggregated bars "
+                        f"(backtesting only supports internal aggregation at this stage).")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -197,7 +208,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from instrument for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -211,7 +226,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from quote ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -225,7 +244,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from trade ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -239,7 +262,14 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from bars {bar_type} (not connected).")
+            return
+
+        self._log.error(f"Cannot unsubscribe from externally aggregated bars "
+                        f"(backtesting only supports internal aggregation at this stage).")
+
+        # Do nothing else for backtest
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -258,7 +288,17 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot request instrument for {symbol} (not connected).")
+            return
+
+        cdef Instrument instrument = self._instruments.get(symbol)
+
+        if instrument is None:
+            self._log.warning(f"No instrument found for {symbol}.")
+            return
+
+        self._handle_instruments([instrument], correlation_id)
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
         """
@@ -272,13 +312,13 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        self._handle_instruments(list(self._instruments.values()), correlation_id)
 
     cpdef void request_quote_ticks(
             self,
             Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
+            datetime from_datetime,  # Can be None
+            datetime to_datetime,    # Can be None
             int limit,
             UUID correlation_id,
     ) except *:
@@ -304,13 +344,17 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot request quote ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void request_trade_ticks(
             self,
             Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
+            datetime from_datetime,  # Can be None
+            datetime to_datetime,    # Can be None
             int limit,
             UUID correlation_id,
     ) except *:
@@ -336,18 +380,22 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot request trade ticks for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
 
     cpdef void request_bars(
             self,
             BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
+            datetime from_datetime,  # Can be None
+            datetime to_datetime,    # Can be None
             int limit,
             UUID correlation_id,
     ) except *:
         """
-        Request historical bars for the given parameters.
+        Request historical bars for the given parameters from the data engine.
 
         Parameters
         ----------
@@ -368,4 +416,8 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot request bars for {bar_type} (not connected).")
+            return
+
+        # Do nothing else for backtest
