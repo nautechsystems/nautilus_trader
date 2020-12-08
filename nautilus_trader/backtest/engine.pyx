@@ -159,10 +159,9 @@ cdef class BacktestEngine:
             exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
                 logger=self.test_logger,
-                host="localhost",
-                port=6379,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
+                config={"host": "localhost", "port": 6379},
             )
         else:
             raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
@@ -263,6 +262,67 @@ cdef class BacktestEngine:
 
         # TODO: Multiple exchanges
         self.exchange.load_module(module)
+
+    cpdef void print_log_store(self) except *:
+        """
+        Print the contents of the test loggers store to the console.
+        """
+        self.log.info("")
+        self.log.info("=================================================================")
+        self.log.info(" LOG STORE")
+        self.log.info("=================================================================")
+
+        cdef list log_store = self.test_logger.get_log_store()
+        cdef str message
+        if not log_store:
+            self.log.info("No log messages were stored.")
+        else:
+            for message in self.test_logger.get_log_store():
+                print(message)
+
+    cpdef void reset(self) except *:
+        """
+        Reset the backtest engine.
+
+        All stateful values are reset to their initial value.
+        """
+        self.log.debug(f"Resetting...")
+
+        if self.data_engine.state_c() == ComponentState.RUNNING:
+            self.data_engine.stop()
+        self.data_engine.reset()
+
+        if self.exec_engine.state_c() == ComponentState.RUNNING:
+            self.exec_engine.stop()
+        if self.config.exec_db_flush:
+            self.exec_engine.flush_db()
+        self.exec_engine.reset()
+
+        self.trader.reset()
+        self.exchange.reset()
+        self.logger.clear_log_store()
+        self.test_logger.clear_log_store()
+
+        self.iteration = 0
+
+        self.log.info("Reset.")
+
+    cpdef void dispose(self) except *:
+        """
+        Dispose of the backtest engine by disposing the trader and releasing system resources.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after disposal.
+        """
+        self.trader.dispose()
+
+        if self.data_engine.state_c() == ComponentState.RUNNING:
+            self.data_engine.stop()
+        if self.exec_engine.state_c() == ComponentState.RUNNING:
+            self.exec_engine.stop()
+
+        self.data_engine.dispose()
+        self.exec_engine.dispose()
 
     cpdef void run(
             self,
@@ -385,78 +445,6 @@ cdef class BacktestEngine:
             self.test_clock.set_time(event_handler.event.timestamp)
             event_handler.handle()
         self.test_clock.set_time(timestamp)
-
-    cpdef list get_log_store(self):
-        """
-        Return the store of log message strings for the test logger.
-
-        Returns
-        -------
-        list[str]
-
-        """
-        return self.test_logger.get_log_store()
-
-    cpdef void print_log_store(self) except *:
-        """
-        Print the contents of the test loggers store to the console.
-        """
-        self.log.info("")
-        self.log.info("=================================================================")
-        self.log.info(" LOG STORE")
-        self.log.info("=================================================================")
-
-        cdef list log_store = self.test_logger.get_log_store()
-        cdef str message
-        if not log_store:
-            self.log.info("No log messages were stored.")
-        else:
-            for message in self.test_logger.get_log_store():
-                print(message)
-
-    cpdef void reset(self) except *:
-        """
-        Reset the backtest engine.
-
-        All stateful values are reset to their initial value.
-        """
-        self.log.debug(f"Resetting...")
-
-        if self.data_engine.state_c() == ComponentState.RUNNING:
-            self.data_engine.stop()
-        self.data_engine.reset()
-
-        if self.exec_engine.state_c() == ComponentState.RUNNING:
-            self.exec_engine.stop()
-        if self.config.exec_db_flush:
-            self.exec_engine.flush_db()
-        self.exec_engine.reset()
-
-        self.trader.reset()
-        self.exchange.reset()
-        self.logger.clear_log_store()
-        self.test_logger.clear_log_store()
-
-        self.iteration = 0
-
-        self.log.info("Reset.")
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the backtest engine by disposing the trader and releasing system resources.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        self.trader.dispose()
-
-        if self.data_engine.state_c() == ComponentState.RUNNING:
-            self.data_engine.stop()
-        if self.exec_engine.state_c() == ComponentState.RUNNING:
-            self.exec_engine.stop()
-
-        self.data_engine.dispose()
-        self.exec_engine.dispose()
 
     cdef void _backtest_memory(self) except *:
         self.log.info("=================================================================")

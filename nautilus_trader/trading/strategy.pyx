@@ -40,7 +40,7 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
-from nautilus_trader.common.logging cimport TestLogger
+from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
@@ -103,7 +103,7 @@ cdef class TradingStrategy(Component):
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,
-            logger=TestLogger(clock, strategy_id.value),
+            logger=LiveLogger(clock, strategy_id.value),
             name=strategy_id.value,
         )
 
@@ -372,10 +372,10 @@ cdef class TradingStrategy(Component):
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
-        self,
-        TraderId trader_id,
-        Clock clock,
-        Logger logger,
+            self,
+            TraderId trader_id,
+            Clock clock,
+            Logger logger,
     ) except *:
         """
         Register the strategy with a trader.
