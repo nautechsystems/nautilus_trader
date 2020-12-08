@@ -59,7 +59,7 @@ if __name__ == "__main__":
     # Customize the backtest configuration (optional)
     config = BacktestConfig(
         exec_db_type="in-memory",
-        exec_db_flush=False,
+        exec_db_flush=True,
         frozen_account=False,
         starting_capital=1000000,
         account_currency=USDT,  # Multi-asset accounts on the way

@@ -866,7 +866,7 @@ cdef class SimulatedExchange:
             order.id if order.id is not None else self._generate_order_id(order.symbol),
             self._generate_execution_id(),
             position_id,
-            StrategyId.null_c(),
+            order.strategy_id,
             order.symbol,
             order.side,
             order.quantity,

@@ -75,4 +75,10 @@ if __name__ == "__main__":
             if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
                 os.remove(path)
                 removed_count += 1
+    for root, _dirs, files in os.walk(root_dir + '/examples/'):
+        for name in files:
+            path = os.path.join(root, name)
+            if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
+                os.remove(path)
+                removed_count += 1
     print(f"Removed {removed_count} discrete files by extension.")

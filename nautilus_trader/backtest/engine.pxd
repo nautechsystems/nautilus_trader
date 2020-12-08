@@ -59,6 +59,9 @@ cdef class BacktestEngine:
     cdef readonly int iteration
 
     cpdef void load_module(self, Venue venue, SimulationModule module)
+    cpdef void print_log_store(self) except *
+    cpdef void reset(self) except *
+    cpdef void dispose(self) except *
     cpdef void run(
         self,
         datetime start=*,
@@ -68,10 +71,6 @@ cdef class BacktestEngine:
         bint print_log_store=*,
     ) except *
     cdef void _advance_time(self, datetime timestamp) except *
-    cpdef list get_log_store(self)
-    cpdef void print_log_store(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
     cdef void _backtest_memory(self) except *
     cdef void _backtest_header(
         self,
