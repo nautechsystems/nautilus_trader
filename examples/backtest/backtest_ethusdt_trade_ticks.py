@@ -14,13 +14,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import time
+
 from decimal import Decimal
 
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
@@ -32,14 +34,15 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.data_provider import TestDataProvider
 
 
 if __name__ == "__main__":
     # Setup trading instruments
-    exchange = Venue("BINANCE")
-    symbol = Symbol("ETH/USDT", exchange)
+    BINANCE = Venue("BINANCE")
+    symbol = Symbol("ETH/USDT", BINANCE)
     ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
     # Setup data container
@@ -55,6 +58,8 @@ if __name__ == "__main__":
         slow_ema=20,
         trade_size=Decimal(100),
     )
+
+    time.sleep(0.1)  # Allow strategy initialization to log
 
     # Customize the backtest configuration (optional)
     config = BacktestConfig(
@@ -72,6 +77,14 @@ if __name__ == "__main__":
         log_to_file=False,
     )
 
+    # Build the backtest engine
+    engine = BacktestEngine(
+        data=data,
+        trader_id=TraderId("BACKTESTER", "000"),
+        strategies=[strategy],  # List of `any` number of strategies
+        config=config,
+    )
+
     # Create a fill model (optional)
     fill_model = FillModel(
         prob_fill_at_limit=0.2,
@@ -80,14 +93,10 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
-    # Build the backtest engine
-    engine = BacktestEngine(
-        data=data,
-        strategies=[strategy],  # List of `any` number of strategies
-        venue=exchange,
+    engine.add_exchange(
+        venue=BINANCE,
         oms_type=OMSType.NETTING,
         generate_position_ids=False,
-        config=config,
         fill_model=fill_model,
     )
 

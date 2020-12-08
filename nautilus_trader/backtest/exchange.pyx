@@ -51,7 +51,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -79,7 +78,7 @@ cdef class SimulatedExchange:
             OMSType oms_type,
             bint generate_position_ids,
             ExecutionCache exec_cache not None,
-            dict instruments not None: {Symbol, Instrument},
+            dict instruments not None,
             BacktestConfig config not None,
             FillModel fill_model not None,
             TestClock clock not None,
@@ -107,14 +106,7 @@ cdef class SimulatedExchange:
         logger : TestLogger
             The logger for the component.
 
-        Raises
-        ------
-        TypeError
-            If instruments value not type Instrument.
-
         """
-        Condition.dict_types(instruments, Symbol, Instrument, "instruments")
-
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
@@ -132,7 +124,7 @@ cdef class SimulatedExchange:
         self.account_start_day = config.starting_capital
         self.account_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
-        self.frozen_account = config.frozen_account
+        self.frozen_account = config.frozen_accounts
 
         self.xrate_calculator = ExchangeRateCalculator()
         self.fill_model = fill_model
@@ -186,6 +178,29 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(initial_event)
 
         self._log.info(f"Registered {client}.")
+
+    cpdef void add_instrument(self, Instrument instrument) except *:
+        """
+        Add the given instrument to the exchange.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument to add.
+
+        Raises
+        ------
+        ValueError
+            If the instrument symbols venue does not equal the exchange venue.
+
+        """
+        Condition.not_none(instrument, "instrument")
+        Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
+
+        self.instruments[instrument.symbol] = instrument
+        self._slippages = self._get_tick_sizes()
+
+        self._log.info(f"Added instrument {instrument.symbol.value}.")
 
     cpdef void load_module(self, SimulationModule module) except *:
         """
@@ -260,6 +275,8 @@ cdef class SimulatedExchange:
         Condition.not_none(fill_model, "fill_model")
 
         self.fill_model = fill_model
+
+        self._log.info("Changed fill model.")
 
     cpdef void process_tick(self, Tick tick) except *:
         """
