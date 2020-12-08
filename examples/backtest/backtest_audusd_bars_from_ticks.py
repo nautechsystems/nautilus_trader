@@ -16,12 +16,13 @@
 
 from decimal import Decimal
 import os
+import time
 
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
@@ -34,6 +35,7 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
@@ -41,7 +43,8 @@ from tests.test_kit.data_provider import TestDataProvider
 
 if __name__ == "__main__":
     # Setup trading instruments
-    symbol = Symbol("AUD/USD", Venue("SIM"))
+    SIM = Venue("SIM")
+    symbol = Symbol("AUD/USD", SIM)
     AUDUSD = InstrumentLoader.default_fx_ccy(symbol)
 
     # Setup data container
@@ -60,6 +63,8 @@ if __name__ == "__main__":
         slow_ema=20,
         trade_size=Decimal(1000000),
     )
+
+    time.sleep(0.1)  # Allow strategy initialization to log
 
     # Customize the backtest configuration (optional)
     config = BacktestConfig(
@@ -88,12 +93,9 @@ if __name__ == "__main__":
     # Build the backtest engine
     engine = BacktestEngine(
         data=data,
+        trader_id=TraderId("BACKTESTER", "000"),
         strategies=[strategy],  # List of `any` number of strategies
-        venue=Venue("SIM"),
-        oms_type=OMSType.HEDGING,
-        generate_position_ids=False,
         config=config,
-        fill_model=fill_model,
     )
 
     # Optional plug in module to simulate rollover interest,
@@ -101,7 +103,14 @@ if __name__ == "__main__":
     interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    engine.load_module(Venue("SIM"), fx_rollover_interest)
+    # Add exchange (now multiple exchanges possible)
+    engine.add_exchange(
+        venue=SIM,
+        oms_type=OMSType.HEDGING,
+        generate_position_ids=False,
+        fill_model=fill_model,
+        modules=[fx_rollover_interest],
+    )
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

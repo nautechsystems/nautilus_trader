@@ -22,8 +22,7 @@ import pytz
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.data import BacktestDataProducer
+from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -113,13 +112,12 @@ class TradingStrategyTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        container = BacktestDataContainer()
-        container.add_instrument(AUDUSD_FXCM)
-        container.add_instrument(GBPUSD_FXCM)
-        container.add_instrument(USDJPY_FXCM)
-
-        self.data_client = BacktestDataProducer(
-            data=container,
+        self.data_client = BacktestDataClient(
+            instruments={
+                AUDUSD_FXCM.symbol: AUDUSD_FXCM,
+                GBPUSD_FXCM.symbol: GBPUSD_FXCM,
+                USDJPY_FXCM.symbol: USDJPY_FXCM,
+            },
             venue=Venue("FXCM"),
             engine=self.data_engine,
             clock=self.clock,

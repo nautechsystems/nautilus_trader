@@ -17,8 +17,7 @@ import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
-from nautilus_trader.backtest.data import BacktestDataProducer
+from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -29,9 +28,7 @@ from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -39,23 +36,16 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
-from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
+USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class TraderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
-        data = BacktestDataContainer()
-        data.add_instrument(usdjpy)
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])
-        data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask()[:2000])
-
         clock = TestClock()
         logger = TestLogger(clock)
         trader_id = TraderId("TESTER", "000")
@@ -93,15 +83,15 @@ class TraderTests(unittest.TestCase):
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             exec_cache=self.exec_engine.cache,
-            instruments={usdjpy.symbol: usdjpy},
+            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
             config=BacktestConfig(),
             fill_model=FillModel(),
             clock=clock,
             logger=logger,
         )
 
-        self.data_client = BacktestDataProducer(
-            data=data,
+        self.data_client = BacktestDataClient(
+            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
             venue=Venue("FXCM"),
             engine=self.data_engine,
             clock=clock,

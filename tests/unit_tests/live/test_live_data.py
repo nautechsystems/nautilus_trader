@@ -236,4 +236,4 @@ class LiveDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertTrue(True)
+        self.assertTrue(True)  # No exception raised

@@ -13,23 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 import unittest
 
-import pandas as pd
-
 from nautilus_trader.backtest.config import BacktestConfig
-from nautilus_trader.backtest.data import BacktestDataContainer
+from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -50,11 +45,14 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy("000")],
+            config=BacktestConfig(),
+        )
+
+        self.engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             fill_model=FillModel(),
-            config=BacktestConfig(),
         )
 
     def tearDown(self):
@@ -85,9 +83,10 @@ class BacktestEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(7999, self.engine.iteration)
 
-    def test_load_module(self):
+    def test_change_fill_model(self):
         # Arrange
-        interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+        # Act
+        self.engine.change_fill_model(Venue("FXCM"), FillModel())
 
-        self.engine.load_module(Venue("FXCM"), fx_rollover_interest)
+        # Assert
+        self.assertTrue(True)  # No exception raised
