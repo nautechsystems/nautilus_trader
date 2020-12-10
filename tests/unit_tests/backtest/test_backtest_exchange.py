@@ -18,7 +18,6 @@ from decimal import Decimal
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -66,7 +65,7 @@ USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 XBTUSD_BITMEX = InstrumentLoader.xbtusd_bitmex()
 
 
-class ExchangeTests(unittest.TestCase):
+class SimulatedExchangeTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -106,19 +105,16 @@ class ExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        instruments = {
-            AUDUSD_FXCM.symbol: AUDUSD_FXCM,
-            USDJPY_FXCM.symbol: USDJPY_FXCM,
-        }
-
         self.exchange = SimulatedExchange(
             venue=FXCM,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            exec_cache=self.exec_engine.cache,
-            instruments=instruments,
-            config=BacktestConfig(),
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
+            instruments=[AUDUSD_FXCM, USDJPY_FXCM],
+            modules=[],
             fill_model=FillModel(),
+            exec_cache=self.exec_engine.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -505,7 +501,7 @@ class ExchangeTests(unittest.TestCase):
             random_seed=None,
         )
 
-        self.exchange.change_fill_model(fill_model)
+        self.exchange.set_fill_model(fill_model)
 
         order = self.strategy.order_factory.market(
             USDJPY_FXCM.symbol,
@@ -1056,14 +1052,15 @@ class BitmexExchangeTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.config = BacktestConfig()
         self.exchange = SimulatedExchange(
             venue=Venue("BITMEX"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
             exec_cache=self.exec_engine.cache,
-            instruments={XBTUSD_BITMEX.symbol: XBTUSD_BITMEX},
-            config=self.config,
+            instruments=[XBTUSD_BITMEX],
+            modules=[],
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,

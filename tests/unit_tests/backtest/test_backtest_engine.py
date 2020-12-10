@@ -15,15 +15,16 @@
 
 import unittest
 
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.stubs import TestStubs
@@ -45,13 +46,13 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy("000")],
-            config=BacktestConfig(),
         )
 
         self.engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            starting_capital=Money(1000000, USD),
             fill_model=FillModel(),
         )
 
