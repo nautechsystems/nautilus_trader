@@ -80,10 +80,7 @@ class DataEngineTests(unittest.TestCase):
         self.portfolio.register_cache(self.data_engine.cache)
 
         self.binance_client = BacktestDataClient(
-            instruments={
-                BTCUSDT_BINANCE.symbol: BTCUSDT_BINANCE,
-                ETHUSDT_BINANCE.symbol: ETHUSDT_BINANCE,
-            },
+            instruments=[BTCUSDT_BINANCE, ETHUSDT_BINANCE],
             venue=BINANCE,
             engine=self.data_engine,
             clock=self.clock,
@@ -91,7 +88,7 @@ class DataEngineTests(unittest.TestCase):
         )
 
         self.bitmex_client = BacktestDataClient(
-            instruments={XBTUSD_BITMEX.symbol: XBTUSD_BITMEX},
+            instruments=[XBTUSD_BITMEX],
             venue=BITMEX,
             engine=self.data_engine,
             clock=self.clock,

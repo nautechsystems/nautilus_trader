@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
@@ -28,11 +27,13 @@ from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
@@ -82,16 +83,18 @@ class TraderTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
             exec_cache=self.exec_engine.cache,
-            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
-            config=BacktestConfig(),
+            instruments=[USDJPY_FXCM],
+            modules=[],
             fill_model=FillModel(),
             clock=clock,
             logger=logger,
         )
 
         self.data_client = BacktestDataClient(
-            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
+            instruments=[USDJPY_FXCM],
             venue=Venue("FXCM"),
             engine=self.data_engine,
             clock=clock,

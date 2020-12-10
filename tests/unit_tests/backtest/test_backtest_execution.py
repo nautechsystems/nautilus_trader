@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -32,6 +31,7 @@ from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -40,6 +40,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
@@ -81,14 +82,15 @@ class BacktestExecClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.config = BacktestConfig()
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
             oms_type=OMSType.NETTING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
+            instruments=[ETHUSDT_BINANCE],
+            modules=[],
             exec_cache=self.exec_engine.cache,
-            instruments={ETHUSDT_BINANCE.symbol: ETHUSDT_BINANCE},
-            config=self.config,
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
