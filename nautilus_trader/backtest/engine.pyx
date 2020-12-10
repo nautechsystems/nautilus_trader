@@ -42,7 +42,6 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -321,7 +320,7 @@ cdef class BacktestEngine:
         if modules is None:
             modules = []
 
-        account_id = AccountId(venue.value, "000", AccountType.SIMULATED)
+        account_id = AccountId(venue.value, "000")
 
         # Gather instruments for exchange
         instruments = []

@@ -33,7 +33,6 @@ from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OMSType
@@ -91,7 +90,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
         self.trader_id = TraderId("TESTER", "000")
-        self.account_id = AccountId("FXCM", "001", AccountType.SIMULATED)
+        self.account_id = AccountId("FXCM", "001")
 
         exec_db = BypassExecutionDatabase(
             trader_id=self.trader_id,
@@ -1038,7 +1037,7 @@ class BitmexExchangeTests(unittest.TestCase):
         self.analyzer = PerformanceAnalyzer()
 
         self.trader_id = TraderId("TESTER", "000")
-        self.account_id = AccountId("BITMEX", "001", AccountType.SIMULATED)
+        self.account_id = AccountId("BITMEX", "001")
 
         exec_db = BypassExecutionDatabase(
             trader_id=self.trader_id,

@@ -25,7 +25,6 @@ from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -383,7 +382,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_account_state_events(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000", AccountType.SIMULATED),
+            account_id=AccountId("SIM", "000"),
             currency=USD,
             balance=Money(1525000, USD),
             margin_balance=Money(1425000, USD),
