@@ -35,11 +35,10 @@ cdef class Account:
         Condition.not_none(event, "event")
 
         self.id = event.account_id
-        self.account_type = self.id.account_type
         self.currency = event.currency
 
         self._events = [event]
-        self._portfolio = None
+        self._portfolio = None  # Initialized when registered with portfolio
         self._balance = event.balance
         self._order_margin = Money(0, self.currency)
         self._position_margin = Money(0, self.currency)

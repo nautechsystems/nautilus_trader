@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
@@ -30,8 +29,6 @@ cdef class Account:
 
     cdef readonly AccountId id
     """The accounts identifier.\n\n:returns: `AccountId`"""
-    cdef readonly AccountType account_type
-    """The accounts type.\n\n:returns: `AccountType`"""
     cdef readonly Currency currency
     """The accounts currency.\n\n:returns: `Currency`"""
 

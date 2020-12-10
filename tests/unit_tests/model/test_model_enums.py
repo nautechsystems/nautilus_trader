@@ -17,8 +17,6 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.account_type import AccountTypeParser
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_class import AssetClassParser
 from nautilus_trader.model.c_enums.asset_type import AssetType
@@ -45,38 +43,6 @@ from nautilus_trader.model.c_enums.price_type import PriceType
 from nautilus_trader.model.c_enums.price_type import PriceTypeParser
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.c_enums.time_in_force import TimeInForceParser
-
-
-class AccountTypeTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [AccountType.UNDEFINED, "UNDEFINED"],
-        [AccountType.SIMULATED, "SIMULATED"],
-        [AccountType.DEMO, "DEMO"],
-        [AccountType.REAL, "REAL"],
-    ])
-    def test_account_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
-        result = AccountTypeParser.to_str_py(enum)
-
-        # Assert
-        self.assertEqual(expected, result)
-
-    @parameterized.expand([
-        ["", AccountType.UNDEFINED],
-        ["UNDEFINED", AccountType.UNDEFINED],
-        ["SIMULATED", AccountType.SIMULATED],
-        ["DEMO", AccountType.DEMO],
-        ["REAL", AccountType.REAL],
-    ])
-    def test_account_type_from_str(self, string, expected):
-        # Arrange
-        # Act
-        result = AccountTypeParser.from_str_py(string)
-
-        # Assert
-        self.assertEqual(expected, result)
 
 
 class AssetClassTests(unittest.TestCase):

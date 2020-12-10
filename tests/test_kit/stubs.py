@@ -22,7 +22,6 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
@@ -197,7 +196,7 @@ class TestStubs:
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId("FXCM", "000", AccountType.SIMULATED)
+        return AccountId("FXCM", "000")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:
