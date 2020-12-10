@@ -27,9 +27,12 @@ with the ability to backtest portfolios of automated trading strategies on histo
 data with an event-driven engine, and also trade those same strategies live in a
 production grade environment.
 
-The project heavily utilizes Cython, which provides
-static type safety and performance through C extension modules. The libraries can be
-accessed from both pure Python and Cython.
+The platform aims to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
+Thus the platform can handle high-frequency trading operations for any asset classes including FX, Equities,
+Futures, Options, CFDs or Crypto - across multiple venues simultaneously.
+
+The project heavily utilizes Cython, which provides static type safety and performance through C extension modules.
+The libraries can be accessed from both pure Python and Cython.
 
 ## Cython
 Cython is a compiled programming language that aims to be a superset of the
@@ -43,6 +46,8 @@ is written mostly in Python with optional additional C-inspired syntax.
 The documentation for the latest version of the package is available at _readthedocs_.
 
 > https://nautilus-trader.readthedocs.io
+
+![WIP](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.jpg?raw=true "")
 
 ## Features
 
