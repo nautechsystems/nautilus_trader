@@ -23,16 +23,17 @@ import unittest
 import pandas as pd
 import pytz
 
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.data_provider import TestDataProvider
@@ -55,17 +56,19 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
 
         strategies = [TradingStrategy("001")]
 
-        config = BacktestConfig(exec_db_type="in-memory")
         engine = BacktestEngine(
             data=data,
             strategies=strategies,
-            config=config,
+            bypass_logging=True,
+            console_prints=False,
         )
 
         engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
             fill_model=FillModel(),
         )
 
@@ -108,22 +111,19 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             slow_ema=20,
         )
 
-        config = BacktestConfig(
-            exec_db_type="in-memory",
-            bypass_logging=True,
-            console_prints=False,
-        )
-
         engine = BacktestEngine(
             data=data,
             strategies=[strategy],
-            config=config,
+            bypass_logging=True,
+            console_prints=False,
         )
 
         engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
         )
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -150,16 +150,11 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             slow_ema=20,
         )
 
-        config = BacktestConfig(
-            exec_db_type="in-memory",
-            bypass_logging=True,
-            console_prints=False,
-        )
-
         engine = BacktestEngine(
             data=data,
             strategies=[strategy],
-            config=config,
+            bypass_logging=True,
+            console_prints=False,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -169,6 +164,8 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
             modules=[fx_rollover_interest],
         )
 

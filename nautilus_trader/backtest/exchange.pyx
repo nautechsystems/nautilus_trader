@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 from decimal import Decimal
 
-from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
@@ -77,9 +76,11 @@ cdef class SimulatedExchange:
             Venue venue not None,
             OMSType oms_type,
             bint generate_position_ids,
+            bint frozen_account,
+            Money starting_capital not None,
+            list instruments not None,
+            list modules not None,
             ExecutionCache exec_cache not None,
-            dict instruments not None,
-            BacktestConfig config not None,
             FillModel fill_model not None,
             TestClock clock not None,
             TestLogger logger not None,
@@ -93,12 +94,14 @@ cdef class SimulatedExchange:
             The venue to simulate for the backtest.
         oms_type : OMSType
             The order management employed by the exchange/broker for this market.
+        generate_position_ids : bool
+            If the exchange should generate position identifiers.
+        frozen_account : bool
+            If the account associated with this exchange is frozen (value will not change).
+        starting_capital : Money
+            The starting capital for the account associated with this exchange.
         exec_cache : ExecutionCache
             The execution cache for the backtest.
-        instruments : dict[Symbol, Instrument]
-            The instruments needed for the backtest.
-        config : BacktestConfig
-            The backtest configuration.
         fill_model : FillModel
             The fill model for the backtest.
         clock : TestClock
@@ -107,6 +110,11 @@ cdef class SimulatedExchange:
             The logger for the component.
 
         """
+        Condition.not_empty(instruments, "instruments")
+        Condition.list_type(instruments, Instrument, "instruments", "Instrument")
+        Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
+        Condition.positive(starting_capital.as_decimal(), "starting_capital")
+
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"{type(self).__name__}({venue})", logger)
@@ -118,23 +126,35 @@ cdef class SimulatedExchange:
         self.exec_client = None  # Initialized when execution client registered
         self.account = None      # Initialized when execution client registered
 
-        self.starting_capital = config.starting_capital
-        self.account_currency = config.account_currency
-        self.account_balance = config.starting_capital
-        self.account_start_day = config.starting_capital
+        self.starting_capital = starting_capital
+        self.account_currency = starting_capital.currency
+        self.account_balance = starting_capital
+        self.account_start_day = starting_capital
         self.account_activity_day = Money(0, self.account_currency)
         self.total_commissions = Money(0, self.account_currency)
-        self.frozen_account = config.frozen_accounts
+        self.frozen_account = frozen_account
 
         self.xrate_calculator = ExchangeRateCalculator()
         self.fill_model = fill_model
 
+        # Load modules
         self.modules = []
+        for module in modules:
+            Condition.not_in(module, self.modules, "module", "self._modules")
+            module.register_exchange(self)
+            self.modules.append(module)
+            self._log.info(f"Loaded {module}.")
 
-        self.instruments = instruments
+        # Load instruments
+        self.instruments = {}
+        for instrument in instruments:
+            Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
+            self.instruments[instrument.symbol] = instrument
+            self._log.info(f"Loaded instrument {instrument.symbol.value}.")
+
+        self._slippages = self._get_tick_sizes()
         self._market_bids = {}          # type: dict[Symbol, Price]
         self._market_asks = {}          # type: dict[Symbol, Price]
-        self._slippages = self._get_tick_sizes()
 
         self._working_orders = {}       # type: dict[ClientOrderId, Order]
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
@@ -179,46 +199,19 @@ cdef class SimulatedExchange:
 
         self._log.info(f"Registered {client}.")
 
-    cpdef void add_instrument(self, Instrument instrument) except *:
+    cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
-        Add the given instrument to the exchange.
+        Set the fill model to the given model.
 
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument to add.
-
-        Raises
-        ------
-        ValueError
-            If the instrument symbols venue does not equal the exchange venue.
+        fill_model : FillModel
+            The fill model to set.
 
         """
-        Condition.not_none(instrument, "instrument")
-        Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
+        Condition.not_none(fill_model, "fill_model")
 
-        self.instruments[instrument.symbol] = instrument
-        self._slippages = self._get_tick_sizes()
+        self.fill_model = fill_model
 
-        self._log.info(f"Added instrument {instrument.symbol.value}.")
-
-    cpdef void load_module(self, SimulationModule module) except *:
-        """
-        Load the given simulation module into the simulated exchange.
-
-        Parameters
-        ----------
-        module : SimulationModule
-            The module to register
-
-        """
-        Condition.not_none(module, "module")
-        Condition.not_in(module, self.modules, "module", "self._modules")
-
-        module.register_exchange(self)
-        self.modules.append(module)
-
-        self._log.info(f"Loaded {module}.")
+        self._log.info("Changed fill model.")
 
     cpdef void check_residuals(self) except *:
         """
@@ -263,20 +256,6 @@ cdef class SimulatedExchange:
         self._executions_count = 0
 
         self._log.info("Reset.")
-
-    cpdef void change_fill_model(self, FillModel fill_model) except *:
-        """
-        Set the fill model to be the given model.
-
-        fill_model : FillModel
-            The fill model to set.
-
-        """
-        Condition.not_none(fill_model, "fill_model")
-
-        self.fill_model = fill_model
-
-        self._log.info("Changed fill model.")
 
     cpdef void process_tick(self, Tick tick) except *:
         """

@@ -50,7 +50,7 @@ class BacktestDataClientTests(unittest.TestCase):
         )
 
         self.client = BacktestDataClient(
-            instruments={USDJPY_FXCM.symbol: USDJPY_FXCM},
+            instruments=[USDJPY_FXCM],
             venue=Venue("FXCM"),
             engine=self.data_engine,
             clock=TestClock(),

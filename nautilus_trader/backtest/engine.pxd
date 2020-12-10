@@ -17,17 +17,17 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.backtest.config cimport BacktestConfig
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
 
@@ -36,13 +36,14 @@ cdef class BacktestEngine:
     cdef Clock _clock
     cdef Clock _test_clock
     cdef UUIDFactory _uuid_factory
-    cdef BacktestConfig _config
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef BacktestDataProducer _data_producer
     cdef LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
+    cdef bint _log_to_file
+    cdef bint _exec_db_flush
     cdef dict _exchanges
 
     cdef readonly Trader trader
@@ -57,8 +58,10 @@ cdef class BacktestEngine:
         Venue venue,
         OMSType oms_type,
         bint generate_position_ids=*,
-        FillModel fill_model=*,
+        bint frozen_account=*,
+        Money starting_capital=*,
         list modules=*,
+        FillModel fill_model=*,
     ) except *
     cpdef void print_log_store(self) except *
     cpdef void reset(self) except *

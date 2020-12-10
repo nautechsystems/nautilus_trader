@@ -19,7 +19,6 @@ import unittest
 
 import pandas as pd
 
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
@@ -53,27 +52,9 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
         data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
-        config = BacktestConfig(
-            tick_capacity=1000,
-            bar_capacity=1000,
-            exec_db_type='in-memory',
-            exec_db_flush=False,
-            frozen_account=False,
-            starting_capital=1000000,
-            account_currency=USD,
-            short_term_interest_csv_path='default',
-            bypass_logging=True,
-            level_console=LogLevel.DEBUG,
-            level_file=LogLevel.DEBUG,
-            level_store=LogLevel.WARNING,
-            log_thread=False,
-            log_to_file=False,
-        )
-
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            config=config,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -83,6 +64,8 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             venue=self.venue,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USD),
             modules=[fx_rollover_interest]
         )
 
@@ -173,27 +156,9 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         data.add_bars(self.gbpusd.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.gbpusd_1min_bid())
         data.add_bars(self.gbpusd.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.gbpusd_1min_ask())
 
-        config = BacktestConfig(
-            tick_capacity=1000,
-            bar_capacity=1000,
-            exec_db_type='in-memory',
-            exec_db_flush=False,
-            frozen_account=False,
-            starting_capital=1000000,
-            account_currency=GBP,
-            short_term_interest_csv_path='default',
-            bypass_logging=True,
-            level_console=LogLevel.DEBUG,
-            level_file=LogLevel.DEBUG,
-            level_store=LogLevel.WARNING,
-            log_thread=False,
-            log_to_file=False,
-        )
-
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            config=config,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -203,6 +168,8 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
             venue=self.venue,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, GBP),
             modules=[fx_rollover_interest],
         )
 
@@ -238,27 +205,9 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         data.add_instrument(self.audusd)
         data.add_quote_ticks(self.audusd.symbol, TestDataProvider.audusd_ticks())
 
-        config = BacktestConfig(
-            tick_capacity=1000,
-            bar_capacity=1000,
-            exec_db_type='in-memory',
-            exec_db_flush=False,
-            frozen_account=False,
-            starting_capital=1000000,
-            account_currency=AUD,  # Atypical account currency
-            short_term_interest_csv_path='default',
-            bypass_logging=True,
-            level_console=LogLevel.DEBUG,
-            level_file=LogLevel.DEBUG,
-            level_store=LogLevel.WARNING,
-            log_thread=False,
-            log_to_file=False,
-        )
-
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            config=config,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -268,6 +217,8 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
             venue=self.venue,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, AUD),
             modules=[fx_rollover_interest],
         )
 
@@ -321,33 +272,17 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         data.add_instrument(self.ethusdt)
         data.add_trade_ticks(self.ethusdt.symbol, TestDataProvider.ethusdt_trades())
 
-        config = BacktestConfig(
-            tick_capacity=1000,
-            bar_capacity=1000,
-            exec_db_type='in-memory',
-            exec_db_flush=False,
-            frozen_account=False,
-            starting_capital=1000000,
-            account_currency=USDT,  # Atypical account currency
-            short_term_interest_csv_path='default',
-            bypass_logging=True,
-            level_console=LogLevel.DEBUG,
-            level_file=LogLevel.DEBUG,
-            level_store=LogLevel.WARNING,
-            log_thread=False,
-            log_to_file=False,
-        )
-
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy('000')],
-            config=config,
         )
 
         self.engine.add_exchange(
             venue=self.venue,
             oms_type=OMSType.NETTING,
             generate_position_ids=True,
+            frozen_account=False,
+            starting_capital=Money(1000000, USDT),
         )
 
     def tearDown(self):
