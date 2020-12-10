@@ -87,11 +87,9 @@ cdef class SimulatedExchange:
 
     cpdef dict get_working_orders(self)
     cpdef void register_client(self, BacktestExecClient client) except *
-    cpdef void add_instrument(self, Instrument instrument) except *
-    cpdef void load_module(self, SimulationModule module) except *
+    cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-    cpdef void change_fill_model(self, FillModel fill_model) except *
     cpdef void process_tick(self, Tick tick) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------

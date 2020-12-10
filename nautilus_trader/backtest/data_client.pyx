@@ -33,12 +33,12 @@ from nautilus_trader.model.instrument cimport Instrument
 
 cdef class BacktestDataClient(DataClient):
     """
-    Provides an implementation of `DataClient` which produces data for backtesting.
+    Provides an implementation of `DataClient` for backtesting.
     """
 
     def __init__(
             self,
-            dict instruments not None,
+            list instruments not None,
             Venue venue not None,
             DataEngine engine not None,
             Clock clock not None,
@@ -47,10 +47,12 @@ cdef class BacktestDataClient(DataClient):
         """
         Initialize a new instance of the `BacktestDataProducer` class.
 
+        instruments : list[Instrument]
+            The instruments for the data client.
         venue : Venue
-            The venue the producer provides data for.
+            The venue for the data client.
         engine : DataEngine
-            The data engine to connect to the producer.
+            The data engine to connect to the client.
         clock : Clock
             The clock for the component.
         logger : Logger
@@ -64,7 +66,11 @@ cdef class BacktestDataClient(DataClient):
             logger,
         )
 
-        self._instruments = instruments
+        self._instruments = {}
+        for instrument in instruments:
+            Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
+            self._instruments[instrument.symbol] = instrument
+
         self._is_connected = False
 
 # -- COMMANDS --------------------------------------------------------------------------------------

@@ -21,28 +21,24 @@ from decimal import Decimal
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from tests.test_kit.data_provider import TestDataProvider
 
 
 if __name__ == "__main__":
     # Setup trading instruments
     BINANCE = Venue("BINANCE")
-    symbol = Symbol("ETH/USDT", BINANCE)
     ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
 
     # Setup data container
@@ -61,28 +57,10 @@ if __name__ == "__main__":
 
     time.sleep(0.1)  # Allow strategy initialization to log
 
-    # Customize the backtest configuration (optional)
-    config = BacktestConfig(
-        exec_db_type="in-memory",
-        exec_db_flush=True,
-        frozen_account=False,
-        starting_capital=1000000,
-        account_currency=USDT,  # Multi-asset accounts on the way
-        short_term_interest_csv_path="default",
-        bypass_logging=False,
-        level_console=LogLevel.INFO,
-        level_file=LogLevel.DEBUG,
-        level_store=LogLevel.WARNING,
-        log_thread=False,
-        log_to_file=False,
-    )
-
     # Build the backtest engine
     engine = BacktestEngine(
         data=data,
-        trader_id=TraderId("BACKTESTER", "000"),
-        strategies=[strategy],  # List of `any` number of strategies
-        config=config,
+        strategies=[strategy],  # List of 'any' number of strategies
     )
 
     # Create a fill model (optional)
@@ -93,10 +71,12 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
+    # Add an exchange (now multiple exchanges possible)
     engine.add_exchange(
         venue=BINANCE,
         oms_type=OMSType.NETTING,
         generate_position_ids=False,
+        starting_capital=Money(1000000, USDT),
         fill_model=fill_model,
     )
 
