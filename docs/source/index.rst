@@ -11,7 +11,7 @@ trading operations.
 The platform aims
 to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
 Thus the platform can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, CFDs or Crypto - across multiple venues simultaneously.
+including FX, Equities, Futures, Options, CFDs or Crypto - across multiple venues simultaneously.
 
 Why NautilusTrader?
 -------------------

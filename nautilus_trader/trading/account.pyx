@@ -68,7 +68,7 @@ cdef class Account:
     @property
     def last_event(self):
         """
-        Return the accounts last state event.
+        The accounts last state event.
 
         Returns
         -------
@@ -80,7 +80,7 @@ cdef class Account:
     @property
     def events(self):
         """
-        Return all events received by the account.
+        All events received by the account.
 
         Returns
         -------
@@ -92,7 +92,7 @@ cdef class Account:
     @property
     def event_count(self):
         """
-        Return the count of events.
+        The count of events.
 
         Returns
         -------
