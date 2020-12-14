@@ -372,10 +372,10 @@ cdef class TradingStrategy(Component):
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
-            self,
-            TraderId trader_id,
-            Clock clock,
-            Logger logger,
+        self,
+        TraderId trader_id,
+        Clock clock,
+        Logger logger,
     ) except *:
         """
         Register the strategy with a trader.

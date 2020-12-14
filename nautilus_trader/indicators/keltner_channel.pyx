@@ -99,10 +99,10 @@ cdef class KeltnerChannel(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double high,
-            double low,
-            double close,
+        self,
+        double high,
+        double low,
+        double close,
     ) except *:
         """
         Update the indicator with the given raw values.

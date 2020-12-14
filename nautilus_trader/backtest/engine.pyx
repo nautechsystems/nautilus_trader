@@ -440,11 +440,11 @@ cdef class BacktestEngine:
         self._exchanges[venue].set_fill_model(model)
 
     cpdef void run(
-            self,
-            datetime start=None,
-            datetime stop=None,
-            list strategies=None,
-            bint print_log_store=True
+        self,
+        datetime start=None,
+        datetime stop=None,
+        list strategies=None,
+        bint print_log_store=True
     ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
@@ -568,10 +568,10 @@ cdef class BacktestEngine:
         self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
     cdef void _backtest_header(
-            self,
-            datetime run_started,
-            datetime start,
-            datetime stop,
+        self,
+        datetime run_started,
+        datetime start,
+        datetime stop,
     ) except *:
         self._log.info("=================================================================")
         self._log.info(" BACKTEST RUN")
@@ -593,11 +593,11 @@ cdef class BacktestEngine:
                 self._log.info(f"Account balances (starting): {balances}")
 
     cdef void _backtest_footer(
-            self,
-            datetime run_started,
-            datetime run_finished,
-            datetime start,
-            datetime stop,
+        self,
+        datetime run_started,
+        datetime run_finished,
+        datetime start,
+        datetime stop,
     ) except *:
         self._log.info("=================================================================")
         self._log.info(" BACKTEST DIAGNOSTICS")

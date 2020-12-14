@@ -91,11 +91,11 @@ cdef class Pressure(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double high,
-            double low,
-            double close,
-            double volume,
+        self,
+        double high,
+        double low,
+        double close,
+        double volume,
     ) except *:
         """
         Update the indicator with the given raw values.

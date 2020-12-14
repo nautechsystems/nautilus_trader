@@ -146,10 +146,10 @@ cdef class Clock:
         self.is_default_handler_registered = True
 
     cpdef void set_time_alert(
-            self,
-            str name,
-            datetime alert_time,
-            handler: callable=None,
+        self,
+        str name,
+        datetime alert_time,
+        handler: callable=None,
     ) except *:
         """
         Set a time alert for the given time.
@@ -201,12 +201,12 @@ cdef class Clock:
         self._add_timer(timer, handler)
 
     cpdef void set_timer(
-            self,
-            str name,
-            timedelta interval,
-            datetime start_time=None,
-            datetime stop_time=None,
-            handler=None,
+        self,
+        str name,
+        timedelta interval,
+        datetime start_time=None,
+        datetime stop_time=None,
+        handler: callable=None,
     ) except *:
         """
         Set a timer with the given interval.
@@ -309,18 +309,18 @@ cdef class Clock:
             self.cancel_timer(name)
 
     cdef Timer _create_timer(
-            self,
-            str name,
-            callback,
-            timedelta interval,
-            datetime now,
-            datetime start_time,
-            datetime stop_time,
+        self,
+        str name,
+        callback: callable,
+        timedelta interval,
+        datetime now,
+        datetime start_time,
+        datetime stop_time,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef inline void _add_timer(self, Timer timer, handler) except *:
+    cdef inline void _add_timer(self, Timer timer, handler: callable) except *:
         self._timers[timer.name] = timer
         self._handlers[timer.name] = handler
         self._update_stack()
@@ -455,13 +455,13 @@ cdef class TestClock(Clock):
         return sorted(event_handlers)
 
     cdef Timer _create_timer(
-            self,
-            str name,
-            callback,
-            timedelta interval,
-            datetime now,
-            datetime start_time,
-            datetime stop_time,
+        self,
+        str name,
+        callback: callable,
+        timedelta interval,
+        datetime now,
+        datetime start_time,
+        datetime stop_time,
     ):
         return TestTimer(
             name=name,
@@ -502,13 +502,13 @@ cdef class LiveClock(Clock):
         return datetime.now(tz=pytz.utc)
 
     cdef Timer _create_timer(
-            self,
-            str name,
-            callback,
-            timedelta interval,
-            datetime now,
-            datetime start_time,
-            datetime stop_time,
+        self,
+        str name,
+        callback: callable,
+        timedelta interval,
+        datetime now,
+        datetime start_time,
+        datetime stop_time,
     ):
         return LiveTimer(
             name=name,

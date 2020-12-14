@@ -147,10 +147,10 @@ cdef class Condition:
 
     @staticmethod
     cdef void type(
-            object argument,
-            object expected,
-            str param,
-            ex_type=None,
+        object argument,
+        object expected,
+        str param,
+        ex_type=None,
     ) except *:
         """
         Check the argument is of the specified type.
@@ -183,10 +183,10 @@ cdef class Condition:
 
     @staticmethod
     cdef void type_or_none(
-            object argument,
-            object expected,
-            str param,
-            ex_type=None,
+        object argument,
+        object expected,
+        str param,
+        ex_type=None,
     ) except *:
         """
         Check the argument is of the specified type, or is None.
@@ -269,11 +269,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void equal(
-            object argument1,
-            object argument2,
-            str param1,
-            str param2,
-            ex_type=None,
+        object argument1,
+        object argument2,
+        str param1,
+        str param2,
+        ex_type=None,
     ) except *:
         """
         Check the objects are equal.
@@ -310,11 +310,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void not_equal(
-            object object1,
-            object object2,
-            str param1,
-            str param2,
-            ex_type=None,
+        object object1,
+        object object2,
+        str param1,
+        str param2,
+        ex_type=None,
     ) except *:
         """
         Check the objects are not equal.
@@ -350,10 +350,10 @@ cdef class Condition:
 
     @staticmethod
     cdef void list_type(
-            list argument,
-            type expected_type,
-            str param,
-            ex_type=None,
+        list argument,
+        type expected_type,
+        str param,
+        ex_type=None,
     ) except *:
         """
         Check the list only contains types of the given expected type.
@@ -389,11 +389,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void dict_types(
-            dict argument,
-            type key_type,
-            type value_type,
-            str param,
-            ex_type=None,
+        dict argument,
+        type key_type,
+        type value_type,
+        str param,
+        ex_type=None,
     ) except *:
         """
         Check the dictionary only contains types of the given key and value types to contain.
@@ -424,11 +424,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void is_in(
-            object element,
-            object collection,
-            str param1,
-            str param2,
-            ex_type=None,
+        object element,
+        object collection,
+        str param1,
+        str param2,
+        ex_type=None,
     ) except *:
         """
         Check the element is contained within the specified collection.
@@ -466,11 +466,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void not_in(
-            object element,
-            object collection,
-            str param1,
-            str param2,
-            ex_type=None,
+        object element,
+        object collection,
+        str param1,
+        str param2,
+        ex_type=None,
     ) except *:
         """
         Check the element is not contained within the specified collection.
@@ -686,11 +686,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void in_range(
-            double value,
-            double start,
-            double end,
-            str param,
-            ex_type=None,
+        double value,
+        double start,
+        double end,
+        str param,
+        ex_type=None,
     ) except *:
         """
         Check the real number value is within the specified range (inclusive).
@@ -726,11 +726,11 @@ cdef class Condition:
 
     @staticmethod
     cdef void in_range_int(
-            int value,
-            int start,
-            int end,
-            str param,
-            ex_type=None,
+        int value,
+        int start,
+        int end,
+        str param,
+        ex_type=None,
     ) except *:
         """
         Check the integer value is within the specified range (inclusive).
