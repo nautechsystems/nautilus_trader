@@ -198,7 +198,8 @@ cdef class BacktestDataContainer:
 
     cpdef bint has_quote_data(self, Symbol symbol) except *:
         """
-        If the container has quote data for the given symbol.
+        Return a value indicating whether the container has quote data for the
+        given symbol.
 
         Parameters
         ----------
@@ -215,7 +216,8 @@ cdef class BacktestDataContainer:
 
     cpdef bint has_trade_data(self, Symbol symbol) except *:
         """
-        If the container has trade data for the given symbol.
+        Return a value indicating whether the container has trade data for the
+        given symbol.
 
         Parameters
         ----------

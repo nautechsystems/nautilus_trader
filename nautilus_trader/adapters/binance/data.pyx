@@ -79,7 +79,7 @@ cdef class BinanceDataClient(LiveDataClient):
 
     cpdef bint is_connected(self) except *:
         """
-        If the client is connected.
+        Return a value indicating whether the client is connected.
 
         Returns
         -------

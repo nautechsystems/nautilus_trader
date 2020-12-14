@@ -70,7 +70,7 @@ cdef class FillModel:
 
     cpdef bint is_limit_filled(self) except *:
         """
-        Return the models outcome for the probability of a LIMIT order filling.
+        Return a value indicating whether a `LIMIT` order filled.
 
         Returns
         -------
@@ -81,7 +81,7 @@ cdef class FillModel:
 
     cpdef bint is_stop_filled(self) except *:
         """
-        Return the models outcome for the probability of a STOP order filling.
+        Return a value indicating whether a `STOP-MARKET` order filling.
 
         Returns
         -------
@@ -92,7 +92,7 @@ cdef class FillModel:
 
     cpdef bint is_slipped(self) except *:
         """
-        Return the models outcome for the probability of an order fill slipping.
+        Return a value indicating whether an order fill slipping.
 
         Returns
         -------

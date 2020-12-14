@@ -154,7 +154,7 @@ cdef class BarSpecification:
 
     cpdef bint is_time_aggregated(self) except *:
         """
-        If the aggregation method is time-driven.
+        Return a value indicating whether the aggregation method is time-driven.
 
         Returns
         -------
@@ -165,7 +165,8 @@ cdef class BarSpecification:
 
     cpdef bint is_threshold_aggregated(self) except *:
         """
-        If the aggregation method is threshold-driven.
+        Return a value indicating whether the aggregation method is
+        threshold-driven.
 
         Returns
         -------
@@ -176,7 +177,8 @@ cdef class BarSpecification:
 
     cpdef bint is_information_aggregated(self) except *:
         """
-        If the aggregation method is information-driven.
+        Return a value indicating whether the aggregation method is
+        information-driven.
 
         Returns
         -------
