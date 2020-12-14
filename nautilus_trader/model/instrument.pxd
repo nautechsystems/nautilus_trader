@@ -22,7 +22,6 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -39,11 +38,11 @@ cdef class Instrument:
     cdef readonly Currency quote_currency
     """The quote currency of the instrument.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
-    """The settlement currency of the instrument. Used for PNL.\n\n:returns: `Currency`"""
+    """The settlement currency of the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If the quantity is expressed in quote currency.\n\n:returns: `Currency`"""
     cdef readonly bint is_quanto
-    """If settlement currency different to base or quote.\n\n:returns: `Currency`"""
+    """If settlement currency different to base and quote.\n\n:returns: `Currency`"""
     cdef readonly int price_precision
     """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -70,14 +69,14 @@ cdef class Instrument:
     """The maximum printable price for the instrument.\n\n:returns: `Price`"""
     cdef readonly Price min_price
     """The minimum printable price for the instrument.\n\n:returns: `Price`"""
-    cdef readonly object margin_initial
-    """The initial margin rate of the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly object margin_maintenance
-    """The maintenance margin rate of the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly object margin_init
+    """The initial margin rate for the instrument.\n\n:returns: `Decimal`"""
+    cdef readonly object margin_maint
+    """The maintenance margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object maker_fee
-    """The maker fee rate of the instrument.\n\n:returns: `Decimal`"""
+    """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
-    """The taker fee rate of the instrument.\n\n:returns: `Decimal`"""
+    """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object funding_rate_long
     """The funding rate for long positions.\n\n:returns: `Decimal`"""
     cdef readonly object funding_rate_short
@@ -85,22 +84,14 @@ cdef class Instrument:
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
 
-    cpdef Money calculate_notional(self, Quantity quantity, close_price, xrate=*)
-    cpdef Money calculate_order_margin(self, Quantity quantity, Price price, xrate=*)
-    cpdef Money calculate_position_margin(
+    cpdef Money market_value(self, Quantity quantity, close_price)
+    cpdef Money notional_value(self, Quantity quantity, close_price)
+    cpdef Money calculate_init_margin(self, Quantity quantity, Price price)
+    cpdef Money calculate_maint_margin(
         self,
         PositionSide side,
         Quantity quantity,
         Price last,
-        xrate=*,
-    )
-
-    cpdef Money calculate_open_value(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-        xrate=*,
     )
 
     cpdef Money calculate_commission(
@@ -108,5 +99,4 @@ cdef class Instrument:
         Quantity quantity,
         avg_price,
         LiquiditySide liquidity_side,
-        xrate=*,
     )

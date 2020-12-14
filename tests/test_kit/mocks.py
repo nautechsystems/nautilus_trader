@@ -237,11 +237,11 @@ class MockDataClient(DataClient):
     """
 
     def __init__(
-            self,
-            venue: Venue,
-            engine: DataEngine,
-            clock: Clock,
-            logger: Logger,
+        self,
+        venue: Venue,
+        engine: DataEngine,
+        clock: Clock,
+        logger: Logger,
     ):
         """
         Initialize a new instance of the `DataClient` class.
@@ -357,12 +357,12 @@ class MockExecutionClient(ExecutionClient):
     """
 
     def __init__(
-            self,
-            venue,
-            account_id,
-            exec_engine,
-            clock,
-            logger,
+        self,
+        venue,
+        account_id,
+        exec_engine,
+        clock,
+        logger,
     ):
         """
         Initialize a new instance of the `MockExecutionClient` class.

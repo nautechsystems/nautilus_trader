@@ -36,7 +36,6 @@ from scipy.stats import skew
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean
-from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
@@ -53,11 +52,10 @@ cdef class PerformanceAnalyzer:
         """
         Initialize a new instance of the `PerformanceAnalyzer` class.
         """
-        self._account_starting_balance = None
-        self._account_balance = None
-        self._account_currency = None
+        self._account_balances_starting = {}
+        self._account_balances = {}
+        self._realized_pnls = {}
         self._daily_returns = pd.Series(dtype=float64)
-        self._realized_pnls = pd.Series(dtype=float64)
 
     cpdef void calculate_statistics(self, Account account, list positions) except *:
         """
@@ -74,14 +72,10 @@ cdef class PerformanceAnalyzer:
         Condition.not_none(account, "account")
         Condition.not_none(positions, "positions")
 
-        self._account_currency = account.currency
-        self._account_balance = account.balance()
-
-        cdef AccountState initial = account.events_c()[0]
-        self._account_starting_balance = initial.balance
-
+        self._account_balances_starting = account.starting_balances()
+        self._account_balances = account.balances()
+        self._realized_pnls = {}
         self._daily_returns = pd.Series(dtype=float64)
-        self._realized_pnls = pd.Series(dtype=float64)
 
         self.add_positions(positions)
 
@@ -99,9 +93,8 @@ cdef class PerformanceAnalyzer:
 
         cdef Position position
         for position in positions:
-            if position.is_closed_c():
-                self.add_trade(position.id, position.realized_pnl)
-                self.add_return(position.closed_time, position.realized_return)
+            self.add_trade(position.id, position.realized_pnl)
+            self.add_return(position.closed_time, position.realized_return)
 
     cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
         """
@@ -112,13 +105,16 @@ cdef class PerformanceAnalyzer:
         position_id : PositionId
             The position identifier for the trade.
         realized_pnl : Money
-            The realized PNL for the trade.
+            The realized P&L for the trade.
 
         """
         Condition.not_none(position_id, "position_id")
         Condition.not_none(realized_pnl, "realized_pnl")
 
-        self._realized_pnls.loc[position_id.value] = realized_pnl.as_double()
+        cdef Currency currency = realized_pnl.currency
+        realized_pnls = self._realized_pnls.get(currency, pd.Series(dtype=float64))
+        realized_pnls.loc[position_id.value] = realized_pnl.as_double()
+        self._realized_pnls[currency] = realized_pnls
 
     cpdef void add_return(self, datetime timestamp, double value) except *:
         """
@@ -146,11 +142,224 @@ cdef class PerformanceAnalyzer:
 
         All stateful values are reset to their initial value.
         """
-        self._account_starting_balance = None
-        self._account_balance = None
-        self._account_currency = None
+        self._account_balances_starting = {}
+        self._account_balances = {}
+        self._realized_pnls = {}
         self._daily_returns = pd.Series(dtype=float64)
-        self._realized_pnls = pd.Series(dtype=float64)
+
+    cpdef object get_realized_pnls(self, Currency currency=None):
+        """
+        Return the returns data.
+
+        Returns
+        -------
+        pd.Series or None
+
+        """
+        if len(self._realized_pnls) == 0:
+            return pd.Series(dtype=float64)
+        if currency is None:
+            return next(iter(self._realized_pnls.values()))
+        return self._realized_pnls.get(currency)
+
+    cpdef double total_pnl(self, Currency currency=None) except *:
+        """
+        Return the total P&L for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        if len(self._account_balances) == 0:
+            return 0.0
+        if currency is None:
+            account_balance = next(iter(self._account_balances.values()))
+            account_balance_starting = next(iter(self._account_balances_starting.values()))
+        else:
+            account_balance = self._account_balances[currency]
+            account_balance_starting = self._account_balances_starting[currency]
+
+        return float(account_balance - account_balance_starting)
+
+    cpdef double total_pnl_percentage(self, Currency currency=None) except *:
+        """
+        Return the percentage change of the total P&L for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        if currency is None:
+            account_balance = next(iter(self._account_balances.values()))
+            account_balance_starting = next(iter(self._account_balances_starting.values()))
+        else:
+            account_balance = self._account_balances[currency]
+            account_balance_starting = self._account_balances_starting[currency]
+
+        if account_balance_starting.as_decimal() == 0:
+            # Protect divide by zero
+            return 0
+        current = account_balance
+        starting = account_balance_starting
+        difference = current - starting
+
+        return (difference / starting) * 100
+
+    cpdef double max_winner(self, Currency currency=None) except *:
+        """
+        Return the maximum winner for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        if len(realized_pnls.index) == 0:
+            return 0
+
+        return max(realized_pnls)
+
+    cpdef double max_loser(self, Currency currency=None) except *:
+        """
+        Return the maximum loser for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        if len(realized_pnls.index) == 0:
+            return 0
+
+        return min(realized_pnls)
+
+    cpdef double min_winner(self, Currency currency=None) except *:
+        """
+        Return the minimum winner for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        cdef list winners = [x for x in realized_pnls if x > 0]
+        if realized_pnls is None or len(winners) == 0:
+            return 0
+
+        return min(winners)
+
+    cpdef double min_loser(self, Currency currency=None) except *:
+        """
+        Return the minimum loser for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        cdef list losers = [x for x in realized_pnls if x <= 0]
+        if len(losers) == 0:
+            return 0
+
+        return max(losers)  # max is least loser
+
+    cpdef double avg_winner(self, Currency currency=None) except *:
+        """
+        Return the average winner for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        cdef list winners = [x for x in realized_pnls if x > 0]
+        if len(winners) == 0:
+            return 0
+
+        return fast_mean(winners)
+
+    cpdef double avg_loser(self, Currency currency=None) except *:
+        """
+        Return the average loser for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        cdef list losers = [x for x in realized_pnls if x <= 0]
+        if len(losers) == 0:
+            return 0
+
+        return fast_mean(losers)
+
+    cpdef double win_rate(self, Currency currency=None) except *:
+        """
+        Return the win rate (after commission) for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        if len(realized_pnls) == 0:
+            return 0
+
+        cdef list winners = [x for x in realized_pnls if x > 0]
+        cdef list losers = [x for x in realized_pnls if x <= 0]
+
+        return len(winners) / float(max(1, (len(winners) + len(losers))))
+
+    cpdef double expectancy(self, Currency currency=None) except *:
+        """
+        Return the expectancy for the portfolio.
+
+        Returns
+        -------
+        double
+
+        """
+        realized_pnls = self.get_realized_pnls(currency)
+        if realized_pnls is None:
+            return 0
+
+        if len(realized_pnls) == 0:
+            return 0
+
+        cdef double win_rate = self.win_rate()
+        cdef double loss_rate = 1 - win_rate
+
+        return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
 
     cpdef object get_daily_returns(self):
         """
@@ -161,167 +370,6 @@ cdef class PerformanceAnalyzer:
         pd.Series
         """
         return self._daily_returns
-
-    cpdef object get_realized_pnls(self):
-        """
-        Return the returns data.
-
-        Returns
-        -------
-        pd.Series
-        """
-        return self._realized_pnls
-
-    cpdef double total_pnl(self) except *:
-        """
-        Return the total PNL for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return float(self._account_balance - self._account_starting_balance)
-
-    cpdef double total_pnl_percentage(self) except *:
-        """
-        Return the percentage change of the total PNL for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        if self._account_starting_balance is None or self._account_starting_balance.as_decimal() == 0:
-            # Protect divide by zero
-            return 0
-        current = self._account_balance
-        starting = self._account_starting_balance
-        difference = current - starting
-
-        return (difference / starting) * 100
-
-    cpdef double max_winner(self) except *:
-        """
-        Return the maximum winner for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        if len(self._realized_pnls.index) == 0:
-            return 0
-
-        return max(self._realized_pnls)
-
-    cpdef double max_loser(self) except *:
-        """
-        Return the maximum loser for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        if len(self._realized_pnls.index) == 0:
-            return 0
-
-        return min(self._realized_pnls)
-
-    cpdef double min_winner(self) except *:
-        """
-        Return the minimum winner for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        cdef list winners = [x for x in self._realized_pnls if x > 0]
-        if len(winners) == 0:
-            return 0
-
-        return min(winners)
-
-    cpdef double min_loser(self) except *:
-        """
-        Return the minimum loser for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        cdef list losers = [x for x in self._realized_pnls if x <= 0]
-        if len(losers) == 0:
-            return 0
-
-        return max(losers)  # max is least loser
-
-    cpdef double avg_winner(self) except *:
-        """
-        Return the average winner for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        cdef list winners = [x for x in self._realized_pnls if x > 0]
-        if len(winners) == 0:
-            return 0
-
-        return fast_mean(winners)
-
-    cpdef double avg_loser(self) except *:
-        """
-        Return the average loser for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        cdef list losers = [x for x in self._realized_pnls if x <= 0]
-        if len(losers) == 0:
-            return 0
-
-        return fast_mean(losers)
-
-    cpdef double win_rate(self) except *:
-        """
-        Return the win rate (after commission) for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        if len(self._realized_pnls) == 0:
-            return 0
-
-        cdef list winners = [x for x in self._realized_pnls if x > 0]
-        cdef list losers = [x for x in self._realized_pnls if x <= 0]
-
-        return len(winners) / float(max(1, (len(winners) + len(losers))))
-
-    cpdef double expectancy(self) except *:
-        """
-        Return the expectancy for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        if len(self._realized_pnls.index) == 0:
-            return 0
-
-        cdef double win_rate = self.win_rate()
-        cdef double loss_rate = 1 - win_rate
-
-        return (self.avg_winner() * win_rate) + (self.avg_loser() * loss_rate)
 
     cpdef double annual_return(self) except *:
         """
@@ -503,11 +551,16 @@ cdef class PerformanceAnalyzer:
         """
         return beta(returns=self._daily_returns, factor_returns=self._daily_returns)
 
-    cpdef dict get_performance_stats(self):
+    cpdef dict get_performance_stats_pnls(self, Currency currency=None):
         """
-        Return the performance statistics from the last backtest run.
+        Return the performance statistics for P&L from the last backtest run.
 
         Money objects are converted to floats.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency for the performance.
 
         Returns
         -------
@@ -515,16 +568,56 @@ cdef class PerformanceAnalyzer:
 
         """
         return {
-            "PNL": self.total_pnl(),
-            "PNL%": self.total_pnl_percentage(),
-            "MaxWinner": self.max_winner(),
-            "AvgWinner": self.avg_winner(),
-            "MinWinner": self.min_winner(),
-            "MinLoser": self.min_loser(),
-            "AvgLoser": self.avg_loser(),
-            "MaxLoser": self.max_loser(),
-            "WinRate": self.win_rate(),
-            "Expectancy": self.expectancy(),
+            "P&L": self.total_pnl(currency),
+            "P&L%": self.total_pnl_percentage(currency),
+            "MaxWinner": self.max_winner(currency),
+            "AvgWinner": self.avg_winner(currency),
+            "MinWinner": self.min_winner(currency),
+            "MinLoser": self.min_loser(currency),
+            "AvgLoser": self.avg_loser(currency),
+            "MaxLoser": self.max_loser(currency),
+            "WinRate": self.win_rate(currency),
+            "Expectancy": self.expectancy(currency),
+        }
+
+    cpdef list get_performance_stats_pnls_formatted(self, Currency currency=None):
+        """
+        Return the performance statistics from the last backtest run formatted
+        for printing in the backtest run footer.
+
+        Parameters
+        ----------
+        currency : Currency
+            The currency for the performance.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return [
+            f"P&L:               {round(self.total_pnl(currency), currency.precision):,} {currency}",
+            f"P&L%:              {round(self.total_pnl_percentage(currency), 2)}%",
+            f"Max Winner:        {round(self.max_winner(currency), currency.precision):,} {currency}",
+            f"Avg Winner:        {round(self.avg_winner(currency), currency.precision):,} {currency}",
+            f"Min Winner:        {round(self.min_winner(currency), currency.precision):,} {currency}",
+            f"Min Loser:         {round(self.min_loser(currency), currency.precision):,} {currency}",
+            f"Avg Loser:         {round(self.avg_loser(currency), currency.precision):,} {currency}",
+            f"Max Loser:         {round(self.max_loser(currency), currency.precision):,} {currency}",
+            f"Win Rate:          {round(self.win_rate(currency), 2)}",
+            f"Expectancy:        {round(self.expectancy(currency), currency.precision):,} {currency}",
+        ]
+
+    cpdef dict get_performance_stats_returns(self):
+        """
+        Return the performance statistics from the last backtest run.
+
+        Returns
+        -------
+        dict[str, double]
+
+        """
+        return {
             "AnnualReturn": self.annual_return(),
             "CumReturn": self.cum_return(),
             "MaxDrawdown": self.max_drawdown_return(),
@@ -543,15 +636,10 @@ cdef class PerformanceAnalyzer:
             "Beta": self.beta()
         }
 
-    cdef list get_performance_stats_formatted(self, Currency account_currency):
+    cpdef list get_performance_stats_returns_formatted(self):
         """
-        Return the performance statistics from the last backtest run formatted
-        for printing in the backtest run footer.
-
-        Parameters
-        ----------
-        account_currency : Currency
-            The account currency.
+        Return the performance statistics for returns from the last backtest run
+        formatted for printing in the backtest run footer.
 
         Returns
         -------
@@ -559,16 +647,6 @@ cdef class PerformanceAnalyzer:
 
         """
         return [
-            f"PNL:               {round(self.total_pnl(), self._account_currency.precision):,} {self._account_currency}",
-            f"PNL %:             {round(self.total_pnl_percentage(), 2)}%",
-            f"Max Winner:        {round(self.max_winner(), self._account_currency.precision):,} {self._account_currency}",
-            f"Avg Winner:        {round(self.avg_winner(), self._account_currency.precision):,} {self._account_currency}",
-            f"Min Winner:        {round(self.min_winner(), self._account_currency.precision):,} {self._account_currency}",
-            f"Min Loser:         {round(self.min_loser(), self._account_currency.precision):,} {self._account_currency}",
-            f"Avg Loser:         {round(self.avg_loser(), self._account_currency.precision):,} {self._account_currency}",
-            f"Max Loser:         {round(self.max_loser(), self._account_currency.precision):,} {self._account_currency}",
-            f"Win Rate:          {round(self.win_rate(), 2)}",
-            f"Expectancy:        {round(self.expectancy(), self._account_currency.precision):,} {self._account_currency}",
             f"Annual return:     {round(self.annual_return() * 100, 2)}%",
             f"Cum returns:       {round(self.cum_return() * 100, 2)}%",
             f"Max drawdown:      {round(self.max_drawdown_return() * 100, 2)}%",

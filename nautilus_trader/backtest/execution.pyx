@@ -32,12 +32,12 @@ cdef class BacktestExecClient(ExecutionClient):
     """
 
     def __init__(
-            self,
-            SimulatedExchange exchange not None,
-            AccountId account_id not None,
-            ExecutionEngine engine not None,
-            TestClock clock not None,
-            TestLogger logger not None,
+        self,
+        SimulatedExchange exchange not None,
+        AccountId account_id not None,
+        ExecutionEngine engine not None,
+        TestClock clock not None,
+        TestLogger logger not None,
     ):
         """
         Initialize a new instance of the `BacktestExecClient` class.

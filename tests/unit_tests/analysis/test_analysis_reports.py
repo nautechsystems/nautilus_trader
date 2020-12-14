@@ -56,13 +56,13 @@ class ReportProviderTests(unittest.TestCase):
     def test_generate_accounts_report_with_initial_account_state_returns_expected(self):
         # Arrange
         state = AccountState(
-            AccountId.from_str("BITMEX-1513111-SIMULATED"),
-            BTC,
-            Money(10., BTC),
-            Money(0., BTC),
-            Money(0., BTC),
-            uuid4(),
-            UNIX_EPOCH,
+            account_id=AccountId("BITMEX", "1513111"),
+            balances=[Money("10.00000000", BTC)],
+            balances_free=[Money("10.00000000", BTC)],
+            balances_locked=[Money("0.00000000", BTC)],
+            info={},
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
         )
 
         account = Account(state)

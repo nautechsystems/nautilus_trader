@@ -63,13 +63,13 @@ cdef class Position:
         self.open_duration = None  # Can be None
         self.avg_open = event.fill_price.as_decimal()
         self.avg_close = Decimal()
-        self.quote_currency = event.quote_currency
-        self.settlement_currency = event.settlement_currency
+        self.quote_currency = event.currency
         self.is_inverse = event.is_inverse
         self.realized_points = Decimal()
         self.realized_return = Decimal()
-        self.realized_pnl = Money(0, self.settlement_currency)
-        self.commissions = Money(0, self.settlement_currency)
+        self.realized_pnl = Money(0, self.quote_currency)
+        self.commission = Money(0, self.quote_currency)
+        self._commissions = {}
 
         self.apply(event)
 
@@ -316,12 +316,14 @@ cdef class Position:
 
         self._events.append(event)
 
-        # Check currencies match
-        assert event.commission.currency == self.commissions.currency
-        assert event.commission.currency == self.settlement_currency
-        self.commissions = Money(self.commissions + event.commission, event.commission.currency)
+        # Calculate cumulative commission
+        cdef Currency currency = event.commission.currency
+        cdef Money cum_commission = Money(self._commissions.get(currency, Decimal()) + event.commission, currency)
+        self._commissions[currency] = cum_commission
+        if currency == self.quote_currency:
+            self.commission = cum_commission
 
-        # Calculate avg prices, points, return, PNL
+        # Calculate avg prices, points, return, P&L
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
         else:  # event.order_side == OrderSide.SELL:
@@ -342,14 +344,36 @@ cdef class Position:
             self.closed_time = event.execution_time
             self.open_duration = self.closed_time - self.opened_time
 
+    cpdef Money notional_value(self, Price last):
+        """
+        Returns the current notional value of the position.
+
+        Parameters
+        ----------
+        last : Price
+            The last close price for the position.
+
+        Returns
+        -------
+        Money
+            In quote currency.
+
+        """
+        Condition.not_none(last, "last")
+
+        if self.is_inverse:
+            return Money(self.quantity, self.quote_currency)
+        else:
+            return Money(self.quantity * last, self.quote_currency)
+
     cpdef Money calculate_pnl(
-            self,
-            avg_open: Decimal,
-            avg_close: Decimal,
-            quantity: Decimal,
+        self,
+        avg_open: Decimal,
+        avg_close: Decimal,
+        quantity: Decimal,
     ):
         """
-        Return the calculated PNL from the given parameters.
+        Return a generic P&L from the given parameters.
 
         Parameters
         ----------
@@ -370,60 +394,78 @@ cdef class Position:
         Condition.type(avg_close, (Decimal, Price), "avg_close")
         Condition.type(quantity, (Decimal, Quantity), "quantity")
 
-        if self.is_inverse:
-            points = self._calculate_points_inverse(avg_open, avg_close)
-        else:
-            points = self._calculate_points(avg_open, avg_close)
+        pnl: Decimal = self._calculate_pnl(
+            avg_open=avg_open,
+            avg_close=avg_close,
+            quantity=quantity,
+        )
 
-        return Money(points * quantity, self.settlement_currency)
+        return Money(pnl, self.quote_currency)
 
     cpdef Money unrealized_pnl(self, Price last):
         """
-        Return the unrealized PNL from the given last quote tick.
+        Return the unrealized P&L from the given last quote tick.
 
         Parameters
         ----------
         last : Price
-            The position symbols last price.
+            The last price for the calculation.
 
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         """
         Condition.not_none(last, "last")
 
         if self.side == PositionSide.FLAT:
-            return Money(0, self.settlement_currency)
+            return Money(0, self.quote_currency)
 
-        return self.calculate_pnl(
+        pnl: Decimal = self._calculate_pnl(
             avg_open=self.avg_open,
             avg_close=last,
             quantity=self.quantity,
         )
+        return Money(pnl, self.quote_currency)
 
     cpdef Money total_pnl(self, Price last):
         """
-        Return the total PNL from the given last quote tick.
+        Return the total P&L from the given last quote tick.
 
         Parameters
         ----------
-        last : QuoteTick
-            The last tick for the calculation.
+        last : Price
+            The last price for the calculation.
 
         Returns
         -------
         Money
-            In the settlement currency.
+            In quote currency.
 
         """
         Condition.not_none(last, "last")
 
-        return Money(self.realized_pnl + self.unrealized_pnl(last), self.settlement_currency)
+        return Money(self.realized_pnl + self.unrealized_pnl(last), self.quote_currency)
+
+    cpdef list commissions(self):
+        """
+        Return the total commissions generated by the position.
+
+        Returns
+        -------
+        list[Money]
+
+        """
+        return list(self._commissions.values())
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
-        realized_pnl: Decimal = event.commission.as_decimal()
+        # Initialize realized P&L for fill
+        if event.commission.currency == self.quote_currency:
+            realized_pnl: Decimal = -event.commission.as_decimal()
+        else:
+            realized_pnl: Decimal = Decimal()
+
         # LONG POSITION
         if self.relative_quantity > 0:
             self.avg_open = self._calculate_avg_open_price(event)
@@ -432,16 +474,21 @@ cdef class Position:
             self.avg_close = self._calculate_avg_close_price(event)
             self.realized_points = self._calculate_points(self.avg_open, self.avg_close)
             self.realized_return = self._calculate_return(self.avg_open, self.avg_close)
-            realized_pnl += self.calculate_pnl(self.avg_open, event.fill_price, event.fill_qty)
+            realized_pnl += self._calculate_pnl(self.avg_open, event.fill_price, event.fill_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.settlement_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.quote_currency)
 
         # Update quantities
         self._buy_quantity = self._buy_quantity + event.fill_qty
         self.relative_quantity = self.relative_quantity + event.fill_qty
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *:
-        realized_pnl: Decimal = event.commission.as_decimal()
+        # Initialize realized P&L for fill
+        if event.commission.currency == self.quote_currency:
+            realized_pnl: Decimal = -event.commission.as_decimal()
+        else:
+            realized_pnl: Decimal = Decimal()
+
         # SHORT POSITION
         if self.relative_quantity < 0:
             self.avg_open = self._calculate_avg_open_price(event)
@@ -450,16 +497,13 @@ cdef class Position:
             self.avg_close = self._calculate_avg_close_price(event)
             self.realized_points = self._calculate_points(self.avg_open, self.avg_close)
             self.realized_return = self._calculate_return(self.avg_open, self.avg_close)
-            realized_pnl += self.calculate_pnl(self.avg_open, event.fill_price, event.fill_qty)
+            realized_pnl += self._calculate_pnl(self.avg_open, event.fill_price, event.fill_qty)
 
-        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.settlement_currency)
+        self.realized_pnl = Money(self.realized_pnl + realized_pnl, self.quote_currency)
 
         # Update quantities
         self._sell_quantity = self._sell_quantity + event.fill_qty
         self.relative_quantity = self.relative_quantity - event.fill_qty
-
-    cdef inline object _calculate_cost(self, avg_price: Decimal, total_quantity: Decimal):
-        return avg_price * total_quantity
 
     cdef inline object _calculate_avg_open_price(self, OrderFilled event):
         if not self.avg_open:
@@ -480,8 +524,8 @@ cdef class Position:
         quantity: Decimal,
         OrderFilled event,
     ):
-        start_cost: Decimal = self._calculate_cost(avg_price, quantity)
-        event_cost: Decimal = self._calculate_cost(event.fill_price, event.fill_qty)
+        start_cost: Decimal = avg_price * quantity
+        event_cost: Decimal = event.fill_price * event.fill_qty
         cumulative_quantity: Decimal = quantity + event.fill_qty
         return (start_cost + event_cost) / cumulative_quantity
 
@@ -503,3 +547,14 @@ cdef class Position:
 
     cdef inline object _calculate_return(self, avg_open: Decimal, avg_close: Decimal):
         return self._calculate_points(avg_open, avg_close) / avg_open
+
+    cdef inline object _calculate_pnl(
+        self,
+        avg_open: Decimal,
+        avg_close: Decimal,
+        quantity: Decimal,
+    ):
+        if self.is_inverse:
+            return self._calculate_return(avg_open, avg_close) * quantity
+        else:
+            return self._calculate_points(avg_open, avg_close) * quantity

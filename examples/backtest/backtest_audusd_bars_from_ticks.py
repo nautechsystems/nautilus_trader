@@ -31,7 +31,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -59,7 +58,7 @@ if __name__ == "__main__":
         bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
         fast_ema=10,
         slow_ema=20,
-        trade_size=Decimal(1000000),
+        trade_size=Decimal(1_000_000),
     )
 
     time.sleep(0.1)  # Allow strategy initialization to log
@@ -76,6 +75,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
+        # exec_db_type="redis",
     )
 
     # Optional plug in module to simulate rollover interest,
@@ -87,8 +87,7 @@ if __name__ == "__main__":
     engine.add_exchange(
         venue=SIM,
         oms_type=OMSType.HEDGING,
-        generate_position_ids=False,
-        starting_capital=Money(1000000, USD),
+        starting_balances=[Money(1_000_000, USD)],  # now single-asset or multi-asset accounts
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )
@@ -105,7 +104,7 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
-        print(engine.trader.generate_account_report(AccountId.from_str("SIM-000-SIMULATED")))
+        print(engine.trader.generate_account_report(SIM))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

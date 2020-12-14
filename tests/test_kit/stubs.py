@@ -22,7 +22,6 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import Maker
@@ -197,7 +196,7 @@ class TestStubs:
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId("FXCM", "000", AccountType.SIMULATED)
+        return AccountId("FXCM", "000")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:
@@ -206,10 +205,10 @@ class TestStubs:
 
         return AccountState(
             account_id,
-            USD,
-            Money(1000000.00, USD),
-            Money(1000000.00, USD),
-            Money(1000000.00, USD),
+            [Money(1_000_000, USD)],
+            [Money(1_000_000, USD)],
+            [Money(1_000_000, USD)],
+            {"default_currency": "USD"},
             uuid4(),
             UNIX_EPOCH,
         )
@@ -255,7 +254,6 @@ class TestStubs:
             fill_price=None,
             fill_qty=None,
             liquidity_side=LiquiditySide.TAKER,
-            xrate=None,
     ) -> OrderFilled:
         if position_id is None:
             position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))
@@ -270,7 +268,6 @@ class TestStubs:
             quantity=order.quantity,
             avg_price=fill_price,
             liquidity_side=liquidity_side,
-            xrate=xrate,
         )
 
         return OrderFilled(
@@ -286,10 +283,9 @@ class TestStubs:
             cum_qty=Quantity(order.filled_qty + fill_qty),
             leaves_qty=Quantity(max(0, order.quantity - order.filled_qty - fill_qty)),
             fill_price=order.price if fill_price is None else fill_price,
-            quote_currency=instrument.quote_currency,
-            settlement_currency=instrument.settlement_currency,
+            currency=instrument.quote_currency,
             is_inverse=instrument.is_inverse,
-            commission=Money(-commission, commission.currency),
+            commission=commission,
             liquidity_side=liquidity_side,
             execution_time=UNIX_EPOCH,
             event_id=uuid4(),

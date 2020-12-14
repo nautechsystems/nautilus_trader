@@ -77,11 +77,11 @@ cdef class DataEngine(Component):
     """
 
     def __init__(
-            self,
-            Portfolio portfolio not None,
-            Clock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        Portfolio portfolio not None,
+        Clock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `DataEngine` class.

@@ -30,13 +30,13 @@ cdef class KeltnerPosition(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            double k_multiplier,
-            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-            ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
-            bint use_previous=True,
-            double atr_floor=0,
+        self,
+        int period,
+        double k_multiplier,
+        ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+        ma_type_atr not None: MovingAverageType=MovingAverageType.SIMPLE,
+        bint use_previous=True,
+        double atr_floor=0,
     ):
         """
         Initialize a new instance of the `KeltnerChannel` class.

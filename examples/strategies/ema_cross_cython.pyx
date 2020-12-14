@@ -47,12 +47,12 @@ cdef class EMACross(TradingStrategy):
     cdef ExponentialMovingAverage slow_ema
 
     def __init__(
-            self,
-            Symbol symbol,
-            BarSpecification bar_spec,
-            trade_size: Decimal,
-            int fast_ema=10,
-            int slow_ema=20,
+        self,
+        Symbol symbol,
+        BarSpecification bar_spec,
+        trade_size: Decimal,
+        int fast_ema=10,
+        int slow_ema=20,
     ):
         """
         Initialize a new instance of the `EMACross` class.

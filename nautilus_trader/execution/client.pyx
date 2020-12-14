@@ -35,12 +35,13 @@ cdef class ExecutionClient:
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            AccountId account_id not None,
-            ExecutionEngine engine not None,
-            Clock clock not None,
-            Logger logger not None):
+        self,
+        Venue venue not None,
+        AccountId account_id not None,
+        ExecutionEngine engine not None,
+        Clock clock not None,
+        Logger logger not None,
+    ):
         """
         Initialize a new instance of the `ExecutionClient` class.
 

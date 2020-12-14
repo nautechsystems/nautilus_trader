@@ -55,9 +55,10 @@ cdef class BaseDecimal:
     """
 
     def __init__(
-            self, value=0,
-            precision=None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+        self,
+        value=0,
+        precision=None,
+        str rounding not None=decimal.ROUND_HALF_EVEN,
     ):
         """
         Initialize a new instance of the `BaseDecimal` class.
@@ -274,10 +275,10 @@ cdef class Quantity(BaseDecimal):
     """
 
     def __init__(
-            self,
-            value=0,
-            precision=None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+        self,
+        value=0,
+        precision=None,
+        str rounding not None=decimal.ROUND_HALF_EVEN,
     ):
         """
         Initialize a new instance of the `Quantity` class.
@@ -339,10 +340,10 @@ cdef class Price(BaseDecimal):
     """
 
     def __init__(
-            self,
-            value=0,
-            precision=None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+        self,
+        value=0,
+        precision=None,
+        str rounding not None=decimal.ROUND_HALF_EVEN,
     ):
         """
         Initialize a new instance of the `Price` class.
@@ -383,10 +384,10 @@ cdef class Money(BaseDecimal):
     """
 
     def __init__(
-            self,
-            value,
-            Currency currency not None,
-            str rounding not None=decimal.ROUND_HALF_EVEN,
+        self,
+        value,
+        Currency currency not None,
+        str rounding not None=decimal.ROUND_HALF_EVEN,
     ):
         """
         Initialize a new instance of the `Money` class.

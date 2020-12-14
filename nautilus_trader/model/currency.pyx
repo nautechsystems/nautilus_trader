@@ -89,10 +89,10 @@ cdef class Currency:
     """
 
     def __init__(
-            self,
-            str code,
-            int precision,
-            CurrencyType currency_type,
+        self,
+        str code,
+        int precision,
+        CurrencyType currency_type,
     ):
         """
         Initialize a new instance of the `Currency` class.

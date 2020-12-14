@@ -25,10 +25,10 @@ cdef class Connect(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `Connect` class.
@@ -59,10 +59,10 @@ cdef class Disconnect(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `Disconnect` class.
@@ -93,13 +93,13 @@ cdef class Subscribe(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            type data_type not None,
-            dict metadata not None,
-            handler not None: callable,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        type data_type not None,
+        dict metadata not None,
+        handler not None: callable,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `Subscribe` class.
@@ -146,13 +146,13 @@ cdef class Unsubscribe(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            type data_type not None,
-            dict metadata not None,
-            handler not None: callable,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        type data_type not None,
+        dict metadata not None,
+        handler not None: callable,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `Unsubscribe` class.
@@ -199,13 +199,13 @@ cdef class DataRequest(Request):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            type data_type not None,
-            dict metadata not None,
-            callback not None: callable,
-            UUID request_id not None,
-            datetime request_timestamp not None,
+        self,
+        Venue venue not None,
+        type data_type not None,
+        dict metadata not None,
+        callback not None: callable,
+        UUID request_id not None,
+        datetime request_timestamp not None,
     ):
         """
         Initialize a new instance of the `DataRequest` class.
@@ -251,14 +251,14 @@ cdef class DataResponse(Response):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            type data_type not None,
-            dict metadata not None,
-            list data not None,
-            UUID correlation_id not None,
-            UUID response_id not None,
-            datetime response_timestamp not None,
+        self,
+        Venue venue not None,
+        type data_type not None,
+        dict metadata not None,
+        list data not None,
+        UUID correlation_id not None,
+        UUID response_id not None,
+        datetime response_timestamp not None,
     ):
         """
         Initialize a new instance of the `DataResponse` class.

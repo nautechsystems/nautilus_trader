@@ -31,10 +31,10 @@ cdef class WeightedMovingAverage(MovingAverage):
     """
 
     def __init__(
-            self,
-            int period,
-            weights=None,
-            PriceType price_type=PriceType.UNDEFINED,
+        self,
+        int period,
+        weights=None,
+        PriceType price_type=PriceType.UNDEFINED,
     ):
         """
         Initialize a new instance of the `SimpleMovingAverage` class.

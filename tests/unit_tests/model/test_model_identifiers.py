@@ -17,7 +17,6 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Brokerage
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -235,15 +234,15 @@ class IdentifierTests(unittest.TestCase):
     def test_account_identifier(self):
         # Arrange
         # Act
-        account_id1 = AccountId("FXCM", "02851908", AccountType.DEMO)
-        account_id2 = AccountId("FXCM", "09999999", AccountType.DEMO)
+        account_id1 = AccountId("FXCM", "02851908")
+        account_id2 = AccountId("FXCM", "09999999")
 
         # Assert
         self.assertEqual(account_id1, account_id1)
         self.assertNotEqual(account_id1, account_id2)
-        self.assertEqual("FXCM-02851908-DEMO", account_id1.value)
+        self.assertEqual("FXCM-02851908", account_id1.value)
         self.assertEqual(Issuer("FXCM"), account_id1.issuer)
-        self.assertEqual(account_id1, AccountId.from_str("FXCM-02851908-DEMO"))
+        self.assertEqual(account_id1, AccountId("FXCM", "02851908"))
 
     def test_position_identifier(self):
         # Arrange

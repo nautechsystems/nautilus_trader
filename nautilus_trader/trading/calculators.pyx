@@ -25,6 +25,9 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
 
 
+_DECIMAL_ONE = Decimal(1)
+
+
 cdef class ExchangeRateCalculator:
     """
     Provides exchange rate calculations between currencies.
@@ -80,7 +83,7 @@ cdef class ExchangeRateCalculator:
         Condition.true(price_type != PriceType.UNDEFINED and price_type != PriceType.LAST, "price_type not UNDEFINED or LAST")
 
         if from_currency == to_currency:
-            return Decimal(1)  # No conversion necessary
+            return _DECIMAL_ONE  # No conversion necessary
 
         if price_type == PriceType.BID:
             calculation_quotes = bid_quotes

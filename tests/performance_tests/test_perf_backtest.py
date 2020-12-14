@@ -60,15 +60,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             data=data,
             strategies=strategies,
             bypass_logging=True,
-            console_prints=False,
         )
 
         engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
-            frozen_account=False,
-            starting_capital=Money(1000000, USD),
+            starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )
 
@@ -106,7 +103,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategy = EMACross(
             symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
-            trade_size=Decimal(1000000),
+            trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -115,15 +112,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             data=data,
             strategies=[strategy],
             bypass_logging=True,
-            console_prints=False,
         )
 
         engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
-            frozen_account=False,
-            starting_capital=Money(1000000, USD),
+            starting_balances=[Money(1_000_000, USD)],
         )
 
         start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -145,7 +139,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         strategy = EMACross(
             symbol=USDJPY_FXCM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
-            trade_size=Decimal(1000000),
+            trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -154,7 +148,6 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
             data=data,
             strategies=[strategy],
             bypass_logging=True,
-            console_prints=False,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -163,9 +156,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         engine.add_exchange(
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
-            generate_position_ids=True,
-            frozen_account=False,
-            starting_capital=Money(1000000, USD),
+            starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
         )
 
@@ -206,3 +197,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 27/11/20  4294514 function calls (4268761 primitive calls) in 5.822 seconds (remove redundant methods)
         # 29/11/20  4374015 function calls (4348306 primitive calls) in 5.753 seconds (performance check)
         # 09/12/20  4294769 function calls (4268911 primitive calls) in 5.858 seconds (performance check)
+        # 14/12/20  5685767 function calls (5648057 primitive calls) in 6.484 seconds (multi-asset accounts)

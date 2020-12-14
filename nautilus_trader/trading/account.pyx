@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.events cimport AccountState
 
@@ -20,6 +22,8 @@ from nautilus_trader.model.events cimport AccountState
 cdef class Account:
     """
     Provides a trading account.
+
+    Represents Cash, Margin or Futures account types.
     """
 
     def __init__(self, AccountState event):
@@ -35,14 +39,27 @@ cdef class Account:
         Condition.not_none(event, "event")
 
         self.id = event.account_id
-        self.account_type = self.id.account_type
-        self.currency = event.currency
+
+        default_currency_str = event.info.get("default_currency")
+        if default_currency_str:
+            self.default_currency = Currency.from_str_c(default_currency_str)
+        else:
+            self.default_currency = None
 
         self._events = [event]
-        self._portfolio = None
-        self._balance = event.balance
-        self._order_margin = Money(0, self.currency)
-        self._position_margin = Money(0, self.currency)
+        self._starting_balances = {b.currency: b for b in event.balances}
+        self._balances = {}                                        # type: dict[Currency, Money]
+        self._balances_free = {}                                   # type: dict[Currency, Money]
+        self._balances_locked = {}                                 # type: dict[Currency, Money]
+        self._init_margins = event.info.get("init_margins", {})    # type: dict[Currency, Money]
+        self._maint_margins = event.info.get("maint_margins", {})  # type: dict[Currency, Money]
+        self._portfolio = None  # Initialized when registered with portfolio
+
+        self._update_balances(
+            event.balances,
+            event.balances_free,
+            event.balances_locked,
+        )
 
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
@@ -57,7 +74,7 @@ cdef class Account:
         return f"{type(self).__name__}(id={self.id.value})"
 
     cdef AccountState last_event_c(self):
-        return self._events[-1]
+        return self._events[-1]  # Always at least one event
 
     cdef list events_c(self):
         return self._events.copy()
@@ -68,7 +85,7 @@ cdef class Account:
     @property
     def last_event(self):
         """
-        Return the accounts last state event.
+        The accounts last state event.
 
         Returns
         -------
@@ -80,7 +97,7 @@ cdef class Account:
     @property
     def events(self):
         """
-        Return all events received by the account.
+        All events received by the account.
 
         Returns
         -------
@@ -92,7 +109,7 @@ cdef class Account:
     @property
     def event_count(self):
         """
-        Return the count of events.
+        The count of events.
 
         Returns
         -------
@@ -101,6 +118,8 @@ cdef class Account:
         """
         return self.event_count_c()
 
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void register_portfolio(self, PortfolioFacade portfolio):
         """
         Register the given portfolio with the account.
@@ -108,7 +127,11 @@ cdef class Account:
         Parameters
         ----------
         portfolio : PortfolioFacade
-            The portfolio to register
+            The portfolio to register.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(portfolio, "portfolio")
@@ -124,135 +147,441 @@ cdef class Account:
         event : AccountState
             The account event to apply.
 
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
         """
         Condition.not_none(event, "event")
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
         self._events.append(event)
-        self._balance = event.balance
+        self._update_balances(
+            event.balances,
+            event.balances_free,
+            event.balances_locked,
+        )
 
-    cpdef void update_order_margin(self, Money margin) except *:
+    cpdef void update_init_margin(self, Money margin) except *:
         """
-        Update the order margin.
+        Update the initial margin.
 
         Parameters
         ----------
         margin : Money
-            The current order margin.
+            The current initial margin for the currency.
 
-        Raises
-        ----------
-        ValueError
-            If margin.currency is not equal to self.currency.
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(margin, "money")
-        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
 
-        self._order_margin = margin
+        self._init_margins[margin.currency] = margin
 
-    cpdef void update_position_margin(self, Money margin) except *:
+    cpdef void update_maint_margin(self, Money margin) except *:
         """
-        Update the position margin.
+        Update the maintenance margin.
 
         Parameters
         ----------
-        margin : Money
-            The current position margin.
+        margin : Decimal
+            The current maintenance margin for the currency.
 
-        Raises
-        ----------
-        ValueError
-            If margin.currency is not equal to self.currency.
+        Warnings
+        --------
+        System method (not intended to be called by user code).
 
         """
         Condition.not_none(margin, "money")
-        Condition.equal(margin.currency, self.currency, "margin.currency", "self.currency")
 
-        self._position_margin = margin
+        self._maint_margins[margin.currency] = margin
 
-    cpdef Money balance(self):
+# -- QUERIES-CASH ----------------------------------------------------------------------------------
+
+    cpdef list currencies(self):
+        """
+        Return the account currencies.
+
+        Returns
+        -------
+        list[Currency]
+
+        """
+        return list(self._balances.keys())
+
+    cpdef dict starting_balances(self):
+        """
+        Return the account starting balances.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._starting_balances.copy()
+
+    cpdef dict balances(self):
+        """
+        Return the account balances.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._balances.copy()
+
+    cpdef dict balances_free(self):
+        """
+        Return the account balances free.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._balances_free.copy()
+
+    cpdef dict balances_locked(self):
+        """
+        Return the account balances locked.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._balances_locked.copy()
+
+    cpdef Money balance(self, Currency currency=None):
         """
         Return the current account balance.
 
-        Returns
-        -------
-        Money or None
+        For multi-asset accounts, specify the currency for the query.
 
-        """
-        return self._balance
-
-    cpdef Money unrealized_pnl(self):
-        """
-        Return the current account unrealized PNL.
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
 
         Returns
         -------
         Money or None
 
-        """
-        if self._portfolio is None:
-            return None
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
 
-        return self._portfolio.unrealized_pnl_for_venue(self.id.issuer_as_venue())
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
 
-    cpdef Money margin_balance(self):
         """
-        Return the current account margin balance.
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
+
+        return self._balances.get(currency)
+
+    cpdef Money balance_free(self, Currency currency=None):
+        """
+        Return the account balance free.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
 
         Returns
         -------
         Money or None
 
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
+
         """
-        if self._portfolio is None:
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
+
+        return self._balances_free.get(currency)
+
+    cpdef Money balance_locked(self, Currency currency=None):
+        """
+        Return the account balance locked.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
+
+        Returns
+        -------
+        Money or None
+
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
+
+        """
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
+
+        return self._balances_locked.get(currency)
+
+    cpdef Money unrealized_pnl(self, Currency currency=None):
+        """
+        Return the current account unrealized P&L.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
+
+        Returns
+        -------
+        Money or None
+
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+        ValueError
+            If portfolio is not registered.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
+
+        """
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
+        Condition.not_none(self._portfolio, "self._portfolio")
+
+        cdef dict unrealized_pnls = self._portfolio.unrealized_pnls(self.id.issuer_as_venue())
+        if unrealized_pnls is None:
             return None
 
-        if self._balance is None:
+        return unrealized_pnls.get(currency, Money(0, currency))
+
+    cpdef Money equity(self, Currency currency=None):
+        """
+        Return the account equity.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
+
+        Returns
+        -------
+        Money or None
+
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
+
+        """
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
+
+        balance: Decimal = self._balances.get(currency)
+        if balance is None:
             return None
 
-        cdef Money unrealized_pnl = self.unrealized_pnl()
+        cdef Money unrealized_pnl = self.unrealized_pnl(currency)
         if unrealized_pnl is None:
             return None
 
-        return Money(self._balance + unrealized_pnl, self.currency)
+        return Money(balance + unrealized_pnl, currency)
 
-    cpdef Money margin_available(self):
+# -- QUERIES-MARGIN --------------------------------------------------------------------------------
+
+    cpdef dict init_margins(self):
         """
-        Return the current account margin available.
+        Return the initial margins for the account.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._init_margins.copy()
+
+    cpdef dict maint_margins(self):
+        """
+        Return the maintenance margins for the account.
+
+        Returns
+        -------
+        dict[Currency, Money]
+
+        """
+        return self._maint_margins.copy()
+
+    cpdef Money init_margin(self, Currency currency=None):
+        """
+        Return the current initial margin.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
 
         Returns
         -------
         Money or None
 
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
+
         """
-        if self._portfolio is None:
-            return None
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
 
-        cdef Money margin_balance = self.margin_balance()
-        if margin_balance is None:
-            return None
+        return self._init_margins.get(currency)
 
-        return Money(margin_balance - self._order_margin - self._position_margin, self.currency)
-
-    cpdef Money order_margin(self):
+    cpdef Money maint_margin(self, Currency currency=None):
         """
-        Return the account order margin.
+        Return the current maintenance margin.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
 
         Returns
         -------
-        Money
+        Money or None
+
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
 
         """
-        return self._order_margin
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
 
-    cpdef Money position_margin(self):
+        return self._maint_margins.get(currency)
+
+    cpdef Money free_margin(self, Currency currency=None):
         """
-        Return the account position margin.
+        Return the current free margin.
+
+        For multi-asset accounts, specify the currency for the query.
+
+        Parameters
+        ----------
+        currency : Currency, optional
+            The currency for the query. If None then will use the default
+            currency (if set).
 
         Returns
         -------
-        Money
+        Money or None
+
+        Raises
+        ------
+        ValueError
+            If currency is None and default_currency is None.
+
+        Warnings
+        --------
+        Returns `None` if there is no applicable information for the query,
+        rather than `Money` of zero amount.
 
         """
-        return self._position_margin
+        if currency is None:
+            currency = self.default_currency
+        Condition.not_none(currency, "currency")
+
+        cdef Money equity = self.equity(currency)
+        if equity is None:
+            return None
+
+        init_margin: Decimal = self._init_margins.get(currency, Decimal())
+        maint_margin: Decimal = self._maint_margins.get(currency, Decimal())
+
+        return Money(equity - init_margin - maint_margin, currency)
+
+# -- PRIVATE ---------------------------------------------------------------------------------------
+
+    cdef inline void _update_balances(
+        self,
+        list balances,
+        list balances_free,
+        list balances_locked,
+    ) except *:
+        # Update the balances. Note that there is no guarantee that every
+        # account currency is included in the event, which is my we don't just
+        # assign a dict.
+        cdef Money balance
+        for balance in balances:
+            self._balances[balance.currency] = balance
+
+        for balance in balances_free:
+            self._balances_free[balance.currency] = balance
+
+        for balance in balances_locked:
+            self._balances_locked[balance.currency] = balance

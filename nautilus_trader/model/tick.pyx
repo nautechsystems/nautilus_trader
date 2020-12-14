@@ -37,9 +37,9 @@ cdef class Tick:
     """
 
     def __init__(
-            self,
-            Symbol symbol not None,
-            datetime timestamp not None,
+        self,
+        Symbol symbol not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -80,13 +80,13 @@ cdef class QuoteTick(Tick):
     """
 
     def __init__(
-            self,
-            Symbol symbol not None,
-            Price bid not None,
-            Price ask not None,
-            Quantity bid_size not None,
-            Quantity ask_size not None,
-            datetime timestamp not None,
+        self,
+        Symbol symbol not None,
+        Price bid not None,
+        Price ask not None,
+        Quantity bid_size not None,
+        Quantity ask_size not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -232,13 +232,13 @@ cdef class TradeTick(Tick):
     """
 
     def __init__(
-            self,
-            Symbol symbol not None,
-            Price price not None,
-            Quantity size not None,
-            Maker maker,
-            TradeMatchId match_id not None,
-            datetime timestamp not None,
+        self,
+        Symbol symbol not None,
+        Price price not None,
+        Quantity size not None,
+        Maker maker,
+        TradeMatchId match_id not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `TradeTick` class.

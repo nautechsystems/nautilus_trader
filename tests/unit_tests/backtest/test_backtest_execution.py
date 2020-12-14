@@ -60,7 +60,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.logger = TestLogger(self.clock)
 
         self.trader_id = TraderId("TESTER", "000")
-        self.account_id = AccountId.from_str("BINANCE-000-SIMULATED")
+        self.account_id = AccountId("BINANCE", "000")
 
         self.portfolio = Portfolio(
             clock=self.clock,
@@ -86,8 +86,8 @@ class BacktestExecClientTests(unittest.TestCase):
             venue=Venue("BINANCE"),
             oms_type=OMSType.NETTING,
             generate_position_ids=True,
-            frozen_account=False,
-            starting_capital=Money(1000000, USD),
+            is_frozen_account=False,
+            starting_balances=[Money(1_000_000, USD)],
             instruments=[ETHUSDT_BINANCE],
             modules=[],
             exec_cache=self.exec_engine.cache,

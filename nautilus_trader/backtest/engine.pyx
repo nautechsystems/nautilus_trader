@@ -25,6 +25,7 @@ from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
+from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
@@ -42,12 +43,10 @@ from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.execution.database cimport BypassExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.redis.execution cimport RedisExecutionDatabase
 from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
@@ -63,22 +62,22 @@ cdef class BacktestEngine:
     """
 
     def __init__(
-            self,
-            BacktestDataContainer data not None,
-            TraderId trader_id=None,
-            list strategies=None,
-            int tick_capacity=1000,
-            int bar_capacity=1000,
-            str exec_db_type not None="in-memory",
-            bint exec_db_flush=True,
-            bint bypass_logging=False,
-            int level_console=LogLevel.INFO,
-            int level_file=LogLevel.DEBUG,
-            int level_store=LogLevel.WARNING,
-            bint console_prints=True,
-            bint log_thread=False,
-            bint log_to_file=False,
-            str log_file_path not None="backtests/",
+        self,
+        BacktestDataContainer data not None,
+        TraderId trader_id=None,
+        list strategies=None,
+        int tick_capacity=1000,
+        int bar_capacity=1000,
+        str exec_db_type not None="in-memory",
+        bint exec_db_flush=True,
+        bint bypass_logging=False,
+        int level_console=LogLevel.INFO,
+        int level_file=LogLevel.DEBUG,
+        int level_store=LogLevel.WARNING,
+        bint console_prints=True,
+        bint log_thread=False,
+        bint log_to_file=False,
+        str log_file_path not None="backtests/",
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -122,8 +121,6 @@ cdef class BacktestEngine:
             If tick_capacity is not positive (> 0).
         ValueError
             If bar_capacity is not positive (> 0).
-        ValueError
-            If starting_capital is not positive (> 0).
         TypeError
             If strategies contains a type other than TradingStrategy.
         ValueError
@@ -276,9 +273,9 @@ cdef class BacktestEngine:
         self,
         Venue venue,
         OMSType oms_type,
+        list starting_balances,
+        bint is_frozen_account=False,
         bint generate_position_ids=True,
-        bint frozen_account=False,
-        Money starting_capital=None,
         list modules=None,
         FillModel fill_model=None,
     ) except *:
@@ -291,16 +288,16 @@ cdef class BacktestEngine:
             The venue for the exchange.
         oms_type : OMSType
             The order management system type for the exchange.
+        starting_balances : list[Money]
+            The starting account balances (specify one for a single asset account).
+        is_frozen_account : bool, optional
+            If the account for this exchange is frozen (balances will not change).
         generate_position_ids : bool
             If the exchange should generate position identifiers. If oms_type
             is HEDGING then will always generate position identifiers.
-        frozen_account : bool
-            If the account associated with this exchange is frozen (value will not change).
-        starting_capital : int
-            The starting account capital (> 0).
-        modules : list[SimulationModule
+        modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
-        fill_model : FillModel
+        fill_model : FillModel, optional
             The fill model for the exchange (if None then no probabilistic fills).
 
         Raises
@@ -311,17 +308,19 @@ cdef class BacktestEngine:
             If oms_type is UNDEFINED.
 
         """
+        if modules is None:
+            modules = []
+        if fill_model is None:
+            fill_model = FillModel()
         Condition.not_none(venue, "venue")
         Condition.not_in(venue, self._exchanges, "venue", "self._exchanges")
         Condition.not_equal(oms_type, OMSType.UNDEFINED, "oms_type", "UNDEFINED")
-        Condition.not_none(starting_capital, "starting_capital")
+        Condition.not_none(starting_balances, "starting_balances")
+        Condition.not_empty(starting_balances, "starting_balances")
+        Condition.list_type(modules, SimulationModule, "modules")
         Condition.type_or_none(fill_model, FillModel, "fill_model")
-        if fill_model is None:
-            fill_model = FillModel()
-        if modules is None:
-            modules = []
 
-        account_id = AccountId(venue.value, "000", AccountType.SIMULATED)
+        account_id = AccountId(venue.value, "001")
 
         # Gather instruments for exchange
         instruments = []
@@ -333,9 +332,9 @@ cdef class BacktestEngine:
         exchange = SimulatedExchange(
             venue=venue,
             oms_type=oms_type,
-            generate_position_ids=True,
-            frozen_account=frozen_account,
-            starting_capital=starting_capital,
+            generate_position_ids=generate_position_ids,
+            is_frozen_account=is_frozen_account,
+            starting_balances=starting_balances,
             instruments=instruments,
             modules=modules,
             exec_cache=self._exec_engine.cache,
@@ -519,9 +518,8 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start)
 
-        # TODO: Temporary fix to initialize account
         for exchange in self._exchanges.values():
-            exchange.adjust_account(Money(0, exchange.account_currency))
+            exchange.initialize_account()
 
         # Start main components
         self._data_engine.start()
@@ -549,6 +547,7 @@ cdef class BacktestEngine:
         cdef TimeEventHandler event_handler
         cdef list time_events = []  # type: list[TimeEventHandler]
         for strategy in self.trader.strategies_c():
+            # noinspection PyUnresolvedReferences
             time_events += strategy.clock.advance_time(timestamp)
         for event_handler in sorted(time_events):
             self._test_clock.set_time(event_handler.event.timestamp)
@@ -585,12 +584,13 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")
-            self._log.info(exchange.account.id.value)
+            self._log.info(exchange.exec_client.account_id.value)
             self._log.info("=================================================================")
-            if exchange.frozen_account:
+            if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                self._log.info(f"Account balance (starting): {exchange.starting_capital.to_str()}")
+                balances = [{', '.join([b.to_str() for b in exchange.starting_balances])}]
+                self._log.info(f"Account balances (starting): {balances}")
 
     cdef void _backtest_footer(
             self,
@@ -616,20 +616,22 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")
-            self._log.info(exchange.account.id.value)
+            self._log.info(f" {exchange.exec_client.account_id.value}")
             self._log.info("=================================================================")
-            if exchange.frozen_account:
+            if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                account_balance_starting = exchange.starting_capital.to_str()
-                account_starting_length = len(account_balance_starting)
-                account_balance_ending = pad_string(exchange.account_balance.to_str(), account_starting_length)
-                commissions_total = pad_string(exchange.total_commissions.to_str(), account_starting_length)
-                self._log.info(f"Account balance (starting): {account_balance_starting}")
-                self._log.info(f"Account balance (ending):   {account_balance_ending}")
-                self._log.info(f"Commissions (total):        {commissions_total}")
-            # Log output diagnostics for all simulation modules
+                account_balances_starting = ', '.join([b.to_str() for b in exchange.starting_balances])
+                account_balances_ending = ', '.join([b.to_str() for b in exchange.account_balances.values()])
+                account_commissions = ', '.join([b.to_str() for b in exchange.total_commissions.values()])
+                account_starting_length = len(account_balances_starting)
+                account_balances_ending = pad_string(account_balances_ending, account_starting_length)
+                account_commissions = pad_string(account_commissions, account_starting_length)
+                self._log.info(f"Account balances (starting): {account_balances_starting}")
+                self._log.info(f"Account balances (ending):   {account_balances_ending}")
+                self._log.info(f"Commissions (total):         {account_commissions}")
 
+            # Log output diagnostics for all simulation modules
             for module in exchange.modules:
                 module.log_diagnostics(self._log)
 
@@ -642,7 +644,20 @@ cdef class BacktestEngine:
             for position in self._exec_engine.cache.positions():
                 if position.symbol.venue == exchange.venue:
                     positions.append(position)
-            self.analyzer.calculate_statistics(exchange.account, positions)
 
-            for statistic in self.analyzer.get_performance_stats_formatted(exchange.account.currency):
+            # Calculate statistics
+            account = self._exec_engine.cache.account_for_venue(exchange.venue)
+            self.analyzer.calculate_statistics(account, positions)
+
+            # Present P&L performance stats per asset
+            for currency in account.currencies():
+                self._log.info(f" {str(currency)}")
+                self._log.info("-----------------------------------------------------------------")
+                for statistic in self.analyzer.get_performance_stats_pnls_formatted(currency):
+                    self._log.info(statistic)
+                self._log.info("-----------------------------------------------------------------")
+
+            self._log.info(" Returns")
+            self._log.info("-----------------------------------------------------------------")
+            for statistic in self.analyzer.get_performance_stats_returns_formatted():
                 self._log.info(statistic)

@@ -333,11 +333,11 @@ cdef class NewsEvent:
     """
 
     def __init__(
-            self,
-            datetime timestamp,
-            impact,
-            name,
-            currency,
+        self,
+        datetime timestamp,
+        impact,
+        name,
+        currency,
     ):
         """
 
@@ -364,10 +364,10 @@ cdef class EconomicNewsEventFilter:
     """
 
     def __init__(
-            self,
-            list currencies not None,
-            list impacts not None,
-            news_data not None: pd.DataFrame,
+        self,
+        list currencies not None,
+        list impacts not None,
+        news_data not None: pd.DataFrame,
     ):
         """
         Initialize a new instance of the `EconomicNewsEventFilter` class.

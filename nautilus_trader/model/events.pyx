@@ -45,14 +45,14 @@ cdef class AccountState(Event):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            Currency currency not None,
-            Money balance not None,
-            Money margin_balance not None,
-            Money margin_available not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        list balances not None,
+        list balances_free not None,
+        list balances_locked not None,
+        dict info not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `AccountState` class.
@@ -61,14 +61,14 @@ cdef class AccountState(Event):
         ----------
         account_id : AccountId
             The account identifier.
-        currency : Currency
-            The currency for the account.
-        balance : Money
-            The account balance.
-        margin_balance : Money
-            The account margin balance.
-        margin_available : Money
-            The account margin available.
+        balances : list[Money]
+            The current account balances.
+        balances_free : list[Money]
+            The account balances free for trading.
+        balances_locked : list[Money]
+            The account balances locked (assigned to pending orders).
+        info : dict [str, object]
+            The additional implementation specific account information.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -78,15 +78,15 @@ cdef class AccountState(Event):
         super().__init__(event_id, event_timestamp)
 
         self.account_id = account_id
-        self.currency = currency
-        self.balance = balance
-        self.margin_balance = margin_balance
-        self.margin_available = margin_available
+        self.balances = balances
+        self.balances_free = balances_free
+        self.balances_locked = balances_locked
+        self.info = info
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balance={self.balance.to_str()}, "
+                f"balances=[{', '.join([b.to_str() for b in self.balances])}], "
                 f"id={self.id})")
 
 
@@ -98,10 +98,10 @@ cdef class OrderEvent(Event):
     """
 
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderEvent` base class.
@@ -127,17 +127,17 @@ cdef class OrderInitialized(OrderEvent):
     """
 
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            StrategyId strategy_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            OrderType order_type,
-            Quantity quantity not None,
-            TimeInForce time_in_force,
-            UUID event_id not None,
-            datetime event_timestamp not None,
-            dict options not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        StrategyId strategy_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        OrderType order_type,
+        Quantity quantity not None,
+        TimeInForce time_in_force,
+        UUID event_id not None,
+        datetime event_timestamp not None,
+        dict options not None,
     ):
         """
         Initialize a new instance of the `OrderInitialized` class.
@@ -204,11 +204,11 @@ cdef class OrderInvalid(OrderEvent):
     """
 
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            str reason not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        str reason not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderInvalid` class.
@@ -252,11 +252,11 @@ cdef class OrderDenied(OrderEvent):
     """
 
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            str reason not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        str reason not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderDenied` class.
@@ -301,12 +301,12 @@ cdef class OrderSubmitted(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            datetime submitted_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        datetime submitted_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderSubmitted` class.
@@ -347,13 +347,13 @@ cdef class OrderRejected(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            datetime rejected_time not None,
-            str reason not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        datetime rejected_time not None,
+        str reason not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderRejected` class.
@@ -404,13 +404,13 @@ cdef class OrderAccepted(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            datetime accepted_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        datetime accepted_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderAccepted` class.
@@ -455,20 +455,20 @@ cdef class OrderWorking(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            OrderType order_type,
-            Quantity quantity not None,
-            Price price not None,
-            TimeInForce time_in_force,
-            datetime expire_time,  # Can be None
-            datetime working_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        OrderType order_type,
+        Quantity quantity not None,
+        Price price not None,
+        TimeInForce time_in_force,
+        datetime expire_time,  # Can be None
+        datetime working_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderWorking` class.
@@ -553,14 +553,14 @@ cdef class OrderCancelReject(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            datetime rejected_time not None,
-            str response_to not None,
-            str reason not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        datetime rejected_time not None,
+        str response_to not None,
+        str reason not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderCancelReject` class.
@@ -619,13 +619,13 @@ cdef class OrderCancelled(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            datetime cancelled_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        datetime cancelled_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderCancelled` class.
@@ -671,15 +671,15 @@ cdef class OrderModified(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            Quantity quantity not None,
-            Price price not None,
-            datetime modified_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        Quantity quantity not None,
+        Price price not None,
+        datetime modified_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderModified` class.
@@ -732,13 +732,13 @@ cdef class OrderExpired(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            datetime expired_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        datetime expired_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderExpired` class.
@@ -783,27 +783,26 @@ cdef class OrderFilled(OrderEvent):
     """
 
     def __init__(
-            self,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            OrderId order_id not None,
-            ExecutionId execution_id not None,
-            PositionId position_id not None,
-            StrategyId strategy_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            Quantity fill_qty not None,
-            Quantity cum_qty not None,
-            Quantity leaves_qty not None,
-            Price fill_price not None,
-            Currency quote_currency not None,
-            Currency settlement_currency not None,
-            bint is_inverse,
-            Money commission not None,
-            LiquiditySide liquidity_side,
-            datetime execution_time not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
+        ExecutionId execution_id not None,
+        PositionId position_id not None,
+        StrategyId strategy_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        Quantity fill_qty not None,
+        Quantity cum_qty not None,
+        Quantity leaves_qty not None,
+        Price fill_price not None,
+        Currency currency not None,
+        bint is_inverse,
+        Money commission not None,
+        LiquiditySide liquidity_side,
+        datetime execution_time not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `OrderFilled` class.
@@ -834,10 +833,8 @@ cdef class OrderFilled(OrderEvent):
             The quantity open for further execution.
         fill_price : Price
             The fill price for this execution (not average).
-        quote_currency : Currency
-            The instrument quote currency.
-        settlement_currency : Currency
-            The instrument settlement currency.
+        currency : Currency
+            The currency of the price.
         is_inverse : bool
             If quantity is expressed in quote currency.
         commission : Money
@@ -871,8 +868,7 @@ cdef class OrderFilled(OrderEvent):
         self.fill_price = fill_price
         self.cum_qty = cum_qty
         self.leaves_qty = leaves_qty
-        self.quote_currency = quote_currency
-        self.settlement_currency = settlement_currency
+        self.currency = currency
         self.is_inverse = is_inverse
         self.commission = commission
         self.liquidity_side = liquidity_side
@@ -889,7 +885,7 @@ cdef class OrderFilled(OrderEvent):
                 f"side={OrderSideParser.to_str(self.order_side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"fill_qty={self.fill_qty.to_str()}, "
-                f"fill_price={self.fill_price} {self.quote_currency.code}, "
+                f"fill_price={self.fill_price} {self.currency.code}, "
                 f"cum_qty={self.cum_qty.to_str()}, "
                 f"leaves_qty={self.leaves_qty.to_str()}, "
                 f"commission={self.commission.to_str()}, "
@@ -904,11 +900,11 @@ cdef class PositionEvent(Event):
     """
 
     def __init__(
-            self,
-            Position position not None,
-            OrderFilled order_fill not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        Position position not None,
+        OrderFilled order_fill not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `PositionEvent` class.
@@ -936,11 +932,11 @@ cdef class PositionOpened(PositionEvent):
     """
 
     def __init__(
-            self,
-            Position position not None,
-            OrderFilled order_fill not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        Position position not None,
+        OrderFilled order_fill not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `PositionOpened` class.
@@ -982,11 +978,11 @@ cdef class PositionModified(PositionEvent):
     """
 
     def __init__(
-            self,
-            Position position not None,
-            OrderFilled order_fill not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        Position position not None,
+        OrderFilled order_fill not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `PositionModified` class.
@@ -1036,11 +1032,11 @@ cdef class PositionClosed(PositionEvent):
     """
 
     def __init__(
-            self,
-            Position position not None,
-            OrderEvent order_fill not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        Position position not None,
+        OrderEvent order_fill not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `PositionClosed` class.

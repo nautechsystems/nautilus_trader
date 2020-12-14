@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.account_type cimport AccountType
-
 
 cdef class Identifier:
     cdef readonly str value
@@ -83,8 +81,6 @@ cdef class AccountId(Identifier):
     """The account issuer.\n\n:returns: `Issuer`"""
     cdef readonly Identifier identifier
     """The account identifier value.\n\n:returns: `Identifier`"""
-    cdef readonly AccountType account_type
-    """The account type.\n\n:returns: `AccountType`"""
 
     cdef Venue issuer_as_venue(self)
 

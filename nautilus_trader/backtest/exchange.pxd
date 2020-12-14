@@ -15,7 +15,6 @@
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
-from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -35,7 +34,6 @@ from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.order cimport LimitOrder
@@ -43,7 +41,6 @@ from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -54,17 +51,18 @@ cdef class SimulatedExchange:
 
     cdef readonly Venue venue
     cdef readonly OMSType oms_type
+    cdef readonly bint generate_position_ids
+
     cdef readonly ExecutionCache exec_cache
     cdef readonly BacktestExecClient exec_client
-    cdef readonly Account account
-    cdef readonly Currency account_currency
-    cdef readonly Money starting_capital
-    cdef readonly Money account_balance
-    cdef readonly Money account_start_day
-    cdef readonly Money account_activity_day
-    cdef readonly Money total_commissions
-    cdef readonly bint frozen_account
-    cdef readonly bint generate_position_ids
+
+    cdef readonly bint is_frozen_account
+    cdef readonly list starting_balances
+    cdef readonly Currency default_currency
+    cdef readonly dict account_balances
+    cdef readonly dict account_balances_free
+    cdef readonly dict account_balances_locked
+    cdef readonly dict total_commissions
 
     cdef readonly ExchangeRateCalculator xrate_calculator
     cdef readonly FillModel fill_model
@@ -88,9 +86,10 @@ cdef class SimulatedExchange:
     cpdef dict get_working_orders(self)
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
+    cpdef void initialize_account(self) except *
+    cpdef void process_tick(self, Tick tick) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-    cpdef void process_tick(self, Tick tick) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -125,7 +124,7 @@ cdef class SimulatedExchange:
     cdef inline void _process_market_order(self, MarketOrder order, Price market_bid, Price market_ask) except *
     cdef inline void _process_limit_order(self, LimitOrder order, Price market_bid, Price market_ask) except *
     cdef inline void _process_passive_order(self, PassiveOrder order, Price market_bid, Price market_ask) except *
-    cdef inline void _work_order(self, Order order) except *
+    cdef inline void _work_order(self, PassiveOrder order) except *
     cdef inline void _auction_buy_order(self, PassiveOrder order, Price market) except *
     cdef inline void _auction_buy_stop_order(self, PassiveOrder order, Price market) except *
     cdef inline void _auction_buy_limit_order(self, PassiveOrder order, Price market) except *

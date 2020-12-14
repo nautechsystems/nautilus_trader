@@ -88,10 +88,10 @@ cdef class Component:
     """
 
     def __init__(
-            self,
-            Clock clock not None,
-            Logger logger not None,
-            str name=None,
+        self,
+        Clock clock not None,
+        Logger logger not None,
+        str name=None,
     ):
         """
         Initialize a new instance of the `ExecutionEngine` class.

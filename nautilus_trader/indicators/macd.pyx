@@ -31,11 +31,11 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     """
 
     def __init__(
-            self,
-            int fast_period,
-            int slow_period,
-            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-            PriceType price_type=PriceType.UNDEFINED,
+        self,
+        int fast_period,
+        int slow_period,
+        ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+        PriceType price_type=PriceType.UNDEFINED,
     ):
         """
         Initialize a new instance of the `MovingAverageConvergenceDivergence` class.
