@@ -84,14 +84,14 @@ cdef class DataEngine(Component):
     cdef inline void _execute_command(self, VenueCommand command) except *
     cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
-    cdef inline void _handle_subscribe_instrument(self, DataClient client, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_quote_ticks(self, DataClient client, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_trade_ticks(self, DataClient client, Symbol symbol, handler) except *
-    cdef inline void _handle_subscribe_bars(self, DataClient client, BarType bar_type, handler) except *
-    cdef inline void _handle_unsubscribe_instrument(self, DataClient client, Symbol symbol, handler) except *
-    cdef inline void _handle_unsubscribe_quote_ticks(self, DataClient client, Symbol symbol, handler) except *
-    cdef inline void _handle_unsubscribe_trade_ticks(self, DataClient client, Symbol symbol, handler) except *
-    cdef inline void _handle_unsubscribe_bars(self, DataClient client, BarType bar_type, handler) except *
+    cdef inline void _handle_subscribe_instrument(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_subscribe_quote_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_subscribe_trade_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_subscribe_bars(self, DataClient client, BarType bar_type, handler: callable) except *
+    cdef inline void _handle_unsubscribe_instrument(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_unsubscribe_quote_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_unsubscribe_trade_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_unsubscribe_bars(self, DataClient client, BarType bar_type, handler: callable) except *
     cdef inline void _handle_request(self, DataRequest request) except *
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
@@ -115,19 +115,19 @@ cdef class DataEngine(Component):
     cpdef void _internal_update_instruments(self, list instruments) except *
     cdef inline void _start_bar_aggregator(self, DataClient client, BarType bar_type) except *
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *
-    cdef inline void _add_instrument_handler(self, Symbol symbol, handler) except *
-    cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler) except *
-    cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler) except *
-    cdef inline void _add_bar_handler(self, BarType bar_type, handler) except *
-    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler) except *
-    cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler) except *
-    cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler) except *
-    cdef inline void _remove_bar_handler(self, BarType bar_type, handler) except *
+    cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *
+    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_bar_handler(self, BarType bar_type, handler: callable) except *
     cdef inline void _bulk_build_tick_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        callback,
+        callback: callable,
     ) except *

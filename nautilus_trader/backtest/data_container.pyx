@@ -121,11 +121,11 @@ cdef class BacktestDataContainer:
         self.trade_ticks = dict(sorted(self.trade_ticks.items()))
 
     cpdef void add_bars(
-            self,
-            Symbol symbol,
-            BarAggregation aggregation,
-            PriceType price_type,
-            data: pd.DataFrame
+        self,
+        Symbol symbol,
+        BarAggregation aggregation,
+        PriceType price_type,
+        data: pd.DataFrame
     ) except *:
         """
         Add the bar data to the container.

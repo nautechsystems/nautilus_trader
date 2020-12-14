@@ -117,11 +117,11 @@ cdef class OrderFactory:
         self._id_generator.reset()
 
     cpdef MarketOrder market(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            TimeInForce time_in_force=TimeInForce.DAY,
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        TimeInForce time_in_force=TimeInForce.DAY,
     ):
         """
         Create a new market order.
@@ -162,15 +162,15 @@ cdef class OrderFactory:
             timestamp=self._clock.utc_now())
 
     cpdef LimitOrder limit(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None,
-            bint post_only=True,
-            bint hidden=False,
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        TimeInForce time_in_force=TimeInForce.DAY,
+        datetime expire_time=None,
+        bint post_only=True,
+        bint hidden=False,
     ):
         """
         Create a new limit order.
@@ -225,13 +225,13 @@ cdef class OrderFactory:
             hidden=hidden)
 
     cpdef StopMarketOrder stop_market(
-            self,
-            Symbol symbol,
-            OrderSide order_side,
-            Quantity quantity,
-            Price price,
-            TimeInForce time_in_force=TimeInForce.DAY,
-            datetime expire_time=None,
+        self,
+        Symbol symbol,
+        OrderSide order_side,
+        Quantity quantity,
+        Price price,
+        TimeInForce time_in_force=TimeInForce.DAY,
+        datetime expire_time=None,
     ):
         """
         Create a new stop-market order.
@@ -281,10 +281,10 @@ cdef class OrderFactory:
         )
 
     cpdef BracketOrder bracket(
-            self,
-            Order entry_order,
-            Price stop_loss,
-            Price take_profit=None,
+        self,
+        Order entry_order,
+        Price stop_loss,
+        Price take_profit=None,
     ):
         """
         Create a bracket order from the given entry.

@@ -462,10 +462,10 @@ cdef class DataEngine(Component):
             self._log.error(f"Cannot unsubscribe from unrecognized data type {command.data_type}.")
 
     cdef inline void _handle_subscribe_instrument(
-            self,
-            DataClient client,
-            Symbol symbol,
-            handler: callable,
+        self,
+        DataClient client,
+        Symbol symbol,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -476,10 +476,10 @@ cdef class DataEngine(Component):
         client.subscribe_instrument(symbol)
 
     cdef inline void _handle_subscribe_quote_ticks(
-            self,
-            DataClient client,
-            Symbol symbol,
-            handler: callable,
+        self,
+        DataClient client,
+        Symbol symbol,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -490,10 +490,10 @@ cdef class DataEngine(Component):
         client.subscribe_quote_ticks(symbol)
 
     cdef inline void _handle_subscribe_trade_ticks(
-            self,
-            DataClient client,
-            Symbol symbol,
-            handler: callable,
+        self,
+        DataClient client,
+        Symbol symbol,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -504,10 +504,10 @@ cdef class DataEngine(Component):
         client.subscribe_trade_ticks(symbol)
 
     cdef inline void _handle_subscribe_bars(
-            self,
-            DataClient client,
-            BarType bar_type,
-            handler: callable,
+        self,
+        DataClient client,
+        BarType bar_type,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -525,10 +525,10 @@ cdef class DataEngine(Component):
             client.subscribe_bars(bar_type)
 
     cdef inline void _handle_unsubscribe_instrument(
-            self,
-            DataClient client,
-            Symbol symbol,
-            handler: callable,
+        self,
+        DataClient client,
+        Symbol symbol,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -539,10 +539,10 @@ cdef class DataEngine(Component):
         self._remove_instrument_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_quote_ticks(
-            self,
-            DataClient client,
-            Symbol symbol,
-            handler: callable,
+        self,
+        DataClient client,
+        Symbol symbol,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -553,10 +553,10 @@ cdef class DataEngine(Component):
         self._remove_quote_tick_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_trade_ticks(
-            self,
-            DataClient client,
-            Symbol symbol,
-            handler: callable,
+        self,
+        DataClient client,
+        Symbol symbol,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -567,10 +567,10 @@ cdef class DataEngine(Component):
         self._remove_trade_tick_handler(symbol, handler)
 
     cdef inline void _handle_unsubscribe_bars(
-            self,
-            DataClient client,
-            BarType bar_type,
-            handler: callable,
+        self,
+        DataClient client,
+        BarType bar_type,
+        handler: callable,
     ) except *:
         # client already checked
         # validate message data
@@ -962,12 +962,12 @@ cdef class DataEngine(Component):
             self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
     cdef inline void _bulk_build_tick_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            callback,
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
     ) except *:
         # Bulk build tick bars
         cdef int ticks_to_order = bar_type.spec.step * limit

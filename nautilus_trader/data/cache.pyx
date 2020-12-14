@@ -40,9 +40,6 @@ from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
-_DECIMAL_ONE = Decimal(1)
-
-
 cdef class DataCache(DataCacheFacade):
     """
     Provides a cache for the `DataEngine`.
@@ -639,11 +636,11 @@ cdef class DataCache(DataCacheFacade):
         return self.bar_count(bar_type) > 0
 
     cpdef object get_xrate(
-            self,
-            Venue venue,
-            Currency from_currency,
-            Currency to_currency,
-            PriceType price_type=PriceType.MID,
+        self,
+        Venue venue,
+        Currency from_currency,
+        Currency to_currency,
+        PriceType price_type=PriceType.MID,
     ):
         """
         Return the calculated exchange rate for the given currencies.
@@ -673,7 +670,7 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(to_currency, "to_currency")
 
         if from_currency == to_currency:
-            return _DECIMAL_ONE  # No conversion necessary
+            return Decimal(1)  # No conversion necessary
 
         cdef tuple quotes = self._build_quote_table(venue)
 
