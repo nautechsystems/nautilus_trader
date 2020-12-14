@@ -41,11 +41,11 @@ cdef class OrderFactory:
     """
 
     def __init__(
-            self,
-            TraderId trader_id not None,
-            StrategyId strategy_id not None,
-            Clock clock=None,
-            int initial_count=0,
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        Clock clock=None,
+        int initial_count=0,
     ):
         """
         Initialize a new instance of the `OrderFactory` class.

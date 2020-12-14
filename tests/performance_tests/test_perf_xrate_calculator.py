@@ -36,7 +36,7 @@ class ExchangeRateOperations:
         ask_quotes = {
             'BTC/USD': Decimal("11292.58"),
             'ETH/USDT': Decimal("372.11"),
-            'XBT/USD': Decimal("11286.00"),
+            'XBT/USD': Decimal("11286.0"),
         }
 
         ExchangeRateCalculator().get_rate(

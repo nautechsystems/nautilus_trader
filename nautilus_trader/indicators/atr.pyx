@@ -28,12 +28,12 @@ cdef class AverageTrueRange(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
-            bint use_previous=True,
-            double value_floor=0,
-            bint check_inputs=False,
+        self,
+        int period,
+        ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
+        bint use_previous=True,
+        double value_floor=0,
+        bint check_inputs=False,
     ):
         """
         Initialize a new instance of the `AverageTrueRange` class.

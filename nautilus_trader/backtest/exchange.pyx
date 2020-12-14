@@ -62,7 +62,6 @@ from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 
@@ -72,18 +71,18 @@ cdef class SimulatedExchange:
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            OMSType oms_type,
-            bint generate_position_ids,
-            bint frozen_account,
-            Money starting_capital not None,
-            list instruments not None,
-            list modules not None,
-            ExecutionCache exec_cache not None,
-            FillModel fill_model not None,
-            TestClock clock not None,
-            TestLogger logger not None,
+        self,
+        Venue venue not None,
+        OMSType oms_type,
+        bint generate_position_ids,
+        bint is_frozen_account,
+        list starting_balances not None,
+        list instruments not None,
+        list modules not None,
+        ExecutionCache exec_cache not None,
+        FillModel fill_model not None,
+        TestClock clock not None,
+        TestLogger logger not None,
     ):
         """
         Initialize a new instance of the `SimulatedExchange` class.
@@ -96,10 +95,10 @@ cdef class SimulatedExchange:
             The order management employed by the exchange/broker for this market.
         generate_position_ids : bool
             If the exchange should generate position identifiers.
-        frozen_account : bool
-            If the account associated with this exchange is frozen (value will not change).
-        starting_capital : Money
-            The starting capital for the account associated with this exchange.
+        is_frozen_account : bool
+            If the account for this exchange is frozen (balances will not change).
+        starting_balances : list[Money]
+            The starting balances for the exchange.
         exec_cache : ExecutionCache
             The execution cache for the backtest.
         fill_model : FillModel
@@ -112,8 +111,9 @@ cdef class SimulatedExchange:
         """
         Condition.not_empty(instruments, "instruments")
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
+        Condition.not_empty(starting_balances, "starting_balances")
+        Condition.list_type(starting_balances, Money, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
-        Condition.positive(starting_capital.as_decimal(), "starting_capital")
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
@@ -122,17 +122,18 @@ cdef class SimulatedExchange:
         self.venue = venue
         self.oms_type = oms_type
         self.generate_position_ids = generate_position_ids
+
         self.exec_cache = exec_cache
         self.exec_client = None  # Initialized when execution client registered
-        self.account = None      # Initialized when execution client registered
 
-        self.starting_capital = starting_capital
-        self.account_currency = starting_capital.currency
-        self.account_balance = starting_capital
-        self.account_start_day = starting_capital
-        self.account_activity_day = Money(0, self.account_currency)
-        self.total_commissions = Money(0, self.account_currency)
-        self.frozen_account = frozen_account
+        self.is_frozen_account = is_frozen_account
+        self.starting_balances = starting_balances
+        # noinspection PyUnresolvedReferences
+        self.default_currency = None if len(starting_balances) > 1 else starting_balances[0].currency
+        self.account_balances = {b.currency: b for b in starting_balances}
+        self.account_balances_free = {b.currency: b for b in starting_balances}
+        self.account_balances_locked = {b.currency: Money(0, b.currency) for b in starting_balances}
+        self.total_commissions = {}
 
         self.xrate_calculator = ExchangeRateCalculator()
         self.fill_model = fill_model
@@ -194,7 +195,6 @@ cdef class SimulatedExchange:
         self.exec_client = client
 
         cdef AccountState initial_event = self._generate_account_event()
-        self.account = Account(initial_event)
         self.exec_client.handle_event(initial_event)
 
         self._log.info(f"Registered {client}.")
@@ -213,50 +213,14 @@ cdef class SimulatedExchange:
 
         self._log.info("Changed fill model.")
 
-    cpdef void check_residuals(self) except *:
+    cpdef void initialize_account(self) except *:
         """
-        Check for any residual objects and log warnings if any are found.
+        Initialize the account by generating an `AccountState` event.
         """
-        self._log.debug("Checking residuals...")
+        self.exec_client.handle_event(self._generate_account_event())
 
-        for order_list in self._child_orders.values():
-            for order in order_list:
-                self._log.warning(f"Residual child-order {order}")
-
-        for order_id in self._oco_orders.values():
-            self._log.warning(f"Residual OCO {order_id}")
-
-    cpdef void reset(self) except *:
-        """
-        Reset the simulated exchange.
-
-        All stateful values are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
-        for module in self.modules:
-            module.reset()
-
-        self.account_balance = self.starting_capital
-        self.account_start_day = self.account_balance
-        self.account_activity_day = Money(0, self.account_currency)
-        self.total_commissions = Money(0, self.account_currency)
-
-        self._generate_account_event()
-
-        self._market_bids.clear()
-        self._market_asks.clear()
-        self._working_orders.clear()
-        self._position_index.clear()
-        self._child_orders.clear()
-        self._oco_orders.clear()
-        self._position_oco_orders.clear()
-        self._symbol_pos_count.clear()
-        self._symbol_ord_count.clear()
-        self._executions_count = 0
-
-        self._log.info("Reset.")
-
+    # TODO: PyUnresolvedReferences for ticks prices
+    # noinspection PyUnresolvedReferences
     cpdef void process_tick(self, Tick tick) except *:
         """
         Process the exchanges markets with the given tick.
@@ -306,7 +270,7 @@ cdef class SimulatedExchange:
         for module in self.modules:
             module.process(tick, now)
 
-        cdef Order order
+        cdef PassiveOrder order
         cdef Instrument instrument
         for order in self._working_orders.copy().values():  # Copy dict for safe loop
             if order.symbol != tick.symbol:
@@ -328,6 +292,50 @@ cdef class SimulatedExchange:
             if order.expire_time and now >= order.expire_time:
                 self._working_orders.pop(order.cl_ord_id, None)
                 self._expire_order(order)
+
+    cpdef void check_residuals(self) except *:
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        self._log.debug("Checking residuals...")
+
+        for order_list in self._child_orders.values():
+            for order in order_list:
+                self._log.warning(f"Residual child-order {order}")
+
+        for order_id in self._oco_orders.values():
+            self._log.warning(f"Residual OCO {order_id}")
+
+    cpdef void reset(self) except *:
+        """
+        Reset the simulated exchange.
+
+        All stateful values are reset to their initial value.
+        """
+        self._log.debug(f"Resetting...")
+
+        for module in self.modules:
+            module.reset()
+
+        self.account_balances = {b.currency: b for b in self.starting_balances}
+        self.account_balances_free = {b.currency: b for b in self.starting_balances}
+        self.account_balances_locked = {b.currency: Money(0, b.currency) for b in self.starting_balances}
+        self.total_commissions = {}
+
+        self._generate_account_event()
+
+        self._market_bids.clear()
+        self._market_asks.clear()
+        self._working_orders.clear()
+        self._position_index.clear()
+        self._child_orders.clear()
+        self._oco_orders.clear()
+        self._position_oco_orders.clear()
+        self._symbol_pos_count.clear()
+        self._symbol_ord_count.clear()
+        self._executions_count = 0
+
+        self._log.info("Reset.")
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -388,6 +396,8 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(cancelled)
         self._check_oco_order(command.cl_ord_id)
 
+    # TODO: PyUnresolvedReferences for is_post_only
+    # noinspection PyUnresolvedReferences
     cpdef void handle_modify_order(self, ModifyOrder command) except *:
         Condition.not_none(command, "command")
 
@@ -395,7 +405,7 @@ cdef class SimulatedExchange:
             self._cancel_reject_order(command.cl_ord_id, "modify order", "order not found")
             return  # Rejected the modify order command
 
-        cdef Order order = self._working_orders[command.cl_ord_id]
+        cdef PassiveOrder order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
         if command.quantity == 0:
@@ -462,16 +472,14 @@ cdef class SimulatedExchange:
     cpdef void adjust_account(self, Money adjustment) except *:
         Condition.not_none(adjustment, "adjustment")
 
-        if self.frozen_account:
+        if self.is_frozen_account:
             return  # Nothing to adjust
 
-        self.account_balance = Money(self.account_balance + adjustment, self.account_currency)
-        self.account_activity_day = Money(self.account_activity_day + adjustment, self.account_currency)
+        balance = self.account_balances[adjustment.currency]
+        self.account_balances[adjustment.currency] = Money(balance + adjustment, adjustment.currency)
 
         # Generate and handle event
-        cdef AccountState event = self._generate_account_event()
-        self.account.apply(event)
-        self.exec_client.handle_event(event)
+        self.exec_client.handle_event(self._generate_account_event())
 
     cdef inline Price get_current_bid(self, Symbol symbol):
         Condition.not_none(symbol, "symbol")
@@ -512,6 +520,7 @@ cdef class SimulatedExchange:
         cdef dict slippage_index = {}  # type: dict[Symbol, Decimal]
 
         for symbol, instrument in self.instruments.items():
+            # noinspection PyUnresolvedReferences
             slippage_index[symbol] = instrument.tick_size
 
         return slippage_index
@@ -533,12 +542,17 @@ cdef class SimulatedExchange:
         return ExecutionId(f"E-{self._executions_count}")
 
     cdef inline AccountState _generate_account_event(self):
+        cdef dict info
+        if self.default_currency is None:
+            info = {}
+        else:
+            info = {"default_currency": self.default_currency.code}
         return AccountState(
             account_id=self.exec_client.account_id,
-            currency=self.account_currency,
-            balance=self.account_balance,
-            margin_balance=self.account_balance,
-            margin_available=self.account_balance,
+            balances=list(self.account_balances.values()),
+            balances_free=list(self.account_balances_free.values()),
+            balances_locked=list(self.account_balances_locked.values()),
+            info=info,
             event_id=self._uuid_factory.generate(),
             event_timestamp=self._clock.utc_now(),
         )
@@ -546,7 +560,7 @@ cdef class SimulatedExchange:
     cdef inline void _submit_order(self, Order order) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
@@ -559,7 +573,7 @@ cdef class SimulatedExchange:
         # Generate event
 
         cdef OrderAccepted accepted = OrderAccepted(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             self._generate_order_id(order.symbol),
             self._clock.utc_now(),
@@ -576,7 +590,7 @@ cdef class SimulatedExchange:
 
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             self._clock.utc_now(),
             reason,
@@ -595,7 +609,7 @@ cdef class SimulatedExchange:
             str reason) except *:
         # Generate event
         cdef OrderCancelReject cancel_reject = OrderCancelReject(
-            self.account.id,
+            self.exec_client.account_id,
             order_id,
             self._clock.utc_now(),
             response,
@@ -609,7 +623,7 @@ cdef class SimulatedExchange:
     cdef inline void _expire_order(self, PassiveOrder order) except *:
         # Generate event
         cdef OrderExpired expired = OrderExpired(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
             order.expire_time,
@@ -730,13 +744,13 @@ cdef class SimulatedExchange:
         self._accept_order(order)
         self._work_order(order)
 
-    cdef inline void _work_order(self, Order order) except *:
+    cdef inline void _work_order(self, PassiveOrder order) except *:
         # Order now becomes working
         self._working_orders[order.cl_ord_id] = order
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
             order.symbol,
@@ -852,12 +866,11 @@ cdef class SimulatedExchange:
             order.quantity,
             fill_price,
             liquidity_side,
-            xrate=Decimal(1),  # Currently not handling quanto settlement
         )
 
         # Generate event
         cdef OrderFilled filled = OrderFilled(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             order.id if order.id is not None else self._generate_order_id(order.symbol),
             self._generate_execution_id(),
@@ -870,7 +883,6 @@ cdef class SimulatedExchange:
             Quantity(),  # Not modeling partial fills yet
             fill_price,
             instrument.quote_currency,
-            instrument.settlement_currency,
             instrument.is_inverse,
             commission,  # In instrument settlement currency
             liquidity_side,
@@ -879,35 +891,47 @@ cdef class SimulatedExchange:
             self._clock.utc_now(),
         )
 
-        # Calculate potential PNL
+        # Calculate potential P&L
         cdef Money pnl = None
         if position is not None and position.entry != order.side:
-            # Calculate PNL
+            # Calculate P&L
             pnl = position.calculate_pnl(
                 avg_open=position.avg_open,
                 avg_close=fill_price,
                 quantity=order.quantity,
             )
 
-        if pnl is None:
-            pnl = Money(0, self.account_currency)
+        cdef Currency currency  # Settlement currency
+        if self.default_currency is not None:  # Single-asset account
+            currency = self.default_currency
+            if pnl is None:
+                pnl = Money(0, currency)
 
-        if commission.currency != self.account_currency:
-            # Calculate exchange rate to account currency
-            xrate = self.get_xrate(
-                from_currency=commission.currency,
-                to_currency=self.account_currency,
-                price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
-            )
+            if commission.currency != currency:
+                # Calculate exchange rate to account currency
+                xrate = self.get_xrate(
+                    from_currency=commission.currency,
+                    to_currency=currency,
+                    price_type=PriceType.BID if order.side is OrderSide.SELL else PriceType.ASK,
+                )
 
-            # Convert to account currency
-            commission = Money(commission * xrate, self.account_currency)
-            pnl = Money(pnl * xrate, self.account_currency)
+                # Convert to account currency
+                commission = Money(commission * xrate, currency)
+                pnl = Money(pnl * xrate, currency)
 
-        self.total_commissions = Money(self.total_commissions + commission, self.account_currency)
+            total_commissions = self.total_commissions.get(currency, Decimal()) + commission
+            self.total_commissions[currency] = Money(total_commissions, currency)
 
-        # Final PNL
-        pnl = Money(pnl - commission, self.account_currency)
+            # Final P&L
+            pnl = Money(pnl - commission, self.default_currency)
+        else:
+            currency = instrument.settlement_currency
+            if pnl is None:
+                pnl = Money(0, currency)
+
+            total_commissions = self.total_commissions.get(currency, Decimal()) + commission
+            self.total_commissions[currency] = Money(total_commissions, currency)
+
         self.exec_client.handle_event(filled)
         self._check_oco_order(order.cl_ord_id)
 
@@ -949,7 +973,7 @@ cdef class SimulatedExchange:
             # Reject any latent bracket child orders
             for bracket_order_id, child_orders in self._child_orders.items():
                 for order in child_orders:
-                    if oco_order == order and order.state != OrderState.WORKING:
+                    if oco_order == order and order.state_c() != OrderState.WORKING:
                         self._reject_oco_order(order, order_id)
 
             # Cancel any working OCO orders
@@ -966,7 +990,7 @@ cdef class SimulatedExchange:
 
         # Generate event
         cdef OrderRejected event = OrderRejected(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             self._clock.utc_now(),
             f"OCO order rejected from {oco_order_id}",
@@ -985,7 +1009,7 @@ cdef class SimulatedExchange:
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
             self._clock.utc_now(),
@@ -1003,7 +1027,7 @@ cdef class SimulatedExchange:
 
         # Generate event
         cdef OrderCancelled event = OrderCancelled(
-            self.account.id,
+            self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
             self._clock.utc_now(),

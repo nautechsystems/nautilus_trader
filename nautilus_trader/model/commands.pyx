@@ -34,10 +34,10 @@ cdef class VenueCommand(Command):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `VenueCommand` class.
@@ -63,15 +63,15 @@ cdef class SubmitOrder(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            StrategyId strategy_id not None,
-            PositionId position_id not None,
-            Order order not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        TraderId trader_id not None,
+        AccountId account_id not None,
+        StrategyId strategy_id not None,
+        PositionId position_id not None,
+        Order order not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `SubmitOrder` class.
@@ -127,14 +127,14 @@ cdef class SubmitBracketOrder(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            StrategyId strategy_id not None,
-            BracketOrder bracket_order not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        TraderId trader_id not None,
+        AccountId account_id not None,
+        StrategyId strategy_id not None,
+        BracketOrder bracket_order not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `SubmitBracketOrder` class.
@@ -185,15 +185,15 @@ cdef class ModifyOrder(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            Quantity quantity not None,
-            Price price not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        TraderId trader_id not None,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        Quantity quantity not None,
+        Price price not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `ModifyOrder` class.
@@ -242,13 +242,13 @@ cdef class CancelOrder(VenueCommand):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            TraderId trader_id not None,
-            AccountId account_id not None,
-            ClientOrderId cl_ord_id not None,
-            UUID command_id not None,
-            datetime command_timestamp not None,
+        self,
+        Venue venue not None,
+        TraderId trader_id not None,
+        AccountId account_id not None,
+        ClientOrderId cl_ord_id not None,
+        UUID command_id not None,
+        datetime command_timestamp not None,
     ):
         """
         Initialize a new instance of the `CancelOrder` class.

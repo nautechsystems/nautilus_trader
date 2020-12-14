@@ -26,7 +26,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.serialization.base import CommandSerializer
-from nautilus_trader.serialization.base import DictionarySerializer
 from nautilus_trader.serialization.base import EventSerializer
 from nautilus_trader.serialization.base import InstrumentSerializer
 from nautilus_trader.serialization.base import OrderSerializer
@@ -38,15 +37,6 @@ AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class SerializationBaseTests(unittest.TestCase):
-
-    def test_dictionary_serializer_methods_raise_not_implemented_error(self):
-        # Arrange
-        serializer = DictionarySerializer()
-
-        # Act
-        # Assert
-        self.assertRaises(NotImplementedError, serializer.serialize, {})
-        self.assertRaises(NotImplementedError, serializer.deserialize, bytes())
 
     def test_instrument_serializer_methods_raise_not_implemented_error(self):
         # Arrange

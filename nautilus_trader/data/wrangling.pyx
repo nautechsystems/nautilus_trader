@@ -38,11 +38,11 @@ cdef class QuoteTickDataWrangler:
     """
 
     def __init__(
-            self,
-            Instrument instrument not None,
-            data_quotes: pd.DataFrame=None,
-            dict data_bars_bid=None,
-            dict data_bars_ask=None,
+        self,
+        Instrument instrument not None,
+        data_quotes: pd.DataFrame=None,
+        dict data_bars_bid=None,
+        dict data_bars_ask=None,
     ):
         """
         Initialize a new instance of the `QuoteTickDataWrangler` class.
@@ -339,10 +339,10 @@ cdef class BarDataWrangler:
     """
 
     def __init__(
-            self,
-            int price_precision,
-            int size_precision,
-            data: pd.DataFrame=None,
+        self,
+        int price_precision,
+        int size_precision,
+        data: pd.DataFrame=None,
     ):
         """
         Initialize a new instance of the `BarDataWrangler` class.

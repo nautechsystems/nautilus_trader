@@ -61,10 +61,10 @@ class EventTests(unittest.TestCase):
         uuid = uuid4()
         event = AccountState(
             account_id=AccountId("SIM", "000"),
-            currency=USD,
-            balance=Money(1525000, USD),
-            margin_balance=Money(1425000, USD),
-            margin_available=Money(1325000, USD),
+            balances=[Money(1525000, USD)],
+            balances_free=[Money(1525000, USD)],
+            balances_locked=[Money(0, USD)],
+            info={},
             event_id=uuid,
             event_timestamp=UNIX_EPOCH,
         )
@@ -72,9 +72,9 @@ class EventTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(f"AccountState(account_id=SIM-000, "
-                         f"balance=1,525,000.00 USD, id={uuid})", str(event))
+                         f"balances=[1,525,000.00 USD], id={uuid})", str(event))
         self.assertEqual(f"AccountState(account_id=SIM-000, "
-                         f"balance=1,525,000.00 USD, id={uuid})", repr(event))
+                         f"balances=[1,525,000.00 USD], id={uuid})", repr(event))
 
     def test_order_initialized(self):
         # Arrange
@@ -82,7 +82,7 @@ class EventTests(unittest.TestCase):
         event = OrderInitialized(
             cl_ord_id=ClientOrderId("O-2020872378423"),
             strategy_id=StrategyId("SCALPER", "001"),
-            symbol=Symbol("BTC/USD", Exchange("BINANCE")),
+            symbol=Symbol("BTC/USDT", Exchange("BINANCE")),
             order_side=OrderSide.BUY,
             order_type=OrderType.LIMIT,
             quantity=Quantity("0.561000"),
@@ -303,10 +303,9 @@ class EventTests(unittest.TestCase):
             cum_qty=Quantity("0.561000"),
             leaves_qty=Quantity(0),
             fill_price=Price("15600.12445"),
-            quote_currency=USDT,
-            settlement_currency=USDT,
+            currency=USDT,
             is_inverse=False,
-            commission=Money(12.20, USDT),
+            commission=Money("12.20000000", USDT),
             liquidity_side=LiquiditySide.MAKER,
             execution_time=UNIX_EPOCH,
             event_id=uuid,

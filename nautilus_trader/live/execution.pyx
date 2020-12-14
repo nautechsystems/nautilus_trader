@@ -38,13 +38,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     """
 
     def __init__(
-            self,
-            loop not None: AbstractEventLoop,
-            ExecutionDatabase database not None,
-            Portfolio portfolio not None,
-            LiveClock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        loop not None: AbstractEventLoop,
+        ExecutionDatabase database not None,
+        Portfolio portfolio not None,
+        LiveClock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveExecutionEngine` class.
@@ -184,12 +184,12 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        Venue venue not None,
+        AccountId account_id not None,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `LiveExecutionClient` class.

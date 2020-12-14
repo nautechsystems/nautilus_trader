@@ -72,82 +72,74 @@ class InstrumentTests(unittest.TestCase):
         instrument = InstrumentLoader.xbtusd_bitmex()
 
         # Act
-        margin = instrument.calculate_order_margin(
+        margin = instrument.calculate_init_margin(
             Quantity(100000),
             Price("11493.60"),
         )
 
         # Assert
-        self.assertEqual(Money(0.00000000, BTC), margin)
+        self.assertEqual(Money("0.00000000", BTC), margin)
 
     def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
-        margin = instrument.calculate_order_margin(
+        margin = instrument.calculate_init_margin(
             Quantity(100000),
             Price("11493.60"),
         )
 
         # Assert
-        self.assertEqual(Money(0.01392079, BTC), margin)
+        self.assertEqual(Money("0.01392079", BTC), margin)
 
     def test_calculate_position_margin_with_no_leverage_returns_zero(self):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex()
 
         # Act
-        margin = instrument.calculate_position_margin(
+        margin = instrument.calculate_maint_margin(
             PositionSide.LONG,
             Quantity(100000),
             Price("11493.60"),
         )
 
         # Assert
-        self.assertEqual(Money(0.00000000, BTC), margin)
+        self.assertEqual(Money("0.00000000", BTC), margin)
 
     def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
-        margin = instrument.calculate_position_margin(
+        margin = instrument.calculate_maint_margin(
             PositionSide.LONG,
             Quantity(100000),
             Price("11493.60"),
         )
 
         # Assert
-        self.assertEqual(Money(0.00682989, BTC), margin)
+        self.assertEqual(Money("0.00682989", BTC), margin)
 
-    def test_calculate_open_value(self):
+    def test_calculate_notional_value(self):
         # Arrange
         instrument = InstrumentLoader.btcusdt_binance()
 
         # Act
-        value = instrument.calculate_open_value(
-            PositionSide.LONG,
-            Quantity(10),
-            Price("11493.60"),
-        )
+        value = instrument.notional_value(Quantity(10), Price("11493.60"))
 
         # Assert
-        self.assertEqual(Money(114936.00000000, USDT), value)
+        self.assertEqual(Money("114936.00000000", USDT), value)
 
-    def test_calculate_open_value_for_inverse(self):
+    def test_calculate_notional_value_for_inverse(self):
         # Arrange
         instrument = InstrumentLoader.xbtusd_bitmex()
 
         # Act
-        value = instrument.calculate_open_value(
-            PositionSide.LONG,
-            Quantity(100000),
-            Price("11493.60"),
-        )
+        value = instrument.notional_value(Quantity(100000), Price("11493.60"))
 
         # Assert
-        self.assertEqual(Money(8.70049419, BTC), value)
+        self.assertEqual(Money("8.70049419", BTC), value)
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange
@@ -161,7 +153,7 @@ class InstrumentTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money(-0.00218331, BTC), commission)
+        self.assertEqual(Money("-0.00218331", BTC), commission)
 
     def test_calculate_commission_for_taker_fx(self):
         # Arrange
@@ -189,7 +181,7 @@ class InstrumentTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Money(0.00654993, BTC), commission)
+        self.assertEqual(Money("0.00654993", BTC), commission)
 
     def test_calculate_commission_fx_taker(self):
         # Arrange

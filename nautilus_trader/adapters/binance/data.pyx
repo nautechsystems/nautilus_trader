@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-import ccxt
+import ccxt.async_support as ccxt
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -35,11 +35,11 @@ cdef class BinanceDataClient(LiveDataClient):
     """
 
     def __init__(
-            self,
-            dict credentials,
-            LiveDataEngine engine,
-            LiveClock clock,
-            Logger logger,
+        self,
+        dict credentials,
+        LiveDataEngine engine,
+        LiveClock clock,
+        Logger logger,
     ):
         """
         Initialize a new instance of the `BinanceDataClient` class.
@@ -95,6 +95,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.debug("Connecting...")
 
+        self._loop.create_task(self._load_markets())
         self._client.load_markets()
 
         # TODO: Asynchronously request all instruments
@@ -369,3 +370,6 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_none(correlation_id, "correlation_id")
 
         # TODO: Implement
+
+    async def _load_markets(self):
+        await self._client.load_markets()
