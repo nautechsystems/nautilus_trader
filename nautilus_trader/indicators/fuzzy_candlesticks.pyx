@@ -33,14 +33,29 @@ cdef class FuzzyCandle:
     Represents a fuzzy candle.
     """
     def __init__(
-            self,
-            CandleDirection direction,
-            CandleSize size,
-            CandleBodySize body_size,
-            CandleWickSize upper_wick_size,
-            CandleWickSize lower_wick_size,
+        self,
+        CandleDirection direction,
+        CandleSize size,
+        CandleBodySize body_size,
+        CandleWickSize upper_wick_size,
+        CandleWickSize lower_wick_size,
     ):
+        """
+        Initialize a new instance of the `FuzzyCandle` class.
 
+        Parameters
+        ----------
+        direction : CandleDirection
+            The candle direction.
+        size : CandleSize
+            The candle fuzzy size.
+        body_size : CandleBodySize
+            The candle fuzzy body size.
+        upper_wick_size : CandleWickSize
+            The candle fuzzy upper wick size.
+        lower_wick_size : CandleWickSize
+            The candle fuzzy lower wick size.
+        """
         self.direction = direction
         self.size = size
         self.body_size = body_size
@@ -71,12 +86,12 @@ cdef class FuzzyCandlesticks(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            double threshold1=0.5,
-            double threshold2=1.0,
-            double threshold3=2.0,
-            double threshold4=3.0,
+        self,
+        int period,
+        double threshold1=0.5,
+        double threshold2=1.0,
+        double threshold3=2.0,
+        double threshold4=3.0,
     ):
         """
         Initialize a new instance of the `FuzzyCandlesticks` class.

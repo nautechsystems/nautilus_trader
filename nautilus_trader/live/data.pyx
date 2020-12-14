@@ -38,12 +38,12 @@ cdef class LiveDataEngine(DataEngine):
     """
 
     def __init__(
-            self,
-            loop not None: AbstractEventLoop,
-            Portfolio portfolio not None,
-            LiveClock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        loop not None: AbstractEventLoop,
+        Portfolio portfolio not None,
+        LiveClock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveDataEngine` class.
@@ -240,11 +240,11 @@ cdef class LiveDataClient(DataClient):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            LiveDataEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        Venue venue not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `LiveDataClient` class.

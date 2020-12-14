@@ -41,10 +41,10 @@ cdef class MovingAverage(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            list params not None,
-            PriceType price_type,
+        self,
+        int period,
+        list params not None,
+        PriceType price_type,
     ):
         """
         Initialize a new instance of the `MovingAverage` class.

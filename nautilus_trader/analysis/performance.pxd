@@ -22,29 +22,30 @@ from nautilus_trader.trading.account cimport Account
 
 
 cdef class PerformanceAnalyzer:
-    cdef Money _account_starting_balance
-    cdef Money _account_balance
-    cdef Currency _account_currency
+    cdef dict _account_balances_starting
+    cdef dict _account_balances
+    cdef dict _realized_pnls
     cdef object _daily_returns
-    cdef object _realized_pnls
 
     cpdef void calculate_statistics(self, Account account, list positions) except *
     cpdef void add_positions(self, list positions) except *
     cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *
     cpdef void add_return(self, datetime timestamp, double value) except *
     cpdef void reset(self) except *
+
+    cpdef object get_realized_pnls(self, Currency currency=*)
+    cpdef double total_pnl(self, Currency currency=*) except *
+    cpdef double total_pnl_percentage(self, Currency currency=*) except *
+    cpdef double max_winner(self, Currency currency=*) except *
+    cpdef double max_loser(self, Currency currency=*) except *
+    cpdef double min_winner(self, Currency currency=*) except *
+    cpdef double min_loser(self, Currency currency=*) except *
+    cpdef double avg_winner(self, Currency currency=*) except *
+    cpdef double avg_loser(self, Currency currency=*) except *
+    cpdef double win_rate(self, Currency currency=*) except *
+    cpdef double expectancy(self, Currency currency=*) except *
+
     cpdef object get_daily_returns(self)
-    cpdef object get_realized_pnls(self)
-    cpdef double total_pnl(self) except *
-    cpdef double total_pnl_percentage(self) except *
-    cpdef double max_winner(self) except *
-    cpdef double max_loser(self) except *
-    cpdef double min_winner(self) except *
-    cpdef double min_loser(self) except *
-    cpdef double avg_winner(self) except *
-    cpdef double avg_loser(self) except *
-    cpdef double win_rate(self) except *
-    cpdef double expectancy(self) except *
     cpdef double annual_return(self) except *
     cpdef double cum_return(self) except *
     cpdef double max_drawdown_return(self) except *
@@ -61,6 +62,8 @@ cdef class PerformanceAnalyzer:
     cpdef double returns_tail_ratio(self) except *
     cpdef double alpha(self) except *
     cpdef double beta(self) except *
-    cpdef dict get_performance_stats(self)
 
-    cdef list get_performance_stats_formatted(self, Currency account_currency)
+    cpdef dict get_performance_stats_pnls(self, Currency currency=*)
+    cpdef list get_performance_stats_pnls_formatted(self, Currency currency=*)
+    cpdef dict get_performance_stats_returns(self)
+    cpdef list get_performance_stats_returns_formatted(self)

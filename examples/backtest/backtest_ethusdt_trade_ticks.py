@@ -26,11 +26,11 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit.data_provider import TestDataProvider
@@ -61,6 +61,7 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
+        # exec_db_type="redis",
     )
 
     # Create a fill model (optional)
@@ -76,7 +77,7 @@ if __name__ == "__main__":
         venue=BINANCE,
         oms_type=OMSType.NETTING,
         generate_position_ids=False,
-        starting_capital=Money(1000000, USDT),
+        starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],  # now single-asset or multi-asset accounts
         fill_model=fill_model,
     )
 
@@ -92,7 +93,7 @@ if __name__ == "__main__":
             "display.max_columns",
             None,
             "display.width", 300):
-        print(engine.trader.generate_account_report(AccountId("BINANCE", "000")))
+        print(engine.trader.generate_account_report(BINANCE))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

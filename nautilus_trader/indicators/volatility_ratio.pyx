@@ -28,12 +28,12 @@ cdef class VolatilityRatio(Indicator):
     """
 
     def __init__(
-            self,
-            int fast_period,
-            int slow_period,
-            ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
-            bint use_previous=True,
-            double value_floor=0,
+        self,
+        int fast_period,
+        int slow_period,
+        ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
+        bint use_previous=True,
+        double value_floor=0,
     ):
         """
         Initialize a new instance of the `MovingAverageConvergenceDivergence` class.

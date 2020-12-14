@@ -52,12 +52,12 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
     """
 
     def __init__(
-            self,
-            TraderId trader_id not None,
-            Logger logger not None,
-            CommandSerializer command_serializer not None,
-            EventSerializer event_serializer not None,
-            dict config,
+        self,
+        TraderId trader_id not None,
+        Logger logger not None,
+        CommandSerializer command_serializer not None,
+        EventSerializer event_serializer not None,
+        dict config,
     ):
         """
         Initialize a new instance of the `RedisExecutionDatabase` class.

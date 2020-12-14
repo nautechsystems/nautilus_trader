@@ -42,11 +42,11 @@ cdef class FiniteStateMachine:
     """
 
     def __init__(
-            self,
-            dict state_transition_table not None,
-            int initial_state,
-            trigger_parser=str,
-            state_parser=str,
+        self,
+        dict state_transition_table not None,
+        int initial_state,
+        trigger_parser=str,
+        state_parser=str,
     ):
         """
         Initialize a new instance of the `FiniteStateMachine` class.

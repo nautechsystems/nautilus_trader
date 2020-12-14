@@ -115,56 +115,6 @@ cdef class MsgPackSerializer:
         return msgpack.unpackb(message_bytes)
 
 
-cdef class MsgPackDictionarySerializer(DictionarySerializer):
-    """
-    Provides a serializer for dictionaries for the `MessagePack` specification.
-
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the `MsgPackDictionarySerializer` class.
-
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, dict dictionary):
-        """
-        Serialize the given dictionary with string keys and values to bytes.
-
-        Parameters
-        ----------
-        dictionary : dict
-            The dictionary to serialize.
-
-        Returns
-        -------
-        bytes
-
-        """
-        Condition.not_none(dictionary, "dictionary")
-
-        return MsgPackSerializer.serialize(dictionary)
-
-    cpdef dict deserialize(self, bytes dictionary_bytes):
-        """
-        Deserialize the given bytes to a dictionary with string keys and values.
-
-        Parameters
-        ----------
-        dictionary_bytes : bytes
-            The dictionary bytes to deserialize.
-
-        Returns
-        -------
-        dict
-
-        """
-        Condition.not_none(dictionary_bytes, "dictionary_bytes")
-
-        return MsgPackSerializer.deserialize(dictionary_bytes)
-
-
 cdef class MsgPackOrderSerializer(OrderSerializer):
     """
     Provides a `Command` serializer for the `MessagePack` specification.
@@ -500,11 +450,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         if isinstance(event, AccountState):
             package[ACCOUNT_ID] = event.account_id.value
-            # Using update otherwise serializes as a tuple?
-            package.update({CURRENCY: event.currency.code})
-            package[BALANCE] = str(event.balance)
-            package[MARGIN_BALANCE] = str(event.margin_balance)
-            package[MARGIN_AVAILABLE] = str(event.margin_available)
+            package[BALANCES] = {b.currency.code: str(b) for b in event.balances}
+            package[BALANCES_FREE] = {b.currency.code: str(b) for b in event.balances_free}
+            package[BALANCES_LOCKED] = {b.currency.code: str(b) for b in event.balances_locked}
+            package[INFO] = event.info
         elif isinstance(event, OrderInitialized):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[STRATEGY_ID] = event.strategy_id.value
@@ -583,8 +532,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[FILL_PRICE] = str(event.fill_price)
             package[CUM_QUANTITY] = str(event.cum_qty)
             package[LEAVES_QUANTITY] = str(event.leaves_qty)
-            package[QUOTE_CURRENCY] = event.quote_currency.code
-            package[SETTLEMENT_CURRENCY] = event.settlement_currency.code
+            package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
             package[COMMISSION] = str(event.commission)
             package[COMMISSION_CURRENCY] = event.commission.currency.code
@@ -624,15 +572,13 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef UUID event_id = UUID.from_str_c(unpacked[ID])
         cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
-        cdef Currency currency
         if event_type == AccountState.__name__:
-            currency = Currency.from_str_c(unpacked[CURRENCY])
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                currency,
-                Money(unpacked[BALANCE], currency),
-                Money(unpacked[MARGIN_BALANCE], currency),
-                Money(unpacked[MARGIN_AVAILABLE], currency),
+                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES].items()],
+                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES_FREE].items()],
+                [Money(v, Currency.from_str_c(k)) for k, v in unpacked[BALANCES_LOCKED].items()],
+                unpacked[INFO],
                 event_id,
                 event_timestamp,
             )
@@ -760,8 +706,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 Quantity(unpacked[CUM_QUANTITY]),
                 Quantity(unpacked[LEAVES_QUANTITY]),
                 Price(unpacked[FILL_PRICE]),
-                Currency.from_str_c(unpacked[QUOTE_CURRENCY]),
-                Currency.from_str_c(unpacked[SETTLEMENT_CURRENCY]),
+                Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],
                 Money(unpacked[COMMISSION], commission_currency),
                 LiquiditySideParser.from_str(unpacked[LIQUIDITY_SIDE]),

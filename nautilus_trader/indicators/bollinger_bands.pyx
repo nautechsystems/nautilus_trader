@@ -36,10 +36,10 @@ cdef class BollingerBands(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            double k,
-            ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
+        self,
+        int period,
+        double k,
+        ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
     ):
         """
         Initialize a new instance of the `BollingerBands` class.

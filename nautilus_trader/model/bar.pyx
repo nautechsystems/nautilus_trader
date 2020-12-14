@@ -59,10 +59,10 @@ cdef class BarSpecification:
     Represents an aggregation specification for generating bars.
     """
     def __init__(
-            self,
-            int step,
-            BarAggregation aggregation,
-            PriceType price_type,
+        self,
+        int step,
+        BarAggregation aggregation,
+        PriceType price_type,
     ):
         """
         Initialize a new instance of the `BarSpecification` class.
@@ -192,10 +192,10 @@ cdef class BarType:
     """
 
     def __init__(
-            self,
-            Symbol symbol not None,
-            BarSpecification bar_spec not None,
-            is_internal_aggregation=True,
+        self,
+        Symbol symbol not None,
+        BarSpecification bar_spec not None,
+        is_internal_aggregation=True,
     ):
         """
         Initialize a new instance of the `BarType` class.
@@ -288,14 +288,14 @@ cdef class Bar:
     """
 
     def __init__(
-            self,
-            Price open_price not None,
-            Price high_price not None,
-            Price low_price not None,
-            Price close_price not None,
-            Quantity volume not None,
-            datetime timestamp not None,
-            bint check=False,
+        self,
+        Price open_price not None,
+        Price high_price not None,
+        Price low_price not None,
+        Price close_price not None,
+        Quantity volume not None,
+        datetime timestamp not None,
+        bint check=False,
     ):
         """
         Initialize a new instance of the `Bar` class.

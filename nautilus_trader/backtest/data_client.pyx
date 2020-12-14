@@ -37,12 +37,12 @@ cdef class BacktestDataClient(DataClient):
     """
 
     def __init__(
-            self,
-            list instruments not None,
-            Venue venue not None,
-            DataEngine engine not None,
-            Clock clock not None,
-            Logger logger not None,
+        self,
+        list instruments not None,
+        Venue venue not None,
+        DataEngine engine not None,
+        Clock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `BacktestDataProducer` class.

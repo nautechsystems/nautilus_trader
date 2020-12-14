@@ -52,7 +52,7 @@ class BacktestEngineTests(unittest.TestCase):
             venue=Venue("FXCM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            starting_capital=Money(1000000, USD),
+            starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )
 

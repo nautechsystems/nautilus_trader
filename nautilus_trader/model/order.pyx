@@ -463,19 +463,19 @@ cdef class PassiveOrder(Order):
     This class should not be used directly, but through its concrete subclasses.
     """
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            StrategyId strategy_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            OrderType order_type,  # 'type' hides keyword
-            Quantity quantity not None,
-            Price price not None,
-            TimeInForce time_in_force,
-            datetime expire_time,  # Can be None
-            UUID init_id not None,
-            datetime timestamp not None,
-            dict options not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        StrategyId strategy_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        OrderType order_type,  # 'type' hides keyword
+        Quantity quantity not None,
+        Price price not None,
+        TimeInForce time_in_force,
+        datetime expire_time,  # Can be None
+        UUID init_id not None,
+        datetime timestamp not None,
+        dict options not None,
     ):
         """
         Initialize a new instance of the `PassiveOrder` class.
@@ -601,15 +601,15 @@ cdef class MarketOrder(Order):
     be executed.
     """
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            StrategyId strategy_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            Quantity quantity not None,
-            TimeInForce time_in_force,
-            UUID init_id not None,
-            datetime timestamp not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        StrategyId strategy_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        Quantity quantity not None,
+        TimeInForce time_in_force,
+        UUID init_id not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `MarketOrder` class.
@@ -723,19 +723,19 @@ cdef class LimitOrder(PassiveOrder):
     market.
     """
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            StrategyId strategy_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            Quantity quantity not None,
-            Price price not None,
-            TimeInForce time_in_force,
-            datetime expire_time,  # Can be None
-            UUID init_id not None,
-            datetime timestamp not None,
-            bint post_only=True,
-            bint hidden=False,
+        self,
+        ClientOrderId cl_ord_id not None,
+        StrategyId strategy_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        Quantity quantity not None,
+        Price price not None,
+        TimeInForce time_in_force,
+        datetime expire_time,  # Can be None
+        UUID init_id not None,
+        datetime timestamp not None,
+        bint post_only=True,
+        bint hidden=False,
     ):
         """
         Initialize a new instance of the `LimitOrder` class.
@@ -847,17 +847,17 @@ cdef class StopMarketOrder(PassiveOrder):
     trigger price, the stop order becomes a market order.
     """
     def __init__(
-            self,
-            ClientOrderId cl_ord_id not None,
-            StrategyId strategy_id not None,
-            Symbol symbol not None,
-            OrderSide order_side,
-            Quantity quantity not None,
-            Price price not None,
-            TimeInForce time_in_force,
-            datetime expire_time,  # Can be None
-            UUID init_id not None,
-            datetime timestamp not None,
+        self,
+        ClientOrderId cl_ord_id not None,
+        StrategyId strategy_id not None,
+        Symbol symbol not None,
+        OrderSide order_side,
+        Quantity quantity not None,
+        Price price not None,
+        TimeInForce time_in_force,
+        datetime expire_time,  # Can be None
+        UUID init_id not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `StopMarketOrder` class.
@@ -964,10 +964,10 @@ cdef class BracketOrder:
     working on the exchange/broker side.
     """
     def __init__(
-            self,
-            Order entry not None,
-            StopMarketOrder stop_loss not None,
-            PassiveOrder take_profit=None,
+        self,
+        Order entry not None,
+        StopMarketOrder stop_loss not None,
+        PassiveOrder take_profit=None,
     ):
         """
         Initialize a new instance of the `BracketOrder` class.

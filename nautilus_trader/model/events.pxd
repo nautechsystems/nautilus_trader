@@ -37,14 +37,14 @@ from nautilus_trader.model.position cimport Position
 cdef class AccountState(Event):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly Currency currency
-    """The currency of the event.\n\n:returns: `Currency`"""
-    cdef readonly Money balance
-    """The current account balance.\n\n:returns: `Money`"""
-    cdef readonly Money margin_balance
-    """The current margin balance.\n\n:returns: `Money`"""
-    cdef readonly Money margin_available
-    """The current margin available.\n\n:returns: `Money`"""
+    cdef readonly list balances
+    """The currency account balances.\n\n:returns: `list[Money]`"""
+    cdef readonly list balances_free
+    """The account balances free for trading.\n\n:returns: `list[Money]`"""
+    cdef readonly list balances_locked
+    """The account balances locked (assigned to pending orders).\n\n:returns: `list[Money]`"""
+    cdef readonly dict info
+    """The additional implementation specific account information.\n\n:returns: `dict[str, object]`"""
 
 
 cdef class OrderEvent(Event):
@@ -191,11 +191,9 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Quantity leaves_qty
     """The order quantity remaining to be filled.\n\n:returns: `Quantity`"""
     cdef readonly Price fill_price
-    """The fill price (not average).\n\n:returns: `Price`"""
-    cdef readonly Currency quote_currency
-    """The instrument quote currency.\n\n:returns: `Currency`"""
-    cdef readonly Currency settlement_currency
-    """The instrument settlement currency.\n\n:returns: `Currency`"""
+    """The fill price for this execution.\n\n:returns: `Price`"""
+    cdef readonly Currency currency
+    """The currency of the price.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
     """If quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly Money commission

@@ -30,7 +30,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -40,13 +40,13 @@ cdef class Trader(Component):
     """
 
     def __init__(
-            self,
-            TraderId trader_id not None,
-            list strategies not None,
-            DataEngine data_engine not None,
-            ExecutionEngine exec_engine not None,
-            Clock clock not None,
-            Logger logger not None,
+        self,
+        TraderId trader_id not None,
+        list strategies not None,
+        DataEngine data_engine not None,
+        ExecutionEngine exec_engine not None,
+        Clock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `Trader` class.
@@ -278,7 +278,7 @@ cdef class Trader(Component):
         """
         return self._report_provider.generate_positions_report(self._exec_engine.cache.positions())
 
-    cpdef object generate_account_report(self, AccountId account_id):
+    cpdef object generate_account_report(self, Venue venue):
         """
         Generate an account report.
 
@@ -287,4 +287,4 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_account_report(self._exec_engine.cache.account(account_id))
+        return self._report_provider.generate_account_report(self._exec_engine.cache.account_for_venue(venue))

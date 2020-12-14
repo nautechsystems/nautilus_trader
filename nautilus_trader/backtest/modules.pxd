@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.objects cimport Money
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
@@ -36,7 +35,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
     cdef object _rollover_spread
     cdef datetime _rollover_time
     cdef bint _rollover_applied
-    cdef Money _rollover_total
+    cdef dict _rollover_totals
     cdef int _day_number
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *

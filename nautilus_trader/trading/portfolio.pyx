@@ -33,6 +33,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionModified
@@ -41,6 +42,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
@@ -59,23 +61,27 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money order_margin(self, Venue venue):
+    cpdef dict init_margins(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money position_margin(self, Venue venue):
+    cpdef dict maint_margins(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money unrealized_pnl_for_venue(self, Venue venue):
+    cpdef dict unrealized_pnls(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money unrealized_pnl_for_symbol(self, Symbol symbol):
+    cpdef dict market_values(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money open_value(self, Venue venue):
+    cpdef Money unrealized_pnl(self, Symbol symbol):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Money market_value(self, Symbol symbol):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -100,9 +106,15 @@ cdef class PortfolioFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
 
+_DECIMAL_ZERO = Decimal()
+_DECIMAL_ONE = Decimal(1)
+
+
 cdef class Portfolio(PortfolioFacade):
     """
     Provides a trading portfolio.
+
+    Currently there is a limitation of one account per venue.
     """
 
     def __init__(self, Clock clock not None, Logger logger=None):
@@ -122,14 +134,13 @@ cdef class Portfolio(PortfolioFacade):
         self._log = LoggerAdapter(type(self).__name__, logger)
         self._data = None  # Initialized when cache registered
 
-        self._ticks = {}                   # type: dict[Symbol: QuoteTick]
-        self._accounts = {}                # type: dict[Venue: Account]
-        self._orders_working = {}          # type: dict[Venue: set[Order]]
-        self._positions_open = {}          # type: dict[Venue: set[Position]]
-        self._positions_closed = {}        # type: dict[Venue: set[Position]]
-        self._net_positions = {}           # type: dict[Symbol: Decimal]
-        self._unrealized_pnls_symbol = {}  # type: dict[Symbol: Money]
-        self._unrealized_pnls_venue = {}   # type: dict[Venue: Money]
+        self._ticks = {}             # type: dict[Symbol: QuoteTick]
+        self._accounts = {}          # type: dict[Venue: Account]
+        self._orders_working = {}    # type: dict[Venue: set[Order]]
+        self._positions_open = {}    # type: dict[Venue: set[Position]]
+        self._positions_closed = {}  # type: dict[Venue: set[Position]]
+        self._unrealized_pnls = {}   # type: dict[Symbol: Money]
+        self._net_positions = {}     # type: dict[Symbol: Decimal]
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -185,9 +196,8 @@ cdef class Portfolio(PortfolioFacade):
         self._ticks[tick.symbol] = tick
 
         if last is not None and (tick.bid != last.bid or tick.ask != last.ask):
-            # Clear cached unrealized PNLs
-            self._unrealized_pnls_symbol[tick.symbol] = None
-            self._unrealized_pnls_venue[tick.symbol.venue] = None
+            # Clear cached unrealized P&Ls
+            self._unrealized_pnls[tick.symbol] = None
 
     cpdef void update_orders_working(self, set orders) except *:
         """
@@ -216,7 +226,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Venue venue
         for venue in self._orders_working.keys():
-            self._update_order_margin(venue)
+            self._update_init_margin(venue)
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -240,7 +250,7 @@ cdef class Portfolio(PortfolioFacade):
         elif order.is_completed_c():
             orders_working.discard(order)
 
-        self._update_order_margin(venue)
+        self._update_init_margin(venue)
 
     cpdef void update_positions(self, set positions) except *:
         """
@@ -257,7 +267,7 @@ cdef class Portfolio(PortfolioFacade):
         # Clean slate
         self._positions_open.clear()
         self._positions_closed.clear()
-        self._unrealized_pnls_symbol.clear()
+        self._unrealized_pnls.clear()
 
         cdef Position position
         cdef set positions_open
@@ -270,7 +280,7 @@ cdef class Portfolio(PortfolioFacade):
                 positions_open.add(position)
                 self._positions_open[position.symbol.venue] = positions_open
                 self._update_net_position(position.symbol, positions_open)
-                self._log.debug(f"Added open {position}")
+                self._log.debug(f"Added {position}")
                 open_count += 1
             elif position.is_closed_c():
                 positions_closed = self._positions_closed.get(position.symbol.venue, set())
@@ -284,9 +294,9 @@ cdef class Portfolio(PortfolioFacade):
         cdef Venue venue
         cdef Symbol symbol
         for venue in self._positions_open.keys():
-            self._update_position_margin(venue)
+            self._update_maint_margin(venue)
             for symbol in self._symbols_open_for_venue(venue):
-                self._unrealized_pnls_symbol[symbol] = self._calculate_unrealized_pnl(symbol)
+                self._unrealized_pnls[symbol] = self._calculate_unrealized_pnl(symbol)
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -310,8 +320,8 @@ cdef class Portfolio(PortfolioFacade):
         self._log.debug(f"Updated {event.position}.")
 
         cdef Symbol symbol = event.position.symbol
-        self._update_position_margin(symbol.venue)
-        self._unrealized_pnls_symbol[symbol] = self._calculate_unrealized_pnl(symbol)
+        self._update_maint_margin(symbol.venue)
+        self._unrealized_pnls[symbol] = self._calculate_unrealized_pnl(symbol)
 
     cpdef void reset(self) except *:
         """
@@ -327,8 +337,7 @@ cdef class Portfolio(PortfolioFacade):
         self._positions_open.clear()
         self._positions_closed.clear()
         self._net_positions.clear()
-        self._unrealized_pnls_symbol.clear()
-        self._unrealized_pnls_venue.clear()
+        self._unrealized_pnls.clear()
 
         self._log.info("Reset.")
 
@@ -355,6 +364,261 @@ cdef class Portfolio(PortfolioFacade):
         return account
 
 # -- QUERIES ---------------------------------------------------------------------------------
+
+    cpdef dict init_margins(self, Venue venue):
+        """
+        Return the initial margins for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the margin.
+
+        Returns
+        -------
+        dict[Currency, Money] or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef Account account = self._accounts.get(venue)
+        if account is None:
+            self._log.error(f"Cannot calculate order margin "
+                            f"(no account registered for {venue}).")
+            return None
+
+        return account.init_margins()
+
+    cpdef dict maint_margins(self, Venue venue):
+        """
+        Return the maintenance margins for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the margin.
+
+        Returns
+        -------
+        dict[Currency, Money] or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef Account account = self._accounts.get(venue)
+        if account is None:
+            self._log.error(f"Cannot calculate position margin "
+                            f"(no account registered for {venue}).")
+            return None
+
+        return account.maint_margins()
+
+    cpdef dict unrealized_pnls(self, Venue venue):
+        """
+        Return the unrealized pnls for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the unrealized pnl.
+
+        Returns
+        -------
+        dict[Currency, Money] or None
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef set symbols = self._symbols_open_for_venue(venue)
+        if not symbols:
+            return {}  # Nothing to calculate
+
+        cdef dict unrealized_pnls = {}  # type: dict[Currency, Decimal]
+
+        cdef Symbol symbol
+        cdef Money pnl
+        for symbol in symbols:
+            pnl = self._unrealized_pnls.get(symbol)
+            if pnl is not None:
+                # P&L pre-calculated
+                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, _DECIMAL_ZERO) + pnl
+                continue
+            # P&L must be calculated
+            pnl = self._calculate_unrealized_pnl(symbol)
+            if pnl is None:
+                return None  # Error already logged in `_calculate_unrealized_pnl`
+            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, _DECIMAL_ZERO) + pnl
+
+        return {k: Money(v, k) for k, v in unrealized_pnls.items()}
+
+    cpdef dict market_values(self, Venue venue):
+        """
+        Return the market values for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the open value.
+
+        Returns
+        -------
+        dict[Currency, Money] or None
+
+        """
+        Condition.not_none(venue, "venue")
+        Condition.not_none(self._data, "self._data")
+
+        cdef Account account = self._accounts.get(venue)
+        if account is None:
+            self._log.error(f"Cannot calculate open value "
+                            f"(no account registered for {venue}).")
+            return None
+
+        cdef set positions_open = self._positions_open.get(venue)
+        if not positions_open:
+            return {}  # Nothing to calculate
+
+        cdef dict market_values = {}  # type: dict[Currency, Decimal]
+
+        cdef Position position
+        cdef Instrument instrument
+        cdef Price last
+        for position in positions_open:
+            instrument = self._data.instrument(position.symbol)
+            if instrument is None:
+                self._log.error(f"Cannot calculate open value "
+                                f"(no instrument for {position.symbol}).")
+                return None  # Cannot calculate
+
+            last = self._get_last_price(position)  # TODO: Optimize
+            if last is None:
+                self._log.error(f"Cannot calculate open value "
+                                f"(no prices for {position.symbol}).")
+                continue  # Cannot calculate
+
+            xrate = self._calculate_xrate(
+                instrument=instrument,
+                account=account,
+                side=position.entry,
+            )
+
+            if xrate == _DECIMAL_ZERO:
+                self._log.error(f"Cannot calculate open value (insufficient data for "
+                                f"{instrument.quote_currency}/{account.default_currency}).")
+                return None  # Cannot calculate
+
+            market_value = market_values.get(instrument.settlement_currency, _DECIMAL_ZERO)
+            market_value += instrument.market_value(
+                position.quantity,
+                last,
+            ) * xrate
+
+            if account.default_currency is not None:
+                market_values[account.default_currency] = market_value
+            else:
+                market_values[instrument.settlement_currency] = market_value
+
+        return {k: Money(v, k) for k, v in market_values.items()}
+
+    cpdef Money unrealized_pnl(self, Symbol symbol):
+        """
+        Return the unrealized P&L for the given symbol (if found).
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the unrealized P&L.
+
+        Returns
+        -------
+        Money or None
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "self._data")
+
+        cdef Money pnl = self._unrealized_pnls.get(symbol)
+        if pnl is not None:
+            return pnl
+
+        pnl = self._calculate_unrealized_pnl(symbol)
+        self._unrealized_pnls[symbol] = pnl
+
+        return pnl
+
+    cpdef Money market_value(self, Symbol symbol):
+        """
+        Return the open value for the given symbol (if found).
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the open value.
+
+        Returns
+        -------
+        Money or None
+
+        """
+        Condition.not_none(symbol, "symbol")
+        Condition.not_none(self._data, "self._data")
+
+        cdef Account account = self._accounts.get(symbol.venue)
+        if account is None:
+            self._log.error(f"Cannot calculate open value "
+                            f"(no account registered for {symbol.venue}).")
+            return None
+
+        cdef instrument = self._data.instrument(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot calculate open value "
+                            f"(no instrument for {symbol}).")
+            return None  # Cannot calculate
+
+        cdef set positions_open = self._positions_open.get(symbol.venue)
+        if not positions_open:
+            return Money(0, instrument.quote_currency)
+
+        market_value: Decimal = _DECIMAL_ZERO
+
+        cdef Currency currency
+        if account.default_currency is not None:
+            currency = account.default_currency
+        else:
+            currency = instrument.base_currency
+
+        cdef Position position
+        cdef Price last
+        for position in positions_open:
+            if position.symbol != symbol:
+                continue
+
+            last = self._get_last_price(position)  # TODO: Optimize
+            if last is None:
+                self._log.error(f"Cannot calculate open value "
+                                f"(no prices for {position.symbol}).")
+                continue  # Cannot calculate
+
+            xrate = self._calculate_xrate(
+                instrument=instrument,
+                account=account,
+                side=position.entry,
+            )
+
+            if xrate == _DECIMAL_ZERO:
+                self._log.error(f"Cannot calculate open value (insufficient data for "
+                                f"{instrument.settlement_currency}/{account.default_currency}).")
+                return None  # Cannot calculate
+
+            market_value += instrument.market_value(
+                position.quantity,
+                last,
+            ) * xrate
+
+        if account.default_currency is not None:
+            return Money(market_value, account.default_currency)
+        else:
+            return Money(market_value, instrument.settlement_currency)
 
     cpdef object net_position(self, Symbol symbol):
         """
@@ -391,7 +655,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) > 0
+        return self._net_position(symbol) > _DECIMAL_ZERO
 
     cpdef bint is_net_short(self, Symbol symbol) except *:
         """
@@ -411,7 +675,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) < 0
+        return self._net_position(symbol) < _DECIMAL_ZERO
 
     cpdef bint is_flat(self, Symbol symbol) except *:
         """
@@ -431,7 +695,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) == 0
+        return self._net_position(symbol) == _DECIMAL_ZERO
 
     cpdef bint is_completely_flat(self) except *:
         """
@@ -444,207 +708,15 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         for net_position in self._net_positions.values():
-            if net_position != 0:
+            if net_position != _DECIMAL_ZERO:
                 return False
 
         return True
 
-    cpdef Money order_margin(self, Venue venue):
-        """
-        Return the order margin for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the order margin.
-
-        Returns
-        -------
-        Money or None
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(self._data, "self._data")
-
-        cdef Account account = self._accounts.get(venue)
-        if account is None:
-            self._log.error(f"Cannot calculate order margin "
-                            f"(no account registered for {venue}).")
-            return None
-
-        return account.order_margin()
-
-    cpdef Money position_margin(self, Venue venue):
-        """
-        Return the position margin for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the position margin.
-
-        Returns
-        -------
-        Money or None
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(self._data, "self._data")
-
-        cdef Account account = self._accounts.get(venue)
-        if account is None:
-            self._log.error(f"Cannot calculate position margin "
-                            f"(no account registered for {venue}).")
-            return None
-
-        return account.position_margin()
-
-    cpdef Money unrealized_pnl_for_venue(self, Venue venue):
-        """
-        Return the unrealized pnl for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the unrealized pnl.
-
-        Returns
-        -------
-        Money or None
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(self._data, "self._data")
-
-        cdef Money unrealized_pnl = self._unrealized_pnls_venue.get(venue)
-
-        if unrealized_pnl is not None:
-            return unrealized_pnl
-
-        cdef Account account = self._accounts.get(venue)
-        if account is None:
-            self._log.error(f"Cannot calculate unrealized PNL "
-                            f"(no account registered for {venue}).")
-            return None
-
-        cdef set symbols = self._symbols_open_for_venue(venue)
-        if not symbols:
-            return Money(0, account.currency)
-
-        cum_pnl = Decimal()
-
-        cdef Symbol symbol
-        cdef Money pnl
-        for symbol in symbols:
-            pnl = self._unrealized_pnls_symbol.get(symbol)
-            if pnl is not None:
-                cum_pnl += pnl.as_decimal()
-                continue
-            pnl = self._calculate_unrealized_pnl(symbol)
-            if pnl is None:
-                return None  # TODO: Raise exception?
-            cum_pnl += pnl.as_decimal()
-
-        unrealized_pnl = Money(cum_pnl, account.currency)
-        self._unrealized_pnls_venue[venue] = unrealized_pnl
-
-        return unrealized_pnl
-
-    cpdef Money unrealized_pnl_for_symbol(self, Symbol symbol):
-        """
-        Return the unrealized PNL for the given symbol (if found).
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The symbol for the unrealized PNL.
-
-        Returns
-        -------
-        Money or None
-
-        """
-        Condition.not_none(symbol, "symbol")
-        Condition.not_none(self._data, "self._data")
-
-        cdef Money pnl = self._unrealized_pnls_symbol.get(symbol)
-        if pnl is not None:
-            return pnl
-
-        pnl = self._calculate_unrealized_pnl(symbol)
-        self._unrealized_pnls_symbol[symbol] = pnl
-
-        return pnl
-
-    cpdef Money open_value(self, Venue venue):
-        """
-        Return the open value for the given venue (if found).
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the open value.
-
-        Returns
-        -------
-        Money or None
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.not_none(self._data, "self._data")
-
-        cdef Account account = self._accounts.get(venue)
-        if account is None:
-            self._log.error(f"Cannot calculate open value "
-                            f"(no account registered for {venue}).")
-            return None
-
-        cdef set positions_open = self._positions_open.get(venue)
-        if not positions_open:
-            return Money(0, account.currency)
-
-        open_value = Decimal()
-
-        cdef Position position
-        cdef Instrument instrument
-        cdef Price last
-        for position in positions_open:
-            instrument = self._data.instrument(position.symbol)
-            if instrument is None:
-                self._log.error(f"Cannot calculate open value "
-                                f"(no instrument for {position.symbol}).")
-                return None  # Cannot calculate
-
-            last = self._get_last_price(position)  # TODO: Optimize
-            if last is None:
-                self._log.error(f"Cannot calculate open value "
-                                f"(no prices for {position.symbol}).")
-                continue  # Cannot calculate
-
-            xrate_quanto, xrate_account = self._calculate_xrates(
-                instrument=instrument,
-                account=account,
-                side=position.entry,
-            )
-
-            if xrate_account == 0:
-                self._log.error(f"Cannot calculate open value (insufficient data for "
-                                f"{instrument.base_currency}/{account.currency}).")
-                return None  # Cannot calculate
-
-            open_value += instrument.calculate_open_value(
-                position.side,
-                position.quantity,
-                last,
-                xrate_quanto,
-            ) * xrate_account
-
-        return Money(open_value, account.currency)
-
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline object _net_position(self, Symbol symbol):
-        return self._net_positions.get(symbol, Decimal())
+        return self._net_positions.get(symbol, _DECIMAL_ZERO)
 
     cdef inline set _symbols_open_for_venue(self, Venue venue):
         cdef Position position
@@ -684,19 +756,20 @@ cdef class Portfolio(PortfolioFacade):
 
         self._update_net_position(event.position.symbol, positions_open)
 
-    cdef inline void _update_net_position(self, Symbol symbol, set positions_open):
+    cdef inline void _update_net_position(self, Symbol symbol, set positions_open) except *:
         net_position = Decimal()
         for position in positions_open:
             if position.symbol == symbol:
                 net_position += position.relative_quantity
 
         self._net_positions[symbol] = net_position
-        self._log.info(f"{symbol} net position = {net_position}")
+        self._update_maint_margin(symbol.venue)
+        self._log.info(f"{symbol} net_position={net_position}")
 
-    cdef inline void _update_order_margin(self, Venue venue):
+    cdef inline void _update_init_margin(self, Venue venue) except *:
         cdef Account account = self._accounts.get(venue)
         if account is None:
-            self._log.error(f"Cannot update order initial margin "
+            self._log.error(f"Cannot update initial margin "
                             f"(no account registered for {venue}).")
             return  # Cannot calculate
 
@@ -704,47 +777,55 @@ cdef class Portfolio(PortfolioFacade):
         if working_orders is None:
             return  # Nothing to calculate
 
-        margin = Decimal()
+        cdef dict margins = {}  # type: dict[Currency, Decimal]
 
-        cdef Order order
+        cdef PassiveOrder order
         cdef Instrument instrument
+        cdef Currency currency
         for order in working_orders:
             instrument = self._data.instrument(order.symbol)
             if instrument is None:
-                self._log.error(f"Cannot calculate order initial margin "
+                self._log.error(f"Cannot calculate initial margin "
                                 f"(no instrument for {order.symbol}).")
                 continue  # Cannot calculate
 
             if instrument.leverage == 1:
                 continue  # No margin necessary
 
-            xrate_quanto, xrate_account = self._calculate_xrates(
-                instrument=instrument,
-                account=account,
-                side=order.side,
-            )
-
-            if xrate_account == 0:
-                self._log.error(f"Cannot calculate order initial margin (insufficient data for "
-                                f"{instrument.base_currency}/{account.currency}).")
-                continue  # Cannot calculate
-
             # Calculate margin
-            margin += instrument.calculate_order_margin(
+            margin = instrument.calculate_init_margin(
                 order.quantity,
                 order.price,
-                xrate_quanto,
-            ) * xrate_account
+            )
 
-        cdef Money order_margin = Money(margin, account.currency)
+            if account.default_currency is not None:
+                currency = account.default_currency
+                xrate = self._calculate_xrate(
+                    instrument=instrument,
+                    account=account,
+                    side=order.side,
+                )
 
-        if order_margin != account.order_margin():
-            account.update_order_margin(order_margin)
+                if xrate == _DECIMAL_ZERO:
+                    self._log.error(f"Cannot calculate initial margin (insufficient data for "
+                                    f"{instrument.settlement_currency}/{currency}).")
+                    continue  # Cannot calculate
 
-            self._log.info(f"Updated {venue} order initial margin to "
-                           f"{order_margin.to_str()}")
+                margin *= xrate
+            else:
+                currency = instrument.settlement_currency
 
-    cdef inline void _update_position_margin(self, Venue venue):
+            # Update total margin
+            total_margin = margins.get(currency, _DECIMAL_ZERO)
+            total_margin += margin
+            margins[currency] = total_margin
+
+        for currency, total_margin in margins.items():
+            account.update_init_margin(Money(total_margin, currency))
+
+            self._log.info(f"{venue}-{currency} init_margin={total_margin}")
+
+    cdef inline void _update_maint_margin(self, Venue venue) except *:
         cdef Account account = self._accounts.get(venue)
         if account is None:
             self._log.error(f"Cannot update position maintenance margin "
@@ -755,11 +836,12 @@ cdef class Portfolio(PortfolioFacade):
         if open_positions is None:
             return  # Nothing to calculate
 
-        margin = Decimal()
+        cdef dict margins = {}  # type: dict[Currency, Decimal]
 
         cdef Position position
         cdef Instrument instrument
         cdef Price last
+        cdef Currency currency
         for position in open_positions:
             instrument = self._data.instrument(position.symbol)
             if instrument is None:
@@ -776,51 +858,67 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(no prices for {position.symbol}).")
                 continue  # Cannot calculate
 
-            xrate_quanto, xrate_account = self._calculate_xrates(
-                instrument=instrument,
-                account=account,
-                side=position.entry,
-            )
-
-            if xrate_account == 0:
-                self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
-                                f"{instrument.base_currency}/{account.currency}).")
-                continue  # Cannot calculate
-
             # Calculate margin
-            margin += instrument.calculate_position_margin(
+            margin = instrument.calculate_maint_margin(
                 position.side,
                 position.quantity,
                 last,
-                xrate_quanto,
-            ) * xrate_account
+            )
 
-        cdef Money position_margin = Money(margin, account.currency)
+            if account.default_currency is not None:
+                currency = account.default_currency
+                xrate = self._calculate_xrate(
+                    instrument=instrument,
+                    account=account,
+                    side=position.entry,
+                )
 
-        if position_margin != account.position_margin():
-            account.update_position_margin(position_margin)
+                if xrate == _DECIMAL_ZERO:
+                    self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
+                                    f"{instrument.settlement_currency}/{currency}).")
+                    continue  # Cannot calculate
 
-            self._log.info(f"Updated {venue} position maintenance margin to "
-                           f"{position_margin.to_str()}")
+                margin *= xrate
+            else:
+                currency = instrument.settlement_currency
+
+            # Update total margin
+            total_margin = margins.get(currency, _DECIMAL_ZERO)
+            total_margin += margin
+            margins[currency] = total_margin
+
+        for currency, total_margin in margins.items():
+            account.update_maint_margin(Money(total_margin, currency))
+
+            self._log.info(f"{venue}-{currency} maint_margin={total_margin}")
 
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)
         if account is None:
-            self._log.error(f"Cannot calculate unrealized PNL "
+            self._log.error(f"Cannot calculate unrealized P&L "
                             f"(no account registered for {symbol.venue}).")
-            return None
-
-        cdef set positions_open = self._positions_open.get(symbol.venue)
-        if positions_open is None:
-            return Money(0, account.currency)
+            return None  # Cannot calculate
 
         cdef Instrument instrument = self._data.instrument(symbol)
         if instrument is None:
-            self._log.error(f"Cannot calculate unrealized PNL "
+            self._log.error(f"Cannot calculate unrealized P&L "
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
 
-        pnl = Decimal()
+        cdef Currency currency
+        if account.default_currency is not None:
+            currency = account.default_currency
+        else:
+            currency = instrument.settlement_currency
+
+        cdef set positions_open = self._positions_open.get(symbol.venue)
+        if positions_open is None:
+            if account.default_currency is not None:
+                return Money(0, account.default_currency)
+            else:
+                return Money(0, instrument.settlement_currency)
+
+        total_pnl: Decimal = _DECIMAL_ZERO
 
         cdef Position position
         cdef Price last
@@ -828,47 +926,43 @@ cdef class Portfolio(PortfolioFacade):
             if position.symbol != symbol:
                 continue  # Nothing to calculate
 
-            xrate_quanto, xrate_account = self._calculate_xrates(
-                instrument=instrument,
-                account=account,
-                side=position.entry,
-            )
-
-            if xrate_account == 0:
-                self._log.error(f"Cannot calculate unrealized PNL (insufficient data for "
-                                f"{instrument.base_currency}/{account.currency}).")
-                return None  # Cannot calculate
-
-            last = self._get_last_price(position)  # TODO: Optimize
+            last = self._get_last_price(position)  # TODO: Optimize (could be long or short)
             if last is None:
-                self._log.error(f"Cannot calculate unrealized PNL (no prices for {symbol}).")
+                self._log.error(f"Cannot calculate unrealized P&L (no prices for {symbol}).")
                 return None  # Cannot calculate
-            pnl += position.unrealized_pnl(last) * xrate_account
 
-        return Money(pnl, account.currency)
+            pnl = position.unrealized_pnl(last)
 
-    cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side):
-        if instrument.is_quanto:
-            xrate_quanto = self._data.get_xrate(
+            if account.default_currency is not None:
+                xrate = self._calculate_xrate(
+                    instrument=instrument,
+                    account=account,
+                    side=position.entry,
+                )
+
+                if xrate == _DECIMAL_ZERO:
+                    self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
+                                    f"{instrument.settlement_currency}/{currency}).")
+                    return None  # Cannot calculate
+
+                pnl *= xrate
+
+            total_pnl += pnl
+
+        return Money(total_pnl, currency)
+
+    cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side):
+        if account.default_currency is not None:
+            return self._data.get_xrate(
                 venue=instrument.symbol.venue,
-                from_currency=instrument.quote_currency if not instrument.is_inverse else instrument.base_currency,
-                to_currency=instrument.settlement_currency,
+                from_currency=instrument.settlement_currency,
+                to_currency=account.default_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )
-        else:
-            xrate_quanto = None
 
-        xrate_account = self._data.get_xrate(
-            venue=instrument.symbol.venue,
-            from_currency=instrument.settlement_currency,
-            to_currency=account.currency,
-            price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-        )
-
-        return xrate_quanto, xrate_account
+        return _DECIMAL_ONE  # No conversion needed
 
     cdef inline Price _get_last_price(self, Position position):
-        cdef TradeTick trade_tick
         cdef QuoteTick quote_tick = self._data.quote_tick(position.symbol)
         if quote_tick is not None:
             if position.side == PositionSide.LONG:
@@ -878,6 +972,6 @@ cdef class Portfolio(PortfolioFacade):
             else:
                 raise RuntimeError(f"invalid PositionSide, "
                                    f"was {PositionSideParser.to_str(position.side)}")
-        else:
-            trade_tick = self._data.trade_tick(position.symbol)
-            return trade_tick.price if trade_tick is not None else None
+
+        cdef TradeTick trade_tick = self._data.trade_tick(position.symbol)
+        return trade_tick.price if trade_tick is not None else None

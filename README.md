@@ -22,19 +22,18 @@
 
 ## Introduction
 
-_NautilusTrader_ is an open-source, high-performance algorithmic trading platform, providing quantitative traders
-with the ability to backtest portfolios of automated trading strategies on historical
-data with an event-driven engine, and also trade those same strategies live in a
-production grade environment.
+_NautilusTrader_ is an open-source, high-performance, production-grade algorithmic trading platform,
+providing quantitative traders with the ability to backtest portfolios of automated trading strategies
+on historical data with an event-driven engine, and also deploy those same strategies live.
 
 The platform aims to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
 Thus the platform can handle high-frequency trading operations for any asset classes including FX, Equities,
 Futures, Options, CFDs or Crypto - across multiple venues simultaneously.
 
+## Cython
 The project heavily utilizes Cython, which provides static type safety and performance through C extension modules.
 The libraries can be accessed from both pure Python and Cython.
 
-## Cython
 Cython is a compiled programming language that aims to be a superset of the
 Python programming language, designed to give C-like performance with code that
 is written mostly in Python with optional additional C-inspired syntax.
@@ -47,7 +46,7 @@ The documentation for the latest version of the package is available at _readthe
 
 > https://nautilus-trader.readthedocs.io
 
-![WIP](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.jpg?raw=true "")
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.jpg?raw=true "")
 
 ## Features
 
@@ -90,7 +89,7 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 You could also use Visual Studio Code with a Cython plugin.
 
-)[Poetry](https://python-poetry.org/ is the preferred tool for handling all package and dev dependencies.
+[Poetry](https://python-poetry.org/) is the preferred tool for handling all package and dev dependencies.
 
 To install all dependencies and compile the C extensions, run:
 

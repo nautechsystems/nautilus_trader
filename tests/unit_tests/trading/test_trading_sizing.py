@@ -52,7 +52,7 @@ class PositionSizerTests(unittest.TestCase):
             sizer.calculate,
             Price("1.00100"),
             Price("1.00000"),
-            Money(1000000, USD),
+            Money(1_000_000, USD),
             Decimal("0.001"),
             Decimal(1000),
         )
@@ -114,7 +114,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_single_unit_size(self):
         # Arrange
-        equity = Money(1000000, USD)
+        equity = Money(1_000_000, USD)
 
         # Act
         result = self.sizer.calculate(
@@ -126,11 +126,11 @@ class FixedRiskSizerTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Quantity(1000000), result)
+        self.assertEqual(Quantity(1_000_000), result)
 
     def test_calculate_single_unit_with_exchange_rate(self):
         # Arrange
-        equity = Money(1000000, USD)
+        equity = Money(1_000_000, USD)
 
         # Act
         result = self.sizer.calculate(
@@ -162,7 +162,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_impose_hard_limit(self):
         # Arrange
-        equity = Money(1000000, USD)
+        equity = Money(1_000_000, USD)
 
         # Act
         result = self.sizer.calculate(
@@ -181,7 +181,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_multiple_unit_size(self):
         # Arrange
-        equity = Money(1000000, USD)
+        equity = Money(1_000_000, USD)
 
         # Act
         result = self.sizer.calculate(
@@ -198,7 +198,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_multiple_unit_size_larger_batches(self):
         # Arrange
-        equity = Money(1000000, USD)
+        equity = Money(1_000_000, USD)
 
         # Act
         result = self.sizer.calculate(
@@ -216,7 +216,7 @@ class FixedRiskSizerTests(unittest.TestCase):
     def test_calculate_for_usdjpy_with_commission(self):
         # Arrange
         sizer = FixedRiskSizer(InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()))
-        equity = Money(1000000, USD)
+        equity = Money(1_000_000, USD)
 
         # Act
         result = sizer.calculate(

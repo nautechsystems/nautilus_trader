@@ -695,7 +695,7 @@ class MoneyTests(unittest.TestCase):
         # Arrange
         money0 = Money(0, USD)
         money1 = Money(1, USD)
-        money2 = Money(1000000, USD)
+        money2 = Money(1_000_000, USD)
 
         # Act
         # Assert

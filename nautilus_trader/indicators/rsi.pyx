@@ -27,9 +27,9 @@ cdef class RelativeStrengthIndex(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+        self,
+        int period,
+        ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
     ):
         """
         Initialize a new instance of the `RelativeStrengthIndex` class.

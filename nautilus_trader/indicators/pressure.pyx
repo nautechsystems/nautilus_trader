@@ -30,10 +30,10 @@ cdef class Pressure(Indicator):
     """
 
     def __init__(
-            self,
-            int period,
-            ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
-            double atr_floor=0,
+        self,
+        int period,
+        ma_type not None: MovingAverageType=MovingAverageType.EXPONENTIAL,
+        double atr_floor=0,
     ):
         """
         Initialize a new instance of the `Pressure` class.

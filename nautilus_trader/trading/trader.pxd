@@ -18,7 +18,7 @@ from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -51,4 +51,4 @@ cdef class Trader(Component):
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)
     cpdef object generate_positions_report(self)
-    cpdef object generate_account_report(self, AccountId account_id)
+    cpdef object generate_account_report(self, Venue venue)

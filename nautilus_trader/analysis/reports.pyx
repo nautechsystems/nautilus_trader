@@ -174,13 +174,12 @@ cdef class ReportProvider:
             "realized_points": float(position.realized_points),
             "realized_return": float(position.realized_return),
             "realized_pnl": float(position.realized_pnl),
-            "currency": str(position.settlement_currency),
+            "currency": str(position.quote_currency),
         }
 
     cdef dict _account_state_to_dict(self, AccountState event):
-        return {
-            "timestamp": event.timestamp,
-            "balance": event.balance.as_double(),
-            "margin_balance": event.margin_balance.as_double(),
-            "margin_available": event.margin_balance.as_double(),
-        }
+        cdef dict data = {"timestamp": event.timestamp}
+        for balance in event.balances:
+            data[f"balance_{balance.currency}"] = balance
+
+        return data

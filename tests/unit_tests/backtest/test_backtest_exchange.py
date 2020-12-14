@@ -108,8 +108,8 @@ class SimulatedExchangeTests(unittest.TestCase):
             venue=FXCM,
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            frozen_account=False,
-            starting_capital=Money(1000000, USD),
+            is_frozen_account=False,
+            starting_balances=[Money(1_000_000, USD)],
             instruments=[AUDUSD_FXCM, USDJPY_FXCM],
             modules=[],
             fill_model=FillModel(),
@@ -910,8 +910,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         position = self.exec_engine.cache.positions_open()[0]
 
         # Assert
-        self.assertEqual(Money(180.01, JPY), position.realized_pnl)
-        self.assertEqual(Money(180.01, JPY), position.commissions)
+        self.assertEqual(Money(-180.01, JPY), position.realized_pnl)
+        self.assertEqual(Money(180.01, JPY), position.commission)
+        self.assertEqual([Money(180.01, JPY)], position.commissions())
 
     def test_unrealized_pnl(self):
         # Arrange
@@ -959,10 +960,6 @@ class SimulatedExchangeTests(unittest.TestCase):
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
         # Arrange
         # Prepare market
-        tick = TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol)
-        self.data_engine.process(tick)
-        self.exchange.process_tick(tick)
-
         open_quote = QuoteTick(
             USDJPY_FXCM.symbol,
             Price("90.002"),
@@ -971,6 +968,9 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity(1),
             UNIX_EPOCH,
         )
+
+        self.data_engine.process(open_quote)
+        self.exchange.process_tick(open_quote)
 
         order_open = self.strategy.order_factory.market(
             USDJPY_FXCM.symbol,
@@ -1003,11 +1003,13 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order_reduce, PositionId("B-USD/JPY-1"))
 
         # Assert
-        position_open = self.strategy.execution.positions_open()[0]
-        position_closed = self.strategy.execution.positions_closed()[0]
+        print(self.exec_engine.cache.positions())
+        position_open = self.exec_engine.cache.positions_open()[0]
+        position_closed = self.exec_engine.cache.positions_closed()[0]
         self.assertEqual(PositionSide.SHORT, position_open.side)
         self.assertEqual(Quantity(50000), position_open.quantity)
-        self.assertEqual(Money(1000380.02, JPY), position_closed.realized_pnl)
+        self.assertEqual(Money(999619.98, JPY), position_closed.realized_pnl)
+        self.assertEqual([Money(380.02, JPY)], position_closed.commissions())
 
 
 class BitmexExchangeTests(unittest.TestCase):
@@ -1055,8 +1057,8 @@ class BitmexExchangeTests(unittest.TestCase):
             venue=Venue("BITMEX"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
-            frozen_account=False,
-            starting_capital=Money(1000000, USD),
+            is_frozen_account=False,
+            starting_balances=[Money(1_000_000, USD)],
             exec_cache=self.exec_engine.cache,
             instruments=[XBTUSD_BITMEX],
             modules=[],
@@ -1136,5 +1138,5 @@ class BitmexExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[2].liquidity_side)
         self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[7].liquidity_side)
-        self.assertEqual(Money(0.00652529, BTC), self.strategy.object_storer.get_store()[2].commission)
-        self.assertEqual(Money(-0.00217511, BTC), self.strategy.object_storer.get_store()[7].commission)
+        self.assertEqual(Money("0.00652529", BTC), self.strategy.object_storer.get_store()[2].commission)
+        self.assertEqual(Money("-0.00217511", BTC), self.strategy.object_storer.get_store()[7].commission)

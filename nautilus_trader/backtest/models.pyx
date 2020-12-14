@@ -29,11 +29,11 @@ cdef class FillModel:
     """
 
     def __init__(
-            self,
-            double prob_fill_at_limit=0.0,
-            double prob_fill_at_stop=1.0,
-            double prob_slippage=0.0,
-            random_seed=None,
+        self,
+        double prob_fill_at_limit=0.0,
+        double prob_fill_at_stop=1.0,
+        double prob_slippage=0.0,
+        random_seed=None,
     ):
         """
         Initialize a new instance of the `FillModel` class.

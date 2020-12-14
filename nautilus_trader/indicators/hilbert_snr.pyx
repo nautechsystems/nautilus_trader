@@ -27,10 +27,10 @@ cdef class HilbertSignalNoiseRatio(Indicator):
     """
 
     def __init__(
-            self,
-            int period=7,
-            double range_floor=0.00001,
-            double amplitude_floor=0.001,
+        self,
+        int period=7,
+        double range_floor=0.00001,
+        double amplitude_floor=0.001,
     ):
         """
         Initialize a new instance of the HilbertSignalNoiseRatio class.
