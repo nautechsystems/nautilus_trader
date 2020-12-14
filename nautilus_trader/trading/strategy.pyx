@@ -159,7 +159,7 @@ cdef class TradingStrategy(Component):
 
     cpdef bint indicators_initialized(self) except *:
         """
-        If all indicators are initialized.
+        Return a value indicating whether all indicators are initialized.
 
         Returns
         -------

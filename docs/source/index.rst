@@ -10,7 +10,7 @@ data with an event-driven engine, and also deploy those same strategies live.
 
 The platform aims to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
 Thus the platform can handle high-frequency trading operations for any asset classes
-including FX, Equities, Futures, Options, CFDs or Crypto - across multiple venues simultaneously.
+including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
 Cython
 ------
