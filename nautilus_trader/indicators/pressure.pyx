@@ -57,13 +57,13 @@ cdef class Pressure(Indicator):
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(atr_floor, "atr_floor")
-        super().__init__(
-            params=[
-                period,
-                ma_type.name,
-                atr_floor,
-            ]
-        )
+
+        params=[
+            period,
+            ma_type.name,
+            atr_floor,
+        ]
+        super().__init__(params=params)
 
         self.period = period
         self._atr = AverageTrueRange(period, MovingAverageType.EXPONENTIAL, atr_floor)

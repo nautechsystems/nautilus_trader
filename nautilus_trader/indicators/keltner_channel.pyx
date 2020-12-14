@@ -61,16 +61,16 @@ cdef class KeltnerChannel(Indicator):
         Condition.positive_int(period, "period")
         Condition.positive(k_multiplier, "k_multiplier")
         Condition.not_negative(atr_floor, "atr_floor")
-        super().__init__(
-            params=[
-                period,
-                k_multiplier,
-                ma_type.name,
-                ma_type_atr.name,
-                use_previous,
-                atr_floor,
-            ]
-        )
+
+        params = [
+            period,
+            k_multiplier,
+            ma_type.name,
+            ma_type_atr.name,
+            use_previous,
+            atr_floor,
+        ]
+        super().__init__(params=params)
 
         self.period = period
         self.k_multiplier = k_multiplier

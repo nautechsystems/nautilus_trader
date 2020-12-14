@@ -56,14 +56,13 @@ cdef class AverageTrueRange(Indicator):
         """
         Condition.positive_int(period, "period")
         Condition.not_negative(value_floor, "value_floor")
-        super().__init__(
-            params=[
-                period,
-                ma_type.name,
-                use_previous,
-                value_floor,
-            ],
-        )
+        params = [
+            period,
+            ma_type.name,
+            use_previous,
+            value_floor,
+        ]
+        super().__init__(params=params)
 
         self.period = period
         self._ma = MovingAverageFactory.create(period, ma_type)
