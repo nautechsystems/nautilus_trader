@@ -111,16 +111,16 @@ cdef class FixedRiskSizer(PositionSizer):
         super().__init__(instrument)
 
     cpdef Quantity calculate(
-            self,
-            Price entry,
-            Price stop_loss,
-            Money equity,
-            risk: Decimal,
-            commission_rate: Decimal=Decimal(),
-            exchange_rate: Decimal=Decimal(1),
-            hard_limit: Decimal=None,
-            unit_batch_size: Decimal=Decimal(1),
-            int units=1,
+        self,
+        Price entry,
+        Price stop_loss,
+        Money equity,
+        risk: Decimal,
+        commission_rate: Decimal=Decimal(),
+        exchange_rate: Decimal=Decimal(1),
+        hard_limit: Decimal=None,
+        unit_batch_size: Decimal=Decimal(1),
+        int units=1,
     ):
         """
         Calculate the position size quantity.

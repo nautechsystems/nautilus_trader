@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
@@ -23,30 +22,56 @@ from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 cdef class Account:
     cdef list _events
-    cdef Money _balance
-    cdef Money _order_margin
-    cdef Money _position_margin
+    cdef dict _starting_balances
+    cdef dict _balances
+    cdef dict _balances_free
+    cdef dict _balances_locked
+    cdef dict _init_margins
+    cdef dict _maint_margins
     cdef PortfolioFacade _portfolio
 
     cdef readonly AccountId id
     """The accounts identifier.\n\n:returns: `AccountId`"""
-    cdef readonly AccountType account_type
-    """The accounts type.\n\n:returns: `AccountType`"""
-    cdef readonly Currency currency
-    """The accounts currency.\n\n:returns: `Currency`"""
+    cdef readonly Currency default_currency
+    """The accounts default currency.\n\n:returns: `Currency`"""
 
     cdef AccountState last_event_c(self)
     cdef list events_c(self)
     cdef int event_count_c(self)
 
+# -- COMMANDS --------------------------------------------------------------------------------------
+
     cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *
-    cpdef void update_order_margin(self, Money margin) except *
-    cpdef void update_position_margin(self, Money margin) except *
+    cpdef void update_init_margin(self, Money margin) except *
+    cpdef void update_maint_margin(self, Money margin) except *
 
-    cpdef Money balance(self)
-    cpdef Money unrealized_pnl(self)
-    cpdef Money margin_balance(self)
-    cpdef Money margin_available(self)
-    cpdef Money order_margin(self)
-    cpdef Money position_margin(self)
+# -- QUERIES-CASH ----------------------------------------------------------------------------------
+
+    cpdef list currencies(self)
+    cpdef dict starting_balances(self)
+    cpdef dict balances(self)
+    cpdef dict balances_free(self)
+    cpdef dict balances_locked(self)
+    cpdef Money balance(self, Currency currency=*)
+    cpdef Money balance_free(self, Currency currency=*)
+    cpdef Money balance_locked(self, Currency currency=*)
+    cpdef Money unrealized_pnl(self, Currency currency=*)
+    cpdef Money equity(self, Currency currency=*)
+
+# -- QUERIES-MARGIN --------------------------------------------------------------------------------
+
+    cpdef dict init_margins(self)
+    cpdef dict maint_margins(self)
+    cpdef Money init_margin(self, Currency currency=*)
+    cpdef Money maint_margin(self, Currency currency=*)
+    cpdef Money free_margin(self, Currency currency=*)
+
+# -- PRIVATE ---------------------------------------------------------------------------------------
+
+    cdef inline void _update_balances(
+        self,
+        list balances,
+        list balances_free,
+        list balances_locked,
+    ) except *

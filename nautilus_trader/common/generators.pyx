@@ -30,12 +30,12 @@ cdef class IdentifierGenerator:
     """
 
     def __init__(
-            self,
-            str prefix not None,
-            IdTag id_tag_trader not None,
-            IdTag id_tag_strategy not None,
-            Clock clock not None,
-            int initial_count=0,
+        self,
+        str prefix not None,
+        IdTag id_tag_trader not None,
+        IdTag id_tag_strategy not None,
+        Clock clock not None,
+        int initial_count=0,
     ):
         """
         Initialize a new instance of the `IdentifierGenerator` class.
@@ -132,11 +132,11 @@ cdef class OrderIdGenerator(IdentifierGenerator):
     """
 
     def __init__(
-            self,
-            IdTag id_tag_trader not None,
-            IdTag id_tag_strategy not None,
-            Clock clock not None,
-            int initial_count=0,
+        self,
+        IdTag id_tag_trader not None,
+        IdTag id_tag_strategy not None,
+        Clock clock not None,
+        int initial_count=0,
     ):
         """
         Initialize a new instance of the `OrderIdGenerator` class.

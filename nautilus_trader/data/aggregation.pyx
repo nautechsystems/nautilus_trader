@@ -171,11 +171,11 @@ cdef class BarAggregator:
     """
 
     def __init__(
-            self,
-            BarType bar_type not None,
-            handler not None,
-            Logger logger not None,
-            bint use_previous_close,
+        self,
+        BarType bar_type not None,
+        handler not None,
+        Logger logger not None,
+        bint use_previous_close,
     ):
         """
         Initialize a new instance of the `BarAggregator` class.
@@ -254,10 +254,10 @@ cdef class TickBarAggregator(BarAggregator):
     """
 
     def __init__(
-            self,
-            BarType bar_type not None,
-            handler not None,
-            Logger logger not None,
+        self,
+        BarType bar_type not None,
+        handler not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `TickBarAggregator` class.
@@ -297,10 +297,10 @@ cdef class VolumeBarAggregator(BarAggregator):
     """
 
     def __init__(
-            self,
-            BarType bar_type not None,
-            handler not None,
-            Logger logger not None,
+        self,
+        BarType bar_type not None,
+        handler not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `TickBarAggregator` class.
@@ -363,10 +363,10 @@ cdef class ValueBarAggregator(BarAggregator):
     """
 
     def __init__(
-            self,
-            BarType bar_type not None,
-            handler not None,
-            Logger logger not None,
+        self,
+        BarType bar_type not None,
+        handler not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `TickBarAggregator` class.
@@ -433,12 +433,12 @@ cdef class TimeBarAggregator(BarAggregator):
     a bar is created and sent to the handler.
     """
     def __init__(
-            self,
-            BarType bar_type not None,
-            handler not None,
-            bint use_previous_close,
-            Clock clock not None,
-            Logger logger not None,
+        self,
+        BarType bar_type not None,
+        handler not None,
+        bint use_previous_close,
+        Clock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `TimeBarAggregator` class.
@@ -582,10 +582,10 @@ cdef class BulkTickBarBuilder:
     """
 
     def __init__(
-            self,
-            BarType bar_type not None,
-            Logger logger not None,
-            callback not None: callable,
+        self,
+        BarType bar_type not None,
+        Logger logger not None,
+        callback not None: callable,
     ):
         """
         Initialize a new instance of the `BulkTickBarBuilder` class.

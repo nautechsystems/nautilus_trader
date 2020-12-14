@@ -32,33 +32,33 @@ cdef class Instrument:
     """
 
     def __init__(
-            self,
-            Symbol symbol not None,
-            AssetClass asset_class,
-            AssetType asset_type,
-            Currency base_currency,  # Can be None
-            Currency quote_currency not None,
-            Currency settlement_currency not None,
-            bint is_inverse,
-            int price_precision,
-            int size_precision,
-            tick_size not None: Decimal,
-            multiplier not None: Decimal,
-            leverage not None: Decimal,
-            Quantity lot_size not None,
-            Quantity max_quantity,  # Can be None
-            Quantity min_quantity,  # Can be None
-            Money max_notional,     # Can be None
-            Money min_notional,     # Can be None
-            Price max_price,        # Can be None
-            Price min_price,        # Can be None
-            margin_initial not None: Decimal,
-            margin_maintenance not None: Decimal,
-            maker_fee not None: Decimal,
-            taker_fee not None: Decimal,
-            funding_rate_long not None: Decimal,
-            funding_rate_short not None: Decimal,
-            datetime timestamp not None,
+        self,
+        Symbol symbol not None,
+        AssetClass asset_class,
+        AssetType asset_type,
+        Currency base_currency,  # Can be None
+        Currency quote_currency not None,
+        Currency settlement_currency not None,
+        bint is_inverse,
+        int price_precision,
+        int size_precision,
+        tick_size not None: Decimal,
+        multiplier not None: Decimal,
+        leverage not None: Decimal,
+        Quantity lot_size not None,
+        Quantity max_quantity,  # Can be None
+        Quantity min_quantity,  # Can be None
+        Money max_notional,     # Can be None
+        Money min_notional,     # Can be None
+        Price max_price,        # Can be None
+        Price min_price,        # Can be None
+        margin_init not None: Decimal,
+        margin_maint not None: Decimal,
+        maker_fee not None: Decimal,
+        taker_fee not None: Decimal,
+        funding_rate_long not None: Decimal,
+        funding_rate_short not None: Decimal,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `Instrument` class.
@@ -103,9 +103,9 @@ cdef class Instrument:
             The maximum possible printed price.
         min_price : Price
             The minimum possible printed price.
-        margin_initial : Decimal
+        margin_init : Decimal
             The initial margin requirement in percentage of order value.
-        margin_maintenance : Decimal
+        margin_maint : Decimal
             The maintenance margin in percentage of position value.
         maker_fee : Decimal
             The fee rate for liquidity makers as a percentage of order value.
@@ -173,10 +173,10 @@ cdef class Instrument:
             Condition.positive(max_price, "max_price")
         if min_price:
             Condition.not_negative(min_price, "min_price")
-        Condition.type(margin_initial, Decimal, "margin_initial")
-        Condition.not_negative(margin_initial, "margin_initial")
-        Condition.type(margin_maintenance, Decimal, "margin_maintenance")
-        Condition.not_negative(margin_maintenance, "margin_maintenance")
+        Condition.type(margin_init, Decimal, "margin_init")
+        Condition.not_negative(margin_init, "margin_init")
+        Condition.type(margin_maint, Decimal, "margin_maint")
+        Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
         Condition.type(funding_rate_long, Decimal, "funding_rate_long")
@@ -203,8 +203,8 @@ cdef class Instrument:
         self.min_notional = min_notional
         self.max_price = max_price
         self.min_price = min_price
-        self.margin_initial = margin_initial
-        self.margin_maintenance = margin_maintenance
+        self.margin_init = margin_init
+        self.margin_maint = margin_maint
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
         self.funding_rate_long = funding_rate_long
@@ -223,12 +223,34 @@ cdef class Instrument:
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.symbol.value}')"
 
-    cpdef Money calculate_notional(
-            self,
-            Quantity quantity,
-            close_price: Decimal,
-            xrate: Decimal=None,
-    ):
+    cpdef Money market_value(self, Quantity quantity, close_price: Decimal):
+        """
+        Calculate the market value from the given parameters.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The total quantity.
+        close_price : Decimal or Price
+            The closing price.
+
+        Returns
+        -------
+        Money
+            In the settlement currency.
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.type(close_price, (Decimal, Price), "close_price")
+        Condition.not_none(close_price, "close_price")
+
+        if self.is_inverse:
+            close_price = 1 / close_price
+
+        market_value: Decimal = (quantity * close_price * self.multiplier) / self.leverage
+        return Money(market_value, self.settlement_currency)
+
+    cpdef Money notional_value(self, Quantity quantity, close_price: Decimal):
         """
         Calculate the notional value from the given parameters.
 
@@ -238,45 +260,26 @@ cdef class Instrument:
             The total quantity.
         close_price : Decimal or Price
             The closing price.
-        xrate : Decimal, optional
-            The exchange rate between cost and settlement currencies. Applicable
-            to quanto instruments only, otherwise ignored.
 
         Returns
         -------
         Money
             In the settlement currency.
 
-        Raises
-        ------
-        ValueError
-            If is_quanto and xrate is None.
-
         """
         Condition.not_none(quantity, "quantity")
         Condition.type(close_price, (Decimal, Price), "close_price")
         Condition.not_none(close_price, "close_price")
-        if self.is_quanto:
-            Condition.type(xrate, Decimal, "xrate")
 
         if self.is_inverse:
             close_price = 1 / close_price
 
-        notional: Decimal = quantity * close_price * self.multiplier
+        notional_value: Decimal = quantity * close_price * self.multiplier
+        return Money(notional_value, self.settlement_currency)
 
-        # if self.is_quanto:
-        #     notional *= xrate
-
-        return Money(notional, self.settlement_currency)  # Currently not handling quanto settlement
-
-    cpdef Money calculate_order_margin(
-            self,
-            Quantity quantity,
-            Price price,
-            xrate: Decimal=None,
-    ):
+    cpdef Money calculate_init_margin(self, Quantity quantity, Price price):
         """
-        Calculate the order margin from the given parameters.
+        Calculate the initial margin from the given parameters.
 
         Parameters
         ----------
@@ -284,43 +287,34 @@ cdef class Instrument:
             The order quantity.
         price : Price
             The order price.
-        xrate : Decimal, optional
-            The exchange rate between cost and settlement currencies. Applicable
-            to quanto instruments only, otherwise ignored.
 
         Returns
         -------
         Money
             In the settlement currency.
 
-        Raises
-        ------
-        ValueError
-            If is_quanto and xrate is None.
-
         """
         Condition.not_none(quantity, "quantity")
         Condition.not_none(price, "price")
-        # xrate checked in calculate_notional
 
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        notional = self.calculate_notional(quantity, price, xrate)
-        margin = notional / self.leverage * self.margin_initial
+        notional = self.notional_value(quantity, price)
+        margin = notional / self.leverage * self.margin_init
         margin += notional * self.taker_fee * 2
 
-        return Money(margin, self.settlement_currency)  # Currently not handling quanto settlement
+        return Money(margin, self.settlement_currency)
 
-    cpdef Money calculate_position_margin(
+    cpdef Money calculate_maint_margin(
             self,
             PositionSide side,
             Quantity quantity,
             Price last,
-            xrate: Decimal=None,
     ):
         """
-        Calculate the position margin from the given parameters.
+        Calculate the maintenance margin from the given parameters.
+
         Parameters
         ----------
         side : PositionSide
@@ -329,81 +323,31 @@ cdef class Instrument:
             The currency position quantity.
         last : Price
             The position symbols last price.
-        xrate : Decimal, optional
-            The exchange rate between cost and settlement currencies. Applicable
-            to quanto instruments only, otherwise ignored.
 
         Returns
         -------
         Money
             In the settlement currency.
 
-        Raises
-        ------
-        ValueError
-            If is_quanto and xrate is None.
-
         """
         # side checked in _get_close_price
         Condition.not_none(quantity, "quantity")
         Condition.not_none(last, "last")
-        # xrate checked in calculate_notional
 
         if self.leverage == 1:
             return Money(0, self.settlement_currency)  # No margin necessary
 
-        notional = self.calculate_notional(quantity, last, xrate)
-        margin = notional / self.leverage * self.margin_maintenance
+        notional = self.notional_value(quantity, last)
+        margin = (notional / self.leverage) * self.margin_maint
         margin += notional * self.taker_fee
 
-        return Money(margin, self.settlement_currency)  # Currently not handling quanto settlement
-
-    cpdef Money calculate_open_value(
-            self,
-            PositionSide side,
-            Quantity quantity,
-            Price last,
-            xrate: Decimal=None,
-    ):
-        """
-        Parameters
-        ----------
-        side : PositionSide
-            The currency position side.
-        quantity : Quantity
-            The open quantity.
-        last : Price
-            The position symbols last price.
-        xrate : Decimal, optional
-            The exchange rate between cost and settlement currencies. Applicable
-            to quanto instruments only, otherwise ignored.
-
-        Returns
-        -------
-        Money
-            In the settlement currency.
-
-        Raises
-        ------
-        ValueError
-            If side is UNDEFINED or FLAT.
-        ValueError
-            If is_quanto and xrate is None.
-
-        """
-        # side checked in _get_close_price
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(last, "last")
-        # xrate checked in calculate_notional
-
-        return self.calculate_notional(quantity, last, xrate)
+        return Money(margin, self.settlement_currency)
 
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
         avg_price: Decimal,
         LiquiditySide liquidity_side,
-        xrate: Decimal=None,
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -417,9 +361,6 @@ cdef class Instrument:
             The average transaction price.
         liquidity_side : LiquiditySide
             The liquidity side for the transaction.
-        xrate : Decimal, optional
-            The exchange rate between cost and settlement currencies. Applicable
-            to quanto instruments only, otherwise ignored.
 
         Returns
         -------
@@ -430,16 +371,13 @@ cdef class Instrument:
         ------
         ValueError
             If liquidity_side is NONE.
-        ValueError
-            If is_quanto and xrate is None.
 
         """
         Condition.not_none(quantity, "quantity")
         Condition.type(avg_price, (Decimal, Price), "avg_price")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-        # xrate checked in calculate_notional
 
-        notional: Decimal = self.calculate_notional(quantity, avg_price, xrate)
+        notional: Decimal = self.notional_value(quantity, avg_price)
 
         if liquidity_side == LiquiditySide.MAKER:
             commission: Decimal = notional * self.maker_fee
@@ -449,4 +387,4 @@ cdef class Instrument:
             raise RuntimeError(f"invalid LiquiditySide, "
                                f"was {LiquiditySideParser.to_str(liquidity_side)}")
 
-        return Money(commission, self.settlement_currency)  # Currently not handling quanto settlement
+        return Money(commission, self.settlement_currency)

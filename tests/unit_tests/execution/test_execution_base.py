@@ -17,7 +17,6 @@ import unittest
 
 from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.execution.base import ExecutionCacheFacade
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -37,7 +36,7 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.facade = ExecutionCacheFacade()
 
     def test_account_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.account, AccountId("FXCM", "000", AccountType.DEMO))
+        self.assertRaises(NotImplementedError, self.facade.account, AccountId("FXCM", "000"))
 
     def test_account_for_venue_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.account_for_venue, FXCM)

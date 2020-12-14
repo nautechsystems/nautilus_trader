@@ -24,6 +24,7 @@ from nautilus_trader.core.functions cimport pad_string
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -95,10 +96,9 @@ cdef class FXRolloverInterestModule(SimulationModule):
         """
         super().__init__()
         self._calculator = RolloverInterestCalculator(data=rate_data)
-        self._rollover_spread = Decimal()  # Bank + Broker spread markup
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
-        self._rollover_total = None
+        self._rollover_totals = {}
         self._day_number = 0
 
     cpdef void process(self, QuoteTick tick, datetime now) except *:
@@ -120,8 +120,6 @@ cdef class FXRolloverInterestModule(SimulationModule):
         if self._day_number != now.day:
             # Set account statistics for new day
             self._day_number = now.day
-            self._exchange.account_start_day = self._exchange.account.balance()
-            self._exchange.account_activity_day = Money(0, self._exchange.account_currency)
             self._rollover_applied = False
 
             rollover_local = now.astimezone(_TZ_US_EAST)
@@ -140,13 +138,12 @@ cdef class FXRolloverInterestModule(SimulationModule):
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day) except *:
         cdef list open_positions = self._exchange.exec_cache.positions_open()
 
-        rollover_cumulative = Decimal()
-
         cdef Position position
         cdef Instrument instrument
         cdef Price bid
         cdef Price ask
         cdef dict mid_prices = {}  # type: dict[Symbol, Decimal]
+        cdef Currency currency
         for position in open_positions:
             instrument = self._exchange.instruments[position.symbol]
             if instrument.asset_class != AssetClass.FX:
@@ -160,33 +157,35 @@ cdef class FXRolloverInterestModule(SimulationModule):
                     raise RuntimeError("Cannot apply rollover interest, no market prices")
                 mid: Decimal = (bid + ask) / 2
                 mid_prices[instrument.symbol] = mid
+
             interest_rate = self._calculator.calc_overnight_rate(
                 position.symbol,
                 timestamp,
             )
 
-            xrate = self._exchange.get_xrate(
-                from_currency=instrument.quote_currency,
-                to_currency=self._exchange.account.currency,
-                price_type=PriceType.MID,
-            )
+            rollover = instrument.notional_value(position.quantity, mid) * interest_rate
 
-            rollover = mid * position.quantity * interest_rate * xrate
-            # Apply any bank and broker spread markup (basis points)
-            rollover_cumulative += rollover - (rollover * self._rollover_spread)
+            if iso_week_day == 3:  # Book triple for Wednesdays
+                rollover *= 3
+            elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
+                rollover *= 3
 
-        if iso_week_day == 3:  # Book triple for Wednesdays
-            rollover_cumulative = rollover_cumulative * 3
-        elif iso_week_day == 5:  # Book triple for Fridays (holding over weekend)
-            rollover_cumulative = rollover_cumulative * 3
+            if self._exchange.default_currency is not None:
+                currency = self._exchange.default_currency
+                xrate = self._exchange.get_xrate(
+                    from_currency=instrument.settlement_currency,
+                    to_currency=currency,
+                    price_type=PriceType.MID,
+                )
+                rollover *= xrate
+            else:
+                currency = instrument.settlement_currency
 
-        cdef Money rollover_final = Money(rollover_cumulative, self._exchange.account_currency)
-        if self._rollover_total is None:
-            self._rollover_total = Money(rollover_final, self._exchange.account_currency)
-        else:
-            self._rollover_total = Money(self._rollover_total + rollover_final, self._exchange.account_currency)
+            rollover_total = self._rollover_totals.get(currency, Decimal())
+            rollover_total = Money(rollover_total + rollover, currency)
+            self._rollover_totals[currency] = rollover_total
 
-        self._exchange.adjust_account(rollover_final)
+            self._exchange.adjust_account(Money(-rollover, currency))
 
     cpdef void log_diagnostics(self, LoggerAdapter log) except *:
         """
@@ -198,15 +197,14 @@ cdef class FXRolloverInterestModule(SimulationModule):
             The logger to log to.
 
         """
-        account_balance_starting = self._exchange.starting_capital.to_str()
-        account_starting_length = len(account_balance_starting)
-        rollover_total = self._rollover_total.to_str() if self._rollover_total is not None else "0"
-        rollover_interest = pad_string(rollover_total, account_starting_length)
-        log.info(f"Rollover interest (total):  {rollover_interest}")
+        account_balances_starting = ', '.join([b.to_str() for b in self._exchange.starting_balances])
+        account_starting_length = len(account_balances_starting)
+        rollover_totals = ', '.join([b.to_str() for b in self._rollover_totals.values()])
+        rollover_interest = pad_string(rollover_totals, account_starting_length)
+        log.info(f"Rollover interest (totals):  {rollover_interest}")
 
     cpdef void reset(self) except *:
-        self._rollover_spread = Decimal()  # Bank + Broker spread markup
         self._rollover_time = None  # Initialized at first rollover
         self._rollover_applied = False
-        self._rollover_total = None
+        self._rollover_totals = {}
         self._day_number = 0

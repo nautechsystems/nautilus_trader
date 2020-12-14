@@ -27,7 +27,6 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.objects cimport Money
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
 
@@ -57,9 +56,9 @@ cdef class BacktestEngine:
         self,
         Venue venue,
         OMSType oms_type,
+        list starting_balances,
+        bint is_frozen_account=*,
         bint generate_position_ids=*,
-        bint frozen_account=*,
-        Money starting_capital=*,
         list modules=*,
         FillModel fill_model=*,
     ) except *

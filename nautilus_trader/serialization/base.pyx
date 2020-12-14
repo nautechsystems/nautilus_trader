@@ -40,28 +40,6 @@ cdef class Serializer:
         return self.convert_snake_to_camel(value)
 
 
-cdef class DictionarySerializer(Serializer):
-    """
-    The abstract base class for all dictionary serializers.
-
-    This class should not be used directly, but through its concrete subclasses.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the `DictionarySerializer` class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, dict dictionary):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef dict deserialize(self, bytes dictionary_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
 cdef class InstrumentSerializer(Serializer):
     """
     The abstract base class for all instrument serializers.

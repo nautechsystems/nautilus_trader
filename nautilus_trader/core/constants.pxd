@@ -19,6 +19,7 @@ cdef str NONE
 cdef str TYPE
 cdef str ID
 cdef str ORDER
+cdef str INFO
 cdef str OPTIONS
 cdef str TIMESTAMP
 cdef str VENUE
@@ -68,11 +69,14 @@ cdef str MARGIN_AVAILABLE
 cdef str BAR
 cdef str BAR_TYPE
 
+cdef str BALANCES
+cdef str BALANCES_FREE
+cdef str BALANCES_LOCKED
+
 cdef str INSTRUMENT
 cdef str BASE_CURRENCY
 cdef str QUOTE_CURRENCY
 cdef str SETTLEMENT_CURRENCY
-cdef str IS_QUANTO
 cdef str IS_INVERSE
 cdef str COMMISSION_CURRENCY
 cdef str BROKER_SYMBOL
@@ -86,8 +90,8 @@ cdef str MIN_QUANTITY
 cdef str MAX_QUANTITY
 cdef str MIN_NOTIONAL
 cdef str MAX_NOTIONAL
-cdef str MARGIN_INITIAL
-cdef str MARGIN_MAINTENANCE
+cdef str MARGIN_INIT
+cdef str MARGIN_MAINT
 cdef str MAKER_FEE
 cdef str TAKER_FEE
 cdef str SETTLEMENT_FEE

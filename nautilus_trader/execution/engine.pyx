@@ -80,12 +80,12 @@ cdef class ExecutionEngine(Component):
     """
 
     def __init__(
-            self,
-            ExecutionDatabase database not None,
-            Portfolio portfolio not None,
-            Clock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        ExecutionDatabase database not None,
+        Portfolio portfolio not None,
+        Clock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `ExecutionEngine` class.
@@ -616,8 +616,7 @@ cdef class ExecutionEngine(Component):
             position.quantity,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.fill_price,
-            fill.quote_currency,
-            fill.settlement_currency,
+            fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent1, fill.commission.currency),
             fill.liquidity_side,
@@ -653,8 +652,7 @@ cdef class ExecutionEngine(Component):
             difference,  # Cumulative quantity is fill quantity
             fill.leaves_qty,
             fill.fill_price,
-            fill.quote_currency,
-            fill.settlement_currency,
+            fill.currency,
             fill.is_inverse,
             Money(fill.commission * fill_percent2, fill.commission.currency),
             fill.liquidity_side,

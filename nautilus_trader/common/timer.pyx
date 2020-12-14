@@ -31,10 +31,10 @@ cdef class TimeEvent(Event):
     """
 
     def __init__(
-            self,
-            str name not None,
-            UUID event_id not None,
-            datetime event_timestamp not None,
+        self,
+        str name not None,
+        UUID event_id not None,
+        datetime event_timestamp not None,
     ):
         """
         Initialize a new instance of the `TimeEvent` class.
@@ -110,12 +110,12 @@ cdef class Timer:
     """
 
     def __init__(
-            self,
-            str name not None,
-            callback not None,
-            timedelta interval not None,
-            datetime start_time not None,
-            datetime stop_time=None,  # Can be None
+        self,
+        str name not None,
+        callback not None,
+        timedelta interval not None,
+        datetime start_time not None,
+        datetime stop_time=None,  # Can be None
     ):
         """
         Initialize a new instance of the `Timer` class.
@@ -207,12 +207,12 @@ cdef class TestTimer(Timer):
     __test__ = False
 
     def __init__(
-            self,
-            str name not None,
-            callback not None,
-            timedelta interval not None,
-            datetime start_time not None,
-            datetime stop_time=None
+        self,
+        str name not None,
+        callback not None,
+        timedelta interval not None,
+        datetime start_time not None,
+        datetime stop_time=None
     ):
         """
         Initialize a new instance of the `TestTimer` class.
@@ -293,13 +293,13 @@ cdef class LiveTimer(Timer):
     """
 
     def __init__(
-            self,
-            str name not None,
-            callback not None,
-            timedelta interval not None,
-            datetime now not None,
-            datetime start_time not None,
-            datetime stop_time=None,
+        self,
+        str name not None,
+        callback not None,
+        timedelta interval not None,
+        datetime now not None,
+        datetime start_time not None,
+        datetime stop_time=None,
     ):
         """
         Initialize a new instance of the `LiveTimer` class.

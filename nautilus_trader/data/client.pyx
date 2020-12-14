@@ -48,11 +48,11 @@ cdef class DataClient:
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            DataEngine engine not None,
-            Clock clock not None,
-            Logger logger not None,
+        self,
+        Venue venue not None,
+        DataEngine engine not None,
+        Clock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `DataClient` class.

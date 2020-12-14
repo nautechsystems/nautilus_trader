@@ -88,10 +88,10 @@ cdef class Message:
     """
 
     def __init__(
-            self,
-            MessageType msg_type,
-            UUID identifier not None,
-            datetime timestamp not None,
+        self,
+        MessageType msg_type,
+        UUID identifier not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `Message` class.
@@ -160,9 +160,9 @@ cdef class Document(Message):
     """
 
     def __init__(
-            self,
-            UUID identifier not None,
-            datetime timestamp not None,
+        self,
+        UUID identifier not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `Document` class.
@@ -186,9 +186,9 @@ cdef class Event(Message):
     """
 
     def __init__(
-            self,
-            UUID identifier not None,
-            datetime timestamp not None,
+        self,
+        UUID identifier not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `Event` class.
@@ -234,10 +234,10 @@ cdef class Response(Message):
     """
 
     def __init__(
-            self,
-            UUID correlation_id not None,
-            UUID identifier not None,
-            datetime timestamp not None,
+        self,
+        UUID correlation_id not None,
+        UUID identifier not None,
+        datetime timestamp not None,
     ):
         """
         Initialize a new instance of the `Response` class.

@@ -49,11 +49,11 @@ cdef class BacktestDataProducer:
     """
 
     def __init__(
-            self,
-            BacktestDataContainer data not None,
-            DataEngine engine not None,
-            Clock clock not None,
-            Logger logger not None,
+        self,
+        BacktestDataContainer data not None,
+        DataEngine engine not None,
+        Clock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `BacktestDataProducer` class.

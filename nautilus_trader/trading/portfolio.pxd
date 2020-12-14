@@ -38,12 +38,16 @@ cdef class PortfolioFacade:
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa
 
     cpdef Account account(self, Venue venue)
-    cpdef Money order_margin(self, Venue venue)
-    cpdef Money position_margin(self, Venue venue)
-    cpdef Money unrealized_pnl_for_venue(self, Venue venue)
-    cpdef Money unrealized_pnl_for_symbol(self, Symbol symbol)
-    cpdef Money open_value(self, Venue venue)
+
+    cpdef dict init_margins(self, Venue venue)
+    cpdef dict maint_margins(self, Venue venue)
+    cpdef dict unrealized_pnls(self, Venue venue)
+    cpdef dict market_values(self, Venue venue)
+
+    cpdef Money unrealized_pnl(self, Symbol symbol)
+    cpdef Money market_value(self, Symbol symbol)
     cpdef object net_position(self, Symbol symbol)
+
     cpdef bint is_net_long(self, Symbol symbol) except *
     cpdef bint is_net_short(self, Symbol symbol) except *
     cpdef bint is_flat(self, Symbol symbol) except *
@@ -61,9 +65,8 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict _orders_working
     cdef dict _positions_open
     cdef dict _positions_closed
+    cdef dict _unrealized_pnls
     cdef dict _net_positions
-    cdef dict _unrealized_pnls_symbol
-    cdef dict _unrealized_pnls_venue
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -86,9 +89,9 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
     cdef inline void _handle_position_modified(self, PositionModified event) except *
     cdef inline void _handle_position_closed(self, PositionClosed event) except *
-    cdef inline void _update_net_position(self, Symbol symbol, set positions_open)
-    cdef inline void _update_order_margin(self, Venue venue)
-    cdef inline void _update_position_margin(self, Venue venue)
+    cdef inline void _update_net_position(self, Symbol symbol, set positions_open) except *
+    cdef inline void _update_init_margin(self, Venue venue) except *
+    cdef inline void _update_maint_margin(self, Venue venue) except *
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol)
-    cdef tuple _calculate_xrates(self, Instrument instrument, Account account, OrderSide side)
+    cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side)
     cdef inline Price _get_last_price(self, Position position)

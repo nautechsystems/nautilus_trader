@@ -99,7 +99,7 @@ cdef class InstrumentLoader:
     @staticmethod
     def btcusdt_binance() -> Instrument:
         """
-        Return the Binance BTCUSDT instrument for backtesting.
+        Return the Binance BTC/USDT instrument for backtesting.
         """
         return Instrument(
             symbol=Symbol("BTC/USDT", Venue("BINANCE")),
@@ -118,13 +118,13 @@ cdef class InstrumentLoader:
             max_quantity=Quantity("9000.0"),
             min_quantity=Quantity("1e-06"),
             max_notional=None,
-            min_notional=Money(10.00, USDT),
+            min_notional=Money("10.00000000", USDT),
             max_price=Price("1000000.0"),
             min_price=Price("0.01"),
-            margin_initial=Decimal(),
-            margin_maintenance=Decimal(),
-            maker_fee=Decimal("0.001"),
-            taker_fee=Decimal("0.001"),
+            margin_init=Decimal(),
+            margin_maint=Decimal(),
+            maker_fee=Decimal("0.0001"),
+            taker_fee=Decimal("0.0001"),
             funding_rate_long=Decimal(),
             funding_rate_short=Decimal(),
             timestamp=UNIX_EPOCH,
@@ -133,7 +133,7 @@ cdef class InstrumentLoader:
     @staticmethod
     def ethusdt_binance() -> Instrument:
         """
-        Return the Binance ETHUSDT instrument for backtesting.
+        Return the Binance ETH/USDT instrument for backtesting.
         """
         return Instrument(
             symbol=Symbol("ETH/USDT", Venue("BINANCE")),
@@ -152,13 +152,13 @@ cdef class InstrumentLoader:
             max_quantity=Quantity("9000"),
             min_quantity=Quantity("1e-05"),
             max_notional=None,
-            min_notional=Money(10.00, USDT),
+            min_notional=Money("10.00000000", USDT),
             max_price=Price("1000000.0"),
             min_price=Price("0.01"),
-            margin_initial=Decimal("1.00"),
-            margin_maintenance=Decimal("0.35"),
-            maker_fee=Decimal("0.001"),
-            taker_fee=Decimal("0.001"),
+            margin_init=Decimal("1.00"),
+            margin_maint=Decimal("0.35"),
+            maker_fee=Decimal("0.0001"),
+            taker_fee=Decimal("0.0001"),
             funding_rate_long=Decimal("0"),
             funding_rate_short=Decimal("0"),
             timestamp=UNIX_EPOCH,
@@ -167,7 +167,7 @@ cdef class InstrumentLoader:
     @staticmethod
     def xbtusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX XBTUSD perpetual contract for backtesting.
+        Return the BitMEX XBT/USD perpetual contract for backtesting.
         """
         return Instrument(
             symbol=Symbol("XBT/USD", Venue("BITMEX")),
@@ -189,8 +189,8 @@ cdef class InstrumentLoader:
             min_notional=Money("1.0", USD),
             max_price=Price("1000000.0"),
             min_price=Price("0.5"),
-            margin_initial=Decimal("0.01"),
-            margin_maintenance=Decimal("0.0035"),
+            margin_init=Decimal("0.01"),
+            margin_maint=Decimal("0.0035"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             funding_rate_long=Decimal(),
@@ -201,7 +201,7 @@ cdef class InstrumentLoader:
     @staticmethod
     def ethusd_bitmex(leverage: Decimal=Decimal("1.0")) -> Instrument:
         """
-        Return the BitMEX ETHUSD perpetual contract for backtesting.
+        Return the BitMEX ETH/USD perpetual contract for backtesting.
         """
         return Instrument(
             symbol=Symbol("ETH/USD", Venue("BITMEX")),
@@ -223,8 +223,8 @@ cdef class InstrumentLoader:
             min_notional=None,
             max_price=Price("1000000.00"),
             min_price=Price("0.05"),
-            margin_initial=Decimal("0.02"),
-            margin_maintenance=Decimal("0.007"),
+            margin_init=Decimal("0.02"),
+            margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
             funding_rate_long=Decimal(),
@@ -233,7 +233,7 @@ cdef class InstrumentLoader:
         )
 
     @staticmethod
-    def default_fx_ccy(Symbol symbol) -> Instrument:
+    def default_fx_ccy(Symbol symbol, leverage: Decimal=Decimal("50")) -> Instrument:
         """
         Return a default FX currency pair instrument from the given symbol.
 
@@ -241,6 +241,8 @@ cdef class InstrumentLoader:
         ----------
         symbol : Symbol
             The currency pair symbol.
+        leverage : Decimal, optional
+            The leverage for the instrument.
 
         Raises
         ------
@@ -272,7 +274,7 @@ cdef class InstrumentLoader:
             size_precision=0,
             tick_size=Decimal(f"{1 / 10 ** price_precision:.{price_precision}f}"),
             multiplier=Decimal("1"),
-            leverage=Decimal("100"),
+            leverage=leverage,
             lot_size=Quantity("1000"),
             max_quantity=Quantity("1e7"),
             min_quantity=Quantity("1000"),
@@ -280,8 +282,8 @@ cdef class InstrumentLoader:
             min_price=None,
             max_notional=Money(50000000.00, USD),
             min_notional=Money(1000.00, USD),
-            margin_initial=Decimal("0.5"),
-            margin_maintenance=Decimal("0.1"),
+            margin_init=Decimal("0.5"),
+            margin_maint=Decimal("0.1"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
             funding_rate_long=Decimal("0.0000"),

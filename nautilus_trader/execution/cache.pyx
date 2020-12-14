@@ -39,9 +39,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     """
 
     def __init__(
-            self,
-            ExecutionDatabase database not None,
-            Logger logger not None):
+        self,
+        ExecutionDatabase database not None,
+        Logger logger not None,
+    ):
         """
         Initialize a new instance of the `ExecutionCache` class.
 

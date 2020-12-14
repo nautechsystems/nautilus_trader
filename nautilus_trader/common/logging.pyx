@@ -111,11 +111,11 @@ cdef class LogMessage:
     Represents a log message including timestamp and log level.
     """
     def __init__(
-            self,
-            datetime timestamp not None,
-            LogLevel level,
-            str text not None,
-            long thread_id=0,
+        self,
+        datetime timestamp not None,
+        LogLevel level,
+        str text not None,
+        long thread_id=0,
     ):
         """
         Initialize a new instance of the `LogMessage` class.
@@ -168,17 +168,17 @@ cdef class Logger:
     """
 
     def __init__(
-            self,
-            Clock clock not None,
-            str name=None,
-            bint bypass_logging=False,
-            LogLevel level_console=LogLevel.INFO,
-            LogLevel level_file=LogLevel.DEBUG,
-            LogLevel level_store=LogLevel.WARNING,
-            bint console_prints=True,
-            bint log_thread=False,
-            bint log_to_file=False,
-            str log_file_path not None="",
+        self,
+        Clock clock not None,
+        str name=None,
+        bint bypass_logging=False,
+        LogLevel level_console=LogLevel.INFO,
+        LogLevel level_file=LogLevel.DEBUG,
+        LogLevel level_store=LogLevel.WARNING,
+        bint console_prints=True,
+        bint log_thread=False,
+        bint log_to_file=False,
+        str log_file_path not None="",
     ):
         """
         Initialize a new instance of the `Logger` class.
@@ -330,9 +330,9 @@ cdef class LoggerAdapter:
     """
 
     def __init__(
-            self,
-            str component_name not None,
-            Logger logger not None,
+        self,
+        str component_name not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `LoggerAdapter` class.
@@ -540,17 +540,17 @@ cdef class TestLogger(Logger):
     __test__ = False
 
     def __init__(
-            self,
-            Clock clock not None,
-            str name=None,
-            bint bypass_logging=False,
-            LogLevel level_console=LogLevel.DEBUG,
-            LogLevel level_file=LogLevel.DEBUG,
-            LogLevel level_store=LogLevel.WARNING,
-            bint console_prints=True,
-            bint log_thread=False,
-            bint log_to_file=False,
-            str log_file_path not None="log/",
+        self,
+        Clock clock not None,
+        str name=None,
+        bint bypass_logging=False,
+        LogLevel level_console=LogLevel.DEBUG,
+        LogLevel level_file=LogLevel.DEBUG,
+        LogLevel level_store=LogLevel.WARNING,
+        bint console_prints=True,
+        bint log_thread=False,
+        bint log_to_file=False,
+        str log_file_path not None="log/",
     ):
         """
         Initialize a new instance of the `TestLogger` class.
@@ -622,17 +622,17 @@ cdef class LiveLogger(Logger):
     """
 
     def __init__(
-            self,
-            LiveClock clock not None,
-            str name=None,
-            bint bypass_logging=False,
-            LogLevel level_console=LogLevel.INFO,
-            LogLevel level_file=LogLevel.DEBUG,
-            LogLevel level_store=LogLevel.WARNING,
-            bint console_prints=True,
-            bint log_thread=False,
-            bint log_to_file=False,
-            str log_file_path not None="logs/",
+        self,
+        LiveClock clock not None,
+        str name=None,
+        bint bypass_logging=False,
+        LogLevel level_console=LogLevel.INFO,
+        LogLevel level_file=LogLevel.DEBUG,
+        LogLevel level_store=LogLevel.WARNING,
+        bint console_prints=True,
+        bint log_thread=False,
+        bint log_to_file=False,
+        str log_file_path not None="logs/",
     ):
         """
         Initialize a new instance of the `LiveLogger` class.

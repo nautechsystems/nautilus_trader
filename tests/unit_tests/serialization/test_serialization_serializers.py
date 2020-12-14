@@ -25,7 +25,6 @@ from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -58,7 +57,6 @@ from nautilus_trader.model.order import LimitOrder
 from nautilus_trader.model.order import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers import MsgPackDictionarySerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
 from tests.test_kit.stubs import TestStubs
@@ -105,21 +103,6 @@ class SerializerBaseTests(unittest.TestCase):
         self.assertEqual("SnakeCase", result0)
         self.assertEqual("SnakeCase", result1)
         self.assertEqual("Snake", result2)
-
-
-class MsgPackDictionarySerializerTests(unittest.TestCase):
-
-    def test_serialize_and_deserialize_string_dictionaries(self):
-        # Arrange
-        data = {"A": "1", "B": "2", "C": "3"}
-        serializer = MsgPackDictionarySerializer()
-
-        # Act
-        serialized = serializer.serialize(data)
-        deserialized = serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(data, deserialized)
 
 
 class MsgPackOrderSerializerTests(unittest.TestCase):
@@ -383,11 +366,11 @@ class MsgPackEventSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_account_state_events(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "000", AccountType.SIMULATED),
-            currency=USD,
-            balance=Money(1525000, USD),
-            margin_balance=Money(1425000, USD),
-            margin_available=Money(1325000, USD),
+            account_id=AccountId("SIM", "000"),
+            balances=[Money(1525000, USD)],
+            balances_free=[Money(1425000, USD)],
+            balances_locked=[Money(0, USD)],
+            info={"default_currency": "USD"},
             event_id=uuid4(),
             event_timestamp=UNIX_EPOCH,
         )
@@ -650,7 +633,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(50000),
             Price("1.00000"),
             AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
@@ -682,7 +664,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             Quantity(),
             Price("1.00000"),
             AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.settlement_currency,
             AUDUSD_FXCM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,

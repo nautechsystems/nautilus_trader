@@ -66,10 +66,10 @@ cdef class TradingNode:
     cdef readonly Trader trader
 
     def __init__(
-            self,
-            loop not None: AbstractEventLoop,
-            list strategies not None,
-            dict config not None,
+        self,
+        loop not None: AbstractEventLoop,
+        list strategies not None,
+        dict config not None,
     ):
         """
         Initialize a new instance of the TradingNode class.

@@ -36,12 +36,12 @@ class EMACross(TradingStrategy):
     """
 
     def __init__(
-            self,
-            symbol: Symbol,
-            bar_spec: BarSpecification,
-            trade_size: Decimal,
-            fast_ema: int=10,
-            slow_ema: int=20,
+        self,
+        symbol: Symbol,
+        bar_spec: BarSpecification,
+        trade_size: Decimal,
+        fast_ema: int=10,
+        slow_ema: int=20,
     ):
         """
         Initialize a new instance of the `EMACross` class.

@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 
 
 cdef class Identifier:
@@ -426,12 +424,7 @@ cdef class AccountId(Identifier):
     The issuer and identifier combination must be unique at the fund level.
     """
 
-    def __init__(
-            self,
-            str issuer,
-            str identifier,
-            AccountType account_type,
-    ):
+    def __init__(self, str issuer, str identifier):
         """
         Initialize a new instance of the `AccountId` class.
 
@@ -441,8 +434,6 @@ cdef class AccountId(Identifier):
             The issuer identifier value (exchange/broker).
         identifier : str
             The account identifier value.
-        account_type : AccountType
-            The account type.
 
         Raises
         ------
@@ -452,11 +443,10 @@ cdef class AccountId(Identifier):
             If identifier is not a valid string.
 
         """
-        super().__init__(f"{issuer}-{identifier}-{AccountTypeParser.to_str(account_type)}")
+        super().__init__(f"{issuer}-{identifier}")
 
         self.issuer = Issuer(issuer)
         self.identifier = Identifier(identifier)
-        self.account_type = account_type
 
     cdef Venue issuer_as_venue(self):
         return Venue(self.issuer.value)
@@ -465,16 +455,12 @@ cdef class AccountId(Identifier):
     cdef AccountId from_str_c(str value):
         Condition.valid_string(value, "value")
 
-        cdef list pieces = value.split('-', maxsplit=2)
+        cdef list pieces = value.split('-', maxsplit=1)
 
-        if len(pieces) != 3:
+        if len(pieces) != 2:
             raise ValueError(f"The AccountId string value was malformed, was {value}")
 
-        return AccountId(
-            issuer=pieces[0],
-            identifier=pieces[1],
-            account_type=AccountTypeParser.from_str(pieces[2]),
-        )
+        return AccountId(issuer=pieces[0], identifier=pieces[1])
 
     @staticmethod
     def from_str(value: str) -> AccountId:
@@ -482,7 +468,7 @@ cdef class AccountId(Identifier):
         Return an account identifier from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
 
-        Example: "FXCM-02851908-DEMO".
+        Example: "FXCM-02851908".
 
         Parameters
         ----------
