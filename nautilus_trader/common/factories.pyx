@@ -198,7 +198,7 @@ cdef class OrderFactory:
 
         Returns
         -------
-        MarketOrder
+        LimitOrder
 
         Raises
         ------
