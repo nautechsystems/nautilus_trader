@@ -492,7 +492,6 @@ cdef class TradingStrategy(Component):
         indicator : indicator
             The indicator to register.
 
-
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(indicator, "indicator")

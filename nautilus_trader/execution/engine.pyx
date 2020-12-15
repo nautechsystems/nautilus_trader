@@ -276,8 +276,8 @@ cdef class ExecutionEngine(Component):
         self._set_position_symbol_counts()
 
         # Update portfolio - methods require sets
-        self.portfolio.update_orders_working(set(self.cache.orders_working()))
-        self.portfolio.update_positions(set(self.cache.positions_open()))
+        self.portfolio.initialize_orders(set(self.cache.orders_working()))
+        self.portfolio.initialize_positions(set(self.cache.positions_open()))
 
     cpdef void integrity_check(self) except *:
         """

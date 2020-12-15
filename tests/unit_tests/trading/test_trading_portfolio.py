@@ -325,7 +325,7 @@ class PortfolioTests(unittest.TestCase):
 
         # Act
         self.portfolio.update_tick(last)
-        self.portfolio.update_orders_working({order1, order2})
+        self.portfolio.initialize_orders({order1, order2})
 
         # Assert
         self.assertEqual({}, self.portfolio.init_margins(BINANCE))
@@ -392,7 +392,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         # Act
-        self.portfolio.update_positions({position1, position2})
+        self.portfolio.initialize_positions({position1, position2})
         self.portfolio.update_tick(last)
 
         # Assert

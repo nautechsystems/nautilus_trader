@@ -131,7 +131,7 @@ cdef class WindowedMinMaxPrices:
         """
         Reset the indicator.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         # Set the min/max marks as None until we have data
         self.min_price = None
