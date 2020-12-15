@@ -321,12 +321,12 @@ cdef class BacktestDataClient(DataClient):
         self._handle_instruments(list(self._instruments.values()), correlation_id)
 
     cpdef void request_quote_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,  # Can be None
-            datetime to_datetime,    # Can be None
-            int limit,
-            UUID correlation_id,
+        self,
+        Symbol symbol,
+        datetime from_datetime,  # Can be None
+        datetime to_datetime,    # Can be None
+        int limit,
+        UUID correlation_id,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -357,12 +357,12 @@ cdef class BacktestDataClient(DataClient):
         # Do nothing else for backtest
 
     cpdef void request_trade_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,  # Can be None
-            datetime to_datetime,    # Can be None
-            int limit,
-            UUID correlation_id,
+        self,
+        Symbol symbol,
+        datetime from_datetime,  # Can be None
+        datetime to_datetime,    # Can be None
+        int limit,
+        UUID correlation_id,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -393,12 +393,12 @@ cdef class BacktestDataClient(DataClient):
         # Do nothing else for backtest
 
     cpdef void request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,  # Can be None
-            datetime to_datetime,    # Can be None
-            int limit,
-            UUID correlation_id,
+        self,
+        BarType bar_type,
+        datetime from_datetime,  # Can be None
+        datetime to_datetime,    # Can be None
+        int limit,
+        UUID correlation_id,
     ) except *:
         """
         Request historical bars for the given parameters from the data engine.

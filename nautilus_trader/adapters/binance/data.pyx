@@ -79,7 +79,7 @@ cdef class BinanceDataClient(LiveDataClient):
 
     cpdef bint is_connected(self) except *:
         """
-        If the client is connected.
+        Return a value indicating whether the client is connected.
 
         Returns
         -------
@@ -276,12 +276,12 @@ cdef class BinanceDataClient(LiveDataClient):
         # TODO: Implement
 
     cpdef void request_quote_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            UUID correlation_id,
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -308,12 +308,12 @@ cdef class BinanceDataClient(LiveDataClient):
         # TODO: Implement
 
     cpdef void request_trade_ticks(
-            self,
-            Symbol symbol,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            UUID correlation_id,
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -340,12 +340,12 @@ cdef class BinanceDataClient(LiveDataClient):
         # TODO: Implement
 
     cpdef void request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            UUID correlation_id,
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
     ) except *:
         """
         Request historical bars for the given parameters.

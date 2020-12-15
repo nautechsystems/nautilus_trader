@@ -67,15 +67,15 @@ cdef class VolatilityRatio(Indicator):
         Condition.positive_int(slow_period, "slow_period")
         Condition.true(fast_period < slow_period, "fast_period < slow_period")
         Condition.not_negative(value_floor, "value_floor")
-        super().__init__(
-            params=[
-                fast_period,
-                slow_period,
-                ma_type.name,
-                use_previous,
-                value_floor,
-            ]
-        )
+
+        params = [
+            fast_period,
+            slow_period,
+            ma_type.name,
+            use_previous,
+            value_floor,
+        ]
+        super().__init__(params=params)
 
         self.fast_period = fast_period
         self.slow_period = slow_period
@@ -102,10 +102,10 @@ cdef class VolatilityRatio(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double high,
-            double low,
-            double close,
+        self,
+        double high,
+        double low,
+        double close,
     ) except *:
         """
         Update the indicator with the given raw value.

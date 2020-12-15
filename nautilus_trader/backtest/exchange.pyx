@@ -219,8 +219,6 @@ cdef class SimulatedExchange:
         """
         self.exec_client.handle_event(self._generate_account_event())
 
-    # TODO: PyUnresolvedReferences for ticks prices
-    # noinspection PyUnresolvedReferences
     cpdef void process_tick(self, Tick tick) except *:
         """
         Process the exchanges markets with the given tick.
@@ -396,8 +394,6 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(cancelled)
         self._check_oco_order(command.cl_ord_id)
 
-    # TODO: PyUnresolvedReferences for is_post_only
-    # noinspection PyUnresolvedReferences
     cpdef void handle_modify_order(self, ModifyOrder command) except *:
         Condition.not_none(command, "command")
 

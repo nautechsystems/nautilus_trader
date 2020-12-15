@@ -106,10 +106,6 @@ cdef class PortfolioFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-_DECIMAL_ZERO = Decimal()
-_DECIMAL_ONE = Decimal(1)
-
-
 cdef class Portfolio(PortfolioFacade):
     """
     Provides a trading portfolio.
@@ -440,14 +436,14 @@ cdef class Portfolio(PortfolioFacade):
         for symbol in symbols:
             pnl = self._unrealized_pnls.get(symbol)
             if pnl is not None:
-                # P&L pre-calculated
-                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, _DECIMAL_ZERO) + pnl
-                continue
-            # P&L must be calculated
+                # P&L already calculated
+                unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
+                continue  # To next symbol
+            # Calculate P&L
             pnl = self._calculate_unrealized_pnl(symbol)
             if pnl is None:
                 return None  # Error already logged in `_calculate_unrealized_pnl`
-            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, _DECIMAL_ZERO) + pnl
+            unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
 
         return {k: Money(v, k) for k, v in unrealized_pnls.items()}
 
@@ -472,7 +468,7 @@ cdef class Portfolio(PortfolioFacade):
         if account is None:
             self._log.error(f"Cannot calculate open value "
                             f"(no account registered for {venue}).")
-            return None
+            return None  # Cannot calculate
 
         cdef set positions_open = self._positions_open.get(venue)
         if not positions_open:
@@ -502,12 +498,12 @@ cdef class Portfolio(PortfolioFacade):
                 side=position.entry,
             )
 
-            if xrate == _DECIMAL_ZERO:
+            if xrate == Decimal(0):
                 self._log.error(f"Cannot calculate open value (insufficient data for "
                                 f"{instrument.quote_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
-            market_value = market_values.get(instrument.settlement_currency, _DECIMAL_ZERO)
+            market_value = market_values.get(instrument.settlement_currency, Decimal(0))
             market_value += instrument.market_value(
                 position.quantity,
                 last,
@@ -567,7 +563,7 @@ cdef class Portfolio(PortfolioFacade):
         if account is None:
             self._log.error(f"Cannot calculate open value "
                             f"(no account registered for {symbol.venue}).")
-            return None
+            return None  # Cannot calculate
 
         cdef instrument = self._data.instrument(symbol)
         if instrument is None:
@@ -579,7 +575,7 @@ cdef class Portfolio(PortfolioFacade):
         if not positions_open:
             return Money(0, instrument.quote_currency)
 
-        market_value: Decimal = _DECIMAL_ZERO
+        market_value: Decimal = Decimal(0)
 
         cdef Currency currency
         if account.default_currency is not None:
@@ -605,7 +601,7 @@ cdef class Portfolio(PortfolioFacade):
                 side=position.entry,
             )
 
-            if xrate == _DECIMAL_ZERO:
+            if xrate == Decimal(0):
                 self._log.error(f"Cannot calculate open value (insufficient data for "
                                 f"{instrument.settlement_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
@@ -655,7 +651,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) > _DECIMAL_ZERO
+        return self._net_position(symbol) > Decimal(0)
 
     cpdef bint is_net_short(self, Symbol symbol) except *:
         """
@@ -675,7 +671,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) < _DECIMAL_ZERO
+        return self._net_position(symbol) < Decimal(0)
 
     cpdef bint is_flat(self, Symbol symbol) except *:
         """
@@ -695,7 +691,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) == _DECIMAL_ZERO
+        return self._net_position(symbol) == Decimal(0)
 
     cpdef bint is_completely_flat(self) except *:
         """
@@ -708,7 +704,7 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         for net_position in self._net_positions.values():
-            if net_position != _DECIMAL_ZERO:
+            if net_position != Decimal(0):
                 return False
 
         return True
@@ -716,7 +712,7 @@ cdef class Portfolio(PortfolioFacade):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline object _net_position(self, Symbol symbol):
-        return self._net_positions.get(symbol, _DECIMAL_ZERO)
+        return self._net_positions.get(symbol, Decimal(0))
 
     cdef inline set _symbols_open_for_venue(self, Venue venue):
         cdef Position position
@@ -806,7 +802,7 @@ cdef class Portfolio(PortfolioFacade):
                     side=order.side,
                 )
 
-                if xrate == _DECIMAL_ZERO:
+                if xrate == Decimal(0):
                     self._log.error(f"Cannot calculate initial margin (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     continue  # Cannot calculate
@@ -816,7 +812,7 @@ cdef class Portfolio(PortfolioFacade):
                 currency = instrument.settlement_currency
 
             # Update total margin
-            total_margin = margins.get(currency, _DECIMAL_ZERO)
+            total_margin = margins.get(currency, Decimal(0))
             total_margin += margin
             margins[currency] = total_margin
 
@@ -873,7 +869,7 @@ cdef class Portfolio(PortfolioFacade):
                     side=position.entry,
                 )
 
-                if xrate == _DECIMAL_ZERO:
+                if xrate == Decimal(0):
                     self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     continue  # Cannot calculate
@@ -883,7 +879,7 @@ cdef class Portfolio(PortfolioFacade):
                 currency = instrument.settlement_currency
 
             # Update total margin
-            total_margin = margins.get(currency, _DECIMAL_ZERO)
+            total_margin = margins.get(currency, Decimal(0))
             total_margin += margin
             margins[currency] = total_margin
 
@@ -918,7 +914,7 @@ cdef class Portfolio(PortfolioFacade):
             else:
                 return Money(0, instrument.settlement_currency)
 
-        total_pnl: Decimal = _DECIMAL_ZERO
+        total_pnl: Decimal = Decimal(0)
 
         cdef Position position
         cdef Price last
@@ -940,7 +936,7 @@ cdef class Portfolio(PortfolioFacade):
                     side=position.entry,
                 )
 
-                if xrate == _DECIMAL_ZERO:
+                if xrate == Decimal(0):
                     self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     return None  # Cannot calculate
@@ -960,7 +956,7 @@ cdef class Portfolio(PortfolioFacade):
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )
 
-        return _DECIMAL_ONE  # No conversion needed
+        return Decimal(1)  # No conversion needed
 
     cdef inline Price _get_last_price(self, Position position):
         cdef QuoteTick quote_tick = self._data.quote_tick(position.symbol)

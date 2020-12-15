@@ -202,6 +202,8 @@ cdef class OrderFilled(OrderEvent):
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
     cdef readonly datetime execution_time
     """The execution timestamp.\n\n:returns: `datetime`"""
+    cdef readonly dict info
+    """The additional fill information.\n\n:returns: `dict[str, object]`"""
 
 
 cdef class PositionEvent(Event):

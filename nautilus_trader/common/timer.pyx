@@ -72,7 +72,7 @@ cdef class TimeEventHandler:
     Represents a bundled event and handler.
     """
 
-    def __init__(self, TimeEvent event not None, handler not None):
+    def __init__(self, TimeEvent event not None, handler not None: callable):
         self.event = event
         self._handler = handler
 
@@ -112,7 +112,7 @@ cdef class Timer:
     def __init__(
         self,
         str name not None,
-        callback not None,
+        callback not None: callable,
         timedelta interval not None,
         datetime start_time not None,
         datetime stop_time=None,  # Can be None
@@ -209,7 +209,7 @@ cdef class TestTimer(Timer):
     def __init__(
         self,
         str name not None,
-        callback not None,
+        callback not None: callable,
         timedelta interval not None,
         datetime start_time not None,
         datetime stop_time=None
@@ -295,7 +295,7 @@ cdef class LiveTimer(Timer):
     def __init__(
         self,
         str name not None,
-        callback not None,
+        callback not None: callable,
         timedelta interval not None,
         datetime now not None,
         datetime start_time not None,

@@ -73,8 +73,7 @@ cpdef datetime from_posix_ms(long posix):
 
 cpdef bint is_datetime_utc(datetime timestamp) except *:
     """
-    Checks if the given timestamp is timezone aware UTC.
-    Will also return False if timezone is timezone.utc to standardize on pytz.
+    Return a value indicating whether the given timestamp is timezone aware UTC.
 
     Parameters
     ----------
@@ -84,7 +83,7 @@ cpdef bint is_datetime_utc(datetime timestamp) except *:
     Returns
     -------
     bool
-        True if argument timezone aware UTC, else False.
+        True if timezone aware UTC, else False.
 
     """
     Condition.not_none(timestamp, "timestamp")
@@ -94,7 +93,7 @@ cpdef bint is_datetime_utc(datetime timestamp) except *:
 
 cpdef bint is_tz_aware(time_object) except *:
     """
-    Checks if the given object is timezone aware.
+    Return a value indicating whether the given object is timezone aware.
 
     Parameters
     ----------
@@ -104,7 +103,7 @@ cpdef bint is_tz_aware(time_object) except *:
     Returns
     -------
     bool
-        True if object timezone aware, else False.
+        True if timezone aware, else False.
 
     """
     Condition.not_none(time_object, "time_object")
@@ -119,7 +118,7 @@ cpdef bint is_tz_aware(time_object) except *:
 
 cpdef bint is_tz_naive(time_object) except *:
     """
-    Checks if the given object is timezone naive.
+    Return a value indicating whether the given object is timezone naive.
 
     Parameters
     ----------

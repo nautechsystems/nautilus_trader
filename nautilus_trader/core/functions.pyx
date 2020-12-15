@@ -59,11 +59,11 @@ cpdef inline double fast_mean(list values) except *:
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef inline double fast_mean_iterated(
-        list values,
-        double next_value,
-        double current_value,
-        int expected_length,
-        bint drop_left=True,
+    list values,
+    double next_value,
+    double current_value,
+    int expected_length,
+    bint drop_left=True,
 ) except *:
     """
     Return the calculated average from the given inputs.
