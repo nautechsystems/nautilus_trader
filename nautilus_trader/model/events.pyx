@@ -803,6 +803,7 @@ cdef class OrderFilled(OrderEvent):
         datetime execution_time not None,
         UUID event_id not None,
         datetime event_timestamp not None,
+        dict info=None,
     ):
         """
         Initialize a new instance of the `OrderFilled` class.
@@ -847,8 +848,12 @@ cdef class OrderFilled(OrderEvent):
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
+        info : dict[str, object], optional
+            The additional fill information.
 
         """
+        if info is None:
+            info = {}
         Condition.not_equal(order_side, OrderSide.UNDEFINED, "order_side", "UNDEFINED")
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         super().__init__(
@@ -873,6 +878,7 @@ cdef class OrderFilled(OrderEvent):
         self.commission = commission
         self.liquidity_side = liquidity_side
         self.execution_time = execution_time
+        self.info = info
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("

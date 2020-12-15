@@ -46,7 +46,7 @@ The documentation for the latest version of the package is available at _readthe
 
 > https://nautilus-trader.readthedocs.io
 
-![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.jpg?raw=true "")
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 
 ## Features
 
