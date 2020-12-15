@@ -436,10 +436,10 @@ cdef class Portfolio(PortfolioFacade):
         for symbol in symbols:
             pnl = self._unrealized_pnls.get(symbol)
             if pnl is not None:
-                # P&L pre-calculated
+                # P&L already calculated
                 unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
-                continue
-            # P&L must be calculated
+                continue  # To next symbol
+            # Calculate P&L
             pnl = self._calculate_unrealized_pnl(symbol)
             if pnl is None:
                 return None  # Error already logged in `_calculate_unrealized_pnl`
@@ -468,7 +468,7 @@ cdef class Portfolio(PortfolioFacade):
         if account is None:
             self._log.error(f"Cannot calculate open value "
                             f"(no account registered for {venue}).")
-            return None
+            return None  # Cannot calculate
 
         cdef set positions_open = self._positions_open.get(venue)
         if not positions_open:
@@ -563,7 +563,7 @@ cdef class Portfolio(PortfolioFacade):
         if account is None:
             self._log.error(f"Cannot calculate open value "
                             f"(no account registered for {symbol.venue}).")
-            return None
+            return None  # Cannot calculate
 
         cdef instrument = self._data.instrument(symbol)
         if instrument is None:
