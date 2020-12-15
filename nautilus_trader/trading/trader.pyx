@@ -136,13 +136,6 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.start()
 
-    cpdef void _reset(self) except *:
-        for strategy in self._strategies:
-            strategy.reset()
-
-        self.portfolio.reset()
-        self.analyzer.reset()
-
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -150,6 +143,13 @@ cdef class Trader(Component):
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
+
+    cpdef void _reset(self) except *:
+        for strategy in self._strategies:
+            strategy.reset()
+
+        self.portfolio.reset()
+        self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
         for strategy in self._strategies:

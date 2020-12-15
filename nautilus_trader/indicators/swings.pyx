@@ -74,10 +74,10 @@ cdef class Swings(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double high,
-            double low,
-            datetime timestamp,
+        self,
+        double high,
+        double low,
+        datetime timestamp,
     ) except *:
         """
         Update the indicator with the given raw values.

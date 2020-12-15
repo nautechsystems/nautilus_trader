@@ -121,11 +121,11 @@ cdef class BacktestDataContainer:
         self.trade_ticks = dict(sorted(self.trade_ticks.items()))
 
     cpdef void add_bars(
-            self,
-            Symbol symbol,
-            BarAggregation aggregation,
-            PriceType price_type,
-            data: pd.DataFrame
+        self,
+        Symbol symbol,
+        BarAggregation aggregation,
+        PriceType price_type,
+        data: pd.DataFrame
     ) except *:
         """
         Add the bar data to the container.
@@ -198,7 +198,8 @@ cdef class BacktestDataContainer:
 
     cpdef bint has_quote_data(self, Symbol symbol) except *:
         """
-        If the container has quote data for the given symbol.
+        Return a value indicating whether the container has quote data for the
+        given symbol.
 
         Parameters
         ----------
@@ -215,7 +216,8 @@ cdef class BacktestDataContainer:
 
     cpdef bint has_trade_data(self, Symbol symbol) except *:
         """
-        If the container has trade data for the given symbol.
+        Return a value indicating whether the container has trade data for the
+        given symbol.
 
         Parameters
         ----------

@@ -673,7 +673,7 @@ cdef class MarketOrder(Order):
 
         Returns
         -------
-        Order
+        MarketOrder
 
         Raises
         ------
@@ -814,7 +814,7 @@ cdef class LimitOrder(PassiveOrder):
 
         Returns
         -------
-        Order
+        LimitOrder
 
         Raises
         ------
@@ -924,7 +924,7 @@ cdef class StopMarketOrder(PassiveOrder):
 
         Returns
         -------
-        Order
+        StopMarketOrder
 
         Raises
         ------

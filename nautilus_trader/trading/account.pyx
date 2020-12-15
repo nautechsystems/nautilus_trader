@@ -565,7 +565,7 @@ cdef class Account:
 
         return Money(equity - init_margin - maint_margin, currency)
 
-# -- PRIVATE ---------------------------------------------------------------------------------------
+# -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _update_balances(
         self,

@@ -173,7 +173,7 @@ cdef class BarAggregator:
     def __init__(
         self,
         BarType bar_type not None,
-        handler not None,
+        handler not None: callable,
         Logger logger not None,
         bint use_previous_close,
     ):
@@ -256,7 +256,7 @@ cdef class TickBarAggregator(BarAggregator):
     def __init__(
         self,
         BarType bar_type not None,
-        handler not None,
+        handler not None: callable,
         Logger logger not None,
     ):
         """
@@ -299,7 +299,7 @@ cdef class VolumeBarAggregator(BarAggregator):
     def __init__(
         self,
         BarType bar_type not None,
-        handler not None,
+        handler not None: callable,
         Logger logger not None,
     ):
         """
@@ -365,7 +365,7 @@ cdef class ValueBarAggregator(BarAggregator):
     def __init__(
         self,
         BarType bar_type not None,
-        handler not None,
+        handler not None: callable,
         Logger logger not None,
     ):
         """
@@ -435,7 +435,7 @@ cdef class TimeBarAggregator(BarAggregator):
     def __init__(
         self,
         BarType bar_type not None,
-        handler not None,
+        handler not None: callable,
         bint use_previous_close,
         Clock clock not None,
         Logger logger not None,

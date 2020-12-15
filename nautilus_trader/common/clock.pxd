@@ -46,7 +46,7 @@ cdef class Clock:
     cpdef timedelta delta(self, datetime time)
     cpdef list timer_names(self)
     cpdef Timer timer(self, str name)
-    cpdef void register_default_handler(self, handler) except *
+    cpdef void register_default_handler(self, handler: callable) except *
     cpdef void set_time_alert(self, str name, datetime alert_time, handler=*) except *
     cpdef void set_timer(
         self,
@@ -54,7 +54,7 @@ cdef class Clock:
         timedelta interval,
         datetime start_time=*,
         datetime stop_time=*,
-        handler=*,
+        handler: callable=*,
     ) except *
     cpdef void cancel_timer(self, str name) except *
     cpdef void cancel_timers(self) except *
@@ -62,13 +62,13 @@ cdef class Clock:
     cdef Timer _create_timer(
         self,
         str name,
-        callback,
+        callback: callable,
         timedelta interval,
         datetime now,
         datetime start_time,
         datetime stop_time,
     )
-    cdef inline void _add_timer(self, Timer timer, handler) except *
+    cdef inline void _add_timer(self, Timer timer, handler: callable) except *
     cdef inline void _remove_timer(self, Timer timer) except *
     cdef inline void _update_stack(self) except *
     cdef inline void _update_timing(self) except *

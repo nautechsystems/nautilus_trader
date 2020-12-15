@@ -62,16 +62,16 @@ cdef class PositionSizer:
         self.instrument = instrument
 
     cpdef Quantity calculate(
-            self,
-            Price entry,
-            Price stop_loss,
-            Money equity,
-            risk: Decimal,
-            commission_rate: Decimal=Decimal(),
-            exchange_rate: Decimal=Decimal(1),
-            hard_limit: Decimal=None,
-            unit_batch_size: Decimal=Decimal(1),
-            int units=1,
+        self,
+        Price entry,
+        Price stop_loss,
+        Money equity,
+        risk: Decimal,
+        commission_rate: Decimal=Decimal(),
+        exchange_rate: Decimal=Decimal(1),
+        hard_limit: Decimal=None,
+        unit_batch_size: Decimal=Decimal(1),
+        int units=1,
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

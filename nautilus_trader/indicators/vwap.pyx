@@ -55,10 +55,10 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         )
 
     cpdef void update_raw(
-            self,
-            double price,
-            double volume,
-            datetime timestamp,
+        self,
+        double price,
+        double volume,
+        datetime timestamp,
     ) except *:
         """
         Update the indicator with the given raw values.

@@ -36,7 +36,7 @@ cdef class Position:
 
         Parameters
         ----------
-        event : OrderFillEvent
+        event : OrderFilled
             The order fill event which opened the position.
 
         """

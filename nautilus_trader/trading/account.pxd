@@ -67,7 +67,7 @@ cdef class Account:
     cpdef Money maint_margin(self, Currency currency=*)
     cpdef Money free_margin(self, Currency currency=*)
 
-# -- PRIVATE ---------------------------------------------------------------------------------------
+# -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _update_balances(
         self,
