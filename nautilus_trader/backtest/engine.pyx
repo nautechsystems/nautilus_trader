@@ -378,7 +378,7 @@ cdef class BacktestEngine:
         """
         Reset the backtest engine.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 

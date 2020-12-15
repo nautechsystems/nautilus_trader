@@ -84,7 +84,7 @@ cdef class DataCache(DataCacheFacade):
         """
         Reset the cache.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self._log.info("Resetting cache...")
 

@@ -116,7 +116,7 @@ cdef class BarBuilder:
         """
         Reset the bar builder.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         if self.use_previous_close:
             self._open = self._close

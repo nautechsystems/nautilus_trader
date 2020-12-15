@@ -75,10 +75,10 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void initialize_orders(self, set orders) except *
+    cpdef void initialize_positions(self, set positions) except *
     cpdef void update_tick(self, QuoteTick tick) except *
-    cpdef void update_orders_working(self, set orders) except *
     cpdef void update_order(self, Order order) except *
-    cpdef void update_positions(self, set positions) except *
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 
