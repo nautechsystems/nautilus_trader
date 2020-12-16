@@ -60,7 +60,6 @@ cdef set _COMPLETED_STATES = {
     OrderState.CANCELLED,
     OrderState.EXPIRED,
     OrderState.FILLED,
-    OrderState.OVER_FILLED,
 }
 
 
@@ -88,9 +87,6 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderState.OVER_FILLED): OrderState.OVER_FILLED,
-    (OrderState.FILLED, OrderState.OVER_FILLED): OrderState.OVER_FILLED,
-    (OrderState.OVER_FILLED, OrderState.OVER_FILLED): OrderState.OVER_FILLED,
 }
 
 
@@ -409,10 +405,8 @@ cdef class Order:
             leaves_qty: Decimal = self.quantity - self.filled_qty - event.fill_qty
             if leaves_qty > 0:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
-            elif leaves_qty == 0:
-                self._fsm.trigger(OrderState.FILLED)
             else:
-                self._fsm.trigger(OrderState.OVER_FILLED)
+                self._fsm.trigger(OrderState.FILLED)
 
             self._filled(event)
 
