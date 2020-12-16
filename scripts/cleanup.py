@@ -44,6 +44,7 @@ EXTENSIONS_TO_CLEAN = (
     ".dll",
     ".html",
     ".o",
+    ".c",
     ".prof",
     ".pyd",
     ".pyc",

@@ -30,7 +30,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
+USDJPY_SIM = TestStubs.symbol_usdjpy_fxcm()
 
 
 class BacktestEngineTests(unittest.TestCase):
@@ -49,7 +49,7 @@ class BacktestEngineTests(unittest.TestCase):
         )
 
         self.engine.add_exchange(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             starting_balances=[Money(1_000_000, USD)],
@@ -87,7 +87,7 @@ class BacktestEngineTests(unittest.TestCase):
     def test_change_fill_model(self):
         # Arrange
         # Act
-        self.engine.change_fill_model(Venue("FXCM"), FillModel())
+        self.engine.change_fill_model(Venue("SIM"), FillModel())
 
         # Assert
         self.assertTrue(True)  # No exception raised

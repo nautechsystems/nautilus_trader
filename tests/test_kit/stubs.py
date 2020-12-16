@@ -77,15 +77,15 @@ class TestStubs:
 
     @staticmethod
     def symbol_audusd_fxcm() -> Symbol:
-        return Symbol("AUD/USD", Venue("FXCM"))
+        return Symbol("AUD/USD", Venue("SIM"))
 
     @staticmethod
     def symbol_gbpusd_fxcm() -> Symbol:
-        return Symbol("GBP/USD", Venue("FXCM"))
+        return Symbol("GBP/USD", Venue("SIM"))
 
     @staticmethod
     def symbol_usdjpy_fxcm() -> Symbol:
-        return Symbol("USD/JPY", Venue("FXCM"))
+        return Symbol("USD/JPY", Venue("SIM"))
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -196,7 +196,7 @@ class TestStubs:
 
     @staticmethod
     def account_id() -> AccountId:
-        return AccountId("FXCM", "000")
+        return AccountId("SIM", "000")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:

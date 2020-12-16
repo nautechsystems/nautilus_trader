@@ -18,6 +18,7 @@ from decimal import Decimal
 
 import ccxt
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
@@ -35,34 +36,52 @@ cdef class BinanceInstrumentProvider:
     Provides a means of loading Binance `Instrument` objects.
     """
 
-    def __init__(self, bint load_all=False):
+    def __init__(self, client: ccxt.Exchange=None, bint load_all=False):
         """
         Initialize a new instance of the `BinanceInstrumentProvider` class.
 
         Parameters
         ----------
+        client : ccxt.Exchange, optional
+            The client for the provider. If None then one will be created.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
+        Raises
+        ------
+        ValueError
+            If client.name != 'Binance'.
+
         """
+        if client is None:
+            client = ccxt.binance()
+        else:
+            Condition.true(client.name == "Binance", "client.name == `Binance`")
+
         self.venue = Venue("BINANCE")
+        self.count = 0
         self._instruments = {}  # type: dict[Symbol: Instrument]
-        self._binance = ccxt.binance()
+        self._binance = client
 
         if load_all:
             self.load_all()
 
-    cpdef void load_all(self):
+    cpdef void load_all(self) except *:
         """
         Pre-load all instruments.
         """
         self._binance.load_markets()
+
+        if self._binance.markets is None:
+            return  # No markets
 
         for k, v in self._binance.markets.items():
             symbol = Symbol(k, self.venue)
             instrument = self._parse_instrument(symbol, v)
 
             self._instruments[symbol] = instrument
+
+        self.count = len(self._instruments)
 
     cpdef dict get_all(self):
         """

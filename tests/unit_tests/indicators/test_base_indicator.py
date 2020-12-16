@@ -20,7 +20,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class IndicatorTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class IndicatorTests(unittest.TestCase):
         # Arrange
         indicator = Indicator([])
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         # Assert
@@ -39,7 +39,7 @@ class IndicatorTests(unittest.TestCase):
         # Arrange
         indicator = Indicator([])
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         # Assert

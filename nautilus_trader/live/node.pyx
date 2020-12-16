@@ -264,12 +264,15 @@ cdef class TradingNode:
 
         try:
             self._loop.stop()
+            self._log.info("Closing event loop...")
+            time.sleep(1)
             self._loop.close()
+            self._log.info(f"loop.is_closed={self._loop.is_closed()}")
         except RuntimeError as ex:
             self._log.exception(ex)
 
         self._log.info("state=DISPOSED.")
-        time.sleep(1)  # Allow final logs to print to console
+        time.sleep(0.1)  # Allow final logs to print to console
 
     cdef void _setup_data_clients(self, dict config, logger):
         # TODO: DataClientFactory

@@ -110,7 +110,7 @@ cdef class DataCache(DataCacheFacade):
             self._xrate_symbols[instrument.symbol] = (f"{instrument.base_currency}/"
                                                       f"{instrument.quote_currency}")
 
-        self._log.info(f"Updated instrument {instrument.symbol}")
+        self._log.debug(f"Updated instrument {instrument.symbol}")
 
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
         """

@@ -23,7 +23,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class WeightedMovingAverageTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = WeightedMovingAverage(10, self.w, PriceType.MID)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -87,7 +87,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
         # Arrange
         indicator = WeightedMovingAverage(10, self.w)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         indicator.handle_trade_tick(tick)

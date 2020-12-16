@@ -27,7 +27,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class BacktestDataClientTests(unittest.TestCase):
@@ -50,8 +50,8 @@ class BacktestDataClientTests(unittest.TestCase):
         )
 
         self.client = BacktestDataClient(
-            instruments=[USDJPY_FXCM],
-            venue=Venue("FXCM"),
+            instruments=[USDJPY_SIM],
+            venue=Venue("SIM"),
             engine=self.data_engine,
             clock=TestClock(),
             logger=self.logger,
@@ -94,9 +94,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_subscribe_instrument(self):
         # Arrange
         # Act
-        self.client.subscribe_instrument(USDJPY_FXCM.symbol)
+        self.client.subscribe_instrument(USDJPY_SIM.symbol)
         self.client.connect()
-        self.client.subscribe_instrument(USDJPY_FXCM.symbol)
+        self.client.subscribe_instrument(USDJPY_SIM.symbol)
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -104,9 +104,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_subscribe_quote_ticks(self):
         # Arrange
         # Act
-        self.client.subscribe_quote_ticks(USDJPY_FXCM.symbol)
+        self.client.subscribe_quote_ticks(USDJPY_SIM.symbol)
         self.client.connect()
-        self.client.subscribe_quote_ticks(USDJPY_FXCM.symbol)
+        self.client.subscribe_quote_ticks(USDJPY_SIM.symbol)
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -114,9 +114,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_subscribe_trade_ticks(self):
         # Arrange
         # Act
-        self.client.subscribe_trade_ticks(USDJPY_FXCM.symbol)
+        self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
         self.client.connect()
-        self.client.subscribe_trade_ticks(USDJPY_FXCM.symbol)
+        self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -134,9 +134,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_unsubscribe_instrument(self):
         # Arrange
         # Act
-        self.client.unsubscribe_instrument(USDJPY_FXCM.symbol)
+        self.client.unsubscribe_instrument(USDJPY_SIM.symbol)
         self.client.connect()
-        self.client.unsubscribe_instrument(USDJPY_FXCM.symbol)
+        self.client.unsubscribe_instrument(USDJPY_SIM.symbol)
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -144,9 +144,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_unsubscribe_quote_ticks(self):
         # Arrange
         # Act
-        self.client.unsubscribe_quote_ticks(USDJPY_FXCM.symbol)
+        self.client.unsubscribe_quote_ticks(USDJPY_SIM.symbol)
         self.client.connect()
-        self.client.unsubscribe_quote_ticks(USDJPY_FXCM.symbol)
+        self.client.unsubscribe_quote_ticks(USDJPY_SIM.symbol)
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -154,9 +154,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_unsubscribe_trade_ticks(self):
         # Arrange
         # Act
-        self.client.unsubscribe_trade_ticks(USDJPY_FXCM.symbol)
+        self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
         self.client.connect()
-        self.client.unsubscribe_trade_ticks(USDJPY_FXCM.symbol)
+        self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -174,9 +174,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_instrument(self):
         # Arrange
         # Act
-        self.client.request_instrument(USDJPY_FXCM.symbol, uuid4())
+        self.client.request_instrument(USDJPY_SIM.symbol, uuid4())
         self.client.connect()
-        self.client.request_instrument(USDJPY_FXCM.symbol, uuid4())
+        self.client.request_instrument(USDJPY_SIM.symbol, uuid4())
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -194,9 +194,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_quote_ticks(self):
         # Arrange
         # Act
-        self.client.request_quote_ticks(USDJPY_FXCM.symbol, None, None, 0, uuid4())
+        self.client.request_quote_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
         self.client.connect()
-        self.client.request_quote_ticks(USDJPY_FXCM.symbol, None, None, 0, uuid4())
+        self.client.request_quote_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
 
         # Assert
         self.assertTrue(True)  # Add with further functionality
@@ -204,9 +204,9 @@ class BacktestDataClientTests(unittest.TestCase):
     def test_request_trade_ticks(self):
         # Arrange
         # Act
-        self.client.request_trade_ticks(USDJPY_FXCM.symbol, None, None, 0, uuid4())
+        self.client.request_trade_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
         self.client.connect()
-        self.client.request_trade_ticks(USDJPY_FXCM.symbol, None, None, 0, uuid4())
+        self.client.request_trade_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
 
         # Assert
         self.assertTrue(True)  # Add with further functionality

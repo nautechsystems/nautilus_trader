@@ -88,8 +88,8 @@ cdef class LiveDataEngine(DataEngine):
         self._is_running = False
         self._data_queue.put_nowait(None)     # Sentinel message pattern
         self._message_queue.put_nowait(None)  # Sentinel message pattern
-        self._log.info(f"Sentinel message placed on data queue.")
-        self._log.info(f"Sentinel message placed on message queue.")
+        self._log.debug(f"Sentinel message placed on data queue.")
+        self._log.debug(f"Sentinel message placed on message queue.")
 
     async def _run_data_queue(self):
         self._log.info(f"Data queue processing starting (qsize={self.data_qsize()})...")

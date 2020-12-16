@@ -151,9 +151,9 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_equality(self):
         # Arrange
-        symbol1 = Symbol("AUD/USD", Venue("FXCM"))
+        symbol1 = Symbol("AUD/USD", Venue("SIM"))
         symbol2 = Symbol("AUD/USD", Venue('IDEAL_PRO'))
-        symbol3 = Symbol("GBP/USD", Venue("FXCM"))
+        symbol3 = Symbol("GBP/USD", Venue("SIM"))
 
         # Act
         # Assert
@@ -163,23 +163,23 @@ class IdentifierTests(unittest.TestCase):
 
     def test_symbol_str(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue("FXCM"))
+        symbol = Symbol("AUD/USD", Venue("SIM"))
 
         # Act
         # Assert
-        self.assertEqual("AUD/USD.FXCM", str(symbol))
+        self.assertEqual("AUD/USD.SIM", str(symbol))
 
     def test_symbol_repr(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue("FXCM"))
+        symbol = Symbol("AUD/USD", Venue("SIM"))
 
         # Act
         # Assert
-        self.assertEqual("Symbol('AUD/USD.FXCM')", repr(symbol))
+        self.assertEqual("Symbol('AUD/USD.SIM')", repr(symbol))
 
     def test_parse_symbol_from_str(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue("FXCM"))
+        symbol = Symbol("AUD/USD", Venue("SIM"))
 
         # Act
         result = Symbol.from_str(symbol.value)
@@ -234,15 +234,15 @@ class IdentifierTests(unittest.TestCase):
     def test_account_identifier(self):
         # Arrange
         # Act
-        account_id1 = AccountId("FXCM", "02851908")
-        account_id2 = AccountId("FXCM", "09999999")
+        account_id1 = AccountId("SIM", "02851908")
+        account_id2 = AccountId("SIM", "09999999")
 
         # Assert
         self.assertEqual(account_id1, account_id1)
         self.assertNotEqual(account_id1, account_id2)
-        self.assertEqual("FXCM-02851908", account_id1.value)
-        self.assertEqual(Issuer("FXCM"), account_id1.issuer)
-        self.assertEqual(account_id1, AccountId("FXCM", "02851908"))
+        self.assertEqual("SIM-02851908", account_id1.value)
+        self.assertEqual(Issuer("SIM"), account_id1.issuer)
+        self.assertEqual(account_id1, AccountId("SIM", "02851908"))
 
     def test_position_identifier(self):
         # Arrange

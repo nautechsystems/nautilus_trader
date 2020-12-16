@@ -58,9 +58,9 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class TradingStrategyTests(unittest.TestCase):
@@ -102,13 +102,13 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.exchange = SimulatedExchange(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             exec_cache=self.exec_engine.cache,
-            instruments=[USDJPY_FXCM],
+            instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             clock=self.clock,
@@ -116,8 +116,8 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         self.data_client = BacktestDataClient(
-            instruments=[AUDUSD_FXCM, GBPUSD_FXCM, USDJPY_FXCM],
-            venue=Venue("FXCM"),
+            instruments=[AUDUSD_SIM, GBPUSD_SIM, USDJPY_SIM],
+            venue=Venue("SIM"),
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -136,7 +136,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_client(self.exec_client)
         self.exec_engine.process(TestStubs.event_account_state())
 
-        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_FXCM.symbol))  # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_SIM.symbol))  # Prepare market
 
         self.data_engine.start()
         self.exec_engine.start()
@@ -592,7 +592,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         # Assert
@@ -610,7 +610,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         # Assert
@@ -845,9 +845,9 @@ class TradingStrategyTests(unittest.TestCase):
         ema2 = ExponentialMovingAverage(10, price_type=PriceType.MID)
 
         # Act
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema1)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema2)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema2)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema1)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema2)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema2)
 
         self.assertEqual(2, len(strategy.registered_indicators))
         self.assertIn(ema1, strategy.registered_indicators)
@@ -866,9 +866,9 @@ class TradingStrategyTests(unittest.TestCase):
         ema2 = ExponentialMovingAverage(10)
 
         # Act
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema1)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema2)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema2)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema1)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema2)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema2)
 
         self.assertEqual(2, len(strategy.registered_indicators))
         self.assertIn(ema1, strategy.registered_indicators)
@@ -909,9 +909,9 @@ class TradingStrategyTests(unittest.TestCase):
         bar_type = TestStubs.bartype_audusd_1min_bid()
 
         # Act
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
-        strategy.register_indicator_for_quote_ticks(GBPUSD_FXCM.symbol, ema)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema)
+        strategy.register_indicator_for_quote_ticks(GBPUSD_SIM.symbol, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema)
         strategy.register_indicator_for_bars(bar_type, ema)
 
         self.assertEqual(1, len(strategy.registered_indicators))
@@ -927,9 +927,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         strategy.handle_quote_tick(tick)
@@ -948,7 +948,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema)
 
         # Act
         strategy.handle_quote_ticks([])
@@ -966,9 +966,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10, price_type=PriceType.MID)
-        strategy.register_indicator_for_quote_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_quote_ticks(AUDUSD_SIM.symbol, ema)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         strategy.handle_quote_ticks([tick])
@@ -986,9 +986,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         strategy.handle_trade_tick(tick)
@@ -1007,9 +1007,9 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         strategy.handle_trade_ticks([tick])
@@ -1027,7 +1027,7 @@ class TradingStrategyTests(unittest.TestCase):
         )
 
         ema = ExponentialMovingAverage(10)
-        strategy.register_indicator_for_trade_ticks(AUDUSD_FXCM.symbol, ema)
+        strategy.register_indicator_for_trade_ticks(AUDUSD_SIM.symbol, ema)
 
         # Act
         strategy.handle_trade_ticks([])
@@ -1155,10 +1155,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.subscribe_instrument(AUDUSD_FXCM.symbol)
+        strategy.subscribe_instrument(AUDUSD_SIM.symbol)
 
         # Assert
-        self.assertEqual([Symbol("AUD/USD", Venue("FXCM"))], self.data_engine.subscribed_instruments)
+        self.assertEqual([Symbol("AUD/USD", Venue("SIM"))], self.data_engine.subscribed_instruments)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_instrument(self):
@@ -1174,10 +1174,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        strategy.subscribe_instrument(AUDUSD_FXCM.symbol)
+        strategy.subscribe_instrument(AUDUSD_SIM.symbol)
 
         # Act
-        strategy.unsubscribe_instrument(AUDUSD_FXCM.symbol)
+        strategy.unsubscribe_instrument(AUDUSD_SIM.symbol)
 
         # Assert
         self.assertEqual([], self.data_engine.subscribed_instruments)
@@ -1197,10 +1197,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.subscribe_quote_ticks(AUDUSD_FXCM.symbol)
+        strategy.subscribe_quote_ticks(AUDUSD_SIM.symbol)
 
         # Assert
-        self.assertEqual([Symbol("AUD/USD", Venue("FXCM"))], self.data_engine.subscribed_quote_ticks)
+        self.assertEqual([Symbol("AUD/USD", Venue("SIM"))], self.data_engine.subscribed_quote_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_quote_ticks(self):
@@ -1216,10 +1216,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        strategy.subscribe_quote_ticks(AUDUSD_FXCM.symbol)
+        strategy.subscribe_quote_ticks(AUDUSD_SIM.symbol)
 
         # Act
-        strategy.unsubscribe_quote_ticks(AUDUSD_FXCM.symbol)
+        strategy.unsubscribe_quote_ticks(AUDUSD_SIM.symbol)
 
         # Assert
         self.assertEqual([], self.data_engine.subscribed_quote_ticks)
@@ -1239,10 +1239,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.subscribe_trade_ticks(AUDUSD_FXCM.symbol)
+        strategy.subscribe_trade_ticks(AUDUSD_SIM.symbol)
 
         # Assert
-        self.assertEqual([Symbol("AUD/USD", Venue("FXCM"))], self.data_engine.subscribed_trade_ticks)
+        self.assertEqual([Symbol("AUD/USD", Venue("SIM"))], self.data_engine.subscribed_trade_ticks)
         self.assertEqual(1, self.data_engine.command_count)
 
     def test_unsubscribe_trade_ticks(self):
@@ -1258,10 +1258,10 @@ class TradingStrategyTests(unittest.TestCase):
         self.data_engine.register_strategy(strategy)
         self.exec_engine.register_strategy(strategy)
 
-        strategy.subscribe_trade_ticks(AUDUSD_FXCM.symbol)
+        strategy.subscribe_trade_ticks(AUDUSD_SIM.symbol)
 
         # Act
-        strategy.unsubscribe_trade_ticks(AUDUSD_FXCM.symbol)
+        strategy.unsubscribe_trade_ticks(AUDUSD_SIM.symbol)
 
         # Assert
         self.assertEqual([], self.data_engine.subscribed_trade_ticks)
@@ -1323,7 +1323,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.request_quote_ticks(AUDUSD_FXCM.symbol)
+        strategy.request_quote_ticks(AUDUSD_SIM.symbol)
 
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
@@ -1342,7 +1342,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         # Act
-        strategy.request_trade_ticks(AUDUSD_FXCM.symbol)
+        strategy.request_trade_ticks(AUDUSD_SIM.symbol)
 
         # Assert
         self.assertEqual(1, self.data_engine.request_count)
@@ -1399,7 +1399,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1426,7 +1426,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.stop_market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("90.100"),
@@ -1460,7 +1460,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.stop_market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.005"),
@@ -1492,7 +1492,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.001"),
@@ -1518,7 +1518,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.001"),
@@ -1551,14 +1551,14 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop_market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.003"),
         )
 
         order2 = strategy.order_factory.stop_market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("90.005"),
@@ -1568,7 +1568,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order2)
 
         # Act
-        strategy.cancel_all_orders(USDJPY_FXCM.symbol)
+        strategy.cancel_all_orders(USDJPY_SIM.symbol)
 
         # Assert
         self.assertIn(order1, strategy.execution.orders())
@@ -1592,13 +1592,13 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -1628,7 +1628,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1661,13 +1661,13 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.start()
 
         order1 = strategy.order_factory.market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = strategy.order_factory.market(
-            USDJPY_FXCM.symbol,
+            USDJPY_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -1676,7 +1676,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.submit_order(order2)
 
         # Act
-        strategy.flatten_all_positions(USDJPY_FXCM.symbol)
+        strategy.flatten_all_positions(USDJPY_SIM.symbol)
 
         # Assert
         self.assertEqual(OrderState.FILLED, order1.state)

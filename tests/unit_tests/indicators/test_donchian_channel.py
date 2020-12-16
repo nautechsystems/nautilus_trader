@@ -20,7 +20,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class DonchianChannelTests(unittest.TestCase):
@@ -75,7 +75,7 @@ class DonchianChannelTests(unittest.TestCase):
         # Arrange
         indicator = DonchianChannel(10)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -88,7 +88,7 @@ class DonchianChannelTests(unittest.TestCase):
         # Arrange
         indicator = DonchianChannel(10)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         indicator.handle_trade_tick(tick)

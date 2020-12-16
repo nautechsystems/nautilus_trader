@@ -24,9 +24,9 @@ from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.providers import TestInstrumentProvider
 
 
-FXCM = Venue("FXCM")
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", FXCM))
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", FXCM))
+SIM = Venue("SIM")
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
 
 
 class ExecutionCacheFacadeTests(unittest.TestCase):
@@ -36,13 +36,13 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.facade = ExecutionCacheFacade()
 
     def test_account_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.account, AccountId("FXCM", "000"))
+        self.assertRaises(NotImplementedError, self.facade.account, AccountId("SIM", "000"))
 
     def test_account_for_venue_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.account_for_venue, FXCM)
+        self.assertRaises(NotImplementedError, self.facade.account_for_venue, SIM)
 
     def test_account_id_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.account_id, FXCM)
+        self.assertRaises(NotImplementedError, self.facade.account_id, SIM)
 
     def test_order_ids_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.order_ids)

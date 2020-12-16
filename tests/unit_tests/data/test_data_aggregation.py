@@ -48,7 +48,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusd_bitmex()
 
 
@@ -184,7 +184,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(1),
@@ -208,7 +208,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(1),
             maker=Maker.BUYER,
@@ -232,7 +232,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(1),
@@ -241,7 +241,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(1),
@@ -250,7 +250,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(1),
@@ -281,7 +281,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(1),
             maker=Maker.BUYER,
@@ -290,7 +290,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00002"),
             size=Quantity(1),
             maker=Maker.BUYER,
@@ -299,7 +299,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00000"),
             size=Quantity(1),
             maker=Maker.BUYER,
@@ -330,7 +330,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
@@ -392,7 +392,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(3000),
@@ -416,7 +416,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(1),
             maker=Maker.BUYER,
@@ -440,7 +440,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(3000),
@@ -449,7 +449,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(4000),
@@ -458,7 +458,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(3000),
@@ -489,7 +489,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(3000),
             maker=Maker.BUYER,
@@ -498,7 +498,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00002"),
             size=Quantity(4000),
             maker=Maker.BUYER,
@@ -507,7 +507,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00000"),
             size=Quantity(3000),
             maker=Maker.BUYER,
@@ -538,7 +538,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(2000),
@@ -547,7 +547,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(3000),
@@ -556,7 +556,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(25000),
@@ -597,7 +597,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(2000),
             maker=Maker.BUYER,
@@ -606,7 +606,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00002"),
             size=Quantity(3000),
             maker=Maker.BUYER,
@@ -615,7 +615,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("1.00000"),
             size=Quantity(25000),
             maker=Maker.BUYER,
@@ -656,7 +656,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
@@ -718,7 +718,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(3000),
@@ -743,7 +743,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("15000.00"),
             size=Quantity("3.5"),
             maker=Maker.BUYER,
@@ -768,7 +768,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(20000),
@@ -777,7 +777,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(60000),
@@ -786,7 +786,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(30500),
@@ -818,7 +818,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         tick1 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("20.00001"),
             size=Quantity("3000.00"),
             maker=Maker.BUYER,
@@ -827,7 +827,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("20.00002"),
             size=Quantity("4000.00"),
             maker=Maker.BUYER,
@@ -836,7 +836,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             price=Price("20.00000"),
             size=Quantity("5000.00"),
             maker=Maker.BUYER,
@@ -873,7 +873,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
 
         wrangler = QuoteTickDataWrangler(
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             data_quotes=TestDataProvider.audusd_ticks(),
         )
 
@@ -979,7 +979,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         stop_time = UNIX_EPOCH + timedelta(minutes=2)
 
         tick1 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00001"),
             ask=Price("1.00004"),
             bid_size=Quantity(1),
@@ -988,7 +988,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00002"),
             ask=Price("1.00005"),
             bid_size=Quantity(1),
@@ -997,7 +997,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            symbol=AUDUSD_FXCM.symbol,
+            symbol=AUDUSD_SIM.symbol,
             bid=Price("1.00000"),
             ask=Price("1.00003"),
             bid_size=Quantity(1),
