@@ -16,17 +16,17 @@
 from decimal import Decimal
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.sizing import FixedRiskSizer
 from nautilus_trader.trading.sizing import PositionSizer
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+USDJPY = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class PositionSizerTests(unittest.TestCase):
@@ -215,7 +215,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_for_usdjpy_with_commission(self):
         # Arrange
-        sizer = FixedRiskSizer(InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()))
+        sizer = FixedRiskSizer(TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()))
         equity = Money(1_000_000, USD)
 
         # Act

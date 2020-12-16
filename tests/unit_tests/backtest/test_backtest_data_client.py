@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.backtest.data_client import BacktestDataClient
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -24,10 +23,11 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class BacktestDataClientTests(unittest.TestCase):

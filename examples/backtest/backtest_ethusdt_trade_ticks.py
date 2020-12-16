@@ -14,16 +14,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
-
 from decimal import Decimal
+import time
 
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
+from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import BTC
@@ -31,15 +30,21 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from tests.test_kit.data_provider import TestDataProvider
+from tests.test_kit.providers import TestDataProvider
 
 
 if __name__ == "__main__":
     # Setup trading instruments
+    # Requires an internet connection for the instrument loader
+    # Alternatively use the BacktestInstrumentProvider in the test kit
+    print("Loading instruments...")
+    instruments = BinanceInstrumentProvider(load_all=True)
+
     BINANCE = Venue("BINANCE")
-    ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
+    ETHUSDT_BINANCE = instruments.get(Symbol("ETH/USDT", BINANCE))
 
     # Setup data container
     data = BacktestDataContainer()

@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.backtest.data_client import BacktestDataClient
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.messages import Connect
@@ -47,15 +46,16 @@ from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 BITMEX = Venue("BITMEX")
 BINANCE = Venue("BINANCE")
-XBTUSD_BITMEX = InstrumentLoader.xbtusd_bitmex()
-BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
-ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
+XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class DataEngineTests(unittest.TestCase):

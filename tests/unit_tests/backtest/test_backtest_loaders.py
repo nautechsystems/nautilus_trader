@@ -16,18 +16,18 @@
 from decimal import Decimal
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 class BacktestLoadersTests(unittest.TestCase):
 
     def test_default_fx_with_5_dp_returns_expected_instrument(self):
         # Arrange
-        loader = InstrumentLoader()
+        loader = TestInstrumentProvider()
 
         # Act
         instrument = loader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
@@ -40,7 +40,7 @@ class BacktestLoadersTests(unittest.TestCase):
 
     def test_default_fx_with_3_dp_returns_expected_instrument(self):
         # Arrange
-        loader = InstrumentLoader()
+        loader = TestInstrumentProvider()
 
         # Act
         instrument = loader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))

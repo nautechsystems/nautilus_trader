@@ -17,7 +17,6 @@ from datetime import datetime
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -27,11 +26,12 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class AnalyzerTests(unittest.TestCase):

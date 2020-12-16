@@ -83,6 +83,8 @@ cdef class Instrument:
     """The funding rate for short positions.\n\n:returns: `Decimal`"""
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
+    cdef readonly dict info
+    """The additional instrument information.\n\n:returns: `dict[str, object]`"""
 
     cpdef Money market_value(self, Quantity quantity, close_price)
     cpdef Money notional_value(self, Quantity quantity, close_price)

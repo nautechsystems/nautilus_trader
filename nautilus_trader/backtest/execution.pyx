@@ -103,7 +103,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Reset the client.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self._log.info(f"Resetting...")
 

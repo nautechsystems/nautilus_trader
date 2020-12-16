@@ -17,17 +17,17 @@ import unittest
 
 import numpy as np
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandlesticks
 from nautilus_trader.indicators.fuzzy_enum import CandleBodySize
 from nautilus_trader.indicators.fuzzy_enum import CandleDirection
 from nautilus_trader.indicators.fuzzy_enum import CandleSize
 from nautilus_trader.indicators.fuzzy_enum import CandleWickSize
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class FuzzyCandlesticksTests(unittest.TestCase):

@@ -21,7 +21,6 @@ import unittest
 from parameterized import parameterized
 import pytz
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.data.aggregation import BarBuilder
@@ -42,14 +41,15 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
-from tests.test_kit.data_provider import TestDataProvider
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-ETHUSDT_BINANCE = InstrumentLoader.ethusd_bitmex()
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusd_bitmex()
 
 
 class BarBuilderTests(unittest.TestCase):
@@ -1028,7 +1028,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.wrangler = QuoteTickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_quotes=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},

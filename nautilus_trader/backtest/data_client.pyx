@@ -111,7 +111,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Reset the data client.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 

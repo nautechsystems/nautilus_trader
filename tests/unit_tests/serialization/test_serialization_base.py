@@ -15,7 +15,6 @@
 
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import Connect
@@ -29,11 +28,12 @@ from nautilus_trader.serialization.base import CommandSerializer
 from nautilus_trader.serialization.base import EventSerializer
 from nautilus_trader.serialization.base import InstrumentSerializer
 from nautilus_trader.serialization.base import OrderSerializer
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class SerializationBaseTests(unittest.TestCase):
