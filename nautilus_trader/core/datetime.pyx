@@ -209,6 +209,8 @@ cpdef str format_iso8601(datetime dt):
     """
     Condition.not_none(datetime, "datetime")
 
+    # Note the below is faster than .isoformat() or string formatting by 25%
+    # Have not tried char* manipulation
     cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
 
     if not PyUnicode_Contains(tz_stripped, '.'):
