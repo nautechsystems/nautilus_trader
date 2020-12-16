@@ -15,8 +15,9 @@
 
 from cpython.datetime cimport datetime
 
-import ccxt.async_support as ccxt
+import ccxt
 
+from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -73,6 +74,10 @@ cdef class BinanceDataClient(LiveDataClient):
         self._is_connected = False
         self._config = config
         self._client = ccxt.binance(config=config)
+        self._instrument_provider = BinanceInstrumentProvider(
+            client=self._client,
+            load_all=False,
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -95,15 +100,10 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.debug("Connecting...")
 
-        self._loop.create_task(self._load_markets())
-        self._client.load_markets()
+        self._loop.create_task(self._startup_sequence())
 
-        # TODO: Asynchronously request all instruments
-        # instruments = self._client.markets
-
-        # Simulates a socket style connection and ensures markets are loaded
+        # Emulates a socket style connection
         self._is_connected = True
-
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
@@ -371,5 +371,18 @@ cdef class BinanceDataClient(LiveDataClient):
 
         # TODO: Implement
 
-    async def _load_markets(self):
-        await self._client.load_markets()
+    async def _startup_sequence(self):
+        await self._load_instruments()
+        await self._send_instruments()
+        await self._log_instruments_updated()
+
+    async def _load_instruments(self):
+        self._instrument_provider.load_all()
+
+    async def _send_instruments(self):
+        instruments = self._instrument_provider.get_all()
+        for instrument in instruments.values():
+            self._handle_instrument(instrument)
+
+    async def _log_instruments_updated(self):
+        self._log.info(f"Updated {self._instrument_provider.count} instruments.")

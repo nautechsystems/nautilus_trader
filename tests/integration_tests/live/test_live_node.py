@@ -39,9 +39,9 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             },
 
             "logging": {
-                "log_level_console": "INFO",
-                "log_level_file": "DEBUG",
-                "log_level_store": "WARNING",
+                "log_level_console": "INF",
+                "log_level_file": "DBG",
+                "log_level_store": "WRN",
             },
 
             "exec_database": {
@@ -76,9 +76,9 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             },
 
             "logging": {
-                "log_level_console": "INFO",
-                "log_level_file": "DEBUG",
-                "log_level_store": "WARNING",
+                "log_level_console": "INF",
+                "log_level_file": "DBG",
+                "log_level_store": "WRN",
             },
 
             "exec_database": {
@@ -122,9 +122,9 @@ class TradingNodeOperationTests(unittest.TestCase):
             },
 
             "logging": {
-                "log_level_console": "INFO",
-                "log_level_file": "DEBUG",
-                "log_level_store": "WARNING",
+                "log_level_console": "INF",
+                "log_level_file": "DBG",
+                "log_level_store": "WRN",
             },
 
             "exec_database": {

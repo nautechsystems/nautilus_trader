@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.adapters.binance.providers cimport BinanceInstrumentProvider
 from nautilus_trader.live.data cimport LiveDataClient
 
 
 cdef class BinanceDataClient(LiveDataClient):
     cdef object _config
     cdef object _client
+    cdef BinanceInstrumentProvider _instrument_provider
     cdef bint _is_connected

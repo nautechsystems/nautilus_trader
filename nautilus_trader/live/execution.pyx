@@ -90,7 +90,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cpdef void _on_stop(self) except *:
         self._is_running = False
         self._queue.put_nowait(None)  # Sentinel message pattern
-        self._log.info(f"Sentinel message placed on message queue.")
+        self._log.debug(f"Sentinel message placed on message queue.")
 
     async def _run(self):
         self._log.info(f"Message queue processing starting (qsize={self.qsize()})...")

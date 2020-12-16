@@ -5,9 +5,9 @@
   },
 
   "logging": {
-    "log_level_console": "INFO",
-    "log_level_file": "DEBUG",
-    "log_level_store": "WARNING",
+    "log_level_console": "INF",
+    "log_level_file": "DBG",
+    "log_level_store": "WRN",
     "log_to_file": true,
     "log_file_path": "logs/"
   },
