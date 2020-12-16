@@ -63,7 +63,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class SerializerBaseTests(unittest.TestCase):
@@ -119,7 +119,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_market_orders(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -136,7 +136,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_limit_orders(self):
         # Arrange
         order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -158,7 +158,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = LimitOrder(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -182,7 +182,7 @@ class MsgPackOrderSerializerTests(unittest.TestCase):
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -206,7 +206,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.venue = Venue("FXCM")
+        self.venue = Venue("SIM")
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
@@ -219,7 +219,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000))
 
@@ -249,7 +249,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(self):
         # Arrange
         entry_order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000))
 
@@ -281,7 +281,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
     def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(self):
         # Arrange
         entry_order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -389,7 +389,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderInitialized(
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
             Quantity(100000),
@@ -498,7 +498,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("B-123456"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
             Quantity(100000),
@@ -523,7 +523,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("B-123456"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             OrderType.STOP_MARKET,
             Quantity(100000),
@@ -626,14 +626,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ExecutionId("E123456"),
             PositionId("T123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(50000),
             Quantity(50000),
             Quantity(50000),
             Price("1.00000"),
-            AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.is_inverse,
+            AUDUSD_SIM.quote_currency,
+            AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
             UNIX_EPOCH,
@@ -657,14 +657,14 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ExecutionId("E123456"),
             PositionId("T123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
             Quantity(100000),
             Quantity(),
             Price("1.00000"),
-            AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.is_inverse,
+            AUDUSD_SIM.quote_currency,
+            AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,
             UNIX_EPOCH,

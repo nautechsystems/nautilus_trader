@@ -33,8 +33,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class ExecutionCacheTests(unittest.TestCase):
@@ -124,7 +124,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_account_for_venue(self):
         # Arrange
         # Act
-        result = self.cache.account_for_venue(Venue("FXCM"))
+        result = self.cache.account_for_venue(Venue("SIM"))
 
         # Assert
         self.assertIsNone(result)
@@ -188,7 +188,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -208,7 +208,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_load_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -225,7 +225,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_add_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -235,7 +235,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order_filled = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId('P-1'),
             fill_price=Price("1.00000"),
         )
@@ -261,7 +261,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_load_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -271,7 +271,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order_filled = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId('P-1'),
             fill_price=Price("1.00000"),
         )
@@ -288,7 +288,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_update_order_for_working_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -327,7 +327,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_update_order_for_completed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -342,7 +342,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             fill_price=Price("1.00001")),
         )
 
@@ -368,7 +368,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_update_position_for_open_position(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -382,7 +382,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order1)
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId('P-1'),
             fill_price=Price("1.00001"),
         )
@@ -412,7 +412,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_update_position_for_closed_position(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -426,7 +426,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order1)
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId('P-1'),
             fill_price=Price("1.00001"),
         )
@@ -435,7 +435,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_position(position)
 
         order2 = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -447,7 +447,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order2)
         order2_filled = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId('P-1'),
             fill_price=Price("1.00001"),
         )
@@ -500,7 +500,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_check_residuals(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -516,7 +516,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=position1_id,
             fill_price=Price("1.00000"),
         )
@@ -526,7 +526,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_position(position1)
 
         order2 = self.strategy.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.0000"),
@@ -553,7 +553,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_reset(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -569,7 +569,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=position1_id,
             fill_price=Price("1.00000"),
         )
@@ -578,7 +578,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_position(position1)
 
         order2 = self.strategy.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -609,7 +609,7 @@ class ExecutionCacheTests(unittest.TestCase):
     def test_flush_db(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -625,7 +625,7 @@ class ExecutionCacheTests(unittest.TestCase):
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=position1_id,
             fill_price=Price("1.00000"),
         )
@@ -635,7 +635,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.add_position(position1)
 
         order2 = self.strategy.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),

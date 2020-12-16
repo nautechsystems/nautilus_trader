@@ -32,9 +32,9 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
-USDJPY_FXCM = TestStubs.symbol_usdjpy_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_SIM = TestStubs.symbol_gbpusd_fxcm()
+USDJPY_SIM = TestStubs.symbol_usdjpy_fxcm()
 
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
@@ -220,7 +220,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         calculator = RolloverInterestCalculator(data=self.data)
 
         # Act
-        rate = calculator.calc_overnight_rate(AUDUSD_FXCM, UNIX_EPOCH)
+        rate = calculator.calc_overnight_rate(AUDUSD_SIM, UNIX_EPOCH)
 
         # Assert
         self.assertEqual(-8.52054794520548e-05, rate)
@@ -230,7 +230,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         calculator = RolloverInterestCalculator(data=self.data)
 
         # Act
-        rate = calculator.calc_overnight_rate(AUDUSD_FXCM, datetime.date(2018, 2, 1))
+        rate = calculator.calc_overnight_rate(AUDUSD_SIM, datetime.date(2018, 2, 1))
 
         # Assert
         self.assertEqual(-2.739726027397263e-07, rate)
@@ -241,5 +241,5 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_FXCM, datetime.date(1900, 1, 1))
-        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_FXCM, datetime.date(3000, 1, 1))
+        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_SIM, datetime.date(1900, 1, 1))
+        self.assertRaises(RuntimeError, calculator.calc_overnight_rate, AUDUSD_SIM, datetime.date(3000, 1, 1))

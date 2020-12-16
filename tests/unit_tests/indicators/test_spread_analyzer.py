@@ -25,15 +25,15 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-USDJPY_FXCM = Symbol("USD/JPY", Venue("FXCM"))
-AUDUSD_FXCM = Symbol("AUD/USD", Venue("FXCM"))
+USDJPY_SIM = Symbol("USD/JPY", Venue("SIM"))
+AUDUSD_SIM = Symbol("AUD/USD", Venue("SIM"))
 
 
 class SpreadAnalyzerTests(unittest.TestCase):
 
     def test_instantiate(self):
         # Arrange
-        analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1000)
+        analyzer = SpreadAnalyzer(AUDUSD_SIM, 1000)
 
         # Act
         # Assert
@@ -44,7 +44,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
 
     def test_handle_ticks_initializes_indicator(self):
         # Arrange
-        analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1)  # Only one tick
+        analyzer = SpreadAnalyzer(AUDUSD_SIM, 1)  # Only one tick
         tick = TestStubs.quote_tick_5decimal()
 
         # Act
@@ -56,9 +56,9 @@ class SpreadAnalyzerTests(unittest.TestCase):
 
     def test_update_with_incorrect_tick_raises_exception(self):
         # Arrange
-        analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1000)
+        analyzer = SpreadAnalyzer(AUDUSD_SIM, 1000)
         tick = QuoteTick(
-            USDJPY_FXCM,
+            USDJPY_SIM,
             Price("117.80000"),
             Price("117.80010"),
             Quantity(1),
@@ -71,9 +71,9 @@ class SpreadAnalyzerTests(unittest.TestCase):
 
     def test_update_correctly_updates_analyzer(self):
         # Arrange
-        analyzer = SpreadAnalyzer(AUDUSD_FXCM, 1000)
+        analyzer = SpreadAnalyzer(AUDUSD_SIM, 1000)
         tick1 = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_SIM,
             Price("0.80000"),
             Price("0.80010"),
             Quantity(1),
@@ -82,7 +82,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            AUDUSD_FXCM,
+            AUDUSD_SIM,
             Price("0.80002"),
             Price("0.80008"),
             Quantity(1),
@@ -100,7 +100,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
-        instance = SpreadAnalyzer(AUDUSD_FXCM, 1000)
+        instance = SpreadAnalyzer(AUDUSD_SIM, 1000)
 
         # Act
         instance.reset()

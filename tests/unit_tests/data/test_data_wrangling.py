@@ -31,7 +31,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
 
 
 class QuoteTickDataWranglerTests(unittest.TestCase):

@@ -35,8 +35,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-FXCM = Venue("FXCM")
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", FXCM))
+SIM = Venue("SIM")
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
 
 
 class DataClientTests(unittest.TestCase):
@@ -58,7 +58,7 @@ class DataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.venue = Venue("FXCM")
+        self.venue = Venue("SIM")
 
         self.client = DataClient(
             venue=self.venue,
@@ -101,19 +101,19 @@ class DataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe_instrument, AUDUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, self.client.subscribe_instrument, AUDUSD_SIM.symbol)
 
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe_quote_ticks, AUDUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, self.client.subscribe_quote_ticks, AUDUSD_SIM.symbol)
 
     def test_subscribe_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe_trade_ticks, AUDUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, self.client.subscribe_trade_ticks, AUDUSD_SIM.symbol)
 
     def test_subscribe_bars_when_not_implemented_raises_exception(self):
         # Arrange
@@ -125,19 +125,19 @@ class DataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_SIM.symbol)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_quote_ticks, AUDUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_quote_ticks, AUDUSD_SIM.symbol)
 
     def test_unsubscribe_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_trade_ticks, AUDUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_trade_ticks, AUDUSD_SIM.symbol)
 
     def test_unsubscribe_bars_when_not_implemented_raises_exception(self):
         # Arrange
@@ -178,7 +178,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_instrument_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_instrument(AUDUSD_FXCM)
+        self.client._handle_instrument(AUDUSD_SIM)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
@@ -186,7 +186,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00050"),
             Price("1.00048"),
             Quantity(1),
@@ -203,7 +203,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_trade_tick_sends_to_data_engine(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00050"),
             Quantity(1),
             Maker.BUYER,
@@ -247,7 +247,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_quote_ticks(AUDUSD_FXCM.symbol, [], self.uuid_factory.generate())
+        self.client._handle_quote_ticks(AUDUSD_SIM.symbol, [], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -255,7 +255,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_trade_ticks(AUDUSD_FXCM.symbol, [], self.uuid_factory.generate())
+        self.client._handle_trade_ticks(AUDUSD_SIM.symbol, [], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)

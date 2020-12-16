@@ -46,13 +46,13 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-FXCM = Venue("FXCM")
+SIM = Venue("SIM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")), leverage=Decimal("50"))
-GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")), leverage=Decimal("50"))
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")), leverage=Decimal("50"))
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")), leverage=Decimal("50"))
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("SIM")), leverage=Decimal("50"))
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("SIM")), leverage=Decimal("50"))
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal("10"))
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex(leverage=Decimal("10"))
@@ -66,7 +66,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.account, FXCM)
+        self.assertRaises(NotImplementedError, portfolio.account, SIM)
 
     def test_order_margin_raises_not_implemented_error(self):
         # Arrange
@@ -74,7 +74,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.init_margins, FXCM)
+        self.assertRaises(NotImplementedError, portfolio.init_margins, SIM)
 
     def test_position_margin_raises_not_implemented_error(self):
         # Arrange
@@ -82,7 +82,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.maint_margins, FXCM)
+        self.assertRaises(NotImplementedError, portfolio.maint_margins, SIM)
 
     def test_unrealized_pnl_for_venue_raises_not_implemented_error(self):
         # Arrange
@@ -90,7 +90,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.unrealized_pnls, FXCM)
+        self.assertRaises(NotImplementedError, portfolio.unrealized_pnls, SIM)
 
     def test_unrealized_pnl_for_symbol_raises_not_implemented_error(self):
         # Arrange
@@ -114,7 +114,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.net_position, GBPUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, portfolio.net_position, GBPUSD_SIM.symbol)
 
     def test_is_net_long_raises_not_implemented_error(self):
         # Arrange
@@ -122,7 +122,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_net_long, GBPUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, portfolio.is_net_long, GBPUSD_SIM.symbol)
 
     def test_is_net_short_raises_not_implemented_error(self):
         # Arrange
@@ -130,7 +130,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_net_short, GBPUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, portfolio.is_net_short, GBPUSD_SIM.symbol)
 
     def test_is_flat_raises_not_implemented_error(self):
         # Arrange
@@ -138,7 +138,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_flat, GBPUSD_FXCM.symbol)
+        self.assertRaises(NotImplementedError, portfolio.is_flat, GBPUSD_SIM.symbol)
 
     def test_is_completely_flat_raises_not_implemented_error(self):
         # Arrange
@@ -178,8 +178,8 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(self.account)
         self.portfolio.register_cache(self.data_cache)
 
-        self.data_cache.add_instrument(AUDUSD_FXCM)
-        self.data_cache.add_instrument(GBPUSD_FXCM)
+        self.data_cache.add_instrument(AUDUSD_SIM)
+        self.data_cache.add_instrument(GBPUSD_SIM)
         self.data_cache.add_instrument(BTCUSDT_BINANCE)
         self.data_cache.add_instrument(BTCUSD_BITMEX)
         self.data_cache.add_instrument(ETHUSD_BITMEX)
@@ -188,7 +188,7 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.portfolio.account(FXCM))
+        self.assertIsNone(self.portfolio.account(SIM))
 
     def test_account_when_account_returns_the_account_facade(self):
         # Arrange
@@ -202,71 +202,71 @@ class PortfolioTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_FXCM.symbol))
+        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_SIM.symbol))
 
     def test_is_net_long_when_no_positions_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
+        self.assertEqual(False, self.portfolio.is_net_long(AUDUSD_SIM.symbol))
 
     def test_is_net_short_when_no_positions_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
+        self.assertEqual(False, self.portfolio.is_net_short(AUDUSD_SIM.symbol))
 
     def test_is_flat_when_no_positions_returns_true(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_SIM.symbol))
 
     def test_is_completely_flat_when_no_positions_returns_true(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_SIM.symbol))
 
     def test_unrealized_pnl_for_symbol_when_no_instrument_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.portfolio.unrealized_pnl(USDJPY_FXCM.symbol))
+        self.assertIsNone(self.portfolio.unrealized_pnl(USDJPY_SIM.symbol))
 
     def test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual({}, self.portfolio.unrealized_pnls(FXCM))
+        self.assertEqual({}, self.portfolio.unrealized_pnls(SIM))
 
     def test_init_margins_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.init_margins(FXCM))
+        self.assertEqual(None, self.portfolio.init_margins(SIM))
 
     def test_maint_margins_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.maint_margins(FXCM))
+        self.assertEqual(None, self.portfolio.maint_margins(SIM))
 
     def test_open_value_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.market_values(FXCM))
+        self.assertEqual(None, self.portfolio.market_values(SIM))
 
     def test_update_tick(self):
         # Arrange
-        tick = TestStubs.quote_tick_5decimal(GBPUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(GBPUSD_SIM.symbol)
 
         # Act
         self.portfolio.update_tick(tick)
 
         # Assert
-        self.assertIsNone(self.portfolio.unrealized_pnl(GBPUSD_FXCM.symbol))
+        self.assertIsNone(self.portfolio.unrealized_pnl(GBPUSD_SIM.symbol))
 
     def test_update_orders_working(self):
         # Arrange
@@ -646,7 +646,7 @@ class PortfolioTests(unittest.TestCase):
     def test_opening_several_positions_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId("FXCM", "01234"),
+            AccountId("SIM", "01234"),
             balances=[Money(1_000_000.00, USD)],
             balances_free=[Money(1_000_000.00, USD)],
             balances_locked=[Money(0.00, USD)],
@@ -660,7 +660,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         last_audusd = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("0.80501"),
             Price("0.80505"),
             Quantity(1),
@@ -669,7 +669,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last_gbpusd = QuoteTick(
-            GBPUSD_FXCM.symbol,
+            GBPUSD_SIM.symbol,
             Price("1.30315"),
             Price("1.30317"),
             Quantity(1),
@@ -683,20 +683,20 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_tick(last_gbpusd)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            GBPUSD_FXCM.symbol,
+            GBPUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -704,7 +704,7 @@ class PortfolioTests(unittest.TestCase):
 
         order2_filled = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -720,24 +720,24 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(position_opened2)
 
         # Assert
-        self.assertEqual({USD: Money("4216.32", USD)}, self.portfolio.market_values(FXCM))
-        self.assertEqual({USD: Money("10816.00", USD)}, self.portfolio.unrealized_pnls(FXCM))
-        self.assertEqual({USD: Money('425.85', USD)}, self.portfolio.maint_margins(FXCM))
-        self.assertEqual(Money("1610.02", USD), self.portfolio.market_value(AUDUSD_FXCM.symbol))
-        self.assertEqual(Money("2606.30", USD), self.portfolio.market_value(GBPUSD_FXCM.symbol))
-        self.assertEqual(Money("-19499.00", USD), self.portfolio.unrealized_pnl(AUDUSD_FXCM.symbol))
-        self.assertEqual(Money("30315.00", USD), self.portfolio.unrealized_pnl(GBPUSD_FXCM.symbol))
-        self.assertEqual(Decimal(100000), self.portfolio.net_position(AUDUSD_FXCM.symbol))
-        self.assertEqual(Decimal(100000), self.portfolio.net_position(GBPUSD_FXCM.symbol))
-        self.assertTrue(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
-        self.assertFalse(self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
-        self.assertFalse(self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertEqual({USD: Money("4216.32", USD)}, self.portfolio.market_values(SIM))
+        self.assertEqual({USD: Money("10816.00", USD)}, self.portfolio.unrealized_pnls(SIM))
+        self.assertEqual({USD: Money('425.85', USD)}, self.portfolio.maint_margins(SIM))
+        self.assertEqual(Money("1610.02", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
+        self.assertEqual(Money("2606.30", USD), self.portfolio.market_value(GBPUSD_SIM.symbol))
+        self.assertEqual(Money("-19499.00", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
+        self.assertEqual(Money("30315.00", USD), self.portfolio.unrealized_pnl(GBPUSD_SIM.symbol))
+        self.assertEqual(Decimal(100000), self.portfolio.net_position(AUDUSD_SIM.symbol))
+        self.assertEqual(Decimal(100000), self.portfolio.net_position(GBPUSD_SIM.symbol))
+        self.assertTrue(self.portfolio.is_net_long(AUDUSD_SIM.symbol))
+        self.assertFalse(self.portfolio.is_net_short(AUDUSD_SIM.symbol))
+        self.assertFalse(self.portfolio.is_flat(AUDUSD_SIM.symbol))
         self.assertFalse(self.portfolio.is_completely_flat())
 
     def test_modifying_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId("FXCM", "01234"),
+            AccountId("SIM", "01234"),
             balances=[Money(1_000_000.00, USD)],
             balances_free=[Money(1_000_000.00, USD)],
             balances_locked=[Money(0.00, USD)],
@@ -751,7 +751,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         last_audusd = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("0.80501"),
             Price("0.80505"),
             Quantity(1),
@@ -763,14 +763,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_tick(last_audusd)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -781,14 +781,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(50000),
         )
 
         order2_filled = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -800,15 +800,15 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_modified(position))
 
         # Assert
-        self.assertEqual({USD: Money("805.01", USD)}, self.portfolio.market_values(FXCM))
-        self.assertEqual({USD: Money("-9749.50", USD)}, self.portfolio.unrealized_pnls(FXCM))
-        self.assertEqual({USD: Money("81.31", USD)}, self.portfolio.maint_margins(FXCM))
-        self.assertEqual(Money("805.01", USD), self.portfolio.market_value(AUDUSD_FXCM.symbol))
-        self.assertEqual(Money("-9749.50", USD), self.portfolio.unrealized_pnl(AUDUSD_FXCM.symbol))
-        self.assertEqual(Decimal(50000), self.portfolio.net_position(AUDUSD_FXCM.symbol))
-        self.assertTrue(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
-        self.assertFalse(self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
-        self.assertFalse(self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertEqual({USD: Money("805.01", USD)}, self.portfolio.market_values(SIM))
+        self.assertEqual({USD: Money("-9749.50", USD)}, self.portfolio.unrealized_pnls(SIM))
+        self.assertEqual({USD: Money("81.31", USD)}, self.portfolio.maint_margins(SIM))
+        self.assertEqual(Money("805.01", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
+        self.assertEqual(Money("-9749.50", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
+        self.assertEqual(Decimal(50000), self.portfolio.net_position(AUDUSD_SIM.symbol))
+        self.assertTrue(self.portfolio.is_net_long(AUDUSD_SIM.symbol))
+        self.assertFalse(self.portfolio.is_net_short(AUDUSD_SIM.symbol))
+        self.assertFalse(self.portfolio.is_flat(AUDUSD_SIM.symbol))
         self.assertFalse(self.portfolio.is_completely_flat())
         self.assertEqual({}, self.portfolio.unrealized_pnls(BINANCE))
         self.assertEqual({}, self.portfolio.market_values(BINANCE))
@@ -816,7 +816,7 @@ class PortfolioTests(unittest.TestCase):
     def test_closing_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId("FXCM", "01234"),
+            AccountId("SIM", "01234"),
             balances=[Money(1_000_000.00, USD)],
             balances_free=[Money(1_000_000.00, USD)],
             balances_locked=[Money(0.00, USD)],
@@ -830,14 +830,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -848,14 +848,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order2_filled = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00010"),
@@ -867,21 +867,21 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_closed(position))
 
         # Assert
-        self.assertEqual({}, self.portfolio.market_values(FXCM))
-        self.assertEqual({}, self.portfolio.unrealized_pnls(FXCM))
-        self.assertEqual({}, self.portfolio.maint_margins(FXCM))
-        self.assertEqual(Money("0", USD), self.portfolio.market_value(AUDUSD_FXCM.symbol))
-        self.assertEqual(Money("0", USD), self.portfolio.unrealized_pnl(AUDUSD_FXCM.symbol))
-        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_FXCM.symbol))
-        self.assertFalse(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
-        self.assertFalse(self.portfolio.is_net_short(AUDUSD_FXCM.symbol))
-        self.assertTrue(self.portfolio.is_flat(AUDUSD_FXCM.symbol))
+        self.assertEqual({}, self.portfolio.market_values(SIM))
+        self.assertEqual({}, self.portfolio.unrealized_pnls(SIM))
+        self.assertEqual({}, self.portfolio.maint_margins(SIM))
+        self.assertEqual(Money("0", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
+        self.assertEqual(Money("0", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
+        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_SIM.symbol))
+        self.assertFalse(self.portfolio.is_net_long(AUDUSD_SIM.symbol))
+        self.assertFalse(self.portfolio.is_net_short(AUDUSD_SIM.symbol))
+        self.assertTrue(self.portfolio.is_flat(AUDUSD_SIM.symbol))
         self.assertTrue(self.portfolio.is_completely_flat())
 
     def test_several_positions_with_different_symbols_updates_portfolio(self):
         # Arrange
         state = AccountState(
-            AccountId("FXCM", "01234"),
+            AccountId("SIM", "01234"),
             balances=[Money(1_000_000.00, USD)],
             balances_free=[Money(1_000_000.00, USD)],
             balances_locked=[Money(0.00, USD)],
@@ -895,32 +895,32 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order3 = self.order_factory.market(
-            GBPUSD_FXCM.symbol,
+            GBPUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order4 = self.order_factory.market(
-            GBPUSD_FXCM.symbol,
+            GBPUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order1_filled = TestStubs.event_order_filled(
             order1,
-            instrument=GBPUSD_FXCM,
+            instrument=GBPUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -928,7 +928,7 @@ class PortfolioTests(unittest.TestCase):
 
         order2_filled = TestStubs.event_order_filled(
             order2,
-            instrument=GBPUSD_FXCM,
+            instrument=GBPUSD_SIM,
             position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -936,7 +936,7 @@ class PortfolioTests(unittest.TestCase):
 
         order3_filled = TestStubs.event_order_filled(
             order3,
-            instrument=GBPUSD_FXCM,
+            instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00000"),
@@ -944,7 +944,7 @@ class PortfolioTests(unittest.TestCase):
 
         order4_filled = TestStubs.event_order_filled(
             order4,
-            instrument=GBPUSD_FXCM,
+            instrument=GBPUSD_SIM,
             position_id=PositionId("P-3"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("1.00100"),
@@ -955,7 +955,7 @@ class PortfolioTests(unittest.TestCase):
         position3 = Position(order3_filled)
 
         last_audusd = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("0.80501"),
             Price("0.80505"),
             Quantity(1),
@@ -964,7 +964,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         last_gbpusd = QuoteTick(
-            GBPUSD_FXCM.symbol,
+            GBPUSD_SIM.symbol,
             Price("1.30315"),
             Price("1.30317"),
             Quantity(1),
@@ -986,14 +986,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_closed(position3))
 
         # Assert
-        self.assertEqual({USD: Money("-38998.00", USD)}, self.portfolio.unrealized_pnls(FXCM))
-        self.assertEqual({USD: Money("3220.04", USD)}, self.portfolio.market_values(FXCM))
-        self.assertEqual({USD: Money("325.22", USD)}, self.portfolio.maint_margins(FXCM))
-        self.assertEqual(Money("3220.04", USD), self.portfolio.market_value(AUDUSD_FXCM.symbol))
-        self.assertEqual(Money("-38998.00", USD), self.portfolio.unrealized_pnl(AUDUSD_FXCM.symbol))
-        self.assertEqual(Money("0", USD), self.portfolio.unrealized_pnl(GBPUSD_FXCM.symbol))
-        self.assertEqual(Decimal(200000), self.portfolio.net_position(AUDUSD_FXCM.symbol))
-        self.assertEqual(Decimal(0), self.portfolio.net_position(GBPUSD_FXCM.symbol))
-        self.assertTrue(self.portfolio.is_net_long(AUDUSD_FXCM.symbol))
-        self.assertTrue(self.portfolio.is_flat(GBPUSD_FXCM.symbol))
+        self.assertEqual({USD: Money("-38998.00", USD)}, self.portfolio.unrealized_pnls(SIM))
+        self.assertEqual({USD: Money("3220.04", USD)}, self.portfolio.market_values(SIM))
+        self.assertEqual({USD: Money("325.22", USD)}, self.portfolio.maint_margins(SIM))
+        self.assertEqual(Money("3220.04", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
+        self.assertEqual(Money("-38998.00", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
+        self.assertEqual(Money("0", USD), self.portfolio.unrealized_pnl(GBPUSD_SIM.symbol))
+        self.assertEqual(Decimal(200000), self.portfolio.net_position(AUDUSD_SIM.symbol))
+        self.assertEqual(Decimal(0), self.portfolio.net_position(GBPUSD_SIM.symbol))
+        self.assertTrue(self.portfolio.is_net_long(AUDUSD_SIM.symbol))
+        self.assertTrue(self.portfolio.is_flat(GBPUSD_SIM.symbol))
         self.assertFalse(self.portfolio.is_completely_flat())
