@@ -775,50 +775,6 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
-    def test_apply_partial_fill_events_to_market_order_results_in_overfill(self):
-        # Arrange
-        order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-
-        fill1 = TestStubs.event_order_filled(
-            order,
-            instrument=AUDUSD_FXCM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(50000),
-        )
-
-        fill2 = TestStubs.event_order_filled(
-            order,
-            instrument=AUDUSD_FXCM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00002"),
-            fill_qty=Quantity(60000),
-        )
-
-        order.apply(submitted)
-        order.apply(accepted)
-
-        # Act
-        order.apply(fill1)
-        order.apply(fill2)
-
-        # Assert
-        self.assertEqual(OrderState.OVER_FILLED, order.state)
-        self.assertEqual(Quantity(110000), order.filled_qty)
-        self.assertEqual(Decimal("1.000013529411764705882352941"), order.avg_price)
-        self.assertEqual(2, len(order.execution_ids))
-        self.assertTrue(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
-
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
