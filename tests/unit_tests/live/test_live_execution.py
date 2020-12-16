@@ -39,9 +39,9 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-FXCM = Venue("FXCM")
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+SIM = Venue("SIM")
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class ExecutionEngineTests(unittest.TestCase):
@@ -125,13 +125,13 @@ class ExecutionEngineTests(unittest.TestCase):
             self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
-                AUDUSD_FXCM.symbol,
+                AUDUSD_SIM.symbol,
                 OrderSide.BUY,
                 Quantity(100000),
             )
 
             submit_order = SubmitOrder(
-                Venue("FXCM"),
+                Venue("SIM"),
                 self.trader_id,
                 self.account_id,
                 strategy.id,
@@ -169,7 +169,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
-                AUDUSD_FXCM.symbol,
+                AUDUSD_SIM.symbol,
                 OrderSide.BUY,
                 Quantity(100000),
             )
@@ -229,7 +229,7 @@ class LiveExecutionClientTests(unittest.TestCase):
         )
 
         self.client = LiveExecutionClient(
-            venue=FXCM,
+            venue=SIM,
             account_id=self.account_id,
             engine=self.engine,
             clock=self.clock,

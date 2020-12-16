@@ -73,9 +73,9 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result3 = self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
 
         # Assert
-        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-1"), result1)
-        self.assertEqual(PositionId("P-001-USD/JPY.FXCM-1"), result2)
-        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-2"), result3)
+        self.assertEqual(PositionId("P-001-AUD/USD.SIM-1"), result1)
+        self.assertEqual(PositionId("P-001-USD/JPY.SIM-1"), result2)
+        self.assertEqual(PositionId("P-001-AUD/USD.SIM-2"), result3)
 
     def test_generate_position_id_with_flip_appends_correctly(self):
         # Arrange
@@ -85,9 +85,9 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result3 = self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm(), flipped=True)
 
         # Assert
-        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-1"), result1)
-        self.assertEqual(PositionId("P-001-USD/JPY.FXCM-1F"), result2)
-        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-2F"), result3)
+        self.assertEqual(PositionId("P-001-AUD/USD.SIM-1"), result1)
+        self.assertEqual(PositionId("P-001-USD/JPY.SIM-1F"), result2)
+        self.assertEqual(PositionId("P-001-AUD/USD.SIM-2F"), result3)
 
     def test_reset_id_generator(self):
         # Arrange
@@ -100,4 +100,4 @@ class PositionIdGeneratorTests(unittest.TestCase):
         result1 = self.position_id_generator.generate(TestStubs.symbol_audusd_fxcm())
 
         # Assert
-        self.assertEqual(PositionId("P-001-AUD/USD.FXCM-1"), result1)
+        self.assertEqual(PositionId("P-001-AUD/USD.SIM-1"), result1)

@@ -15,6 +15,8 @@
 
 import unittest
 
+import ccxt
+
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
@@ -30,6 +32,14 @@ from nautilus_trader.model.instrument import Instrument
 
 class BinanceInstrumentProviderTests(unittest.TestCase):
 
+    def test_instantiate_with_none_binance_client_raises_value_error(self):
+        # Arrange
+        client = ccxt.bitfinex
+
+        # Act
+        # Assert
+        self.assertRaises(ValueError, BinanceInstrumentProvider, client)
+
     def test_load_all(self):
         # Arrange
         provider = BinanceInstrumentProvider()
@@ -38,7 +48,7 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
         provider.load_all()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertTrue(provider.count > 0)  # No exceptions raised
 
     def test_get_all_when_not_loaded_returns_empty_dict(self):
         # Arrange

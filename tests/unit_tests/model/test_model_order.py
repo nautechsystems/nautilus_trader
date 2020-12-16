@@ -51,7 +51,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class OrderTests(unittest.TestCase):
@@ -110,7 +110,7 @@ class OrderTests(unittest.TestCase):
             MarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(),
             TimeInForce.DAY,
@@ -126,7 +126,7 @@ class OrderTests(unittest.TestCase):
             MarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100),
             TimeInForce.GTD,
@@ -142,7 +142,7 @@ class OrderTests(unittest.TestCase):
             StopMarketOrder,
             ClientOrderId("O-123456"),
             StrategyId("S", "001"),
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             price=Price("1.00000"),
@@ -155,7 +155,7 @@ class OrderTests(unittest.TestCase):
     def test_reset_order_factory(self):
         # Arrange
         self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -165,7 +165,7 @@ class OrderTests(unittest.TestCase):
         self.order_factory.reset()
 
         order2 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -177,28 +177,28 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order1 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order2 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order3 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
         )
 
         order4 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00001"),
@@ -214,7 +214,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -235,7 +235,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
@@ -256,20 +256,20 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         # Assert
-        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY)", str(order))  # noqa
-        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY)", repr(order))  # noqa
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY)", str(order))  # noqa
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY)", repr(order))  # noqa
 
     def test_initialize_limit_order(self):
         # Arrange
         # Act
         order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -285,7 +285,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -294,7 +294,7 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(AUDUSD_FXCM.symbol, order.symbol)
+        self.assertEqual(AUDUSD_SIM.symbol, order.symbol)
         self.assertEqual(OrderType.LIMIT, order.type)
         self.assertEqual(Price("1.00000"), order.price)
         self.assertEqual(OrderState.INITIALIZED, order.state)
@@ -306,7 +306,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         order = self.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -321,13 +321,13 @@ class OrderTests(unittest.TestCase):
     def test_bracket_order_equality(self):
         # Arrange
         entry1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         entry2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -343,7 +343,7 @@ class OrderTests(unittest.TestCase):
     def test_initialize_bracket_order_market_with_no_take_profit(self):
         # Arrange
         entry_order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -352,7 +352,7 @@ class OrderTests(unittest.TestCase):
         bracket_order = self.order_factory.bracket(entry_order, Price("0.99990"))
 
         # Assert
-        self.assertEqual(AUDUSD_FXCM.symbol, bracket_order.stop_loss.symbol)
+        self.assertEqual(AUDUSD_SIM.symbol, bracket_order.stop_loss.symbol)
         self.assertFalse(bracket_order.take_profit is not None)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
@@ -368,7 +368,7 @@ class OrderTests(unittest.TestCase):
     def test_initialize_bracket_order_stop_with_take_profit(self):
         # Arrange
         entry_order = self.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99995"),
@@ -382,9 +382,9 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(AUDUSD_FXCM.symbol, bracket_order.stop_loss.symbol)
+        self.assertEqual(AUDUSD_SIM.symbol, bracket_order.stop_loss.symbol)
         self.assertTrue(bracket_order.take_profit is not None)
-        self.assertEqual(AUDUSD_FXCM.symbol, bracket_order.take_profit.symbol)
+        self.assertEqual(AUDUSD_SIM.symbol, bracket_order.take_profit.symbol)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-1"), bracket_order.entry.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-2"), bracket_order.stop_loss.cl_ord_id)
         self.assertEqual(ClientOrderId("O-19700101-000000-000-001-3"), bracket_order.take_profit.cl_ord_id)
@@ -406,7 +406,7 @@ class OrderTests(unittest.TestCase):
         # Arrange
         # Act
         entry_order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -418,13 +418,13 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.FXCM MARKET DAY), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
 
     def test_apply_order_invalid_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -448,7 +448,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_denied_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -472,7 +472,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_submitted_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -491,7 +491,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_accepted_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -511,7 +511,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_rejected_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -531,7 +531,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_working_event(self):
         # Arrange
         order = self.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -558,7 +558,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_expired_event(self):
         # Arrange
         order = self.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99990"),
@@ -585,7 +585,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_cancelled_event(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -607,7 +607,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_modified_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -647,7 +647,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -657,7 +657,7 @@ class OrderTests(unittest.TestCase):
 
         filled = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -680,7 +680,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -690,7 +690,7 @@ class OrderTests(unittest.TestCase):
 
         fill1 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -699,7 +699,7 @@ class OrderTests(unittest.TestCase):
 
         fill2 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
@@ -724,7 +724,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_partial_fill_events_to_market_order_results_in_filled(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -734,7 +734,7 @@ class OrderTests(unittest.TestCase):
 
         fill1 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -743,7 +743,7 @@ class OrderTests(unittest.TestCase):
 
         fill2 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
@@ -752,7 +752,7 @@ class OrderTests(unittest.TestCase):
 
         fill3 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
@@ -775,54 +775,10 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_completed)
         self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
 
-    def test_apply_partial_fill_events_to_market_order_results_in_overfill(self):
-        # Arrange
-        order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-
-        fill1 = TestStubs.event_order_filled(
-            order,
-            instrument=AUDUSD_FXCM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00001"),
-            fill_qty=Quantity(50000),
-        )
-
-        fill2 = TestStubs.event_order_filled(
-            order,
-            instrument=AUDUSD_FXCM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S", "001"),
-            fill_price=Price("1.00002"),
-            fill_qty=Quantity(60000),
-        )
-
-        order.apply(submitted)
-        order.apply(accepted)
-
-        # Act
-        order.apply(fill1)
-        order.apply(fill2)
-
-        # Assert
-        self.assertEqual(OrderState.OVER_FILLED, order.state)
-        self.assertEqual(Quantity(110000), order.filled_qty)
-        self.assertEqual(Decimal("1.000013529411764705882352941"), order.avg_price)
-        self.assertEqual(2, len(order.execution_ids))
-        self.assertTrue(order.is_completed)
-        self.assertEqual(UNIX_EPOCH, order.filled_timestamp)
-
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -845,8 +801,8 @@ class OrderTests(unittest.TestCase):
             order.quantity,
             Quantity(),
             Price("1.00001"),
-            AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.is_inverse,
+            AUDUSD_SIM.quote_currency,
+            AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
             UNIX_EPOCH,
@@ -873,7 +829,7 @@ class OrderTests(unittest.TestCase):
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
         order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("1.00000"),
@@ -896,8 +852,8 @@ class OrderTests(unittest.TestCase):
             Quantity(50000),
             Quantity(50000),
             Price("0.999999"),
-            AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.is_inverse,
+            AUDUSD_SIM.quote_currency,
+            AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.MAKER,
             UNIX_EPOCH,

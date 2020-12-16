@@ -51,19 +51,19 @@ class ObjectCacheTests(unittest.TestCase):
     def test_get_from_empty_cache(self):
         # Arrange
         cache = ObjectCache(Symbol, Symbol.from_str)
-        symbol = "AUD/USD.FXCM"
+        symbol = "AUD/USD.SIM"
 
         # Act
         result = cache.get(symbol)
 
         # Assert
         self.assertEqual(symbol, str(result))
-        self.assertEqual(["AUD/USD.FXCM"], cache.keys())
+        self.assertEqual(["AUD/USD.SIM"], cache.keys())
 
     def test_get_from_cache(self):
         # Arrange
         cache = ObjectCache(Symbol, Symbol.from_str)
-        symbol = "AUD/USD.FXCM"
+        symbol = "AUD/USD.SIM"
         cache.get(symbol)
 
         # Act
@@ -74,7 +74,7 @@ class ObjectCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual(symbol, str(result1))
         self.assertEqual(id(result1), id(result2))
-        self.assertEqual(["AUD/USD.FXCM"], cache.keys())
+        self.assertEqual(["AUD/USD.SIM"], cache.keys())
 
     def test_keys_when_cache_empty_returns_empty_list(self):
         # Arrange
@@ -89,7 +89,7 @@ class ObjectCacheTests(unittest.TestCase):
     def test_clear_cache(self):
         # Arrange
         cache = ObjectCache(Symbol, Symbol.from_str)
-        symbol = "AUD/USD.FXCM"
+        symbol = "AUD/USD.SIM"
         cache.get(symbol)
 
         # Act

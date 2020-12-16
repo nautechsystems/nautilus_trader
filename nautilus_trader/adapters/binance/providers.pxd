@@ -23,8 +23,11 @@ cdef class BinanceInstrumentProvider:
     cdef object _binance
 
     cdef readonly Venue venue
+    """The venue of the provider.\n\n:returns: `Venue`"""
+    cdef readonly int count
+    """The count of instruments held by the provider.\n\n:returns: `int`"""
 
-    cpdef void load_all(self)
+    cpdef void load_all(self) except *
     cpdef dict get_all(self)
     cpdef Instrument get(self, Symbol symbol)
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

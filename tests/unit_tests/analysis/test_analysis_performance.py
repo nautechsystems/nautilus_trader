@@ -30,8 +30,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class AnalyzerTests(unittest.TestCase):
@@ -96,25 +96,25 @@ class AnalyzerTests(unittest.TestCase):
     def test_get_realized_pnls_when_all_flat_positions_returns_expected_series(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
         )
 
         fill2 = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00000"),

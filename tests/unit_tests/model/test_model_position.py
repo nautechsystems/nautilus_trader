@@ -45,7 +45,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
@@ -84,14 +84,14 @@ class PositionTests(unittest.TestCase):
     def test_position_filled_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         fill = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -130,19 +130,19 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(47.00, USD), position.total_pnl(last))
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
-        self.assertEqual("Position(id=P-123456, LONG 100,000 AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=P-123456, LONG 100,000 AUD/USD.SIM)", repr(position))
 
     def test_position_filled_with_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         fill = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -174,19 +174,19 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-51.00, USD), position.total_pnl(last))
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
-        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.SIM)", repr(position))
 
     def test_position_partial_fills_with_buy_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         fill = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -216,19 +216,19 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(21.50, USD), position.total_pnl(last))
         self.assertEqual(Money(2.00, USD), position.commission)
         self.assertEqual([Money(2.00, USD)], position.commissions())
-        self.assertEqual("Position(id=P-123456, LONG 50,000 AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=P-123456, LONG 50,000 AUD/USD.SIM)", repr(position))
 
     def test_position_partial_fills_with_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -237,7 +237,7 @@ class PositionTests(unittest.TestCase):
 
         fill2 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00002"),
@@ -268,19 +268,19 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-52.50, USD), position.total_pnl(last))
         self.assertEqual([Money(4.00, USD)], position.commissions())
         self.assertEqual(Money(4.00, USD), position.commission)
-        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=P-123456, SHORT 100,000 AUD/USD.SIM)", repr(position))
 
     def test_position_filled_with_buy_order_then_sell_order_returns_expected_attributes(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(150000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -301,8 +301,8 @@ class PositionTests(unittest.TestCase):
             order.quantity,
             Quantity(),
             Price("1.00011"),
-            AUDUSD_FXCM.quote_currency,
-            AUDUSD_FXCM.is_inverse,
+            AUDUSD_SIM.quote_currency,
+            AUDUSD_SIM.is_inverse,
             Money(0, USD),
             LiquiditySide.TAKER,
             UNIX_EPOCH + timedelta(minutes=1),
@@ -335,29 +335,29 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(12.00, USD), position.total_pnl(last))
         self.assertEqual([Money(3.00, USD)], position.commissions())
         self.assertEqual(Money(3.00, USD), position.commission)
-        self.assertEqual("Position(id=P-123456, FLAT AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=P-123456, FLAT AUD/USD.SIM)", repr(position))
 
     def test_position_filled_with_sell_order_then_buy_order_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_FXCM)
+        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_SIM)
 
         position = Position(fill1)
 
         fill2 = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -366,7 +366,7 @@ class PositionTests(unittest.TestCase):
 
         fill3 = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
@@ -397,29 +397,29 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-8.000, USD), position.total_pnl(last))
         self.assertEqual([Money(6.00, USD)], position.commissions())
         self.assertEqual(Money(6.00, USD), position.commission)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_FXCM)
+        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_SIM)
 
         position = Position(fill1)
 
         fill2 = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00000"),
@@ -456,38 +456,38 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-4.00, USD), position.total_pnl(last))
         self.assertEqual([Money(4.00, USD)], position.commissions())
         self.assertEqual(Money(4.00, USD), position.commission)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
 
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order3 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(200000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
         )
 
         fill2 = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
@@ -495,7 +495,7 @@ class PositionTests(unittest.TestCase):
 
         fill3 = TestStubs.event_order_filled(
             order3,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00010"),
@@ -526,7 +526,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(11.00, USD), position.total_pnl(last))
         self.assertEqual([Money(8.00, USD)], position.commissions())
         self.assertEqual(Money(8.00, USD), position.commission)
-        self.assertEqual("Position(id=P-123456, FLAT AUD/USD.FXCM)", repr(position))
+        self.assertEqual("Position(id=P-123456, FLAT AUD/USD.SIM)", repr(position))
 
     def test_pnl_calculation_from_trading_technologies_example(self):
         # https://www.tradingtechnologies.com/xtrader-help/fix-adapter-reference/pl-calculation-algorithm/understanding-pl-calculations/  # noqa

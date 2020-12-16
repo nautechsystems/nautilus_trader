@@ -455,7 +455,7 @@ cdef class Portfolio(PortfolioFacade):
         Parameters
         ----------
         venue : Venue
-            The venue for the open value.
+            The venue for the market value.
 
         Returns
         -------
@@ -467,7 +467,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Account account = self._accounts.get(venue)
         if account is None:
-            self._log.error(f"Cannot calculate open value "
+            self._log.error(f"Cannot calculate market value "
                             f"(no account registered for {venue}).")
             return None  # Cannot calculate
 
@@ -483,13 +483,13 @@ cdef class Portfolio(PortfolioFacade):
         for position in positions_open:
             instrument = self._data.instrument(position.symbol)
             if instrument is None:
-                self._log.error(f"Cannot calculate open value "
+                self._log.error(f"Cannot calculate market value "
                                 f"(no instrument for {position.symbol}).")
                 return None  # Cannot calculate
 
             last = self._get_last_price(position)  # TODO: Optimize
             if last is None:
-                self._log.error(f"Cannot calculate open value "
+                self._log.error(f"Cannot calculate market value "
                                 f"(no prices for {position.symbol}).")
                 continue  # Cannot calculate
 
@@ -500,7 +500,7 @@ cdef class Portfolio(PortfolioFacade):
             )
 
             if xrate == 0:
-                self._log.error(f"Cannot calculate open value (insufficient data for "
+                self._log.error(f"Cannot calculate market value (insufficient data for "
                                 f"{instrument.quote_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 
@@ -545,12 +545,12 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef Money market_value(self, Symbol symbol):
         """
-        Return the open value for the given symbol (if found).
+        Return the market value for the given symbol (if found).
 
         Parameters
         ----------
         symbol : Symbol
-            The symbol for the open value.
+            The symbol for the market value.
 
         Returns
         -------
@@ -562,13 +562,13 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Account account = self._accounts.get(symbol.venue)
         if account is None:
-            self._log.error(f"Cannot calculate open value "
+            self._log.error(f"Cannot calculate market value "
                             f"(no account registered for {symbol.venue}).")
             return None  # Cannot calculate
 
         cdef instrument = self._data.instrument(symbol)
         if instrument is None:
-            self._log.error(f"Cannot calculate open value "
+            self._log.error(f"Cannot calculate market value "
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
 
@@ -592,7 +592,7 @@ cdef class Portfolio(PortfolioFacade):
 
             last = self._get_last_price(position)  # TODO: Optimize
             if last is None:
-                self._log.error(f"Cannot calculate open value "
+                self._log.error(f"Cannot calculate market value "
                                 f"(no prices for {position.symbol}).")
                 continue  # Cannot calculate
 
@@ -603,7 +603,7 @@ cdef class Portfolio(PortfolioFacade):
             )
 
             if xrate == 0:
-                self._log.error(f"Cannot calculate open value (insufficient data for "
+                self._log.error(f"Cannot calculate market value (insufficient data for "
                                 f"{instrument.settlement_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
 

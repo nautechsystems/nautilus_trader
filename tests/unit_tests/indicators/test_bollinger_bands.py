@@ -20,7 +20,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class BollingerBandsTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class BollingerBandsTests(unittest.TestCase):
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        tick = TestStubs.quote_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         indicator.handle_quote_tick(tick)
@@ -85,7 +85,7 @@ class BollingerBandsTests(unittest.TestCase):
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        tick = TestStubs.trade_tick_5decimal(AUDUSD_FXCM.symbol)
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
 
         # Act
         indicator.handle_trade_tick(tick)
