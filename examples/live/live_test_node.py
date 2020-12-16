@@ -42,9 +42,11 @@ config = {
     },
 
     "logging": {
-        "log_level_console": "INFO",
-        "log_level_file": "DEBUG",
-        "log_level_store": "WARNING",
+        "log_level_console": "INF",
+        "log_level_file": "DGB",
+        "log_level_store": "WRN",
+        "log_to_file": False,
+        "log_file_path": "logs/",
     },
 
     "exec_database": {
