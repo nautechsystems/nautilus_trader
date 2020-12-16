@@ -23,7 +23,6 @@ import pandas as pd
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
@@ -35,14 +34,15 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.data_provider import TestDataProvider
+from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
     # Setup trading instruments
     SIM = Venue("SIM")
     symbol = Symbol("AUD/USD", SIM)
-    AUDUSD = InstrumentLoader.default_fx_ccy(symbol)
+    AUDUSD = TestInstrumentProvider.default_fx_ccy(symbol)
 
     # Setup data container
     data = BacktestDataContainer()

@@ -21,7 +21,6 @@ import pandas as pd
 
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import AUD
@@ -36,7 +35,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.data_provider import TestDataProvider
+from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 
 
@@ -45,7 +45,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.usdjpy = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", self.venue))
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", self.venue))
         data = BacktestDataContainer()
         data.add_instrument(self.usdjpy)
         data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
@@ -148,7 +148,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.gbpusd = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", self.venue))
+        self.gbpusd = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", self.venue))
         data = BacktestDataContainer()
         data.add_instrument(self.gbpusd)
         data.add_bars(self.gbpusd.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.gbpusd_1min_bid())
@@ -197,7 +197,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("SIM")
-        self.audusd = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", self.venue))
+        self.audusd = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", self.venue))
         data = BacktestDataContainer()
         data.add_instrument(self.audusd)
         data.add_quote_ticks(self.audusd.symbol, TestDataProvider.audusd_ticks())
@@ -263,7 +263,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.venue = Venue("BINANCE")
-        self.ethusdt = InstrumentLoader.ethusdt_binance()
+        self.ethusdt = TestInstrumentProvider.ethusdt_binance()
         data = BacktestDataContainer()
         data.add_instrument(self.ethusdt)
         data.add_trade_ticks(self.ethusdt.symbol, TestDataProvider.ethusdt_trades())

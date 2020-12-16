@@ -13,10 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 
-cdef class CSVTickDataLoader:
-    pass
 
+cdef class BinanceInstrumentProvider:
+    cdef dict _instruments
+    cdef object _binance
 
-cdef class CSVBarDataLoader:
-    pass
+    cdef readonly Venue venue
+
+    cpdef void load_all(self)
+    cpdef dict get_all(self)
+    cpdef Instrument get(self, Symbol symbol)
+    cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

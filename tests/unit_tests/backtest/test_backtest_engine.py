@@ -17,7 +17,6 @@ import unittest
 
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
@@ -26,7 +25,8 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
-from tests.test_kit.data_provider import TestDataProvider
+from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -37,7 +37,7 @@ class BacktestEngineTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        usdjpy = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+        usdjpy = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
         data = BacktestDataContainer()
         data.add_instrument(usdjpy)
         data.add_bars(usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid()[:2000])

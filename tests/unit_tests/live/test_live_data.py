@@ -17,7 +17,6 @@ import asyncio
 import time
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LogLevel
@@ -32,14 +31,15 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
 BITMEX = Venue("BITMEX")
 BINANCE = Venue("BINANCE")
-XBTUSD_BITMEX = InstrumentLoader.xbtusd_bitmex()
-BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
-ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
+XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class LiveDataEngineTests(unittest.TestCase):

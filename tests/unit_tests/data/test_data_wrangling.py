@@ -17,7 +17,6 @@ import unittest
 
 from pandas import Timestamp
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
@@ -27,7 +26,8 @@ from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests.test_kit.data_provider import TestDataProvider
+from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -52,7 +52,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.usdjpy_ticks()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_quotes=tick_data,
             data_bars_bid=None,
             data_bars_ask=None,
@@ -72,7 +72,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_quotes=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -103,7 +103,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.audusd_ticks()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm()),
             data_quotes=tick_data,
             data_bars_bid=None,
             data_bars_ask=None,
@@ -126,7 +126,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data_quotes=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -163,7 +163,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.ethusdt_trades()
         self.tick_builder = TradeTickDataWrangler(
-            instrument=InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
             data=tick_data,
         )
 
@@ -179,7 +179,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.ethusdt_trades()
         self.tick_builder = TradeTickDataWrangler(
-            instrument=InstrumentLoader.ethusdt_binance(),
+            instrument=TestInstrumentProvider.ethusdt_binance(),
             data=tick_data,
         )
 

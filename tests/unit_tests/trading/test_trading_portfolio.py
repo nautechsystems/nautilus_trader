@@ -16,7 +16,6 @@
 from decimal import Decimal
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
@@ -42,6 +41,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.portfolio import PortfolioFacade
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
@@ -50,12 +50,12 @@ FXCM = Venue("FXCM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")), leverage=Decimal("50"))
-GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")), leverage=Decimal("50"))
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")), leverage=Decimal("50"))
-BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
-BTCUSD_BITMEX = InstrumentLoader.xbtusd_bitmex(leverage=Decimal("10"))
-ETHUSD_BITMEX = InstrumentLoader.ethusd_bitmex(leverage=Decimal("10"))
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")), leverage=Decimal("50"))
+GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")), leverage=Decimal("50"))
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")), leverage=Decimal("50"))
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal("10"))
+ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex(leverage=Decimal("10"))
 
 
 class PortfolioFacadeTests(unittest.TestCase):

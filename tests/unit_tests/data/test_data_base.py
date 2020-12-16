@@ -15,16 +15,16 @@
 
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.data.base import DataCacheFacade
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
 FXCM = Venue("FXCM")
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", FXCM))
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", FXCM))
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", FXCM))
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", FXCM))
 
 
 class DataCacheFacadeTests(unittest.TestCase):
