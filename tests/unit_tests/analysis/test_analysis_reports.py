@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.analysis.reports import ReportProvider
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
@@ -34,12 +33,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
-GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")))
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
+GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")))
 
 
 class ReportProviderTests(unittest.TestCase):

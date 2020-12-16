@@ -18,7 +18,6 @@ import unittest
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -45,10 +44,11 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 BINANCE = Venue("BINANCE")
-ETHUSDT_BINANCE = InstrumentLoader.ethusdt_binance()
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class BacktestExecClientTests(unittest.TestCase):

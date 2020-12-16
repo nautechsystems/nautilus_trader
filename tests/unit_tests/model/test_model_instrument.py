@@ -18,7 +18,6 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -30,11 +29,12 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.test_kit.providers import TestInstrumentProvider
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
-BTCUSDT_BINANCE = InstrumentLoader.btcusdt_binance()
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class InstrumentTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_order_margin_with_no_leverage_returns_zero(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
         margin = instrument.calculate_init_margin(
@@ -82,7 +82,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_order_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
+        instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
         margin = instrument.calculate_init_margin(
@@ -95,7 +95,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_position_margin_with_no_leverage_returns_zero(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
         margin = instrument.calculate_maint_margin(
@@ -109,7 +109,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_position_margin_with_100x_leverage_returns_expected(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex(leverage=Decimal(100))
+        instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
         margin = instrument.calculate_maint_margin(
@@ -123,7 +123,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_notional_value(self):
         # Arrange
-        instrument = InstrumentLoader.btcusdt_binance()
+        instrument = TestInstrumentProvider.btcusdt_binance()
 
         # Act
         value = instrument.notional_value(Quantity(10), Price("11493.60"))
@@ -133,7 +133,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_notional_value_for_inverse(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
         value = instrument.notional_value(Quantity(100000), Price("11493.60"))
@@ -143,7 +143,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_commission_for_maker_crypto(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
         commission = instrument.calculate_commission(
@@ -157,7 +157,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_commission_for_taker_fx(self):
         # Arrange
-        instrument = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", Venue("IDEALPRO")))
+        instrument = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("IDEALPRO")))
 
         # Act
         commission = instrument.calculate_commission(
@@ -171,7 +171,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_commission_crypto_taker(self):
         # Arrange
-        instrument = InstrumentLoader.xbtusd_bitmex()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
         commission = instrument.calculate_commission(
@@ -185,7 +185,7 @@ class InstrumentTests(unittest.TestCase):
 
     def test_calculate_commission_fx_taker(self):
         # Arrange
-        instrument = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", Venue("IDEALPRO")))
+        instrument = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("IDEALPRO")))
 
         # Act
         commission = instrument.calculate_commission(

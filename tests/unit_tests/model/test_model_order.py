@@ -18,7 +18,6 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
@@ -47,11 +46,12 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
 from nautilus_trader.model.order import Order
 from nautilus_trader.model.order import StopMarketOrder
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class OrderTests(unittest.TestCase):

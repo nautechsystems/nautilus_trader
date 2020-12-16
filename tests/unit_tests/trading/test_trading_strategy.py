@@ -24,7 +24,6 @@ from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
@@ -54,13 +53,14 @@ from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class TradingStrategyTests(unittest.TestCase):
