@@ -41,9 +41,9 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-FXCM = Venue("FXCM")
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", FXCM))
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", FXCM))
+SIM = Venue("SIM")
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
 
 
 class ExecutionClientTests(unittest.TestCase):
@@ -71,7 +71,7 @@ class ExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.venue = Venue("FXCM")
+        self.venue = Venue("SIM")
 
         self.client = ExecutionClient(
             venue=self.venue,
@@ -104,7 +104,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
             Price("1.00000"),
@@ -125,7 +125,7 @@ class ExecutionClientTests(unittest.TestCase):
 
     def test_submit_bracket_order_raises_not_implemented_error(self):
         entry_order = self.order_factory.stop_market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
             Price("0.99995"),
@@ -185,14 +185,14 @@ class ExecutionClientTests(unittest.TestCase):
     def test_handle_event_sends_to_execution_engine(self):
         # Arrange
         order = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         fill = TestStubs.event_order_filled(
             order,
-            AUDUSD_FXCM,
+            AUDUSD_SIM,
             PositionId("P-123456"),
             StrategyId("S", "001"),
             Price("1.00001"),

@@ -23,7 +23,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 
@@ -31,7 +31,7 @@ class ObjectTests:
 
     @staticmethod
     def symbol_using_str():
-        str(AUDUSD_FXCM)
+        str(AUDUSD_SIM)
 
     @staticmethod
     def build_bar_no_checking():

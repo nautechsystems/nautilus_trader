@@ -31,8 +31,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_FXCM = TestStubs.symbol_gbpusd_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
+GBPUSD_SIM = TestStubs.symbol_gbpusd_fxcm()
 
 
 class BarSpecificationTests(unittest.TestCase):
@@ -109,8 +109,8 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_equality(self):
         # Arrange
-        symbol1 = Symbol("AUD/USD", Venue("FXCM"))
-        symbol2 = Symbol("GBP/USD", Venue("FXCM"))
+        symbol1 = Symbol("AUD/USD", Venue("SIM"))
+        symbol2 = Symbol("GBP/USD", Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type1 = BarType(symbol1, bar_spec)
         bar_type2 = BarType(symbol1, bar_spec)
@@ -124,14 +124,14 @@ class BarTypeTests(unittest.TestCase):
 
     def test_bar_type_str_and_repr(self):
         # Arrange
-        symbol = Symbol("AUD/USD", Venue("FXCM"))
+        symbol = Symbol("AUD/USD", Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
 
         # Act
         # Assert
-        self.assertEqual("AUD/USD.FXCM-1-MINUTE-BID", str(bar_type))
-        self.assertEqual("BarType(AUD/USD.FXCM-1-MINUTE-BID, is_internal_aggregation=True)", repr(bar_type))
+        self.assertEqual("AUD/USD.SIM-1-MINUTE-BID", str(bar_type))
+        self.assertEqual("BarType(AUD/USD.SIM-1-MINUTE-BID, is_internal_aggregation=True)", repr(bar_type))
 
     @parameterized.expand([
         [""],
@@ -146,7 +146,7 @@ class BarTypeTests(unittest.TestCase):
 
     @parameterized.expand([
         ["AUD/USD.IDEALPRO-1-MINUTE-BID", BarType(Symbol("AUD/USD", Venue("IDEALPRO")), BarSpecification(1, BarAggregation.MINUTE, PriceType.BID))],
-        ["GBP/USD.FXCM-1000-TICK-MID", BarType(Symbol("GBP/USD", Venue("FXCM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],
+        ["GBP/USD.SIM-1000-TICK-MID", BarType(Symbol("GBP/USD", Venue("SIM")), BarSpecification(1000, BarAggregation.TICK, PriceType.MID))],
         ["AAPL.NYSE-1-HOUR-MID", BarType(Symbol("AAPL", Venue("NYSE")), BarSpecification(1, BarAggregation.HOUR, PriceType.MID))],
         ["BTC/USDT.BINANCE-100-TICK-LAST", BarType(Symbol("BTC/USDT", Venue("BINANCE")), BarSpecification(100, BarAggregation.TICK, PriceType.LAST))],
     ])
@@ -297,7 +297,7 @@ class BarDataTests(unittest.TestCase):
 
     def test_str_repr(self):
         # Arrange
-        symbol = Symbol("GBP/USD", Venue("FXCM"))
+        symbol = Symbol("GBP/USD", Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         bar = Bar(
@@ -313,5 +313,5 @@ class BarDataTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("BarData(bar_type=GBP/USD.FXCM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", str(bar_data))   # noqa
-        self.assertEqual("BarData(bar_type=GBP/USD.FXCM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", repr(bar_data))  # noqa
+        self.assertEqual("BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", str(bar_data))   # noqa
+        self.assertEqual("BarData(bar_type=GBP/USD.SIM-1-MINUTE-BID, bar=1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", repr(bar_data))  # noqa

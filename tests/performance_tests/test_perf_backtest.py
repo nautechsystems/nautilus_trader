@@ -41,7 +41,7 @@ from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
@@ -50,9 +50,9 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     def test_run_with_empty_strategy():
         # Arrange
         data = BacktestDataContainer()
-        data.add_instrument(USDJPY_FXCM)
-        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_instrument(USDJPY_SIM)
+        data.add_bars(USDJPY_SIM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_SIM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategies = [TradingStrategy("001")]
 
@@ -63,7 +63,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         )
 
         engine.add_exchange(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
@@ -96,12 +96,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     def test_run_for_tick_processing():
         # Arrange
         data = BacktestDataContainer()
-        data.add_instrument(USDJPY_FXCM)
-        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_instrument(USDJPY_SIM)
+        data.add_bars(USDJPY_SIM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_SIM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategy = EMACross(
-            symbol=USDJPY_FXCM.symbol,
+            symbol=USDJPY_SIM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -115,7 +115,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         )
 
         engine.add_exchange(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
         )
@@ -132,12 +132,12 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
     def test_run_with_ema_cross_strategy():
         # Arrange
         data = BacktestDataContainer()
-        data.add_instrument(USDJPY_FXCM)
-        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
-        data.add_bars(USDJPY_FXCM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+        data.add_instrument(USDJPY_SIM)
+        data.add_bars(USDJPY_SIM.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(USDJPY_SIM.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
 
         strategy = EMACross(
-            symbol=USDJPY_FXCM.symbol,
+            symbol=USDJPY_SIM.symbol,
             bar_spec=TestStubs.bar_spec_1min_bid(),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
@@ -154,7 +154,7 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
         engine.add_exchange(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],

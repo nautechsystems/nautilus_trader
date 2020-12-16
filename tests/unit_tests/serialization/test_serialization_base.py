@@ -33,7 +33,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class SerializationBaseTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class SerializationBaseTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, serializer.serialize, AUDUSD_FXCM)
+        self.assertRaises(NotImplementedError, serializer.serialize, AUDUSD_SIM)
         self.assertRaises(NotImplementedError, serializer.deserialize, bytes())
 
     def test_order_serializer_methods_raise_not_implemented_error(self):
@@ -56,7 +56,7 @@ class SerializationBaseTests(unittest.TestCase):
         )
 
         order = order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
@@ -71,7 +71,7 @@ class SerializationBaseTests(unittest.TestCase):
     def test_command_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         command = Connect(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             command_id=uuid4(),
             command_timestamp=UNIX_EPOCH,
         )

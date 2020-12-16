@@ -28,7 +28,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class QuoteTickTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class QuoteTickTests(unittest.TestCase):
         # Arrange
         # These are based on timestamp for tick sorting
         tick1 = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -46,7 +46,7 @@ class QuoteTickTests(unittest.TestCase):
         )
 
         tick2 = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -55,7 +55,7 @@ class QuoteTickTests(unittest.TestCase):
         )
 
         tick3 = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -76,7 +76,7 @@ class QuoteTickTests(unittest.TestCase):
     def test_tick_str_and_repr(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -89,13 +89,13 @@ class QuoteTickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual("AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z", result0)
-        self.assertEqual("QuoteTick(AUD/USD.FXCM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z)", result1)
+        self.assertEqual("AUD/USD.SIM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z", result0)
+        self.assertEqual("QuoteTick(AUD/USD.SIM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z)", result1)
 
     def test_extract_price_with_invalid_price_raises_value_error(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -110,7 +110,7 @@ class QuoteTickTests(unittest.TestCase):
     def test_extract_price_with_various_price_types_returns_expected_values(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -131,7 +131,7 @@ class QuoteTickTests(unittest.TestCase):
     def test_extract_volume_with_invalid_price_raises_value_error(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -146,7 +146,7 @@ class QuoteTickTests(unittest.TestCase):
     def test_extract_volume_with_various_price_types_returns_expected_values(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(500000),
@@ -171,14 +171,14 @@ class QuoteTickTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             QuoteTick.from_serializable_string,
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             "NOT_A_TICK",
         )
 
     def test_from_serializable_string_given_valid_string_returns_expected_tick(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -187,7 +187,7 @@ class QuoteTickTests(unittest.TestCase):
         )
 
         # Act
-        result = QuoteTick.from_serializable_string(AUDUSD_FXCM.symbol, tick.to_serializable_string())
+        result = QuoteTick.from_serializable_string(AUDUSD_SIM.symbol, tick.to_serializable_string())
 
         # Assert
         self.assertEqual(tick, result)
@@ -195,7 +195,7 @@ class QuoteTickTests(unittest.TestCase):
     def test_to_serializable_returns_expected_string(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Price("1.00001"),
             Quantity(1),
@@ -216,7 +216,7 @@ class TradeTickTests(unittest.TestCase):
         # Arrange
         # These are based on timestamp for tick sorting
         tick1 = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
             Maker.BUYER,
@@ -225,7 +225,7 @@ class TradeTickTests(unittest.TestCase):
         )
 
         tick2 = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
             Maker.BUYER,
@@ -234,7 +234,7 @@ class TradeTickTests(unittest.TestCase):
         )
 
         tick3 = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
             Maker.BUYER,
@@ -255,7 +255,7 @@ class TradeTickTests(unittest.TestCase):
     def test_str_and_repr(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
             Maker.BUYER,
@@ -268,8 +268,8 @@ class TradeTickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual("AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z", result0)
-        self.assertEqual("TradeTick(AUD/USD.FXCM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z)", result1)
+        self.assertEqual("AUD/USD.SIM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z", result0)
+        self.assertEqual("TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z)", result1)
 
     def test_from_serializable_given_malformed_string_raises_value_error(self):
         # Arrange
@@ -278,14 +278,14 @@ class TradeTickTests(unittest.TestCase):
         self.assertRaises(
             ValueError,
             TradeTick.from_serializable_string,
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             "NOT_A_TICK",
         )
 
     def test_from_serializable_string_given_valid_string_returns_expected_tick(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,
@@ -294,7 +294,7 @@ class TradeTickTests(unittest.TestCase):
         )
 
         # Act
-        result = TradeTick.from_serializable_string(AUDUSD_FXCM.symbol, tick.to_serializable_string())
+        result = TradeTick.from_serializable_string(AUDUSD_SIM.symbol, tick.to_serializable_string())
 
         # Assert
         self.assertEqual(tick, result)
@@ -302,7 +302,7 @@ class TradeTickTests(unittest.TestCase):
     def test_to_serializable_returns_expected_string(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
             Maker.BUYER,

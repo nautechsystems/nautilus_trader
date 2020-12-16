@@ -118,7 +118,7 @@ cdef class Symbol(Identifier):
         Return a symbol parsed from the given string value. Must be correctly
         formatted with two valid strings either side of a period.
 
-        Example: "AUD/USD.FXCM".
+        Example: "AUD/USD.IDEALPRO".
 
         Parameters
         ----------
@@ -468,7 +468,7 @@ cdef class AccountId(Identifier):
         Return an account identifier from the given string value. Must be
         correctly formatted with two valid strings either side of a hyphen.
 
-        Example: "FXCM-02851908".
+        Example: "IB-D02851908".
 
         Parameters
         ----------

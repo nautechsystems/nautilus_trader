@@ -38,8 +38,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
-GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("FXCM")))
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")))
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("GBP/USD", Venue("SIM")))
 
 
 class ReportProviderTests(unittest.TestCase):
@@ -110,7 +110,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -121,7 +121,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -133,7 +133,7 @@ class ReportProviderTests(unittest.TestCase):
 
         event = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             fill_price=Price("0.80011"),
         )
@@ -162,7 +162,7 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(1500000),
             Price("0.80010"),
@@ -173,7 +173,7 @@ class ReportProviderTests(unittest.TestCase):
         order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(1500000),
             Price("0.80000"),
@@ -189,7 +189,7 @@ class ReportProviderTests(unittest.TestCase):
 
         filled = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("0.80011"),
@@ -218,20 +218,20 @@ class ReportProviderTests(unittest.TestCase):
         report_provider = ReportProvider()
 
         order1 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.BUY,
             Quantity(100000),
         )
 
         order2 = self.order_factory.market(
-            AUDUSD_FXCM.symbol,
+            AUDUSD_SIM.symbol,
             OrderSide.SELL,
             Quantity(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order1,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00010"),
@@ -239,7 +239,7 @@ class ReportProviderTests(unittest.TestCase):
 
         fill2 = TestStubs.event_order_filled(
             order2,
-            instrument=AUDUSD_FXCM,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123457"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00010"),

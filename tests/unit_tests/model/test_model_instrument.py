@@ -32,16 +32,16 @@ from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestInstrumentProvider
 
 
-AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("FXCM")))
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("FXCM")))
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")))
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("SIM")))
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class InstrumentTests(unittest.TestCase):
 
     @parameterized.expand([
-        [AUDUSD_FXCM, AUDUSD_FXCM, True, False],
-        [AUDUSD_FXCM, USDJPY_FXCM, False, True],
+        [AUDUSD_SIM, AUDUSD_SIM, True, False],
+        [AUDUSD_SIM, USDJPY_SIM, False, True],
     ])
     def test_equality(self, instrument1, instrument2, expected1, expected2):
         # Arrange

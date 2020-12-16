@@ -40,7 +40,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class TraderTests(unittest.TestCase):
@@ -80,13 +80,13 @@ class TraderTests(unittest.TestCase):
         )
 
         self.exchange = SimulatedExchange(
-            venue=Venue("FXCM"),
+            venue=Venue("SIM"),
             oms_type=OMSType.HEDGING,
             generate_position_ids=True,
             is_frozen_account=False,
             starting_balances=[Money(1_000_000, USD)],
             exec_cache=self.exec_engine.cache,
-            instruments=[USDJPY_FXCM],
+            instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
             clock=clock,
@@ -94,8 +94,8 @@ class TraderTests(unittest.TestCase):
         )
 
         self.data_client = BacktestDataClient(
-            instruments=[USDJPY_FXCM],
-            venue=Venue("FXCM"),
+            instruments=[USDJPY_SIM],
+            venue=Venue("SIM"),
             engine=self.data_engine,
             clock=clock,
             logger=logger,
