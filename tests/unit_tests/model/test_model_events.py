@@ -15,7 +15,6 @@
 
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -47,11 +46,12 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class EventTests(unittest.TestCase):

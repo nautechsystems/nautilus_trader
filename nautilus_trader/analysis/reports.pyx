@@ -42,7 +42,7 @@ cdef class ReportProvider:
         Parameters
         ----------
         orders : dict[OrderId, Order]
-            The dictionary of client order identifiers and order objects.
+            The orders for the report.
 
         Returns
         -------
@@ -67,7 +67,7 @@ cdef class ReportProvider:
         Parameters
         ----------
         orders : dict[OrderId, Order]
-            The dictionary of client order identifiers and order objects.
+            The orders for the report.
 
         Returns
         -------
@@ -97,6 +97,7 @@ cdef class ReportProvider:
         Parameters
         ----------
         positions : dict[PositionId, Position]
+            The positions for the report.
 
         Returns
         -------

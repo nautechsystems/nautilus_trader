@@ -18,7 +18,6 @@ import unittest
 
 from parameterized import parameterized
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.data.cache import DataCache
@@ -35,13 +34,14 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 FXCM = Venue("FXCM")
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", FXCM))
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", FXCM))
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", FXCM))
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", FXCM))
 
 
 class DataCacheTests(unittest.TestCase):
@@ -147,7 +147,7 @@ class DataCacheTests(unittest.TestCase):
 
     def test_symbols_when_one_instrument_returns_expected_list(self):
         # Arrange
-        instrument = InstrumentLoader.ethusdt_binance()
+        instrument = TestInstrumentProvider.ethusdt_binance()
 
         self.cache.add_instrument(instrument)
 
@@ -159,7 +159,7 @@ class DataCacheTests(unittest.TestCase):
 
     def test_instruments_when_one_instrument_returns_expected_list(self):
         # Arrange
-        instrument = InstrumentLoader.ethusdt_binance()
+        instrument = TestInstrumentProvider.ethusdt_binance()
 
         self.cache.add_instrument(instrument)
 

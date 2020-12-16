@@ -15,7 +15,6 @@
 
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
@@ -38,12 +37,13 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
 FXCM = Venue("FXCM")
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(Symbol("USD/JPY", FXCM))
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(Symbol("AUD/USD", FXCM))
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", FXCM))
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", FXCM))
 
 
 class ExecutionClientTests(unittest.TestCase):

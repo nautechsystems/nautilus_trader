@@ -16,13 +16,13 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 class VolumeWeightedAveragePriceTests(unittest.TestCase):
 

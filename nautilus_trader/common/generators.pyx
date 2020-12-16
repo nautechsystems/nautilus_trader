@@ -86,7 +86,7 @@ cdef class IdentifierGenerator:
         """
         Reset the identifier generator.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self.count = 0
 
@@ -200,7 +200,7 @@ cdef class PositionIdGenerator:
         """
         Reset the identifier generator.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self._counts = {}
 

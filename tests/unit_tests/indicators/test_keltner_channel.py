@@ -15,13 +15,13 @@
 
 import unittest
 
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.keltner_channel import KeltnerChannel
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 
 class KeltnerChannelTests(unittest.TestCase):

@@ -16,7 +16,6 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
@@ -36,11 +35,12 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+AUDUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+GBPUSD_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
 
 
 class ExecutionEngineTests(unittest.TestCase):

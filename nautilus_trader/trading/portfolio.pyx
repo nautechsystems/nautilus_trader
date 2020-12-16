@@ -176,32 +176,14 @@ cdef class Portfolio(PortfolioFacade):
         self._accounts[account_id.issuer_as_venue()] = account
         account.register_portfolio(self)
 
-    cpdef void update_tick(self, QuoteTick tick) except *:
+    cpdef void initialize_orders(self, set orders) except *:
         """
-        Update the portfolio with the given tick.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick to update with.
-
-        """
-        Condition.not_none(tick, "tick")
-
-        cdef QuoteTick last = self._ticks.get(tick.symbol)
-        self._ticks[tick.symbol] = tick
-
-        if last is not None and (tick.bid != last.bid or tick.ask != last.ask):
-            # Clear cached unrealized P&Ls
-            self._unrealized_pnls[tick.symbol] = None
-
-    cpdef void update_orders_working(self, set orders) except *:
-        """
-        Update the portfolio with the given orders.
+        Initialize the portfolio with the given orders.
 
         Parameters
         ----------
         orders : set[Order]
+            The orders to initialize with.
 
         """
         Condition.not_none(orders, "orders")
@@ -224,38 +206,14 @@ cdef class Portfolio(PortfolioFacade):
         for venue in self._orders_working.keys():
             self._update_init_margin(venue)
 
-    cpdef void update_order(self, Order order) except *:
+    cpdef void initialize_positions(self, set positions) except *:
         """
-        Update the portfolio with the given order.
-
-        Parameters
-        ----------
-        order : Order
-            The order to update with.
-
-        """
-        Condition.not_none(order, "order")
-
-        cdef Venue venue = order.symbol.venue
-
-        cdef set orders_working = self._orders_working.get(venue, set())
-        if order.is_working_c():
-            orders_working.add(order)
-            self._orders_working[venue] = orders_working
-            self._log.debug(f"Added working {order}")
-        elif order.is_completed_c():
-            orders_working.discard(order)
-
-        self._update_init_margin(venue)
-
-    cpdef void update_positions(self, set positions) except *:
-        """
-        Update the portfolio with the given positions.
+        Initialize the portfolio with the given positions.
 
         Parameters
         ----------
         positions : set[Position]
-            The positions to update with.
+            The positions to initialize with.
 
         """
         Condition.not_none(positions, "positions")
@@ -294,6 +252,49 @@ cdef class Portfolio(PortfolioFacade):
             for symbol in self._symbols_open_for_venue(venue):
                 self._unrealized_pnls[symbol] = self._calculate_unrealized_pnl(symbol)
 
+    cpdef void update_tick(self, QuoteTick tick) except *:
+        """
+        Update the portfolio with the given tick.
+
+        Parameters
+        ----------
+        tick : QuoteTick
+            The tick to update with.
+
+        """
+        Condition.not_none(tick, "tick")
+
+        cdef QuoteTick last = self._ticks.get(tick.symbol)
+        self._ticks[tick.symbol] = tick
+
+        if last is not None and (tick.bid != last.bid or tick.ask != last.ask):
+            # Clear cached unrealized P&Ls
+            self._unrealized_pnls[tick.symbol] = None
+
+    cpdef void update_order(self, Order order) except *:
+        """
+        Update the portfolio with the given order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update with.
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef Venue venue = order.symbol.venue
+
+        cdef set orders_working = self._orders_working.get(venue, set())
+        if order.is_working_c():
+            orders_working.add(order)
+            self._orders_working[venue] = orders_working
+            self._log.debug(f"Added working {order}")
+        elif order.is_completed_c():
+            orders_working.discard(order)
+
+        self._update_init_margin(venue)
+
     cpdef void update_position(self, PositionEvent event) except *:
         """
         Update the portfolio with the given position event.
@@ -323,7 +324,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Reset the portfolio.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
         """
         self._log.debug(f"Resetting...")
 
@@ -498,7 +499,7 @@ cdef class Portfolio(PortfolioFacade):
                 side=position.entry,
             )
 
-            if xrate == Decimal(0):
+            if xrate == 0:
                 self._log.error(f"Cannot calculate open value (insufficient data for "
                                 f"{instrument.quote_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
@@ -601,7 +602,7 @@ cdef class Portfolio(PortfolioFacade):
                 side=position.entry,
             )
 
-            if xrate == Decimal(0):
+            if xrate == 0:
                 self._log.error(f"Cannot calculate open value (insufficient data for "
                                 f"{instrument.settlement_currency}/{account.default_currency}).")
                 return None  # Cannot calculate
@@ -651,7 +652,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) > Decimal(0)
+        return self._net_position(symbol) > 0
 
     cpdef bint is_net_short(self, Symbol symbol) except *:
         """
@@ -671,7 +672,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) < Decimal(0)
+        return self._net_position(symbol) < 0
 
     cpdef bint is_flat(self, Symbol symbol) except *:
         """
@@ -691,7 +692,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(symbol, "symbol")
 
-        return self._net_position(symbol) == Decimal(0)
+        return self._net_position(symbol) == 0
 
     cpdef bint is_completely_flat(self) except *:
         """
@@ -802,7 +803,7 @@ cdef class Portfolio(PortfolioFacade):
                     side=order.side,
                 )
 
-                if xrate == Decimal(0):
+                if xrate == 0:
                     self._log.error(f"Cannot calculate initial margin (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     continue  # Cannot calculate
@@ -869,7 +870,7 @@ cdef class Portfolio(PortfolioFacade):
                     side=position.entry,
                 )
 
-                if xrate == Decimal(0):
+                if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     continue  # Cannot calculate
@@ -936,7 +937,7 @@ cdef class Portfolio(PortfolioFacade):
                     side=position.entry,
                 )
 
-                if xrate == Decimal(0):
+                if xrate == 0:
                     self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     return None  # Cannot calculate

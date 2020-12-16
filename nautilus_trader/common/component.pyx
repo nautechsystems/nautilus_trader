@@ -243,7 +243,7 @@ cdef class Component:
         """
         Reset the component.
 
-        All stateful values are reset to their initial value.
+        All stateful fields are reset to their initial value.
 
         Raises
         ------

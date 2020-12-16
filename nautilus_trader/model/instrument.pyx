@@ -59,6 +59,7 @@ cdef class Instrument:
         funding_rate_long not None: Decimal,
         funding_rate_short not None: Decimal,
         datetime timestamp not None,
+        dict info=None,
     ):
         """
         Initialize a new instance of the `Instrument` class.
@@ -117,6 +118,8 @@ cdef class Instrument:
             The funding rate for short positions.
         timestamp : datetime
             The timestamp the instrument was created/updated at.
+        info : dict[str, object], optional
+            The additional instrument information.
 
         Raises
         ------
@@ -181,6 +184,8 @@ cdef class Instrument:
         Condition.type(taker_fee, Decimal, "taker_fee")
         Condition.type(funding_rate_long, Decimal, "funding_rate_long")
         Condition.type(funding_rate_short, Decimal, "funding_rate_short")
+        if info is None:
+            info = {}
 
         self.symbol = symbol
         self.asset_class = asset_class
@@ -210,6 +215,7 @@ cdef class Instrument:
         self.funding_rate_long = funding_rate_long
         self.funding_rate_short = funding_rate_short
         self.timestamp = timestamp
+        self.info = info
 
     def __eq__(self, Instrument other) -> bool:
         return self.symbol.value == other.symbol.value

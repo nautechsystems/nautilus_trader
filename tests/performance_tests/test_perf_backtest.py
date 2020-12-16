@@ -25,7 +25,6 @@ import pytz
 
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.loaders import InstrumentLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
@@ -36,12 +35,13 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.data_provider import TestDataProvider
+from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY_FXCM = InstrumentLoader.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+USDJPY_FXCM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
 
 
 class BacktestEnginePerformanceTests(unittest.TestCase):
