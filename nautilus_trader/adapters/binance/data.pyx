@@ -375,7 +375,6 @@ cdef class BinanceDataClient(LiveDataClient):
     async def _startup_sequence(self):
         await self._load_instruments()
         await self._send_instruments()
-        await self._log_instruments_updated()
 
     async def _load_instruments(self):
         self._instrument_provider.load_all()
@@ -385,5 +384,4 @@ cdef class BinanceDataClient(LiveDataClient):
         for instrument in instruments.values():
             self._handle_instrument(instrument)
 
-    async def _log_instruments_updated(self):
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")

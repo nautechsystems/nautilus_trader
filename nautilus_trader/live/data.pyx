@@ -86,7 +86,7 @@ cdef class LiveDataEngine(DataEngine):
             self._loop.create_task(self._run_message_queue()),
         )
 
-        self._log.info(f"Scheduled {self._task_run}")
+        self._log.debug(f"Scheduled {self._task_run}")
 
     cpdef void _on_stop(self) except *:
         self._is_running = False
@@ -96,7 +96,7 @@ cdef class LiveDataEngine(DataEngine):
         self._log.debug(f"Sentinel message placed on message queue.")
 
     async def _run_data_queue(self):
-        self._log.info(f"Data queue processing starting (qsize={self.data_qsize()})...")
+        self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
         try:
             while self._is_running:
                 data = await self._data_queue.get()
@@ -107,12 +107,11 @@ cdef class LiveDataEngine(DataEngine):
             if self.data_qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.data_qsize()} data item(s) on queue.")
-            return
-
-        self._log.info(f"Data queue processing stopped (qsize={self.data_qsize()}).")
+            else:
+                self._log.debug(f"Data queue processing stopped (qsize={self.data_qsize()}).")
 
     async def _run_message_queue(self):
-        self._log.info(f"Message queue processing starting (qsize={self.message_qsize()})...")
+        self._log.debug(f"Message queue processing starting (qsize={self.message_qsize()})...")
         cdef Message message
         try:
             while self._is_running:
@@ -131,9 +130,8 @@ cdef class LiveDataEngine(DataEngine):
             if self.message_qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.message_qsize()} message(s) on queue.")
-                return
-
-        self._log.info(f"Message queue processing stopped (qsize={self.message_qsize()}).")
+            else:
+                self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
 
     cpdef object get_event_loop(self):
         """
