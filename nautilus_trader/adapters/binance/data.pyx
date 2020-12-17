@@ -65,11 +65,12 @@ cdef class BinanceDataClient(LiveDataClient):
             logger,
         )
 
-        cdef dict config = {}
-        config["apiKey"] = credentials.get("api_key")
-        config["secret"] = credentials.get("secret")
-        config["timeout"] = 10000
-        config["enableRateLimit"] = True
+        cdef dict config = {
+            "apiKey": credentials.get("api_key"),
+            "secret": credentials.get("api_secret"),
+            "timeout": 10000,
+            "enableRateLimit": True,
+        }
 
         self._is_connected = False
         self._config = config
