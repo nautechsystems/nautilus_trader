@@ -105,6 +105,7 @@ cdef class TradingStrategy(Component):
             clock=clock,
             logger=LiveLogger(clock, strategy_id.value),
             name=strategy_id.value,
+            log_initialized=False,
         )
 
         self._data_engine = None    # Initialized when registered with the data engine
