@@ -61,14 +61,14 @@ config = {
     },
 
     "data_clients": {
-        "ccxt-binance": {
+        "binance": {
             "api_key": "BINANCE_API_KEY",        # value is the environment variable name
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
         },
     },
 
     "exec_clients": {
-        "ccxt-binance": {
+        "binance": {
             "api_key": "BINANCE_API_KEY",        # value is the environment variable name
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
         },

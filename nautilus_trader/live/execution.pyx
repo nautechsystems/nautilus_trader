@@ -93,7 +93,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Sentinel message placed on message queue.")
 
     async def _run(self):
-        self._log.info(f"Message queue processing starting (qsize={self.qsize()})...")
+        self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
         cdef Message message
         try:
             while self._is_running:
@@ -110,9 +110,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             if self.qsize() > 0:
                 self._log.warning(f"Running cancelled "
                                   f"with {self.qsize()} message(s) on queue.")
-            return
-
-        self._log.info(f"Message queue processing stopped (qsize={self.qsize()}).")
+            else:
+                self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
 
     cpdef object get_event_loop(self):
         """
