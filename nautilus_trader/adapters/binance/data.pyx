@@ -99,9 +99,9 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Connect the client.
         """
-        self._log.debug("Connecting...")
+        self._log.info("Connecting...")
 
-        self._loop.create_task(self._startup_sequence())
+        self._loop.run_in_executor(None, self._startup_sequence)
 
         # Emulates a socket style connection
         self._is_connected = True
@@ -111,7 +111,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Disconnect the client.
         """
-        self._log.debug("Disconnecting...")
+        self._log.info("Disconnecting...")
 
         self._is_connected = False
 
@@ -121,6 +121,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Reset the client.
         """
+        # Refresh CCXT client
         self._client = ccxt.binance(config=self._config)
 
     cpdef void dispose(self) except *:
@@ -372,14 +373,14 @@ cdef class BinanceDataClient(LiveDataClient):
 
         # TODO: Implement
 
-    async def _startup_sequence(self):
-        await self._load_instruments()
-        await self._send_instruments()
+    def _startup_sequence(self):
+        self._load_instruments()
+        self._loop.call_soon_threadsafe(self._send_instruments)
 
-    async def _load_instruments(self):
+    def _load_instruments(self):
         self._instrument_provider.load_all()
 
-    async def _send_instruments(self):
+    def _send_instruments(self):
         instruments = self._instrument_provider.get_all()
         for instrument in instruments.values():
             self._handle_instrument(instrument)

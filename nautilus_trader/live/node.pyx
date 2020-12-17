@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import time
 import msgpack
 import redis
@@ -171,7 +172,7 @@ cdef class TradingNode:
             logger=logger,
         )
 
-        self._check_residuals_delay = 2.0  # Hard coded delay to await system spool up (refactor)
+        self._check_residuals_delay = 2.0  # Hard coded delay (refactor)
         self._load_strategy_state = config_strategy.get("load_state", True)
         self._save_strategy_state = config_strategy.get("save_state", True)
 
@@ -191,7 +192,7 @@ cdef class TradingNode:
         signals = (SIGTERM, SIGINT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self._log.info(f"Event loop {signals} handling setup.")
+        self._log.debug(f"Event loop {signals} handling setup.")
 
     def start(self):
         """
@@ -209,6 +210,11 @@ cdef class TradingNode:
     def stop(self):
         """
         Stop the trading node.
+
+        After a specified delay the internal `Trader` residuals will be checked.
+
+        If save strategy is specified then strategy states will then be saved.
+
         """
         self._log.info("state=STOPPING...")
 
@@ -220,41 +226,13 @@ cdef class TradingNode:
         self._log.info(f"loop.is_running={self._loop.is_running()}")
         self._log.info("state=STOPPED.")
 
-    async def _run(self):
-        self._log.info(f"loop.is_running={self._loop.is_running()}")
-        self._data_engine.start()
-        self._exec_engine.start()
-        self.trader.start()
-
-    async def _shutdown(self):
-        """
-        Stop the trading node.
-
-        After the specified check residuals delay the internal `Trader`
-        residuals will be checked.
-
-        If save strategy is specified then strategy
-        states will then be saved.
-
-        """
-        self.trader.stop()
-
-        self._log.info("Awaiting residual state...")
-        time.sleep(self._check_residuals_delay)
-        self.trader.check_residuals()
-
-        if self._save_strategy_state:
-            self.trader.save()
-
-        self._data_engine.stop()
-        self._exec_engine.stop()
-
     cpdef void dispose(self) except *:
         """
         Dispose of the trading node.
 
         This method is idempotent and irreversible. No other methods should be
         called after disposal.
+
         """
         self._log.info("state=DISPOSING...")
 
@@ -265,20 +243,52 @@ cdef class TradingNode:
         try:
             self._loop.stop()
             self._log.info("Closing event loop...")
-            time.sleep(1)
+            time.sleep(0.1)  # Allow event loop to close (refactor)
             self._loop.close()
             self._log.info(f"loop.is_closed={self._loop.is_closed()}")
         except RuntimeError as ex:
             self._log.exception(ex)
 
         self._log.info("state=DISPOSED.")
-        time.sleep(0.1)  # Allow final logs to print to console
+        time.sleep(0.1)  # Allow final logs to print to console (refactor)
+
+    async def _run(self):
+        self._log.info(f"loop.is_running={self._loop.is_running()}")
+
+        self._data_engine.start()
+        self._exec_engine.start()
+
+        #self._loop.call_later(0.5, lambda: self.trader.start())
+        await asyncio.sleep(0.5)
+        self.trader.start()
+
+    async def _shutdown(self):
+        self.trader.stop()
+
+        await self._await_residuals_and_stop()
+
+    async def _await_residuals_and_stop(self):
+        self._log.info("Awaiting residual state...")
+        await asyncio.sleep(self._check_residuals_delay)
+
+        # TODO: Refactor shutdown - check completely flat before stopping engines
+        self.trader.check_residuals()
+
+        if self._save_strategy_state:
+            self.trader.save()
+
+        self._data_engine.stop()
+        self._exec_engine.stop()
 
     cdef void _setup_data_clients(self, dict config, logger):
         # TODO: DataClientFactory
         for key, value in config.items():
+            credentials = {
+                "api_key": config.get("api_key"),
+                "api_secret": config.get("api_secret"),
+            }
             client = BinanceDataClient(
-                credentials={},
+                credentials=credentials,
                 engine=self._data_engine,
                 clock=self._clock,
                 logger=logger,

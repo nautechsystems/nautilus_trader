@@ -67,7 +67,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         if config is None:
             config = {}
-        config["name"] = "LiveExecEngine"
         super().__init__(
             database,
             portfolio,
@@ -78,17 +77,19 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._loop = loop
         self._queue = asyncio.Queue()
-        self._is_running = True
+        self.is_running = True
 
     cpdef void _on_start(self) except *:
-        self._is_running = True
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
+
+        self.is_running = True
+
         self._task_run = self._loop.create_task(self._run())
-        self._log.info(f"Scheduled {self._task_run}")
+        self._log.debug(f"Scheduled {self._task_run}")
 
     cpdef void _on_stop(self) except *:
-        self._is_running = False
+        self.is_running = False
         self._queue.put_nowait(None)  # Sentinel message pattern
         self._log.debug(f"Sentinel message placed on message queue.")
 
@@ -96,10 +97,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
         cdef Message message
         try:
-            while self._is_running:
+            while self.is_running:
                 message = await self._queue.get()
                 if message is None:  # Sentinel message
-                    continue         # Returns to the top to check `self._is_running`
+                    continue         # Returns to the top to check `self.is_running`
                 if message.type == MessageType.EVENT:
                     self._handle_event(message)
                 elif message.type == MessageType.COMMAND:
