@@ -79,9 +79,13 @@ cdef class LiveDataEngine(DataEngine):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
         self._is_running = True
-        data_queue_task = self._loop.create_task(self._run_data_queue())
-        message_queue_task = self._loop.create_task(self._run_message_queue())
-        self._task_run = asyncio.gather(data_queue_task, message_queue_task)
+
+        # Run queues
+        self._task_run = asyncio.gather(
+            self._loop.create_task(self._run_data_queue()),
+            self._loop.create_task(self._run_message_queue()),
+        )
+
         self._log.info(f"Scheduled {self._task_run}")
 
     cpdef void _on_stop(self) except *:
@@ -234,7 +238,7 @@ cdef class LiveDataEngine(DataEngine):
 
 cdef class LiveDataClient(DataClient):
     """
-    The abstract base class live data clients.
+    The abstract base class for all live data clients.
 
     This class should not be used directly, but through its concrete subclasses.
     """
