@@ -72,13 +72,13 @@ cdef class LiveDataEngine(DataEngine):
         self._loop = loop
         self._data_queue = asyncio.Queue()
         self._message_queue = asyncio.Queue()
-        self._is_running = False
+        self.is_running = False
 
     cpdef void _on_start(self) except *:
-        self._is_running = True
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
-        self._is_running = True
+
+        self.is_running = True
 
         # Run queues
         self._task_run = asyncio.gather(
@@ -89,7 +89,7 @@ cdef class LiveDataEngine(DataEngine):
         self._log.debug(f"Scheduled {self._task_run}")
 
     cpdef void _on_stop(self) except *:
-        self._is_running = False
+        self.is_running = False
         self._data_queue.put_nowait(None)     # Sentinel message pattern
         self._message_queue.put_nowait(None)  # Sentinel message pattern
         self._log.debug(f"Sentinel message placed on data queue.")
@@ -98,10 +98,10 @@ cdef class LiveDataEngine(DataEngine):
     async def _run_data_queue(self):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
         try:
-            while self._is_running:
+            while self.is_running:
                 data = await self._data_queue.get()
                 if data is None:  # Sentinel message
-                    continue      # Returns to the top to check `self._is_running`
+                    continue      # Returns to the top to check `self.is_running`
                 self._handle_data(data)
         except CancelledError:
             if self.data_qsize() > 0:
@@ -114,10 +114,10 @@ cdef class LiveDataEngine(DataEngine):
         self._log.debug(f"Message queue processing starting (qsize={self.message_qsize()})...")
         cdef Message message
         try:
-            while self._is_running:
+            while self.is_running:
                 message = await self._message_queue.get()
                 if message is None:  # Sentinel message
-                    continue         # Returns to the top to check `self._is_running`
+                    continue         # Returns to the top to check `self.is_running`
                 if message.type == MessageType.COMMAND:
                     self._execute_command(message)
                 elif message.type == MessageType.REQUEST:

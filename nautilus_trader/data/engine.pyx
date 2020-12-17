@@ -98,10 +98,9 @@ cdef class DataEngine(Component):
             The configuration options.
 
         """
-        super().__init__(clock, logger)
-
         if config is None:
             config = {}
+        super().__init__(clock, logger, name="DataEngine")
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}              # type: dict[Venue, DataClient]
