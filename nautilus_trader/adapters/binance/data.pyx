@@ -22,12 +22,19 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
+from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport TradeMatchId
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BinanceDataClient(LiveDataClient):
@@ -101,11 +108,14 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
-        self._loop.run_in_executor(None, self._startup_sequence)
+        # self._loop.run_in_executor(None, self._load_instruments)
 
         # Emulates a socket style connection
         self._is_connected = True
         self._log.info("Connected.")
+
+    def _load_instruments(self):
+        self._instrument_provider.load_all()
 
     cpdef void disconnect(self) except *:
         """
@@ -261,7 +271,18 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        self._loop.run_in_executor(None, self._request_instrument, symbol, correlation_id)
+
+    def _request_instrument(self, Symbol symbol, UUID correlation_id):
+        self._instrument_provider.load_all()
+        self._loop.call_soon_threadsafe(self._send_instrument, symbol, correlation_id)
+
+    def _send_instrument(self, Symbol symbol, UUID correlation_id):
+        cdef Instrument instrument = self._instrument_provider.get_all().get(symbol)
+        if instrument is not None:
+            self._handle_instruments([instrument], correlation_id)
+        else:
+            self._log.error(f"Could not find instrument {symbol.code}.")
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
         """
@@ -275,7 +296,16 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        self._loop.run_in_executor(None, self._request_instruments, correlation_id)
+
+    def _request_instruments(self, UUID correlation_id):
+        self._instrument_provider.load_all()
+        self._loop.call_soon_threadsafe(self._send_instruments, correlation_id)
+
+    def _send_instruments(self, UUID correlation_id):
+        cdef list instruments = list(self._instrument_provider.get_all().values())
+        self._log.info(f"Received {len(instruments)} instruments.")
+        self._handle_instruments(instruments, correlation_id)
 
     cpdef void request_quote_ticks(
         self,
@@ -339,7 +369,59 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        self._loop.run_in_executor(
+            None,
+            self._request_trade_ticks,
+            symbol,
+            from_datetime,
+            to_datetime,
+            limit,
+            correlation_id
+        )
+
+    def _request_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ):
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot request trade ticks (no instrument for {symbol}")
+            return
+
+        cdef list trades = self._client.fetch_trades(
+            symbol=symbol.code,
+            since=from_datetime,
+            limit=limit,
+        )
+
+        cdef list ticks = []
+        cdef dict trade
+        for trade in trades:
+            tick = TradeTick(
+                symbol,
+                Price(f"{trade['price']:.{instrument.price_precision}f}"),
+                Quantity(f"{trade['amount']:.{instrument.size_precision}f}"),
+                Maker.BUYER if trade["side"] == "buy" else Maker.SELLER,
+                TradeMatchId(trade["id"]),
+                from_posix_ms(trade["timestamp"]),
+            )
+
+            ticks.append(tick)
+
+        self._loop.call_soon_threadsafe(
+            self._send_trade_ticks,
+            symbol,
+            ticks,
+            correlation_id,
+        )
+
+    def _send_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id):
+        self._log.info(f"Received {len(ticks)} trade ticks.")
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
 
     cpdef void request_bars(
         self,
@@ -372,17 +454,3 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_none(correlation_id, "correlation_id")
 
         # TODO: Implement
-
-    def _startup_sequence(self):
-        self._load_instruments()
-        self._loop.call_soon_threadsafe(self._send_instruments)
-
-    def _load_instruments(self):
-        self._instrument_provider.load_all()
-
-    def _send_instruments(self):
-        instruments = self._instrument_provider.get_all()
-        for instrument in instruments.values():
-            self._handle_instrument(instrument)
-
-        self._log.info(f"Updated {self._instrument_provider.count} instruments.")
