@@ -69,7 +69,7 @@ cdef class DataClient:
         """
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(f"{type(self).__name__}-{venue.value}", logger)
+        self._log = LoggerAdapter(f"DataClient-{venue.value}", logger)
         self._engine = engine
 
         self.venue = venue

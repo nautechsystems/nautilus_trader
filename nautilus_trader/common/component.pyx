@@ -92,9 +92,10 @@ cdef class Component:
         Clock clock not None,
         Logger logger not None,
         str name=None,
+        bint log_initialized=True,
     ):
         """
-        Initialize a new instance of the `ExecutionEngine` class.
+        Initialize a new instance of the `Component` class.
 
         Parameters
         ----------
@@ -104,7 +105,9 @@ cdef class Component:
             The logger for the component.
         name : str, optional
             The customized name for the component. If None is passed then the
-            name will be from `type(self).__name__`.
+            name will be taken from `type(self).__name__`.
+        log_initialized : bool
+            If the initial state should be logged.
 
         """
         if name is None:
@@ -118,7 +121,8 @@ cdef class Component:
         self._log = LoggerAdapter(name, logger)
         self._fsm = ComponentFSMFactory.create()
 
-        self._log.info(f"state={self._fsm.state_string_c()}...")
+        if log_initialized:
+            self._log.info(f"state={self._fsm.state_string_c()}...")
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state

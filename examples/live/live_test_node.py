@@ -61,14 +61,14 @@ config = {
     },
 
     "data_clients": {
-        "ccxt-binance": {
+        "binance": {
             "api_key": "BINANCE_API_KEY",        # value is the environment variable name
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
         },
     },
 
     "exec_clients": {
-        "ccxt-binance": {
+        "binance": {
             "api_key": "BINANCE_API_KEY",        # value is the environment variable name
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
         },
@@ -90,10 +90,11 @@ strategy = EMACross(
 
 # For this example the input() calls will enable control of the trading node
 # through one sequence of start, stop and dispose.
-# It is only necessary to pass a single event loop into the trading node, all
+# It is only necessary to pass the event loop into the trading node, all
 # asyncio functionality is handled 'under the hood' for you.
 def main():
     loop = asyncio.get_event_loop()
+    loop.set_debug(True)
     node = TradingNode(
         loop=loop,
         strategies=[strategy],  # A list of strategies

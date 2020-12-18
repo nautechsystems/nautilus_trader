@@ -156,7 +156,6 @@ class TradingNodeOperationTests(unittest.TestCase):
         # Arrange
         # Act
         self.node.start()
-        time.sleep(0.1)
 
         # Assert
         self.assertEqual(ComponentState.RUNNING, self.node.trader.state)

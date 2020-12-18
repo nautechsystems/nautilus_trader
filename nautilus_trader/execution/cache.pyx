@@ -56,7 +56,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         super().__init__()
 
-        self._log = LoggerAdapter(type(self).__name__, logger)
+        self._log = LoggerAdapter("ExecCache", logger)
         self._database = database
 
         # Cached objects
@@ -127,7 +127,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
-        self._log.info(f"Indexes built.")
+        self._log.debug(f"Indexes built.")
 
     cpdef void integrity_check(self) except *:
         pass  # TODO: Implement
@@ -620,7 +620,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_positions_open.clear()
         self._index_positions_closed.clear()
         self._index_strategies.clear()
-        self._log.info(f"Indexes cleared.")
+        self._log.debug(f"Indexes cleared.")
 
 # -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 

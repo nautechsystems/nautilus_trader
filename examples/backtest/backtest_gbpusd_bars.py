@@ -16,7 +16,6 @@
 
 from decimal import Decimal
 import os
-import time
 
 import pandas as pd
 
@@ -68,8 +67,6 @@ if __name__ == "__main__":
         slow_ema=20,
         trade_size=Decimal(1_000_000),
     )
-
-    time.sleep(0.1)  # Allow strategy initialization to log
 
     # Build the backtest engine
     engine = BacktestEngine(
