@@ -98,10 +98,9 @@ cdef class DataEngine(Component):
             The configuration options.
 
         """
-        super().__init__(clock, logger)
-
         if config is None:
             config = {}
+        super().__init__(clock, logger, name="DataEngine")
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}              # type: dict[Venue, DataClient]
@@ -259,6 +258,7 @@ cdef class DataEngine(Component):
         for client in self._clients.values():
             client.connect()
 
+        self.update_instruments_all()
         self._on_start()
 
     cpdef void _stop(self) except *:
@@ -805,6 +805,27 @@ cdef class DataEngine(Component):
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
+
+            # Update aggregator with latest data
+            data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
+
+            # noinspection bulk_updater.receive
+            # noinspection PyUnresolvedReferences
+            request = DataRequest(
+                venue=bar_type.symbol.venue,
+                data_type=data_type,
+                metadata={
+                    SYMBOL: bar_type.symbol,
+                    FROM_DATETIME: None,
+                    TO_DATETIME: None,
+                    LIMIT: bar_type.spec.step * 1000,
+                },
+                callback=self._update_tick_bar_aggregator,
+                request_id=self._uuid_factory.generate(),
+                request_timestamp=self._clock.utc_now(),
+            )
+            # Send request directly to handler as control is already inside engine
+            self._handle_request(request)
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
                 bar_type=bar_type,
@@ -831,6 +852,11 @@ cdef class DataEngine(Component):
             self._handle_subscribe_trade_ticks(client, bar_type.symbol, aggregator.handle_trade_tick)
         else:
             self._handle_subscribe_quote_ticks(client, bar_type.symbol, aggregator.handle_quote_tick)
+
+    # TODO: Create tick bar updater
+    def _update_tick_bar_aggregator(self, aggregator, ticks):
+        for tick in ticks:
+            aggregator.handle_trade_tick(tick)
 
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators[bar_type]

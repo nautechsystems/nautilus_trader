@@ -21,7 +21,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
     cdef object _queue
     cdef object _task_run
-    cdef bint _is_running
+
+    cdef readonly bint is_running
 
     cpdef object get_event_loop(self)
     cpdef object get_run_task(self)

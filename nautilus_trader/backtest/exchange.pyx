@@ -632,7 +632,7 @@ cdef class SimulatedExchange:
         cdef ClientOrderId first_child_order_id
         cdef ClientOrderId other_oco_order_id
         if order.cl_ord_id in self._child_orders:
-            # Remove any unprocessed bracket child order OCO identifiers
+            # Remove any unprocessed OCO child orders
             first_child_order_id = self._child_orders[order.cl_ord_id][0].cl_ord_id
             if first_child_order_id in self._oco_orders:
                 other_oco_order_id = self._oco_orders[first_child_order_id]
@@ -958,8 +958,10 @@ cdef class SimulatedExchange:
     cdef inline void _check_oco_order(self, ClientOrderId order_id) except *:
         # Check held OCO orders and remove any paired with the given order_id
         cdef ClientOrderId oco_order_id
+        cdef ClientOrderId bracket_order_id
         cdef Order oco_order
-
+        cdef Order order
+        cdef list child_orders
         if order_id in self._oco_orders:
             oco_order_id = self._oco_orders[order_id]
             oco_order = self.exec_cache.order(oco_order_id)

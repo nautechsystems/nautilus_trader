@@ -106,7 +106,7 @@ cdef class ExecutionEngine(Component):
         """
         if config is None:
             config = {}
-        super().__init__(clock, logger)
+        super().__init__(clock, logger, name="ExecEngine")
 
         self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
         self._clients = {}     # type: dict[Venue, ExecutionClient]
