@@ -24,7 +24,6 @@ from nautilus_trader.model.c_enums.asset_type import AssetType                # 
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation      # noqa F401 (being used)
 from nautilus_trader.model.c_enums.currency_type import CurrencyType          # noqa F401 (being used)
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide        # noqa F401 (being used)
-from nautilus_trader.model.c_enums.maker import Maker                         # noqa F401 (being used)
 from nautilus_trader.model.c_enums.oms_type import OMSType                    # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_side import OrderSide                # noqa F401 (being used)
 from nautilus_trader.model.c_enums.order_state import OrderState              # noqa F401 (being used)

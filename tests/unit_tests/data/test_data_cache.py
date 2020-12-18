@@ -25,7 +25,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -214,7 +214,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -233,7 +233,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -336,7 +336,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -355,7 +355,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -448,7 +448,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -468,7 +468,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -477,7 +477,7 @@ class DataCacheTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00001"),
             Quantity(20000),
-            Maker.SELLER,
+            OrderSide.SELL,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )

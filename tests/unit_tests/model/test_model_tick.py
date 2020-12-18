@@ -16,7 +16,7 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
@@ -219,7 +219,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH + timedelta(seconds=1),
         )
@@ -228,7 +228,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH + timedelta(seconds=2),
         )
@@ -237,7 +237,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH + timedelta(seconds=3),
         )
@@ -258,7 +258,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(50000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -268,8 +268,8 @@ class TradeTickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
-        self.assertEqual("AUD/USD.SIM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z", result0)
-        self.assertEqual("TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1970-01-01T00:00:00.000Z)", result1)
+        self.assertEqual("AUD/USD.SIM,1.00000,50000,BUY,123456789,1970-01-01T00:00:00.000Z", result0)
+        self.assertEqual("TradeTick(AUD/USD.SIM,1.00000,50000,BUY,123456789,1970-01-01T00:00:00.000Z)", result1)
 
     def test_from_serializable_given_malformed_string_raises_value_error(self):
         # Arrange
@@ -288,7 +288,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -305,7 +305,7 @@ class TradeTickTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(10000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -314,4 +314,4 @@ class TradeTickTests(unittest.TestCase):
         result = tick.to_serializable_string()
 
         # Assert
-        self.assertEqual("1.00000,10000,BUYER,123456789,0", result)
+        self.assertEqual("1.00000,10000,BUY,123456789,0", result)
