@@ -258,7 +258,7 @@ cdef class TradingNode:
         self._data_engine.start()
         self._exec_engine.start()
 
-        #self._loop.call_later(0.5, lambda: self.trader.start())
+        # Allow engines time to spool up
         await asyncio.sleep(0.5)
         self.trader.start()
 
