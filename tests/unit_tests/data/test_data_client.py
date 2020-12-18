@@ -21,7 +21,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
@@ -206,7 +206,7 @@ class DataClientTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00050"),
             Quantity(1),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456"),
             UNIX_EPOCH,
         )

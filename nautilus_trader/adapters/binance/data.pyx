@@ -26,7 +26,7 @@ from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
-from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -405,7 +405,7 @@ cdef class BinanceDataClient(LiveDataClient):
                 symbol,
                 Price(f"{trade['price']:.{instrument.price_precision}f}"),
                 Quantity(f"{trade['amount']:.{instrument.size_precision}f}"),
-                Maker.BUYER if trade["side"] == "buy" else Maker.SELLER,
+                OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
                 TradeMatchId(trade["id"]),
                 from_posix_ms(trade["timestamp"]),
             )

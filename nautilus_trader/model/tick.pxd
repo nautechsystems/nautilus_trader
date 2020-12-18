@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.model.c_enums.maker cimport Maker
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TradeMatchId
@@ -53,8 +53,8 @@ cdef class TradeTick(Tick):
     """The ticks traded price.\n\n:returns: `Price`"""
     cdef readonly Quantity size
     """The ticks traded size.\n\n:returns: `Quantity`"""
-    cdef readonly Maker maker
-    """ The ticks trade maker side (BUYER or SELLER).\n\n:returns: `Maker`"""
+    cdef readonly OrderSide side
+    """ The ticks traded side.\n\n:returns: `OrderSide`"""
     cdef readonly TradeMatchId match_id
     """The ticks trade match identifier.\n\n:returns: `TradeMatchId`"""
 
