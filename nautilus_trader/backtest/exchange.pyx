@@ -855,7 +855,7 @@ cdef class SimulatedExchange:
         # Calculate commission
         cdef Instrument instrument = self.instruments.get(order.symbol)
         if instrument is None:
-            raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
+            raise RuntimeError(f"Cannot run backtest, no instrument data for {order.symbol}")
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,

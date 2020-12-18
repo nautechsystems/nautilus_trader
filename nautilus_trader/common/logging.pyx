@@ -639,8 +639,8 @@ cdef class LiveLogger(Logger):
 
         Parameters
         ----------
-        clock :
-            LiveClockThe clock for the logger.
+        clock : LiveClock
+            The clock for the logger.
         name : str
             The name of the logger.
         level_console : LogLevel

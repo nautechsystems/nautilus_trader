@@ -262,6 +262,12 @@ cdef class TradingNode:
         await asyncio.sleep(0.5)
         self.trader.start()
 
+        # Continue to run loop while engines are running
+        await asyncio.gather(
+            self._data_engine.get_run_task(),
+            self._exec_engine.get_run_task(),
+        )
+
     async def _shutdown(self):
         self.trader.stop()
 

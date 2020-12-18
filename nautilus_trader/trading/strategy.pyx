@@ -1484,7 +1484,7 @@ cdef class TradingStrategy(Component):
         self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
 
         if length > 0 and first.timestamp > last.timestamp:
-            raise RuntimeError(f"Cannot handle <Bar[{length}]> data (incorrectly sorted).")
+            raise RuntimeError(f"Cannot handle <Bar[{length}]> data, incorrectly sorted")
 
         for i in range(length):
             self.handle_bar(bar_type, bars[i], is_historical=True)

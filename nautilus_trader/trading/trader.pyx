@@ -204,8 +204,8 @@ cdef class Trader(Component):
             if strategy.id not in strategy_ids:
                 strategy_ids.add(strategy.id)
             else:
-                raise ValueError(f"The strategy_id {strategy.id} was not unique "
-                                 f"(duplicate strategy identifiers)")
+                raise ValueError(f"The strategy_id {strategy.id} was not unique, "
+                                 f"duplicate strategy identifiers")
 
             # Wire trader into strategy
             strategy.register_trader(
