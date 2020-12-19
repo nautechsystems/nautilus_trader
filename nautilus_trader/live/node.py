@@ -17,26 +17,28 @@ import asyncio
 import time
 import msgpack
 import redis
+import signal
 from asyncio import AbstractEventLoop
-from signal import SIGINT, SIGTERM
+from asyncio import tasks
 
-from nautilus_trader.adapters.binance.data cimport BinanceDataClient
-from nautilus_trader.execution.database cimport BypassExecutionDatabase
-from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport nautilus_header
-from nautilus_trader.common.logging cimport LogLevelParser
-from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.live.data cimport LiveDataEngine
-from nautilus_trader.live.execution cimport LiveExecutionEngine
-from nautilus_trader.redis.execution cimport RedisExecutionDatabase
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
-from nautilus_trader.trading.trader cimport Trader
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.adapters.binance.data import BinanceDataClient
+from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import nautilus_header
+from nautilus_trader.common.logging import LogLevelParser
+from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.live.execution import LiveExecutionEngine
+from nautilus_trader.redis.execution import RedisExecutionDatabase
+from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.trading.trader import Trader
+from nautilus_trader.trading.portfolio import Portfolio
 
 try:
     import uvloop
@@ -45,32 +47,16 @@ except ImportError:
     uvloop_version = None
 
 
-cdef class TradingNode:
+class TradingNode:
     """
     Provides an asynchronous network node for live trading.
     """
-    cdef LiveClock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
-
-    cdef object _loop
-    cdef LiveExecutionEngine _exec_engine
-    cdef LiveDataEngine _data_engine
-
-    cdef double _check_residuals_delay
-    cdef bint _load_strategy_state
-    cdef bint _save_strategy_state
-
-    cdef readonly TraderId trader_id
-    cdef readonly Portfolio portfolio
-    cdef readonly PerformanceAnalyzer analyzer
-    cdef readonly Trader trader
 
     def __init__(
         self,
-        loop not None: AbstractEventLoop,
-        list strategies not None,
-        dict config not None,
+        loop: AbstractEventLoop,
+        strategies,
+        config,
     ):
         """
         Initialize a new instance of the TradingNode class.
@@ -88,11 +74,11 @@ cdef class TradingNode:
         if strategies is None:
             strategies = []
 
-        cdef dict config_trader = config["trader"]
-        cdef dict config_log = config["logging"]
-        cdef dict config_exec_db = config["exec_database"]
-        cdef dict config_strategy = config["strategy"]
-        cdef dict config_data_clients = config["data_clients"]
+        config_trader = config["trader"]
+        config_log = config["logging"]
+        config_exec_db = config["exec_database"]
+        config_strategy = config["strategy"]
+        config_data_clients = config["data_clients"]
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
@@ -105,12 +91,12 @@ cdef class TradingNode:
         )
 
         # Setup logging
-        cdef LiveLogger logger = LiveLogger(
+        logger = LiveLogger(
             clock=self._clock,
             name=self.trader_id.value,
-            level_console=LogLevelParser.from_str(config_log.get("log_level_console")),
-            level_file=LogLevelParser.from_str(config_log.get("log_level_file")),
-            level_store=LogLevelParser.from_str(config_log.get("log_level_store")),
+            level_console=LogLevelParser.from_str_py(config_log.get("log_level_console")),
+            level_file=LogLevelParser.from_str_py(config_log.get("log_level_file")),
+            level_store=LogLevelParser.from_str_py(config_log.get("log_level_store")),
             log_thread=config_log.get("log_thread_id", True),
             log_to_file=config_log.get("log_to_file", False),
             log_file_path=config_log.get("log_file_path", ""),
@@ -182,51 +168,30 @@ cdef class TradingNode:
         self._setup_loop()
         self._log.info("state=INITIALIZED.")
 
-    def _loop_sig_handler(self, sig):
-        self._loop.stop()
-        self._log.warning(f"Received {sig!s}, shutting down...")
-        self._loop.remove_signal_handler(SIGTERM)
-        self._loop.add_signal_handler(SIGINT, lambda: None)
-
-    def _setup_loop(self):
-        signals = (SIGTERM, SIGINT)
-        for sig in signals:
-            self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
-        self._log.debug(f"Event loop {signals} handling setup.")
-
-    def start(self):
+    def run(self):
         """
         Start the trading node.
         """
-        self._log.info("state=STARTING...")
-
         if self._loop.is_running():
             self._loop.create_task(self._run())
         else:
             self._loop.run_until_complete(self._run())
 
-        self._log.info("state=RUNNING.")
-
     def stop(self):
         """
-        Stop the trading node.
+        Stop the trading node gracefully.
 
         After a specified delay the internal `Trader` residuals will be checked.
 
         If save strategy is specified then strategy states will then be saved.
 
         """
-        self._log.info("state=STOPPING...")
-
         if self._loop.is_running():
-            self._loop.create_task(self._shutdown())
+            self._loop.create_task(self._stop())
         else:
-            self._loop.run_until_complete(self._shutdown())
+            self._loop.run_until_complete(self._stop())
 
-        self._log.info(f"loop.is_running={self._loop.is_running()}")
-        self._log.info("state=STOPPED.")
-
-    cpdef void dispose(self) except *:
+    def dispose(self):
         """
         Dispose of the trading node.
 
@@ -234,59 +199,20 @@ cdef class TradingNode:
         called after disposal.
 
         """
-        self._log.info("state=DISPOSING...")
+        if self._loop.is_running():
+            self._loop.create_task(self._dispose())
+        else:
+            self._loop.run_until_complete(self._dispose())
 
-        self.trader.dispose()
-        self._data_engine.dispose()
-        self._exec_engine.dispose()
+    def _log_header(self):
+        nautilus_header(self._log)
+        self._log.info(f"redis {redis.__version__}")
+        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
+        if uvloop_version:
+            self._log.info(f"uvloop {uvloop_version}")
+        self._log.info("=================================================================")
 
-        try:
-            self._loop.stop()
-            self._log.info("Closing event loop...")
-            time.sleep(0.1)  # Allow event loop to close (refactor)
-            self._loop.close()
-            self._log.info(f"loop.is_closed={self._loop.is_closed()}")
-        except RuntimeError as ex:
-            self._log.exception(ex)
-
-        self._log.info("state=DISPOSED.")
-        time.sleep(0.1)  # Allow final logs to print to console (refactor)
-
-    async def _run(self):
-        self._log.info(f"loop.is_running={self._loop.is_running()}")
-
-        self._data_engine.start()
-        self._exec_engine.start()
-
-        # Allow engines time to spool up
-        await asyncio.sleep(0.5)
-        self.trader.start()
-
-        # Continue to run loop while engines are running
-        await asyncio.gather(
-            self._data_engine.get_run_task(),
-            self._exec_engine.get_run_task(),
-        )
-
-    async def _shutdown(self):
-        self.trader.stop()
-
-        await self._await_residuals_and_stop()
-
-    async def _await_residuals_and_stop(self):
-        self._log.info("Awaiting residual state...")
-        await asyncio.sleep(self._check_residuals_delay)
-
-        # TODO: Refactor shutdown - check completely flat before stopping engines
-        self.trader.check_residuals()
-
-        if self._save_strategy_state:
-            self.trader.save()
-
-        self._data_engine.stop()
-        self._exec_engine.stop()
-
-    cdef void _setup_data_clients(self, dict config, logger):
+    def _setup_data_clients(self, config, logger):
         # TODO: DataClientFactory
         for key, value in config.items():
             credentials = {
@@ -302,10 +228,101 @@ cdef class TradingNode:
 
             self._data_engine.register_client(client)
 
-    cdef void _log_header(self) except *:
-        nautilus_header(self._log)
-        self._log.info(f"redis {redis.__version__}")
-        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
-        if uvloop_version:
-            self._log.info(f"uvloop {uvloop_version}")
-        self._log.info("=================================================================")
+    def _setup_loop(self):
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signals = (signal.SIGTERM, signal.SIGINT)
+        for sig in signals:
+            self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
+        self._log.debug(f"Event loop {signals} handling setup.")
+
+    def _loop_sig_handler(self, sig):
+        self._loop.stop()
+        self._log.warning(f"Received {sig!s}, shutting down...")
+
+        # Remove signal handler so shutdown sequence is triggered only once
+        self._loop.remove_signal_handler(signal.SIGTERM)
+        self._loop.add_signal_handler(signal.SIGINT, lambda: None)
+
+        if self.trader.state == ComponentState.RUNNING:
+            self.trader.stop()
+
+        if self._data_engine.state == ComponentState.RUNNING:
+            self._data_engine.stop()
+
+        if self._exec_engine.state == ComponentState.RUNNING:
+            self._exec_engine.stop()
+
+        self.dispose()
+
+    async def _run(self):
+        self._log.info("state=STARTING...")
+
+        self._data_engine.start()
+        self._exec_engine.start()
+
+        # Allow engines time to spool up
+        await asyncio.sleep(0.5)
+        self.trader.start()
+
+        if self._loop.is_running():
+            self._log.info("state=RUNNING.")
+        else:
+            self._log.warning("Event loop is not running.")
+
+        # Continue to run loop while engines are running
+        await asyncio.gather(
+            self._data_engine.get_run_task(),
+            self._exec_engine.get_run_task(),
+        )
+
+    async def _stop(self):
+        self._log.info("state=STOPPING...")
+        self.trader.stop()
+
+        self._log.info("Awaiting residual state...")
+        await asyncio.sleep(self._check_residuals_delay)
+
+        # TODO: Refactor shutdown - check completely flat before stopping engines
+        self.trader.check_residuals()
+
+        if self._save_strategy_state:
+            self.trader.save()
+
+        self._data_engine.stop()
+        self._exec_engine.stop()
+
+        self._log.info("state=STOPPED.")
+
+    async def _dispose(self):
+        self._log.info("state=DISPOSING...")
+
+        self.trader.dispose()
+        self._data_engine.dispose()
+        self._exec_engine.dispose()
+
+        try:
+            self._cancel_all_tasks()
+        except RuntimeError as ex:
+            self._log.exception(ex)
+        finally:
+            self._loop.stop()
+            await self._loop.shutdown_asyncgens()
+
+            if self._loop.is_running():
+                self._log.warning("Cannot close running event loop.")
+            else:
+                self._log.info("Closing event loop...")
+                self._loop.close()
+
+            self._log.info(f"loop.is_closed={self._loop.is_closed()}")
+            self._log.info("state=DISPOSED.")
+
+    def _cancel_all_tasks(self):
+        to_cancel = tasks.all_tasks(self._loop)
+        if not to_cancel:
+            return
+
+        for task in to_cancel:
+            task.cancel()
+
+        self._log.info("Cancelled all tasks.")
