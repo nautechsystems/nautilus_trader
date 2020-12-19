@@ -33,7 +33,6 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState

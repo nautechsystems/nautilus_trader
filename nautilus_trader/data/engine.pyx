@@ -777,6 +777,28 @@ cdef class DataEngine(Component):
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )
+
+            # Update aggregator with latest data
+            bulk_updater = BulkTimeBarUpdater(aggregator)
+            data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
+
+            # noinspection bulk_updater.receive
+            # noinspection PyUnresolvedReferences
+            request = DataRequest(
+                venue=bar_type.symbol.venue,
+                data_type=data_type,
+                metadata={
+                    SYMBOL: bar_type.symbol,
+                    FROM_DATETIME: aggregator.get_start_time(),
+                    TO_DATETIME: None,
+                    LIMIT: 0,
+                },
+                callback=bulk_updater.receive,
+                request_id=self._uuid_factory.generate(),
+                request_timestamp=self._clock.utc_now(),
+            )
+            # Send request directly to handler as we're already inside engine
+            self._handle_request(request)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 bar_type=bar_type,
@@ -804,61 +826,11 @@ cdef class DataEngine(Component):
         self._bar_aggregators[bar_type] = aggregator
         self._log.debug(f"Added {aggregator} for {bar_type} bars.")
 
-        # Update aggregator with latest data
-        bulk_updater = BulkTimeBarUpdater(aggregator)
-        data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-        # noinspection bulk_updater.receive
-        # noinspection PyUnresolvedReferences
-        request = DataRequest(
-            venue=bar_type.symbol.venue,
-            data_type=data_type,
-            metadata={
-                SYMBOL: bar_type.symbol,
-                FROM_DATETIME: aggregator.get_start_time(),
-                TO_DATETIME: None,
-                LIMIT: 0,
-            },
-            callback=bulk_updater.receive,
-            request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
-        )
-        # Send request directly to handler as control is already inside engine
-        self._handle_request(request)
-
-
-        # Update aggregator with latest data
-        data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-        # noinspection bulk_updater.receive
-        # noinspection PyUnresolvedReferences
-        request = DataRequest(
-            venue=bar_type.symbol.venue,
-            data_type=data_type,
-            metadata={
-                SYMBOL: bar_type.symbol,
-                FROM_DATETIME: None,
-                TO_DATETIME: None,
-                LIMIT: bar_type.spec.step * 1000,
-            },
-            callback=self._update_tick_bar_aggregator,
-            request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
-        )
-        # Send request directly to handler as control is already inside engine
-        self._handle_request(request)
-
-        # -----------------------------------------------------------------------
         # Subscribe to required data
         if bar_type.spec.price_type == PriceType.LAST:
             self._handle_subscribe_trade_ticks(client, bar_type.symbol, aggregator.handle_trade_tick)
         else:
             self._handle_subscribe_quote_ticks(client, bar_type.symbol, aggregator.handle_quote_tick)
-
-    # TODO: Create tick bar updater
-    def _update_tick_bar_aggregator(self, aggregator, ticks):
-        for tick in ticks:
-            aggregator.handle_trade_tick(tick)
 
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators[bar_type]

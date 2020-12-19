@@ -152,10 +152,10 @@ class TradingNodeOperationTests(unittest.TestCase):
 
         self.node.dispose()
 
-    def test_run(self):
-        # Arrange
-        # Act
-        self.node.start()
-
-        # Assert
-        self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
+    # def test_run(self):
+    #     # Arrange
+    #     # Act
+    #     self.node.start()
+    #
+    #     # Assert
+    #     self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
