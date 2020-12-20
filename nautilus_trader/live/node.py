@@ -14,31 +14,33 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from asyncio import tasks
+import signal
 import time
+from typing import Dict, List
+
 import msgpack
 import redis
-import signal
-from asyncio import AbstractEventLoop
-from asyncio import tasks
 
 from nautilus_trader.adapters.binance.data import BinanceDataClient
-from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data import LiveDataEngine
 from nautilus_trader.live.execution import LiveExecutionEngine
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
-from nautilus_trader.trading.trader import Trader
 from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.trader import Trader
+
 
 try:
     import uvloop
@@ -54,35 +56,33 @@ class TradingNode:
 
     def __init__(
         self,
-        loop: AbstractEventLoop,
-        strategies,
-        config,
+        strategies: List[TradingStrategy],
+        config: Dict[str, object],
     ):
         """
         Initialize a new instance of the TradingNode class.
 
         Parameters
         ----------
-        loop : AbstractEventLoop
-            The event loop for the trading node.
         strategies : list[TradingStrategy]
             The list of strategies to run on the trading node.
-        config : dict
+        config : dict[str, object]
             The configuration for the trading node.
 
         """
         if strategies is None:
             strategies = []
 
-        config_trader = config["trader"]
-        config_log = config["logging"]
-        config_exec_db = config["exec_database"]
-        config_strategy = config["strategy"]
-        config_data_clients = config["data_clients"]
+        config_trader = config.get("trader", {})
+        config_log = config.get("logging", {})
+        config_exec_db = config.get("exec_database", {})
+        config_strategy = config.get("strategy", {})
+        config_data_clients = config.get("data_clients", {})
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
-        self._loop = loop
+        self._loop = asyncio.get_event_loop()
+        # self._loop.set_debug(True)  # TODO: Development
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -168,14 +168,12 @@ class TradingNode:
         self._setup_loop()
         self._log.info("state=INITIALIZED.")
 
-    def run(self):
+    def start(self):
         """
         Start the trading node.
         """
-        if self._loop.is_running():
-            self._loop.create_task(self._run())
-        else:
-            self._loop.run_until_complete(self._run())
+        self._loop.create_task(self._run())
+        self._loop.run_forever()
 
     def stop(self):
         """
@@ -186,10 +184,13 @@ class TradingNode:
         If save strategy is specified then strategy states will then be saved.
 
         """
-        if self._loop.is_running():
-            self._loop.create_task(self._stop())
-        else:
-            self._loop.run_until_complete(self._stop())
+        try:
+            if self._loop.is_running():
+                self._loop.create_task(self._stop())
+            else:
+                self._loop.run_until_complete(self._stop())
+        except RuntimeError as ex:
+            self._log.exception(ex)
 
     def dispose(self):
         """
@@ -243,15 +244,7 @@ class TradingNode:
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
 
-        if self.trader.state == ComponentState.RUNNING:
-            self.trader.stop()
-
-        if self._data_engine.state == ComponentState.RUNNING:
-            self._data_engine.stop()
-
-        if self._exec_engine.state == ComponentState.RUNNING:
-            self._exec_engine.stop()
-
+        self.stop()
         self.dispose()
 
     async def _run(self):
@@ -269,7 +262,7 @@ class TradingNode:
         else:
             self._log.warning("Event loop is not running.")
 
-        # Continue to run loop while engines are running
+        # Continue to run while engines are running
         await asyncio.gather(
             self._data_engine.get_run_task(),
             self._exec_engine.get_run_task(),
@@ -280,7 +273,7 @@ class TradingNode:
         self.trader.stop()
 
         self._log.info("Awaiting residual state...")
-        await asyncio.sleep(self._check_residuals_delay)
+        time.sleep(self._check_residuals_delay)
 
         # TODO: Refactor shutdown - check completely flat before stopping engines
         self.trader.check_residuals()
@@ -301,11 +294,11 @@ class TradingNode:
         self._exec_engine.dispose()
 
         try:
-            self._cancel_all_tasks()
+            self._loop.call_soon(self._loop.stop)
+            self._loop.call_soon(self._cancel_all_tasks)
         except RuntimeError as ex:
             self._log.exception(ex)
         finally:
-            self._loop.stop()
             await self._loop.shutdown_asyncgens()
 
             if self._loop.is_running():
@@ -324,5 +317,18 @@ class TradingNode:
 
         for task in to_cancel:
             task.cancel()
+
+        self._loop.run_until_complete(
+            tasks.gather(*to_cancel, loop=self._loop, return_exceptions=True))
+
+        for task in to_cancel:
+            if task.cancelled():
+                continue
+            if task.exception() is not None:
+                self._loop.call_exception_handler({
+                    'message': 'unhandled exception during asyncio.run() shutdown',
+                    'exception': task.exception(),
+                    'task': task,
+                })
 
         self._log.info("Cancelled all tasks.")
