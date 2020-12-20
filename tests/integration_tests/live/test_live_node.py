@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import time
 import unittest
 
 from nautilus_trader.common.enums import ComponentState
@@ -23,12 +22,6 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class TradingNodeConfigurationTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
 
     def test_config_with_inmemory_execution_database(self):
         # Arrange
@@ -59,7 +52,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
         # Act
         node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -98,7 +90,6 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 
         # Act
         node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )

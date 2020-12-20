@@ -14,7 +14,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from decimal import Decimal
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -87,26 +86,18 @@ strategy = EMACross(
     trade_size=Decimal(0.1),
 )
 
-# Setup event loop
-# ----------------
-loop = asyncio.get_event_loop()
-loop.set_debug(True)
-
-# Setup trading node
-# ------------------
-# It is only necessary to pass the event loop into the trading node, all
-# asyncio functionality is handled 'under the hood' for you.
 node = TradingNode(
-    loop=loop,
     strategies=[strategy],  # A list of strategies
     config=config,
 )
 
 
-# For this example the input() calls will enable  manual control of the
-# trading node through one sequence of start, stop and dispose.
+# For this example the input() calls will enable control of the trading node
+# through one sequence of start, stop and dispose.
+# It is only necessary to pass the event loop into the trading node, all
+# asyncio functionality is handled 'under the hood' for you.
 def main():
-    node.run()
+    node.start()
 
 
 if __name__ == "__main__":
