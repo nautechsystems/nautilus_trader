@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
 import unittest
 
 from nautilus_trader.common.enums import ComponentState
@@ -132,7 +133,6 @@ class TradingNodeOperationTests(unittest.TestCase):
         }
 
         self.node = TradingNode(
-            loop=self.loop,
             strategies=[TradingStrategy("000")],
             config=config,
         )
@@ -143,10 +143,19 @@ class TradingNodeOperationTests(unittest.TestCase):
 
         self.node.dispose()
 
+    def stopNode(self):
+        time.sleep(1)
+        loop = self.node.get_event_loop()
+        asyncio.set_event_loop(loop)
+
     # def test_run(self):
     #     # Arrange
+    #     stopper = threading.Thread(target=self.stopNode, daemon=True)
+    #     stopper.start()
+    #
     #     # Act
     #     self.node.start()
     #
     #     # Assert
+    #     self.assertTrue(True)
     #     self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
