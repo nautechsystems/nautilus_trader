@@ -115,7 +115,8 @@ cdef class Component:
         else:
             Condition.valid_string(name, "name")
 
-        self._component_name = name
+        self.name = name
+
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(name, logger)
@@ -150,7 +151,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *:
         Condition.not_none(logger, "logger")
 
-        self._log = LoggerAdapter(self._component_name, logger)
+        self._log = LoggerAdapter(self.name, logger)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

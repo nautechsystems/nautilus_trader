@@ -37,6 +37,8 @@ cdef class DataClient:
 
     cdef readonly Venue venue
     """The clients venue.\n\n:returns: `Venue`"""
+    cdef readonly bint initialized
+    """If the client is ready for trading.\n\n:returns: `bool`"""
 
     cpdef bint is_connected(self) except *
 

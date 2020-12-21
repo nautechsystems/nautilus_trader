@@ -36,6 +36,8 @@ cdef class ExecutionClient:
     """The clients venue.\n\n:returns: `Venue`"""
     cdef readonly AccountId account_id
     """The clients account identifier.\n\n:returns: `AccountId`"""
+    cdef readonly bint initialized
+    """If the client is ready for trading.\n\n:returns: `bool`"""
 
     cpdef bint is_connected(self) except *
 

@@ -82,7 +82,8 @@ class TradingNode:
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()
-        # self._loop.set_debug(True)  # TODO: Development
+        self._loop.set_debug(True)  # TODO: Development
+        self._task_running = None
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -168,12 +169,22 @@ class TradingNode:
         self._setup_loop()
         self._log.info("state=INITIALIZED.")
 
+    def get_event_loop(self):
+        """
+        Return the event loop of the trading node.
+
+        Returns
+        -------
+        asyncio.AbstractEventLoop
+
+        """
+        return self._loop
+
     def start(self):
         """
         Start the trading node.
         """
-        self._loop.create_task(self._run())
-        self._loop.run_forever()
+        self._task_running = self._loop.run_until_complete(self._run())
 
     def stop(self):
         """
@@ -232,6 +243,11 @@ class TradingNode:
     def _setup_loop(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
         signals = (signal.SIGTERM, signal.SIGINT)
+
+        if self._loop.is_closed():
+            self._log.error(f"Cannot setup signal handling (event loop was closed).")
+            return
+
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
@@ -254,7 +270,8 @@ class TradingNode:
         self._exec_engine.start()
 
         # Allow engines time to spool up
-        await asyncio.sleep(0.5)
+        # TODO: Temporary hard-coded delay
+        await asyncio.sleep(2)
         self.trader.start()
 
         if self._loop.is_running():
@@ -270,6 +287,7 @@ class TradingNode:
 
     async def _stop(self):
         self._log.info("state=STOPPING...")
+
         self.trader.stop()
 
         self._log.info("Awaiting residual state...")
@@ -296,9 +314,6 @@ class TradingNode:
         try:
             self._loop.call_soon(self._loop.stop)
             self._loop.call_soon(self._cancel_all_tasks)
-        except RuntimeError as ex:
-            self._log.exception(ex)
-        finally:
             await self._loop.shutdown_asyncgens()
 
             if self._loop.is_running():
@@ -306,7 +321,9 @@ class TradingNode:
             else:
                 self._log.info("Closing event loop...")
                 self._loop.close()
-
+        except RuntimeError as ex:
+            self._log.exception(ex)
+        finally:
             self._log.info(f"loop.is_closed={self._loop.is_closed()}")
             self._log.info("state=DISPOSED.")
 
