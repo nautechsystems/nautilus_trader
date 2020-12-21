@@ -66,6 +66,7 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._exchange = exchange
         self._is_connected = False
+        self.initialized = True
 
     cpdef bint is_connected(self) except *:
         """

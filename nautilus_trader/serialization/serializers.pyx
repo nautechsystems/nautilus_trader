@@ -326,7 +326,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
         else:
-            raise RuntimeError("Cannot serialize command (unrecognized command).")
+            raise RuntimeError("Cannot serialize command, unrecognized command")
 
         return MsgPackSerializer.serialize(package)
 
@@ -403,7 +403,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_timestamp,
             )
         else:
-            raise RuntimeError("Cannot deserialize command (unrecognized bytes pattern).")
+            raise RuntimeError("Cannot deserialize command, unrecognized bytes pattern")
 
 
 cdef class MsgPackEventSerializer(EventSerializer):
@@ -539,7 +539,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[LIQUIDITY_SIDE] = LiquiditySideParser.to_str(event.liquidity_side)
             package[EXECUTION_TIME] = ObjectParser.datetime_to_str(event.execution_time)
         else:
-            raise RuntimeError("Cannot serialize event (unrecognized event.")
+            raise RuntimeError("Cannot serialize event, unrecognized event")
 
         return MsgPackSerializer.serialize(package)
 
@@ -715,4 +715,4 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp,
             )
         else:
-            raise RuntimeError(f"Cannot deserialize event (unrecognized event {event_type}).")
+            raise RuntimeError(f"Cannot deserialize event, unrecognized event {event_type}")

@@ -86,7 +86,14 @@ cdef class LiveDataEngine(DataEngine):
             self._loop.create_task(self._run_message_queue()),
         )
 
+        self._loop.call_later(2, self._check_initialized)
+
         self._log.debug(f"Scheduled {self._task_run}")
+
+    def _check_initialized(self):
+        for client in self._clients.values():
+            if not client.initialized:
+                self._log.error(f"{type(client).__name__} not initialized after timeout.")
 
     cpdef void _on_stop(self) except *:
         self.is_running = False

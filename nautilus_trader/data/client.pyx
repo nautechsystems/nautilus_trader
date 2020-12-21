@@ -73,6 +73,7 @@ cdef class DataClient:
         self._engine = engine
 
         self.venue = venue
+        self.initialized = False
 
         self._log.info("Initialized.")
 

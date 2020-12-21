@@ -21,10 +21,15 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 
+
+BTCUSDT = Symbol("BTC/USDT", Venue("BINANCE"))
 
 # Requirements:
 #    - An internet connection
@@ -72,6 +77,11 @@ class BinanceDataClientTests(unittest.TestCase):
             logger=logger,
         )
 
+    def tearDown(self):
+        self.data_engine.dispose()
+        self.loop.stop()
+        self.loop.close()
+
     def test_connect(self):
         # Arrange
         # Act
@@ -106,16 +116,16 @@ class BinanceDataClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exceptions raised
 
-    # def test_subscribe_instrument(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.subscribe_instrument(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.subscribe_instrument(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
+    def test_subscribe_instrument(self):
+        # Arrange
+        self.client.connect()
+
+        # Act
+        self.client.subscribe_instrument(BTCUSDT)
+
+        # Assert
+        self.assertTrue(True)  # Add with further functionality
+
     # def test_subscribe_quote_ticks(self):
     #     # Arrange
     #     # Act
@@ -145,17 +155,17 @@ class BinanceDataClientTests(unittest.TestCase):
     #
     #     # Assert
     #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_unsubscribe_instrument(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.unsubscribe_instrument(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.unsubscribe_instrument(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
+
+    def test_unsubscribe_instrument(self):
+        # Arrange
+        self.client.connect()
+
+        # Act
+        self.client.unsubscribe_instrument(BTCUSDT)
+
+        # Assert
+        self.assertTrue(True)
+
     # def test_unsubscribe_quote_ticks(self):
     #     # Arrange
     #     # Act
@@ -185,27 +195,45 @@ class BinanceDataClientTests(unittest.TestCase):
     #
     #     # Assert
     #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_request_instrument(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.request_instrument(USDJPY_SIM.symbol, uuid4())
-    #     self.client.connect()
-    #     self.client.request_instrument(USDJPY_SIM.symbol, uuid4())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_request_instruments(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.request_instruments(uuid4())
-    #     self.client.connect()
-    #     self.client.request_instruments(uuid4())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
+
+    def test_request_instrument(self):
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
+
+            # Act
+            self.client.request_instrument(BTCUSDT, uuid4())
+
+            await asyncio.sleep(2)
+
+            # Assert
+            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_task()
+
+        self.loop.run_until_complete(run_test())
+
+    def test_request_instruments(self):
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
+
+            # Act
+            self.client.request_instruments(uuid4())
+
+            await asyncio.sleep(2)
+
+            # Assert
+            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_task()
+
+        self.loop.run_until_complete(run_test())
+
     # def test_request_quote_ticks(self):
     #     # Arrange
     #     # Act
@@ -215,17 +243,30 @@ class BinanceDataClientTests(unittest.TestCase):
     #
     #     # Assert
     #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_request_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.request_trade_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
-    #     self.client.connect()
-    #     self.client.request_trade_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
+
+    def test_request_trade_ticks(self):
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
+
+            self.client.request_instruments(uuid4())
+
+            await asyncio.sleep(2)
+
+            # Act
+            self.client.request_trade_ticks(BTCUSDT, None, None, 0, uuid4())
+
+            await asyncio.sleep(1)
+
+            # Assert
+            self.assertEqual(2, self.data_engine.response_count)  # Add with further functionality
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_task()
+
+        self.loop.run_until_complete(run_test())
+
     # def test_request_bars(self):
     #     # Arrange
     #     # Act

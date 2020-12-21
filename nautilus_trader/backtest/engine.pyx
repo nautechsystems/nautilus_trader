@@ -194,8 +194,8 @@ cdef class BacktestEngine:
                 config={"host": "localhost", "port": 6379},
             )
         else:
-            raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized "
-                             f"(can be either \"in-memory\" or \"redis\")")
+            raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized, "
+                             f"can be either \"in-memory\" or \"redis\"")
 
         if self._exec_db_flush:
             exec_db.flush()

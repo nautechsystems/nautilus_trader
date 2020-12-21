@@ -19,8 +19,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.core.datetime cimport to_posix_ms
-from nautilus_trader.model.c_enums.maker cimport Maker
-from nautilus_trader.model.c_enums.maker cimport MakerParser
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport Symbol
@@ -236,7 +236,7 @@ cdef class TradeTick(Tick):
         Symbol symbol not None,
         Price price not None,
         Quantity size not None,
-        Maker maker,
+        OrderSide side,
         TradeMatchId match_id not None,
         datetime timestamp not None,
     ):
@@ -251,8 +251,8 @@ cdef class TradeTick(Tick):
             The price of the trade.
         size : Quantity
             The size of the trade.
-        maker : Maker
-            The trade maker.
+        side : OrderSide
+            The side of the trade.
         match_id : TradeMatchId
             The trade match identifier.
         timestamp : datetime
@@ -261,22 +261,22 @@ cdef class TradeTick(Tick):
         Raises
         ------
         ValueError
-            If maker is UNDEFINED.
+            If side is UNDEFINED.
 
         """
-        Condition.not_equal(maker, Maker.UNDEFINED, "maker", "UNDEFINED")
+        Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
         super().__init__(symbol, timestamp)
 
         self.price = price
         self.size = size
-        self.maker = maker
+        self.side = side
         self.match_id = match_id
 
     def __str__(self) -> str:
         return (f"{self.symbol},"
                 f"{self.price},"
                 f"{self.size},"
-                f"{MakerParser.to_str(self.maker)},"
+                f"{OrderSideParser.to_str(self.side)},"
                 f"{self.match_id},"
                 f"{format_iso8601(self.timestamp)}")
 
@@ -297,7 +297,7 @@ cdef class TradeTick(Tick):
             symbol,
             Price(pieces[0]),
             Quantity(pieces[1]),
-            MakerParser.from_str(pieces[2]),
+            OrderSideParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
             from_posix_ms(long(pieces[4])),
         )
@@ -337,6 +337,6 @@ cdef class TradeTick(Tick):
         """
         return (f"{self.price},"
                 f"{self.size},"
-                f"{MakerParser.to_str(self.maker)},"
+                f"{OrderSideParser.to_str(self.side)},"
                 f"{self.match_id},"
                 f"{to_posix_ms(self.timestamp)}")

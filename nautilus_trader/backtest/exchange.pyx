@@ -25,7 +25,6 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.maker cimport Maker
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -246,20 +245,20 @@ cdef class SimulatedExchange:
             self._market_bids[symbol] = bid
             self._market_asks[symbol] = ask
         else:  # TradeTick
-            if tick.maker == Maker.BUYER:  # TAKER hit the bid
+            if tick.side == OrderSide.SELL:  # TAKER hit the bid
                 bid = tick.price
                 ask = self._market_asks.get(symbol)
                 if ask is None:
                     ask = bid
                 self._market_bids[symbol] = bid
-            elif tick.maker == Maker.SELLER:  # TAKER lifted the offer
+            elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = tick.price
                 bid = self._market_bids.get(symbol)
                 if bid is None:
                     bid = ask
                 self._market_asks[symbol] = ask
             else:
-                raise RuntimeError("invalid maker")
+                raise RuntimeError("invalid trade side")
 
         cdef datetime now = self._clock.utc_now()
 
@@ -856,7 +855,7 @@ cdef class SimulatedExchange:
         # Calculate commission
         cdef Instrument instrument = self.instruments.get(order.symbol)
         if instrument is None:
-            raise RuntimeError(f"Cannot run backtest (no instrument data for {order.symbol}).")
+            raise RuntimeError(f"Cannot run backtest, no instrument data for {order.symbol}")
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,

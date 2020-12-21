@@ -186,15 +186,15 @@ cdef class BacktestDataContainer:
                 if aggregation not in indexs:
                     indexs[aggregation] = dataframe.index
                 if dataframe.shape != shapes[aggregation]:
-                    raise RuntimeError(f"{dataframe} bid ask shape is not equal.")
+                    raise RuntimeError(f"{dataframe} bid ask shape is not equal")
                 if not all(dataframe.index == indexs[aggregation]):
-                    raise RuntimeError(f"{dataframe} bid ask index is not equal.")
+                    raise RuntimeError(f"{dataframe} bid ask index is not equal")
         for symbol, data in self.bars_ask.items():
             for aggregation, dataframe in data.items():
                 if dataframe.shape != shapes[aggregation]:
-                    raise RuntimeError(f"{dataframe} bid ask shape is not equal.")
+                    raise RuntimeError(f"{dataframe} bid ask shape is not equal")
                 if not all(dataframe.index == indexs[aggregation]):
-                    raise RuntimeError(f"{dataframe} bid ask index is not equal.")
+                    raise RuntimeError(f"{dataframe} bid ask index is not equal")
 
     cpdef bint has_quote_data(self, Symbol symbol) except *:
         """

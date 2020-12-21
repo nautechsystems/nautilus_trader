@@ -33,7 +33,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.commands import VenueCommand
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
@@ -833,7 +833,7 @@ class DataEngineTests(unittest.TestCase):
             ETHUSDT_BINANCE.symbol,
             Price("1050.00000"),
             Quantity(100),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -876,7 +876,7 @@ class DataEngineTests(unittest.TestCase):
             ETHUSDT_BINANCE.symbol,
             Price("1050.00000"),
             Quantity(100),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )

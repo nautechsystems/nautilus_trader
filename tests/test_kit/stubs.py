@@ -24,7 +24,7 @@ from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
@@ -185,7 +185,7 @@ class TestStubs:
             symbol if symbol is not None else TestStubs.symbol_audusd_fxcm(),
             Price("1.00001"),
             Quantity(100000),
-            Maker.BUYER,
+            OrderSide.BUY,
             TradeMatchId("123456"),
             UNIX_EPOCH,
         )

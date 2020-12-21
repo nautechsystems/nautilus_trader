@@ -42,6 +42,7 @@ from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
+from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport CancelOrder
@@ -711,18 +712,19 @@ cdef class ExecutionEngine(Component):
 
         # Count positions per symbol
         cdef dict counts = {}  # type: dict[Symbol, int]
+        cdef int count
         cdef Position position
         for position in positions:
-            if position.symbol not in counts:
-                counts[position.symbol] = 0
-            counts[position.symbol] += 1
+            count = counts.get(position.symbol, 0)
+            count += 1
+            # noinspection PyUnresolvedReferences
+            counts[position.symbol] = count
 
         # Reset position identifier generator
         self._pos_id_generator.reset()
 
         # Set counts
         cdef Symbol symbol
-        cdef int count
         for symbol, count in counts.items():
             self._pos_id_generator.set_count(symbol, count)
             self._log.info(f"Set position count {symbol} to {count}")
