@@ -29,11 +29,12 @@ cdef class ComponentFSMFactory:
 
 
 cdef class Component:
-    cdef str _component_name
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
+
+    cdef readonly str name
 
     cdef ComponentState state_c(self) except *
     cdef str state_string_c(self)

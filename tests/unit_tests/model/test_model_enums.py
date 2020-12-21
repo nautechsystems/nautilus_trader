@@ -27,8 +27,6 @@ from nautilus_trader.model.c_enums.currency_type import CurrencyType
 from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side import LiquiditySideParser
-from nautilus_trader.model.c_enums.maker import Maker
-from nautilus_trader.model.c_enums.maker import MakerParser
 from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
 from nautilus_trader.model.c_enums.order_side import OrderSide
@@ -226,36 +224,6 @@ class LiquiditySideTests(unittest.TestCase):
         # Arrange
         # Act
         result = LiquiditySideParser.from_str_py(string)
-
-        # Assert
-        self.assertEqual(expected, result)
-
-
-class MakerTests(unittest.TestCase):
-
-    @parameterized.expand([
-        [Maker.UNDEFINED, "UNDEFINED"],
-        [Maker.BUYER, "BUYER"],
-        [Maker.SELLER, "SELLER"],
-    ])
-    def test_maker_to_str(self, enum, expected):
-        # Arrange
-        # Act
-        result = MakerParser.to_str_py(enum)
-
-        # Assert
-        self.assertEqual(expected, result)
-
-    @parameterized.expand([
-        ["", Maker.UNDEFINED],
-        ["UNDEFINED", Maker.UNDEFINED],
-        ["BUYER", Maker.BUYER],
-        ["SELLER", Maker.SELLER],
-    ])
-    def test_maker_from_str(self, string, expected):
-        # Arrange
-        # Act
-        result = MakerParser.from_str_py(string)
 
         # Assert
         self.assertEqual(expected, result)

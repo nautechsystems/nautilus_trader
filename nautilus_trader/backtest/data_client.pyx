@@ -72,6 +72,7 @@ cdef class BacktestDataClient(DataClient):
             self._instruments[instrument.symbol] = instrument
 
         self._is_connected = False
+        self.initialized = True
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

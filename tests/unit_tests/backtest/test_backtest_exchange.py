@@ -33,7 +33,6 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import Maker
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
@@ -794,7 +793,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00000"),
             Quantity(100000),
-            Maker.BUYER,
+            OrderSide.SELL,
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -803,7 +802,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("1.00001"),
             Quantity(100000),
-            Maker.SELLER,
+            OrderSide.BUY,
             TradeMatchId("123456790"),
             UNIX_EPOCH,
         )
@@ -833,7 +832,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             AUDUSD_SIM.symbol,
             Price("0.99899"),
             Quantity(100000),
-            Maker.SELLER,
+            OrderSide.BUY,  # Lowers ask price
             TradeMatchId("123456789"),
             UNIX_EPOCH,
         )
@@ -841,7 +840,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.exchange.process_tick(tick3)
 
         # Assert
-        self.assertEqual(2, len(self.exchange.get_working_orders()))  # SL and TP
+        self.assertEqual(2, len(self.exchange.get_working_orders()))  # SL and TP only
         self.assertIn(bracket.stop_loss, self.exchange.get_working_orders().values())
         self.assertIn(bracket.take_profit, self.exchange.get_working_orders().values())
 

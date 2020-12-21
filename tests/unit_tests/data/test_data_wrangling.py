@@ -22,7 +22,7 @@ from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -191,7 +191,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         self.assertEqual(69806, len(ticks))
         self.assertEqual(Price("423.760"), ticks[0].price)
         self.assertEqual(Quantity("2.67900"), ticks[0].size)
-        self.assertEqual(Maker.BUYER, ticks[0].maker)
+        self.assertEqual(OrderSide.SELL, ticks[0].side)
         self.assertEqual(TradeMatchId("148568980"), ticks[0].match_id)
         self.assertEqual(Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks[0].timestamp)
 

@@ -239,7 +239,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' object was not callable.",
+            msg=f"The \'{param}\' object was not callable",
         )
 
     @staticmethod

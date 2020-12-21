@@ -36,7 +36,7 @@ from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.maker cimport MakerParser
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -189,7 +189,7 @@ cdef class BacktestDataProducer:
         self._trade_prices = None
         self._trade_sizes = None
         self._trade_match_ids = None
-        self._trade_makers = None
+        self._trade_sides = None
         self._trade_timestamps = None
         self._trade_index = 0
         self._trade_index_last = 0
@@ -262,7 +262,7 @@ cdef class BacktestDataProducer:
             self._trade_prices = trade_ticks_slice["price"].values
             self._trade_sizes = trade_ticks_slice["quantity"].values
             self._trade_match_ids = trade_ticks_slice["match_id"].values
-            self._trade_makers = trade_ticks_slice["buyer_maker"].values
+            self._trade_sides = trade_ticks_slice["side"].values
             self._trade_timestamps = np.asarray([<datetime>dt for dt in trade_ticks_slice.index])
 
             # Calculate cumulative data size
@@ -270,7 +270,7 @@ cdef class BacktestDataProducer:
             total_size += get_size_of(self._trade_prices)
             total_size += get_size_of(self._trade_sizes)
             total_size += get_size_of(self._trade_match_ids)
-            total_size += get_size_of(self._trade_makers)
+            total_size += get_size_of(self._trade_sides)
             total_size += get_size_of(self._trade_timestamps)
 
             # Set indexing
@@ -322,7 +322,7 @@ cdef class BacktestDataProducer:
             self._symbol_index[self._trade_symbols[index]],
             Price(self._trade_prices[index]),
             Quantity(self._trade_sizes[index]),
-            MakerParser.from_str(self._trade_makers[index]),
+            OrderSideParser.from_str(self._trade_sides[index]),
             TradeMatchId(self._trade_match_ids[index]),
             self._trade_timestamps[index],
         )
@@ -366,7 +366,7 @@ cdef class BacktestDataProducer:
         self._trade_prices = None
         self._trade_sizes = None
         self._trade_match_ids = None
-        self._trade_makers = None
+        self._trade_sides = None
         self._trade_timestamps = None
         self._trade_index = 0
         self._trade_index_last = len(self._quote_tick_data) - 1

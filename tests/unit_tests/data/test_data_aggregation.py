@@ -34,7 +34,7 @@ from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import Maker
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
@@ -211,7 +211,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(1),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -284,7 +284,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(1),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -293,7 +293,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00002"),
             size=Quantity(1),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp=UNIX_EPOCH,
         )
@@ -302,7 +302,7 @@ class TickBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00000"),
             size=Quantity(1),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp=UNIX_EPOCH,
         )
@@ -419,7 +419,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(1),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -492,7 +492,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(3000),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -501,7 +501,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00002"),
             size=Quantity(4000),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp=UNIX_EPOCH,
         )
@@ -510,7 +510,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00000"),
             size=Quantity(3000),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp=UNIX_EPOCH,
         )
@@ -600,7 +600,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00001"),
             size=Quantity(2000),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -609,7 +609,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00002"),
             size=Quantity(3000),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp=UNIX_EPOCH,
         )
@@ -618,7 +618,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("1.00000"),
             size=Quantity(25000),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp=UNIX_EPOCH,
         )
@@ -746,7 +746,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("15000.00"),
             size=Quantity("3.5"),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -821,7 +821,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("20.00001"),
             size=Quantity("3000.00"),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123456"),
             timestamp=UNIX_EPOCH,
         )
@@ -830,7 +830,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("20.00002"),
             size=Quantity("4000.00"),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123457"),
             timestamp=UNIX_EPOCH,
         )
@@ -839,7 +839,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
             symbol=AUDUSD_SIM.symbol,
             price=Price("20.00000"),
             size=Quantity("5000.00"),
-            maker=Maker.BUYER,
+            side=OrderSide.BUY,
             match_id=TradeMatchId("123458"),
             timestamp=UNIX_EPOCH,
         )
