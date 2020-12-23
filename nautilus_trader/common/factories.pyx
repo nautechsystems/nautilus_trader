@@ -83,6 +83,9 @@ cdef class OrderFactory:
             initial_count=initial_count,
         )
 
+    cdef int count_c(self):
+        return self._id_generator.count
+
     @property
     def count(self):
         """
@@ -93,7 +96,7 @@ cdef class OrderFactory:
         int
 
         """
-        return self._id_generator.count
+        return self.count_c()
 
     cpdef void set_count(self, int count) except *:
         """

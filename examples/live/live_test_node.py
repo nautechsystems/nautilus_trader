@@ -80,22 +80,20 @@ config = {
 # file.
 strategy = EMACross(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=BarSpecification(200, BarAggregation.TICK, PriceType.LAST),
+    bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
     fast_ema=10,
     slow_ema=20,
-    trade_size=Decimal(0.1),
+    trade_size=Decimal("0.1"),
 )
 
+# Instantiate the node passing a list of strategies and configuration
 node = TradingNode(
-    strategies=[strategy],  # A list of strategies
+    strategies=[strategy],
     config=config,
 )
 
 
-# For this example the input() calls will enable control of the trading node
-# through one sequence of start, stop and dispose.
-# It is only necessary to pass the event loop into the trading node, all
-# asyncio functionality is handled 'under the hood' for you.
+# Stop the node with a SIGINT or CTRL+C
 def main():
     node.start()
 

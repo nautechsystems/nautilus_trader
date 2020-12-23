@@ -42,6 +42,8 @@ cdef class OrderFactory:
     cdef readonly StrategyId strategy_id
     """The order factories trading strategy identifier.\n\n:returns: `StrategyId`"""
 
+    cdef int count_c(self)
+
     cpdef void set_count(self, int count) except *
     cpdef void reset(self) except *
 

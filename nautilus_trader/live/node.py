@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 from asyncio import tasks
-import signal
-import time
 from typing import Dict, List
-
+from concurrent.futures import ThreadPoolExecutor as Executor
+import asyncio
+import signal
+import sys
 import msgpack
+import time
 import redis
 
 from nautilus_trader.adapters.binance.data import BinanceDataClient
@@ -82,8 +83,9 @@ class TradingNode:
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()
+        self._executor = Executor()
+        self._loop.set_default_executor(self._executor)
         self._loop.set_debug(True)  # TODO: Development
-        self._task_running = None
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -184,7 +186,11 @@ class TradingNode:
         """
         Start the trading node.
         """
-        self._task_running = self._loop.run_until_complete(self._run())
+        try:
+            self._loop.run_until_complete(self._run())
+        except RuntimeError as ex:
+            self._log.error(str(ex))
+            time.sleep(0.1)  # Assist final logging
 
     def stop(self):
         """
@@ -245,7 +251,7 @@ class TradingNode:
         signals = (signal.SIGTERM, signal.SIGINT)
 
         if self._loop.is_closed():
-            self._log.error(f"Cannot setup signal handling (event loop was closed).")
+            self._log.error("Cannot setup signal handling (event loop was closed).")
             return
 
         for sig in signals:
@@ -315,6 +321,13 @@ class TradingNode:
             self._loop.call_soon(self._loop.stop)
             self._loop.call_soon(self._cancel_all_tasks)
             await self._loop.shutdown_asyncgens()
+
+            # Give blocking calls a chance to shutdown
+            if sys.version_info.major > 3 or (sys.version_info == 3 and sys.version_info.minor >= 9):
+                # cancel_futures added in Python 3.9
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            else:
+                self._executor.shutdown(wait=True)
 
             if self._loop.is_running():
                 self._log.warning("Cannot close running event loop.")
