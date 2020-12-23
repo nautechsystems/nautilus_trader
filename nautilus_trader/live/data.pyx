@@ -16,7 +16,6 @@
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 import asyncio
-import threading
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.messages cimport DataRequest
@@ -196,7 +195,7 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(command, "command")
-        # Do not allow None through as its a sentinel value which stops the queue
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._message_queue.put_nowait, command)
 
@@ -211,7 +210,7 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(data, "data")
-        # Do not allow None through as its a sentinel value which stops the queue
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
 
@@ -226,7 +225,7 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(request, "request")
-        # Do not allow None through as its a sentinel value which stops the queue
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._message_queue.put_nowait, request)
 
@@ -241,7 +240,7 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(response, "response")
-        # Do not allow None through as its a sentinel value which stops the queue
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
 
@@ -282,4 +281,4 @@ cdef class LiveDataClient(DataClient):
             logger,
         )
 
-        self._loop = engine.get_event_loop()
+        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

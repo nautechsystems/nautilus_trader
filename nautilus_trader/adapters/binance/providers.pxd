@@ -20,7 +20,7 @@ from nautilus_trader.model.instrument cimport Instrument
 
 cdef class BinanceInstrumentProvider:
     cdef dict _instruments
-    cdef object _binance
+    cdef object _client
 
     cdef readonly Venue venue
     """The venue of the provider.\n\n:returns: `Venue`"""
