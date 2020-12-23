@@ -23,10 +23,14 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.datetime cimport from_posix_ms
+from nautilus_trader.core.datetime cimport to_posix_ms
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -350,6 +354,11 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
+        if to_datetime is not None:
+            self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
+                              f"argument of {to_datetime} when not supported by the exchange "
+                              f"(will use `limit` of {limit}).")
+
         self._loop.run_in_executor(
             None,
             self._request_trade_ticks,
@@ -390,18 +399,47 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.error(f"`request_bars` was called with a `price_type` argument "
+                            f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
+                            f"when not supported by the exchange (must be PriceType.LAST).")
+            return
+
+        if to_datetime is not None:
+            self._log.warning(f"`request_bars` was called with a `to_datetime` "
+                              f"argument of `{to_datetime}` when not supported by the exchange "
+                              f"(will use `limit` of {limit}).")
+
+        self._loop.run_in_executor(
+            None,
+            self._request_bars,
+            bar_type,
+            from_datetime,
+            to_datetime,
+            limit,
+            correlation_id,
+        )
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
         return TradeTick(
-            instrument.symbol,
-            Price(f"{trade['price']:.{instrument.price_precision}f}"),
-            Quantity(f"{trade['amount']:.{instrument.size_precision}f}"),
-            OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
-            TradeMatchId(trade["id"]),
-            from_posix_ms(trade["timestamp"]),
+            symbol=instrument.symbol,
+            price=Price(f"{trade['price']:.{instrument.price_precision}f}"),
+            size=Quantity(f"{trade['amount']:.{instrument.size_precision}f}"),
+            side=OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
+            match_id=TradeMatchId(trade["id"]),
+            timestamp=from_posix_ms(trade["timestamp"]),
+        )
+
+    cpdef Bar _parse_bar(self, Instrument instrument, list values):
+        return Bar(
+            open_price=Price(f"{values[1]:.{instrument.price_precision}f}"),
+            high_price=Price(f"{values[2]:.{instrument.price_precision}f}"),
+            low_price=Price(f"{values[3]:.{instrument.price_precision}f}"),
+            close_price=Price(f"{values[4]:.{instrument.price_precision}f}"),
+            volume=Quantity(f"{values[5]:.{instrument.size_precision}f}"),
+            timestamp=from_posix_ms(values[0]),
         )
 
     def _request_instrument(self, Symbol symbol, UUID correlation_id):
@@ -436,6 +474,9 @@ cdef class BinanceDataClient(LiveDataClient):
     def _send_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id):
         self._handle_trade_ticks(symbol, ticks, correlation_id)
 
+    def _send_bars(self, BarType bar_type, list bars, UUID correlation_id):
+        self._handle_bars(bar_type, bars, correlation_id)
+
     def _subscribed_instruments_update(self):
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
 
@@ -462,11 +503,20 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
             return
 
-        cdef list trades = self._client.fetch_trades(
-            symbol=symbol.code,
-            since=from_datetime,
-            limit=limit,
-        )
+        cdef list trades
+        try:
+            trades = self._client.fetch_trades(
+                symbol=symbol.code,
+                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
+                limit=limit,
+            )
+        except Exception as ex:
+            self._log.error(str(ex))
+            return
+
+        if len(trades) == 0:
+            self._log.error("No data returned from fetch_trades.")
+            return
 
         cdef list ticks = []  # type: list[TradeTick]
         cdef dict trade       # type: dict[str, object]
@@ -477,5 +527,45 @@ cdef class BinanceDataClient(LiveDataClient):
             self._send_trade_ticks,
             symbol,
             ticks,
+            correlation_id,
+        )
+
+    def _request_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ):
+        cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
+        if instrument is None:
+            self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
+            return
+
+        cdef list data
+        try:
+            data = self._client.fetch_ohlcv(
+                symbol=bar_type.symbol.code,
+                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
+                limit=limit,
+            )
+        except Exception as ex:
+            self._log.error(str(ex))
+            return
+
+        if len(data) == 0:
+            self._log.error("No data returned from fetch_ohlcv.")
+            return
+
+        cdef list bars = []  # type: list[Bar]
+        cdef list values     # type: list[object]
+        for values in data[:-1]:
+            bars.append(self._parse_bar(instrument, values))
+
+        self._loop.call_soon_threadsafe(
+            self._send_bars,
+            bar_type,
+            bars,
             correlation_id,
         )

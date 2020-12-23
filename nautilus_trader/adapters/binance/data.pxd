@@ -15,6 +15,7 @@
 
 from nautilus_trader.adapters.binance.providers cimport BinanceInstrumentProvider
 from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -27,3 +28,4 @@ cdef class BinanceDataClient(LiveDataClient):
     cdef set _subscribed_instruments
 
     cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
+    cpdef Bar _parse_bar(self, Instrument instrument, list values)

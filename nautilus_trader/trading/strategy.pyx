@@ -599,7 +599,7 @@ cdef class TradingStrategy(Component):
 
         self.log.info("Saving state...")
 
-        cpdef dict state = {"OrderIdCount": self.order_factory.count}
+        cpdef dict state = {"OrderIdCount": self.order_factory.count_c()}
 
         try:
             user_state = self.on_save()
@@ -871,6 +871,8 @@ cdef class TradingStrategy(Component):
         """
         Request historical quote ticks for the given parameters.
 
+        If datetimes are `None` then will request the most recent data.
+
         Parameters
         ----------
         symbol : Symbol
@@ -915,6 +917,8 @@ cdef class TradingStrategy(Component):
     ) except *:
         """
         Request historical trade ticks for the given parameters.
+
+        If datetimes are `None` then will request the most recent data.
 
         Parameters
         ----------
@@ -961,12 +965,14 @@ cdef class TradingStrategy(Component):
         """
         Request historical bars for the given parameters.
 
+        If datetimes are `None` then will request the most recent data.
+
         Parameters
         ----------
         bar_type : BarType
             The bar type for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
