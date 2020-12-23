@@ -16,11 +16,15 @@
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
 
+cdef extern from *:
+    ctypedef unsigned long long uint128 "__uint128_t"
+
 
 cdef class LiveDataEngine(DataEngine):
     cdef object _loop
     cdef object _data_queue
     cdef object _message_queue
+    cdef uint128 _queue_tid
     cdef object _task_run
 
     cdef readonly bint is_running

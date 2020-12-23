@@ -23,6 +23,10 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -259,7 +263,7 @@ class BinanceDataClientTests(unittest.TestCase):
             await asyncio.sleep(1)
 
             # Assert
-            self.assertEqual(2, self.data_engine.response_count)  # Add with further functionality
+            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
 
             # Tear Down
             self.data_engine.stop()
@@ -267,12 +271,28 @@ class BinanceDataClientTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
-    # def test_request_bars(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
-    #     self.client.connect()
-    #     self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
+    def test_request_bars(self):
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
+
+            self.client.request_instruments(uuid4())
+
+            await asyncio.sleep(2)
+
+            bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+            bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
+
+            # Act
+            self.client.request_bars(bar_type, None, None, 0, uuid4())
+
+            await asyncio.sleep(1)
+
+            # Assert
+            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_task()
+
+        self.loop.run_until_complete(run_test())

@@ -791,7 +791,7 @@ cdef class DataEngine(Component):
                     SYMBOL: bar_type.symbol,
                     FROM_DATETIME: aggregator.get_start_time(),
                     TO_DATETIME: None,
-                    LIMIT: 0,
+                    LIMIT: 999999,  # TODO: Temporary value
                 },
                 callback=bulk_updater.receive,
                 request_id=self._uuid_factory.generate(),
