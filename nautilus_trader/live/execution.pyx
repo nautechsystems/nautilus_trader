@@ -78,7 +78,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._loop = loop
         self._queue = asyncio.Queue()
-        self._queue_tid = threading.current_thread().ident
         self.is_running = True
 
     cpdef void _on_start(self) except *:
@@ -167,13 +166,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         Condition.not_none(command, "command")
-        # Do not allow None through as its a sentinel value to stop the queue
+        # Do not allow None through as its a sentinel value which stops the queue
 
-        if threading.current_thread().ident == self._queue_tid:
-            self._queue.put_nowait(command)
-        else:
-            # This method was called from a different thread
-            self._loop.call_soon_threadsafe(self._queue.put_nowait, command)
+        self._loop.call_soon_threadsafe(self._queue.put_nowait, command)
 
     cpdef void process(self, Event event) except *:
         """
@@ -186,13 +181,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         Condition.not_none(event, "event")
-        # Do not allow None through as its a sentinel value to stop the queue
+        # Do not allow None through as its a sentinel value which stops the queue
 
-        if threading.current_thread().ident == self._queue_tid:
-            self._queue.put_nowait(event)
-        else:
-            # This method was called from a different thread
-            self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
+        self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
 
 
 cdef class LiveExecutionClient(ExecutionClient):

@@ -16,14 +16,10 @@
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 
-cdef extern from *:
-    ctypedef unsigned long long uint128 "__uint128_t"
-
 
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
     cdef object _queue
-    cdef uint128 _queue_tid
     cdef object _task_run
 
     cdef readonly bint is_running

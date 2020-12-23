@@ -73,7 +73,6 @@ cdef class LiveDataEngine(DataEngine):
         self._loop = loop
         self._data_queue = asyncio.Queue()
         self._message_queue = asyncio.Queue()
-        self._queue_tid = threading.current_thread().ident
         self.is_running = False
 
     cpdef void _on_start(self) except *:
@@ -197,13 +196,9 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(command, "command")
-        # Do not allow None through as its a sentinel value to stop the queue
+        # Do not allow None through as its a sentinel value which stops the queue
 
-        if threading.current_thread().ident == self._queue_tid:
-            self._message_queue.put_nowait(command)
-        else:
-            # This method was called from a different thread
-            self._loop.call_soon_threadsafe(self._message_queue.put_nowait, command)
+        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, command)
 
     cpdef void process(self, data) except *:
         """
@@ -216,13 +211,9 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(data, "data")
-        # Do not allow None through as its a sentinel value to stop the queue
+        # Do not allow None through as its a sentinel value which stops the queue
 
-        if threading.current_thread().ident == self._queue_tid:
-            self._data_queue.put_nowait(data)
-        else:
-            # This method was called from a different thread
-            self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
+        self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
 
     cpdef void send(self, DataRequest request) except *:
         """
@@ -235,13 +226,9 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(request, "request")
-        # Do not allow None through as its a sentinel value to stop the queue
+        # Do not allow None through as its a sentinel value which stops the queue
 
-        if threading.current_thread().ident == self._queue_tid:
-            self._message_queue.put_nowait(request)
-        else:
-            # This method was called from a different thread
-            self._loop.call_soon_threadsafe(self._message_queue.put_nowait, request)
+        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, request)
 
     cpdef void receive(self, DataResponse response) except *:
         """
@@ -254,13 +241,9 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(response, "response")
-        # Do not allow None through as its a sentinel value to stop the queue
+        # Do not allow None through as its a sentinel value which stops the queue
 
-        if threading.current_thread().ident == self._queue_tid:
-            self._message_queue.put_nowait(response)
-        else:
-            # This method was called from a different thread
-            self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
+        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
 
 
 cdef class LiveDataClient(DataClient):
