@@ -111,7 +111,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.39.53"
+version = "1.39.59"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -342,7 +342,7 @@ testing = ["packaging", "pep517", "importlib-resources (>=1.3)"]
 
 [[package]]
 name = "importlib-resources"
-version = "3.3.0"
+version = "3.3.1"
 description = "Read resources from Python packages"
 category = "dev"
 optional = false
@@ -483,6 +483,14 @@ sphinx = ">=1.6.5"
 
 [package.extras]
 testing = ["matplotlib", "pytest", "pytest-cov"]
+
+[[package]]
+name = "oandapyv20"
+version = "0.6.3"
+description = "Python wrapper for the OANDA REST-V20 API"
+category = "main"
+optional = false
+python-versions = "*"
 
 [[package]]
 name = "packaging"
@@ -1001,7 +1009,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.6.1"
-content-hash = "48d9c5f8cb6b02ed33bc34e64e8a7957e493592990389697af261750b70a645f"
+content-hash = "dbbaf082f0cf4de5187f915d26f99dd4c52c69f1611092ce10384761eb18d84f"
 
 [metadata.files]
 aiodns = [
@@ -1080,8 +1088,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.39.53-py2.py3-none-any.whl", hash = "sha256:6f05981de8da8d3c8ffdae62f059808f8cceb7b32afb233a46e5fec6b642c984"},
-    {file = "ccxt-1.39.53.tar.gz", hash = "sha256:a17c60f23011cbd7eb75f0c412c9b895fa108ffc8ee6b017665ec4a29fcf64b9"},
+    {file = "ccxt-1.39.59-py2.py3-none-any.whl", hash = "sha256:f4d878233e4e478b3fce16db65ad17e7ae03e000315c77f45fec8d870d27e8df"},
+    {file = "ccxt-1.39.59.tar.gz", hash = "sha256:76b9cf88e250a3339246cc62f80d479c1b0c76363dfde64b00c6fe1fcbf1a588"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1269,8 +1277,8 @@ importlib-metadata = [
     {file = "importlib_metadata-1.7.0.tar.gz", hash = "sha256:90bb658cdbbf6d1735b6341ce708fc7024a3e14e99ffdc5783edea9f9b077f83"},
 ]
 importlib-resources = [
-    {file = "importlib_resources-3.3.0-py2.py3-none-any.whl", hash = "sha256:a3d34a8464ce1d5d7c92b0ea4e921e696d86f2aa212e684451cb1482c8d84ed5"},
-    {file = "importlib_resources-3.3.0.tar.gz", hash = "sha256:7b51f0106c8ec564b1bef3d9c588bc694ce2b92125bbb6278f4f2f5b54ec3592"},
+    {file = "importlib_resources-3.3.1-py2.py3-none-any.whl", hash = "sha256:42068585cc5e8c2bf0a17449817401102a5125cbfbb26bb0f43cde1568f6f2df"},
+    {file = "importlib_resources-3.3.1.tar.gz", hash = "sha256:0ed250dbd291947d1a298e89f39afcc477d5a6624770503034b72588601bcc05"},
 ]
 iniconfig = [
     {file = "iniconfig-1.1.1-py2.py3-none-any.whl", hash = "sha256:011e24c64b7f47f6ebd835bb12a743f2fbe9a26d4cecaa7f53bc4f35ee9da8b3"},
@@ -1478,6 +1486,9 @@ numpy = [
 numpydoc = [
     {file = "numpydoc-1.1.0-py3-none-any.whl", hash = "sha256:c53d6311190b9e3b9285bc979390ba0257ba9acde5eca1a7065fc8dfca9d46e8"},
     {file = "numpydoc-1.1.0.tar.gz", hash = "sha256:c36fd6cb7ffdc9b4e165a43f67bf6271a7b024d0bb6b00ac468c9e2bfc76448e"},
+]
+oandapyv20 = [
+    {file = "oandapyV20-0.6.3.tar.gz", hash = "sha256:173a56b41ab3a19315c2fbea6f9aa3f0c17f64ba84acff014d072c64c1844b28"},
 ]
 packaging = [
     {file = "packaging-20.8-py2.py3-none-any.whl", hash = "sha256:24e0da08660a87484d1602c30bb4902d74816b6985b93de36926f5bc95741858"},

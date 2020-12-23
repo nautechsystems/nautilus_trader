@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+import os
 
 import ccxt
 
@@ -77,8 +78,8 @@ cdef class BinanceDataClient(LiveDataClient):
         )
 
         cdef dict config = {
-            "apiKey": credentials.get("api_key"),
-            "secret": credentials.get("api_secret"),
+            "apiKey": os.getenv(credentials.get("api_key", "")),
+            "secret": os.getenv(credentials.get("api_secret", "")),
             "timeout": 10000,
             "enableRateLimit": True,
         }
@@ -322,7 +323,8 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        # TODO: Implement
+        self._log.error("`request_quote_ticks` was called when not supported "
+                        "by the exchange, use trade ticks.")
 
     cpdef void request_trade_ticks(
         self,

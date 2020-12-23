@@ -233,10 +233,16 @@ class TradingNode:
     def _setup_data_clients(self, config, logger):
         # TODO: DataClientFactory
         for key, value in config.items():
+            binance_config = config.get("binance")
+            if binance_config is None:
+                self._log.error("No `binance` configuration found.")
+                return
+
             credentials = {
-                "api_key": config.get("api_key"),
-                "api_secret": config.get("api_secret"),
+                "api_key": binance_config.get("api_key"),
+                "api_secret": binance_config.get("api_secret"),
             }
+
             client = BinanceDataClient(
                 credentials=credentials,
                 engine=self._data_engine,

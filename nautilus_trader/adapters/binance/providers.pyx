@@ -61,7 +61,7 @@ cdef class BinanceInstrumentProvider:
         self.venue = Venue("BINANCE")
         self.count = 0
         self._instruments = {}  # type: dict[Symbol: Instrument]
-        self._binance = client
+        self._client = client
 
         if load_all:
             self.load_all()
@@ -70,12 +70,12 @@ cdef class BinanceInstrumentProvider:
         """
         Pre-load all instruments.
         """
-        self._binance.load_markets()
+        self._client.load_markets()
 
-        if self._binance.markets is None:
+        if self._client.markets is None:
             return  # No markets
 
-        for k, v in self._binance.markets.items():
+        for k, v in self._client.markets.items():
             symbol = Symbol(k, self.venue)
             instrument = self._parse_instrument(symbol, v)
 

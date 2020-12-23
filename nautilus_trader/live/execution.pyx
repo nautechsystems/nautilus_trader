@@ -16,7 +16,6 @@
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 import asyncio
-import threading
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -166,7 +165,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         Condition.not_none(command, "command")
-        # Do not allow None through as its a sentinel value which stops the queue
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._queue.put_nowait, command)
 
@@ -181,7 +180,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         Condition.not_none(event, "event")
-        # Do not allow None through as its a sentinel value which stops the queue
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
 
@@ -226,4 +225,4 @@ cdef class LiveExecutionClient(ExecutionClient):
             logger,
         )
 
-        self._loop = engine.get_event_loop()
+        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
