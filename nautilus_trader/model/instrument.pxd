@@ -77,14 +77,19 @@ cdef class Instrument:
     """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
     """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
-    cdef readonly object funding_rate_long
-    """The funding rate for long positions.\n\n:returns: `Decimal`"""
-    cdef readonly object funding_rate_short
-    """The funding rate for short positions.\n\n:returns: `Decimal`"""
+    cdef readonly dict financing
+    """The financing information for the instrument.\n\n:returns: `dict[str, object]`"""
     cdef readonly datetime timestamp
     """The initialization timestamp of the instrument.\n\n:returns: `datetime`"""
     cdef readonly dict info
     """The additional instrument information.\n\n:returns: `dict[str, object]`"""
+
+    cdef bint _is_quanto(
+        self,
+        Currency base_currency,
+        Currency quote_currency,
+        Currency settlement_currency,
+    ) except *
 
     cpdef Money market_value(self, Quantity quantity, close_price)
     cpdef Money notional_value(self, Quantity quantity, close_price)

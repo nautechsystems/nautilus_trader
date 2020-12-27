@@ -16,19 +16,22 @@
 from cpython.datetime cimport datetime
 import os
 
-import ccxt
+import pandas as pd
+import oandapyV20
+import oandapyV20.endpoints.instruments as instruments_endpoint
 
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
-from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
@@ -42,9 +45,9 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class BinanceDataClient(LiveDataClient):
+cdef class OandaDataClient(LiveDataClient):
     """
-    Provides a data client for the `Binance` exchange.
+    Provides a data client for the `Oanda` brokerage.
     """
 
     def __init__(
@@ -55,7 +58,7 @@ cdef class BinanceDataClient(LiveDataClient):
         Logger logger,
     ):
         """
-        Initialize a new instance of the `BinanceDataClient` class.
+        Initialize a new instance of the `OandaDataClient` class.
 
         Parameters
         ----------
@@ -71,24 +74,20 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(credentials, "credentials")
         super().__init__(
-            Venue("BINANCE"),
+            Venue("OANDA"),
             engine,
             clock,
             logger,
         )
 
-        cdef dict config = {
-            "apiKey": os.getenv(credentials.get("api_key", "")),
-            "secret": os.getenv(credentials.get("api_secret", "")),
-            "timeout": 10000,
-            "enableRateLimit": True,
-        }
+        self._api_token = os.getenv(credentials.get("api_token", ""))
+        self._account_id = os.getenv(credentials.get("account_id", ""))
 
         self._is_connected = False
-        self._config = config
-        self._client = ccxt.binance(config=config)
-        self._instrument_provider = BinanceInstrumentProvider(
+        self._client = oandapyV20.API(access_token=self._api_token)
+        self._instrument_provider = OandaInstrumentProvider(
             client=self._client,
+            account_id=self._account_id,
             load_all=False,
         )
 
@@ -137,16 +136,12 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Reset the client.
         """
-        self._client = ccxt.binance(config=self._config)
-        self._instrument_provider = BinanceInstrumentProvider(
+        self._client = oandapyV20.API(access_token=self._api_token)
+        self._instrument_provider = OandaInstrumentProvider(
             client=self._client,
+            account_id=self._account_id,
             load_all=False,
         )
-
-        self._subscribed_instruments = set()
-
-        # Schedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
 
     cpdef void dispose(self) except *:
         """
@@ -331,8 +326,6 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.error("`request_quote_ticks` was called when not supported "
-                        "by the exchange, use trade ticks.")
 
     cpdef void request_trade_ticks(
         self,
@@ -369,16 +362,6 @@ cdef class BinanceDataClient(LiveDataClient):
                               f"argument of {to_datetime} when not supported by the exchange "
                               f"(will use `limit` of {limit}).")
 
-        self._loop.run_in_executor(
-            None,
-            self._request_trade_ticks,
-            symbol,
-            from_datetime,
-            to_datetime,
-            limit,
-            correlation_id,
-        )
-
     cpdef void request_bars(
         self,
         BarType bar_type,
@@ -409,10 +392,10 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if bar_type.spec.price_type != PriceType.LAST:
+        if bar_type.spec.price_type == PriceType.UNDEFINED or bar_type.spec.price_type == PriceType.LAST:
             self._log.error(f"`request_bars` was called with a `price_type` argument "
                             f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
-                            f"when not supported by the exchange (must be LAST).")
+                            f"when not supported by the exchange (must be BID, ASK or MID).")
             return
 
         if to_datetime is not None:
@@ -432,24 +415,34 @@ cdef class BinanceDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
-        return TradeTick(
-            symbol=instrument.symbol,
-            price=Price(trade['price'], instrument.price_precision),
-            size=Quantity(trade['amount'], instrument.size_precision),
-            side=OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
-            match_id=TradeMatchId(trade["id"]),
-            timestamp=from_posix_ms(trade["timestamp"]),
-        )
+    # cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
+    #     return TradeTick(
+    #         symbol=instrument.symbol,
+    #         price=Price(f"{trade['price']:.{instrument.price_precision}f}"),
+    #         size=Quantity(f"{trade['amount']:.{instrument.size_precision}f}"),
+    #         side=OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
+    #         match_id=TradeMatchId(trade["id"]),
+    #         timestamp=from_posix_ms(trade["timestamp"]),
+    #     )
 
-    cpdef Bar _parse_bar(self, Instrument instrument, list values):
+    cpdef Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
+        cdef dict prices
+        if price_type == PriceType.BID:
+            # prices = values.get("bid")  # TODO: Always mid bars?
+            prices = values.get("mid")
+        elif price_type == PriceType.ASK:
+            # prices = values.get("ask")  # TODO: Always mid bars?
+            prices = values.get("mid")
+        else:
+            prices = values.get("mid")
+
         return Bar(
-            open_price=Price(values[1], instrument.price_precision),
-            high_price=Price(values[2], instrument.price_precision),
-            low_price=Price(values[3], instrument.price_precision),
-            close_price=Price(values[4], instrument.price_precision),
-            volume=Quantity(values[5], instrument.size_precision),
-            timestamp=from_posix_ms(values[0]),
+            open_price=Price(prices.get("o"), instrument.price_precision),
+            high_price=Price(prices.get("h"), instrument.price_precision),
+            low_price=Price(prices.get("l"), instrument.price_precision),
+            close_price=Price(prices.get("c"), instrument.price_precision),
+            volume=Quantity(values.get("volume"), instrument.size_precision),
+            timestamp=pd.to_datetime(values.get("time")),
         )
 
     def _request_instrument(self, Symbol symbol, UUID correlation_id):
@@ -500,46 +493,6 @@ cdef class BinanceDataClient(LiveDataClient):
         # Reschedule subscribed instruments update in one hour
         self._loop.call_later(60 * 60, self._subscribed_instruments_update)
 
-    def _request_trade_ticks(
-        self,
-        Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        UUID correlation_id,
-    ):
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
-        if instrument is None:
-            self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
-            return
-
-        cdef list trades
-        try:
-            trades = self._client.fetch_trades(
-                symbol=symbol.code,
-                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit,
-            )
-        except Exception as ex:
-            self._log.error(str(ex))
-            return
-
-        if len(trades) == 0:
-            self._log.error("No data returned from fetch_trades.")
-            return
-
-        cdef list ticks = []  # type: list[TradeTick]
-        cdef dict trade       # type: dict[str, object]
-        for trade in trades:
-            ticks.append(self._parse_trade_tick(instrument, trade))
-
-        self._loop.call_soon_threadsafe(
-            self._send_trade_ticks,
-            symbol,
-            ticks,
-            correlation_id,
-        )
-
     def _request_bars(
         self,
         BarType bar_type,
@@ -553,25 +506,89 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
             return
 
-        cdef list data
+        oanda_name = instrument.info["name"]
+
+        if bar_type.spec.price_type == PriceType.BID or bar_type.spec.price_type == PriceType.ASK:
+            candle_format = "bidask"
+        else:
+            candle_format = "midpoint"
+
+        cdef str granularity
+
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            granularity = 'S'
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
+            granularity = 'M'
+        elif bar_type.spec.aggregation == BarAggregation.HOUR:
+            granularity = 'H'
+        elif bar_type.spec.aggregation == BarAggregation.DAY:
+            granularity = 'D'
+        else:
+            self._log.error(f"Requesting bars with aggregation "
+                            f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                            f"not currently supported in this version.")
+
+        granularity += str(bar_type.spec.step)
+        valid_granularities = [
+            "S5",
+            "S10",
+            "S15",
+            "S30",
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M10",
+            "M15",
+            "M30",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "H6",
+            "H8",
+            "H12",
+            "D1",
+        ]
+
+        if granularity not in valid_granularities:
+            self._log.error(f"Requesting bars with invalid granularity `{granularity}`, "
+                            f"interpolation will be available in a future version, "
+                            f"valid_granularities={valid_granularities}.")
+
+        cdef dict params = {
+            "dailyAlignment": 0,
+            "count": limit,
+            "candleFormat": candle_format,
+            "granularity": granularity,  # TODO: Implement
+        }
+
+        if from_datetime is not None:
+            params["start"] = format_iso8601(from_datetime)
+
+        if to_datetime is not None:
+            params["end"] = format_iso8601(to_datetime)
+
+        cdef dict res
         try:
-            data = self._client.fetch_ohlcv(
-                symbol=bar_type.symbol.code,
-                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit,
-            )
+            req = instruments_endpoint.InstrumentsCandles(instrument=oanda_name, params=params)
+            res = self._client.request(req)
         except Exception as ex:
             self._log.error(str(ex))
             return
 
+        cdef list data = res.get("candles", [])
         if len(data) == 0:
             self._log.error(f"No data returned for {bar_type}.")
             return
 
         cdef list bars = []  # type: list[Bar]
-        cdef list values     # type: list[object]
-        for values in data[:-1]:
-            bars.append(self._parse_bar(instrument, values))
+        cdef dict values     # type: dict[str, object]
+        for values in data:
+            if not values["complete"]:
+                continue
+            bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))
 
         self._loop.call_soon_threadsafe(
             self._send_bars,

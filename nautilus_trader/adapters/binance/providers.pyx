@@ -75,6 +75,10 @@ cdef class BinanceInstrumentProvider:
         if self._client.markets is None:
             return  # No markets
 
+        cdef str k
+        cdef dict v
+        cdef Symbol symbol
+        cdef Instrument instrument
         for k, v in self._client.markets.items():
             symbol = Symbol(k, self.venue)
             instrument = self._parse_instrument(symbol, v)
@@ -130,27 +134,27 @@ cdef class BinanceInstrumentProvider:
 
         max_quantity = values["limits"]["amount"]["max"]
         if max_quantity is not None:
-            max_quantity = Quantity(f"{max_quantity:.{size_precision}f}")
+            max_quantity = Quantity(max_quantity, precision=size_precision)
 
         min_quantity = values["limits"]["amount"]["min"]
         if min_quantity is not None:
-            min_quantity = Quantity(f"{min_quantity:.{size_precision}f}")
+            min_quantity = Quantity(min_quantity, precision=size_precision)
 
         max_notional = values["limits"]["cost"]["max"]
         if max_notional is not None:
-            max_notional = Money(f"{max_notional:.{quote_precision}f}", quote_currency)
+            max_notional = Money(max_notional, currency=quote_currency)
 
         min_notional = values["limits"]["cost"]["min"]
         if min_notional is not None:
-            min_notional = Money(f"{min_notional:.{quote_precision}f}", quote_currency)
+            min_notional = Money(min_notional, currency=quote_currency)
 
         max_price = values["limits"]["cost"]["max"]
         if max_price is not None:
-            max_price = Price(f"{max_price:.{price_precision}f}")
+            max_price = Price(max_price, precision=price_precision)
 
         min_price = values["limits"]["cost"]["min"]
         if min_price is not None:
-            min_price = Price(f"{min_price:.{price_precision}f}")
+            min_price = Price(min_price, precision=price_precision)
 
         asset_type = AssetTypeParser.from_str(values["type"].upper())
 
@@ -181,8 +185,7 @@ cdef class BinanceInstrumentProvider:
             margin_maint=Decimal(),        # Margin trading not implemented
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            funding_rate_long=Decimal(),   # Extracting to future soon
-            funding_rate_short=Decimal(),  # Extracting to future soon
+            financing={},
             timestamp=datetime.utcnow(),
             info=values,
         )
