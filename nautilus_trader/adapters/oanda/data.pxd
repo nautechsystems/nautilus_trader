@@ -26,6 +26,7 @@ cdef class OandaDataClient(LiveDataClient):
     cdef object _client
     cdef bint _is_connected
     cdef set _subscribed_instruments
+    cdef set _subscribed_quote_ticks
     cdef OandaInstrumentProvider _instrument_provider
 
     # cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)

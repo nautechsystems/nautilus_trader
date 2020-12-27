@@ -19,6 +19,7 @@ import os
 import pandas as pd
 import oandapyV20
 import oandapyV20.endpoints.instruments as instruments_endpoint
+from oandapyV20.endpoints.pricing import PricingStream
 
 from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
@@ -29,7 +30,6 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -38,11 +38,10 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class OandaDataClient(LiveDataClient):
@@ -92,6 +91,7 @@ cdef class OandaDataClient(LiveDataClient):
         )
 
         self._subscribed_instruments = set()
+        self._subscribed_quote_ticks = set()
 
         # Schedule subscribed instruments update in one hour
         self._loop.call_later(60 * 60, self._subscribed_instruments_update)
@@ -117,8 +117,6 @@ cdef class OandaDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
-        # TODO: Connect websocket here
-
         self._is_connected = True
         self._log.info("Connected.")
 
@@ -143,11 +141,15 @@ cdef class OandaDataClient(LiveDataClient):
             load_all=False,
         )
 
+        self._subscribed_instruments = set()
+        self._subscribed_quote_ticks = set()
+
     cpdef void dispose(self) except *:
         """
         Dispose the client.
         """
-        pass  # Nothing to dispose yet
+        self._subscribed_instruments = set()
+        self._subscribed_quote_ticks = set()
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -177,7 +179,8 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        self._subscribed_quote_ticks.add(symbol)
+        self._loop.run_in_executor(None, self._stream_prices, symbol)
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -191,7 +194,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        self._log.error(f"`subscribe_trade_ticks` was called when not supported by the brokerage.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -205,7 +208,8 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        self._log.error(f"`subscribe_bars` was called when not supported by the brokerage "
+                        f"(use internal aggregation).")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -233,7 +237,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        self._subscribed_quote_ticks.discard(symbol)
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -247,7 +251,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        self._log.error(f"`unsubscribe_trade_ticks` was called when not supported by the brokerage.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -261,7 +265,8 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        self._log.error(f"`unsubscribe_bars` was called when not supported by the brokerage "
+                        f"(use internal aggregation).")
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -326,6 +331,7 @@ cdef class OandaDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
+        self._log.error(f"`request_quote_ticks` was called when not supported by the brokerage.")
 
     cpdef void request_trade_ticks(
         self,
@@ -357,10 +363,7 @@ cdef class OandaDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if to_datetime is not None:
-            self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
-                              f"argument of {to_datetime} when not supported by the exchange "
-                              f"(will use `limit` of {limit}).")
+        self._log.error(f"`request_trade_ticks` was called when not supported by the brokerage.")
 
     cpdef void request_bars(
         self,
@@ -415,16 +418,6 @@ cdef class OandaDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    # cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
-    #     return TradeTick(
-    #         symbol=instrument.symbol,
-    #         price=Price(f"{trade['price']:.{instrument.price_precision}f}"),
-    #         size=Quantity(f"{trade['amount']:.{instrument.size_precision}f}"),
-    #         side=OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
-    #         match_id=TradeMatchId(trade["id"]),
-    #         timestamp=from_posix_ms(trade["timestamp"]),
-    #     )
-
     cpdef Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
         cdef dict prices
         if price_type == PriceType.BID:
@@ -474,8 +467,11 @@ cdef class OandaDataClient(LiveDataClient):
         self._log.info(f"Updated {len(instruments)} instruments.")
         self.initialized = True
 
-    def _send_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id):
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
+    def _send_quote_tick(self, QuoteTick tick):
+        self._handle_quote_tick(tick)
+
+    def _send_bar(self, BarType bar_type, Bar bar):
+        self._handle_bar(bar_type, bar)
 
     def _send_bars(self, BarType bar_type, list bars, UUID correlation_id):
         self._handle_bars(bar_type, bars, correlation_id)
@@ -492,6 +488,48 @@ cdef class OandaDataClient(LiveDataClient):
 
         # Reschedule subscribed instruments update in one hour
         self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+
+    def _stream_prices(
+        self,
+        Symbol symbol,
+    ):
+        params = {
+            "instruments": symbol.code.replace('/', '_')
+        }
+
+        req = PricingStream(accountID=self._account_id, params=params)
+
+        cdef dict res
+        cdef dict best_bid
+        cdef dict best_ask
+        cdef QuoteTick tick
+        while True:
+            try:
+                if symbol not in self._subscribed_quote_ticks:
+                    break
+
+                for res in self._client.request(req):
+                    if res.get("type") != "PRICE":
+                        # Heartbeat
+                        continue
+
+                    best_bid = res.get("bids")[0]
+                    best_ask = res.get("asks")[0]
+
+                    tick = QuoteTick(
+                        symbol,
+                        Price(best_bid["price"]),
+                        Price(best_ask["price"]),
+                        Quantity(best_bid["liquidity"]),
+                        Quantity(best_ask["liquidity"]),
+                        pd.to_datetime(res["time"])
+                    )
+
+                    self._loop.call_soon_threadsafe(self._send_quote_tick, tick)
+
+            except Exception as ex:
+                self._log.error(str(ex))
+                break
 
     def _request_bars(
         self,

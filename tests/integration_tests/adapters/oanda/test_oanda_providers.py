@@ -30,8 +30,8 @@ from nautilus_trader.model.instrument import Instrument
 
 # Requirements:
 #    - An internet connection
-#    - Environment variable OANDA_API_TOKEN with a valid practice account token
-#    - Environment variable OANDA_ACCOUNT_ID with a valid practice account identifier
+#    - Environment variable OANDA_API_TOKEN with a valid practice account api token
+#    - Environment variable OANDA_ACCOUNT_ID with a valid practice `accountID`
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):
