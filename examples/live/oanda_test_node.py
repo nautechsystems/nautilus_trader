@@ -25,13 +25,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
 
-try:
-    import uvloop
-    uvloop.install()
-except ImportError:
-    pass
-
-
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
 config = {
@@ -60,16 +53,16 @@ config = {
     },
 
     "data_clients": {
-        "binance": {
-            "api_key": "BINANCE_API_KEY",        # value is the environment variable name
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
+        "oanda": {
+            "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+            "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
         },
     },
 
     "exec_clients": {
-        "binance": {
-            "api_key": "BINANCE_API_KEY",        # value is the environment variable name
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
+        "oanda": {
+            "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+            "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
         },
     }
 }
@@ -79,11 +72,11 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 strategy = EMACross(
-    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+    symbol=Symbol("AUD/USD", Venue("OANDA")),
+    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema=10,
     slow_ema=20,
-    trade_size=Decimal("0.1"),
+    trade_size=Decimal(10000),
 )
 
 # Instantiate the node passing a list of strategies and configuration

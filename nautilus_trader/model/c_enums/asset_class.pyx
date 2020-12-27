@@ -27,6 +27,8 @@ cdef class AssetClassParser:
             return "COMMODITY"
         elif value == 5:
             return "BOND"
+        elif value == 6:
+            return "INDEX"
         else:
             return "UNDEFINED"
 
@@ -42,6 +44,8 @@ cdef class AssetClassParser:
             return AssetClass.COMMODITY
         elif value == "BOND":
             return AssetClass.BOND
+        elif value == "INDEX":
+            return AssetClass.INDEX
         else:
             return AssetClass.UNDEFINED
 
