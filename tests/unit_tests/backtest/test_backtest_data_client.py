@@ -99,7 +99,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_instrument(USDJPY_SIM.symbol)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_subscribe_quote_ticks(self):
         # Arrange
@@ -109,7 +109,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_quote_ticks(USDJPY_SIM.symbol)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_subscribe_trade_ticks(self):
         # Arrange
@@ -119,7 +119,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_subscribe_bars(self):
         # Arrange
@@ -129,7 +129,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_unsubscribe_instrument(self):
         # Arrange
@@ -139,7 +139,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_instrument(USDJPY_SIM.symbol)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_unsubscribe_quote_ticks(self):
         # Arrange
@@ -149,7 +149,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.symbol)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_unsubscribe_trade_ticks(self):
         # Arrange
@@ -159,7 +159,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_unsubscribe_bars(self):
         # Arrange
@@ -169,7 +169,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_request_instrument(self):
         # Arrange
@@ -179,7 +179,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_instrument(USDJPY_SIM.symbol, uuid4())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_request_instruments(self):
         # Arrange
@@ -189,7 +189,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_instruments(uuid4())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_request_quote_ticks(self):
         # Arrange
@@ -199,7 +199,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_quote_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_request_trade_ticks(self):
         # Arrange
@@ -209,7 +209,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_trade_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
     def test_request_bars(self):
         # Arrange
@@ -219,4 +219,4 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
