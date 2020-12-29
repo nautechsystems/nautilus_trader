@@ -30,6 +30,7 @@ from nautilus_trader.model.instrument import Instrument
 # Requirements:
 #    - An internet connection
 
+
 class BinanceInstrumentProviderTests(unittest.TestCase):
 
     def test_instantiate_with_none_binance_client_raises_value_error(self):

@@ -59,6 +59,7 @@ cdef class BarBuilder:
         self.last_timestamp = None
         self.count = 0
 
+        self._partial_set = False
         self._last_close = None
         self._open = None
         self._high = None
@@ -74,6 +75,40 @@ cdef class BarBuilder:
                 f"{self._low},"
                 f"{self._close},"
                 f"{self.volume})")
+
+    cpdef void set_partial(self, Bar partial_bar) except *:
+        """
+        Set the initial values for a partially completed bar.
+
+        This method can only be called once per instance.
+
+        Parameters
+        ----------
+        partial_bar : Bar
+            The partial bar with values to set.
+
+        """
+        if self._partial_set:
+            return  # Already updated
+
+        self._open = partial_bar.open
+
+        if self._high is None or partial_bar.high > self._high:
+            self._high = partial_bar.high
+
+        if self._low is None or partial_bar.low < self._low:
+            self._low = partial_bar.low
+
+        if self._close is None:
+            self._close = partial_bar.close
+
+        self.volume += partial_bar.volume
+
+        if self.last_timestamp is None:
+            self.last_timestamp = partial_bar.timestamp
+
+        self._partial_set = True
+        self.initialized = True
 
     cpdef void update(self, Price price, Quantity size, datetime timestamp) except *:
         """
@@ -469,13 +504,15 @@ cdef class TimeBarAggregator(BarAggregator):
         self._set_build_timer()
         self.next_close = self._clock.timer(str(self.bar_type)).next_time
 
-    cpdef void stop(self) except *:
-        """
-        Stop the bar aggregator.
-        """
-        self._clock.cancel_timer(str(self.bar_type))
-
     cpdef datetime get_start_time(self):
+        """
+        Return the start time for the aggregators next bar.
+
+        Returns
+        -------
+        datetime
+
+        """
         cdef datetime now = self._clock.utc_now()
         cdef int step = self.bar_type.spec.step
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
@@ -516,6 +553,26 @@ cdef class TimeBarAggregator(BarAggregator):
             # Design time error
             raise ValueError(f"Aggregation not a time, "
                              f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}")
+
+    cpdef void set_partial(self, Bar partial_bar) except *:
+        """
+        Set the initial values for a partially completed bar.
+
+        This method can only be called once per instance.
+
+        Parameters
+        ----------
+        partial_bar : Bar
+            The partial bar with values to set.
+
+        """
+        self._builder.set_partial(partial_bar)
+
+    cpdef void stop(self) except *:
+        """
+        Stop the bar aggregator.
+        """
+        self._clock.cancel_timer(str(self.bar_type))
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation

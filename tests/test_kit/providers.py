@@ -102,8 +102,7 @@ class TestInstrumentProvider:
             margin_maint=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal(),
+            financing={},
             timestamp=UNIX_EPOCH,
         )
 
@@ -136,8 +135,7 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
-            funding_rate_long=Decimal("0"),
-            funding_rate_short=Decimal("0"),
+            financing={},
             timestamp=UNIX_EPOCH,
         )
 
@@ -170,8 +168,7 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.0035"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal("0.003321"),
+            financing={},
             timestamp=UNIX_EPOCH,
         )
 
@@ -204,8 +201,7 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            funding_rate_long=Decimal(),
-            funding_rate_short=Decimal("0.000897"),
+            financing={},
             timestamp=UNIX_EPOCH,
         )
 
@@ -259,11 +255,10 @@ class TestInstrumentProvider:
             min_price=None,
             max_notional=Money(50000000.00, USD),
             min_notional=Money(1000.00, USD),
-            margin_init=Decimal("0.5"),
-            margin_maint=Decimal("0.1"),
+            margin_init=Decimal("0.03"),
+            margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
-            funding_rate_long=Decimal("0.0000"),
-            funding_rate_short=Decimal("0.0000"),
+            financing={},
             timestamp=UNIX_EPOCH,
         )

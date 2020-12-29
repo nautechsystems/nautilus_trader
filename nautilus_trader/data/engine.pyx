@@ -187,6 +187,22 @@ cdef class DataEngine(Component):
         """
         return sorted(list(self._bar_handlers.keys()))
 
+    cpdef bint check_initialized(self) except *:
+        """
+        Check the engine is initialized.
+
+        Returns
+        -------
+        bool
+            True if all data clients initialized, else False.
+
+        """
+        cdef DataClient client
+        for client in self._clients.values():
+            if not client.initialized:
+                return False
+        return True
+
 # --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
@@ -709,7 +725,12 @@ cdef class DataEngine(Component):
         elif response.data_type == TradeTick:
             self._handle_trade_ticks(response.data, response.correlation_id)
         elif response.data_type == Bar:
-            self._handle_bars(response.metadata.get(BAR_TYPE), response.data, response.correlation_id)
+            self._handle_bars(
+                response.metadata.get(BAR_TYPE),
+                response.data,
+                response.metadata.get("Partial"),
+                response.correlation_id,
+            )
         else:
             self._log.error(f"Cannot handle data (data_type {response.data_type} is unrecognized).")
 
@@ -748,13 +769,23 @@ cdef class DataEngine(Component):
 
         callback(ticks)
 
-    cdef inline void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
+    cdef inline void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         self.cache.add_bars(bar_type, bars)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
         if callback is None:
             self._log.error(f"Callback not found for correlation_id {correlation_id}.")
             return
+
+        cdef TimeBarAggregator
+        if partial is not None:
+            # Update partial time bar
+            aggregator = self._bar_aggregators.get(bar_type)
+            if aggregator:
+                self._log.critical(f"Applying partial bar {partial} for {bar_type}.")
+                aggregator.set_partial(partial)
+            else:
+                self._log.error("No aggregator for partial bar update.")
 
         callback(bar_type, bars)
 

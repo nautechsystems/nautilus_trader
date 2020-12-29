@@ -189,7 +189,7 @@ cdef class DataClient:
         self._engine.process(tick)
 
     cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
-        self._engine.process(BarData(bar_type=bar_type, bar=bar))
+        self._engine.process(BarData(bar_type, bar))
 
     cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -230,11 +230,11 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *:
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             venue=self.venue,
             data_type=Bar,
-            metadata={BAR_TYPE: bar_type},
+            metadata={BAR_TYPE: bar_type, "Partial": partial},
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

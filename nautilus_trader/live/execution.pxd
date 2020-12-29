@@ -20,12 +20,12 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
     cdef object _queue
-    cdef object _task_run
+    cdef object _run_queues_task
 
     cdef readonly bint is_running
 
     cpdef object get_event_loop(self)
-    cpdef object get_run_task(self)
+    cpdef object get_run_queues_task(self)
     cpdef int qsize(self) except *
 
 

@@ -25,13 +25,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
 
-try:
-    import uvloop
-    uvloop.install()
-except ImportError:
-    pass
-
-
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
 config = {

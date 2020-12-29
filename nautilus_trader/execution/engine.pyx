@@ -148,6 +148,22 @@ cdef class ExecutionEngine(Component):
         """
         return sorted(list(self._strategies.keys()))
 
+    cpdef bint check_initialized(self) except *:
+        """
+        Check the engine is initialized.
+
+        Returns
+        -------
+        bool
+            True if all execution clients initialized, else False.
+
+        """
+        cdef ExecutionClient client
+        for client in self._clients.values():
+            if not client.initialized:
+                return False
+        return True
+
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client) except *:

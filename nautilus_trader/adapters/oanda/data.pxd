@@ -13,21 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum AssetClass:
-    UNDEFINED = 0,  # Invalid value
-    CRYPTO = 1,
-    FX = 2,
-    EQUITY = 3,
-    COMMODITY = 4,
-    BOND = 5,
-    INDEX = 6
+from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider
+from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class AssetClassParser:
+cdef class OandaDataClient(LiveDataClient):
+    cdef str _api_token
+    cdef str _account_id
+    cdef object _client
+    cdef bint _is_connected
+    cdef set _subscribed_instruments
+    cdef dict _subscribed_quote_ticks
+    cdef OandaInstrumentProvider _instrument_provider
 
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AssetClass from_str(str value)
+    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)
+    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)

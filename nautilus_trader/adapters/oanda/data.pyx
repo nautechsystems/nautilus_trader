@@ -13,38 +13,42 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 import os
+from asyncio import Future
+from asyncio import CancelledError
+from cpython.datetime cimport datetime
 
-import ccxt
+import pandas as pd
+import oandapyV20
+import oandapyV20.endpoints.instruments as instruments_endpoint
+from oandapyV20.endpoints.pricing import PricingStream
 
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
-from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class BinanceDataClient(LiveDataClient):
+cdef class OandaDataClient(LiveDataClient):
     """
-    Provides a data client for the `Binance` exchange.
+    Provides a data client for the `Oanda` brokerage.
     """
 
     def __init__(
@@ -55,7 +59,7 @@ cdef class BinanceDataClient(LiveDataClient):
         Logger logger,
     ):
         """
-        Initialize a new instance of the `BinanceDataClient` class.
+        Initialize a new instance of the `OandaDataClient` class.
 
         Parameters
         ----------
@@ -71,28 +75,25 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(credentials, "credentials")
         super().__init__(
-            Venue("BINANCE"),
+            Venue("OANDA"),
             engine,
             clock,
             logger,
         )
 
-        cdef dict config = {
-            "apiKey": os.getenv(credentials.get("api_key", "")),
-            "secret": os.getenv(credentials.get("api_secret", "")),
-            "timeout": 10000,
-            "enableRateLimit": True,
-        }
+        self._api_token = os.getenv(credentials.get("api_token", ""))
+        self._account_id = os.getenv(credentials.get("account_id", ""))
 
         self._is_connected = False
-        self._config = config
-        self._client = ccxt.binance(config=config)
-        self._instrument_provider = BinanceInstrumentProvider(
+        self._client = oandapyV20.API(access_token=self._api_token)
+        self._instrument_provider = OandaInstrumentProvider(
             client=self._client,
+            account_id=self._account_id,
             load_all=False,
         )
 
         self._subscribed_instruments = set()
+        self._subscribed_quote_ticks = {}  # type: dict[Symbol, Future]
 
         # Schedule subscribed instruments update in one hour
         self._loop.call_later(60 * 60, self._subscribed_instruments_update)
@@ -118,8 +119,6 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
-        # TODO: Connect websocket here
-
         self._is_connected = True
         self._log.info("Connected.")
 
@@ -129,6 +128,9 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Disconnecting...")
 
+        for symbol in self._subscribed_quote_ticks.copy():
+            self.unsubscribe_quote_ticks(symbol)
+
         self._is_connected = False
 
         self._log.info("Disconnected.")
@@ -137,22 +139,21 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Reset the client.
         """
-        self._client = ccxt.binance(config=self._config)
-        self._instrument_provider = BinanceInstrumentProvider(
+        self._client = oandapyV20.API(access_token=self._api_token)
+        self._instrument_provider = OandaInstrumentProvider(
             client=self._client,
+            account_id=self._account_id,
             load_all=False,
         )
 
         self._subscribed_instruments = set()
-
-        # Schedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        self._subscribed_quote_ticks = {}
 
     cpdef void dispose(self) except *:
         """
         Dispose the client.
         """
-        pass  # Nothing to dispose yet
+        pass  # Nothing to dispose
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -182,7 +183,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if symbol not in self._subscribed_quote_ticks:
+            future = self._loop.run_in_executor(None, self._stream_prices, symbol)
+            self._subscribed_quote_ticks[symbol] = future
+
+            self._log.debug(f"Subscribed to quote ticks for {symbol}.")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -196,7 +201,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        self._log.error(f"`subscribe_trade_ticks` was called when not supported by the brokerage.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -210,7 +215,8 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        self._log.error(f"`subscribe_bars` was called when not supported by the brokerage "
+                        f"(use internal aggregation).")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -238,7 +244,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if symbol in self._subscribed_quote_ticks:
+            future = self._subscribed_quote_ticks.pop(symbol)
+            future.cancel()
+
+            self._log.debug(f"Unsubscribed from quote ticks for {symbol}.")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -252,7 +262,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        self._log.error(f"`unsubscribe_trade_ticks` was called when not supported by the brokerage.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -266,7 +276,8 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        self._log.error(f"`unsubscribe_bars` was called when not supported by the brokerage "
+                        f"(use internal aggregation).")
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -331,8 +342,7 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.error("`request_quote_ticks` was called when not supported "
-                        "by the exchange, use trade ticks.")
+        self._log.error(f"`request_quote_ticks` was called when not supported by the brokerage.")
 
     cpdef void request_trade_ticks(
         self,
@@ -364,20 +374,7 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if to_datetime is not None:
-            self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
-                              f"argument of {to_datetime} when not supported by the exchange "
-                              f"(will use `limit` of {limit}).")
-
-        self._loop.run_in_executor(
-            None,
-            self._request_trade_ticks,
-            symbol,
-            from_datetime,
-            to_datetime,
-            limit,
-            correlation_id,
-        )
+        self._log.error(f"`request_trade_ticks` was called when not supported by the brokerage.")
 
     cpdef void request_bars(
         self,
@@ -409,15 +406,15 @@ cdef class BinanceDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if bar_type.spec.price_type != PriceType.LAST:
+        if bar_type.spec.price_type == PriceType.UNDEFINED or bar_type.spec.price_type == PriceType.LAST:
             self._log.error(f"`request_bars` was called with a `price_type` argument "
                             f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
-                            f"when not supported by the exchange (must be LAST).")
+                            f"when not supported by the brokerage (must be BID, ASK or MID).")
             return
 
         if to_datetime is not None:
             self._log.warning(f"`request_bars` was called with a `to_datetime` "
-                              f"argument of `{to_datetime}` when not supported by the exchange "
+                              f"argument of `{to_datetime}` when not supported by the brokerage "
                               f"(will use `limit` of {limit}).")
 
         self._loop.run_in_executor(
@@ -432,24 +429,32 @@ cdef class BinanceDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
-        return TradeTick(
-            symbol=instrument.symbol,
-            price=Price(trade['price'], instrument.price_precision),
-            size=Quantity(trade['amount'], instrument.size_precision),
-            side=OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
-            match_id=TradeMatchId(trade["id"]),
-            timestamp=from_posix_ms(trade["timestamp"]),
+    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
+        return QuoteTick(
+            symbol,
+            Price(values["bids"][0]["price"]),
+            Price(values["asks"][0]["price"]),
+            Quantity(1),
+            Quantity(1),
+            pd.to_datetime(values["time"]),
         )
 
-    cpdef Bar _parse_bar(self, Instrument instrument, list values):
+    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
+        cdef dict prices
+        if price_type == PriceType.BID:
+            prices = values["bid"]
+        elif price_type == PriceType.ASK:
+            prices = values["ask"]
+        else:
+            prices = values["mid"]
+
         return Bar(
-            open_price=Price(values[1], instrument.price_precision),
-            high_price=Price(values[2], instrument.price_precision),
-            low_price=Price(values[3], instrument.price_precision),
-            close_price=Price(values[4], instrument.price_precision),
-            volume=Quantity(values[5], instrument.size_precision),
-            timestamp=from_posix_ms(values[0]),
+            open_price=Price(prices["o"], instrument.price_precision),
+            high_price=Price(prices["h"], instrument.price_precision),
+            low_price=Price(prices["l"], instrument.price_precision),
+            close_price=Price(prices["c"], instrument.price_precision),
+            volume=Quantity(values["volume"], instrument.size_precision),
+            timestamp=pd.to_datetime(values["time"]),
         )
 
     def _request_instrument(self, Symbol symbol, UUID correlation_id):
@@ -481,12 +486,14 @@ cdef class BinanceDataClient(LiveDataClient):
         self._log.info(f"Updated {len(instruments)} instruments.")
         self.initialized = True
 
-    def _send_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id):
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
+    def _send_quote_tick(self, QuoteTick tick):
+        self._handle_quote_tick(tick)
 
-    def _send_bars(self, BarType bar_type, list bars, UUID correlation_id):
-        # TODO: Partial bars
-        self._handle_bars(bar_type, bars, None, correlation_id)
+    def _send_bar(self, BarType bar_type, Bar bar):
+        self._handle_bar(bar_type, bar)
+
+    def _send_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
+        self._handle_bars(bar_type, bars, partial, correlation_id)
 
     def _subscribed_instruments_update(self):
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
@@ -501,45 +508,37 @@ cdef class BinanceDataClient(LiveDataClient):
         # Reschedule subscribed instruments update in one hour
         self._loop.call_later(60 * 60, self._subscribed_instruments_update)
 
-    def _request_trade_ticks(
+    def _stream_prices(
         self,
         Symbol symbol,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        UUID correlation_id,
     ):
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
-        if instrument is None:
-            self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
-            return
+        cdef dict res
+        cdef dict best_bid
+        cdef dict best_ask
+        cdef QuoteTick tick
 
-        cdef list trades
         try:
-            trades = self._client.fetch_trades(
-                symbol=symbol.code,
-                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit,
-            )
+            params = {
+                "instruments": symbol.code.replace('/', '_'),
+                "sessionId": f"{symbol.code}-001",
+            }
+
+            req = PricingStream(accountID=self._account_id, params=params)
+
+            while True:
+                for res in self._client.request(req):
+                    if res["type"] != "PRICE":
+                        # Heartbeat
+                        continue
+
+                    tick = self._parse_quote_tick(symbol, res)
+                    self._loop.call_soon_threadsafe(self._send_quote_tick, tick)
+        except CancelledError:
+            pass
         except Exception as ex:
-            self._log.error(str(ex))
-            return
-
-        if len(trades) == 0:
-            self._log.error("No data returned from fetch_trades.")
-            return
-
-        cdef list ticks = []  # type: list[TradeTick]
-        cdef dict trade       # type: dict[str, object]
-        for trade in trades:
-            ticks.append(self._parse_trade_tick(instrument, trade))
-
-        self._loop.call_soon_threadsafe(
-            self._send_trade_ticks,
-            symbol,
-            ticks,
-            correlation_id,
-        )
+            if str(ex) == "Event loop is closed":
+                return  # Was unsubscribed
+            self._log.exception(ex)
 
     def _request_bars(
         self,
@@ -554,29 +553,108 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
             return
 
-        cdef list data
+        oanda_name = instrument.info["name"]
+
+        if bar_type.spec.price_type == PriceType.BID:
+            pricing = "B"
+        elif bar_type.spec.price_type == PriceType.ASK:
+            pricing = "A"
+        else:
+            pricing = "M"
+
+        cdef str granularity
+
+        if bar_type.spec.aggregation == BarAggregation.SECOND:
+            granularity = 'S'
+        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
+            granularity = 'M'
+        elif bar_type.spec.aggregation == BarAggregation.HOUR:
+            granularity = 'H'
+        elif bar_type.spec.aggregation == BarAggregation.DAY:
+            granularity = 'D'
+        else:
+            self._log.error(f"Requesting bars with BarAggregation."
+                            f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                            f"not currently supported in this version.")
+            return
+
+        granularity += str(bar_type.spec.step)
+        valid_granularities = [
+            "S5",
+            "S10",
+            "S15",
+            "S30",
+            "M1",
+            "M2",
+            "M3",
+            "M4",
+            "M5",
+            "M10",
+            "M15",
+            "M30",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "H6",
+            "H8",
+            "H12",
+            "D1",
+        ]
+
+        if granularity not in valid_granularities:
+            self._log.error(f"Requesting bars with invalid granularity `{granularity}`, "
+                            f"interpolation will be available in a future version, "
+                            f"valid_granularities={valid_granularities}.")
+
+        # Account for partial bar
+        if limit != -1:
+            limit += 1
+
+        cdef dict params = {
+            "dailyAlignment": 0,  # UTC
+            "count": limit,
+            "price": pricing,
+            "granularity": granularity,
+        }
+
+        if from_datetime is not None:
+            params["start"] = format_iso8601(from_datetime)
+
+        if to_datetime is not None:
+            params["end"] = format_iso8601(to_datetime)
+
+        cdef dict res
         try:
-            data = self._client.fetch_ohlcv(
-                symbol=bar_type.symbol.code,
-                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit,
-            )
+            req = instruments_endpoint.InstrumentsCandles(instrument=oanda_name, params=params)
+            res = self._client.request(req)
         except Exception as ex:
             self._log.error(str(ex))
             return
 
+        cdef list data = res.get("candles", [])
         if len(data) == 0:
             self._log.error(f"No data returned for {bar_type}.")
             return
 
+        # Parse all bars except for the last bar
         cdef list bars = []  # type: list[Bar]
-        cdef list values     # type: list[object]
+        cdef dict values     # type: dict[str, object]
         for values in data[:-1]:
-            bars.append(self._parse_bar(instrument, values))
+            if not values["complete"]:
+                continue
+            bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))
+
+        # Set partial bar if last bar not complete
+        cdef dict last_values = data[-1]
+        cdef Bar partial_bar = None
+        if not last_values["complete"]:
+            partial_bar = self._parse_bar(instrument, last_values, bar_type.spec.price_type)
 
         self._loop.call_soon_threadsafe(
             self._send_bars,
             bar_type,
             bars,
+            partial_bar,
             correlation_id,
         )
