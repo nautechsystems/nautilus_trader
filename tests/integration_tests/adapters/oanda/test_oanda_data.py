@@ -61,7 +61,7 @@ class OandaDataClientTests(unittest.TestCase):
         logger = LiveLogger(
             clock=self.clock,
             name=self.trader_id.value,
-            level_console=LogLevel.INFO,
+            level_console=LogLevel.DEBUG,
             level_file=LogLevel.DEBUG,
             level_store=LogLevel.WARNING,
         )
@@ -147,6 +147,9 @@ class OandaDataClientTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
             self.client.subscribe_quote_ticks(AUDUSD)
 
@@ -155,7 +158,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -181,12 +184,28 @@ class OandaDataClientTests(unittest.TestCase):
         self.assertTrue(True)
 
     def test_unsubscribe_quote_ticks(self):
-        # Arrange
-        # Act
-        self.client.unsubscribe_quote_ticks(AUDUSD)
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
 
-        # Assert
-        self.assertTrue(True)
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
+            self.client.subscribe_quote_ticks(AUDUSD)
+
+            # Act
+            await asyncio.sleep(0.1)
+            self.client.unsubscribe_quote_ticks(AUDUSD)
+
+            # Assert
+            self.assertTrue(True)
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queues_task()
+            await asyncio.sleep(0.1)
+
+        self.loop.run_until_complete(run_test())
 
     def test_unsubscribe_bars(self):
         # Arrange
@@ -204,6 +223,9 @@ class OandaDataClientTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
             self.client.request_instrument(AUDUSD, uuid4())
 
@@ -215,7 +237,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -224,9 +246,11 @@ class OandaDataClientTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
             self.client.request_instruments(uuid4())
-
             await asyncio.sleep(2)
 
             # Assert
@@ -235,7 +259,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -246,7 +270,7 @@ class OandaDataClientTests(unittest.TestCase):
             self.data_engine.start()
 
             # Allow data engine to spool up and request instruments
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
             bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
@@ -274,10 +298,11 @@ class OandaDataClientTests(unittest.TestCase):
             # Assert
             self.assertEqual(2, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
+            self.assertEqual(1000, len(handler.get_store()[0][1]))
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
             self.data_engine.dispose()
 
         self.loop.run_until_complete(run_test())

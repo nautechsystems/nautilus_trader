@@ -71,8 +71,24 @@ config = {
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
-strategy = EMACross(
+strategy1 = EMACross(
     symbol=Symbol("AUD/USD", Venue("OANDA")),
+    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+    fast_ema=10,
+    slow_ema=20,
+    trade_size=Decimal(10000),
+)
+
+strategy2 = EMACross(
+    symbol=Symbol("EUR/USD", Venue("OANDA")),
+    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+    fast_ema=10,
+    slow_ema=20,
+    trade_size=Decimal(10000),
+)
+
+strategy3 = EMACross(
+    symbol=Symbol("GBP/USD", Venue("OANDA")),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
     fast_ema=10,
     slow_ema=20,
@@ -81,7 +97,7 @@ strategy = EMACross(
 
 # Instantiate the node passing a list of strategies and configuration
 node = TradingNode(
-    strategies=[strategy],
+    strategies=[strategy1, strategy2, strategy3],
     config=config,
 )
 

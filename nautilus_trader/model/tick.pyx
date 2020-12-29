@@ -163,7 +163,7 @@ cdef class QuoteTick(Tick):
 
         """
         if price_type == PriceType.MID:
-            return Quantity(self.bid_size + self.ask_size)
+            return Quantity((self.bid_size + self.ask_size) / 2, self.bid_size.precision_c())
         elif price_type == PriceType.BID:
             return self.bid_size
         elif price_type == PriceType.ASK:

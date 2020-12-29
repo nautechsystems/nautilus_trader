@@ -211,10 +211,13 @@ class BinanceDataClientTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
             self.client.request_instrument(BTCUSDT, uuid4())
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             # Assert
             # Instruments additionally requested on start
@@ -222,7 +225,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -231,10 +234,13 @@ class BinanceDataClientTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
             self.client.request_instruments(uuid4())
 
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             # Assert
             # Instruments additionally requested on start
@@ -242,7 +248,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -261,7 +267,7 @@ class BinanceDataClientTests(unittest.TestCase):
             self.data_engine.start()
 
             # Allow data engine to spool up and request instruments
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             request = DataRequest(
                 venue=BINANCE,
@@ -288,7 +294,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -299,7 +305,7 @@ class BinanceDataClientTests(unittest.TestCase):
             self.data_engine.start()
 
             # Allow data engine to spool up and request instruments
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
             bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
@@ -331,6 +337,6 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())

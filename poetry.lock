@@ -111,7 +111,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.39.78"
+version = "1.39.80"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -342,7 +342,7 @@ testing = ["packaging", "pep517", "importlib-resources (>=1.3)"]
 
 [[package]]
 name = "importlib-resources"
-version = "4.1.0"
+version = "4.1.1"
 description = "Read resources from Python packages"
 category = "dev"
 optional = false
@@ -1089,8 +1089,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.39.78-py2.py3-none-any.whl", hash = "sha256:40b86a2d1024342121df1dfd7751f41e617e9e6c1840d8b83faf6717c04b9d30"},
-    {file = "ccxt-1.39.78.tar.gz", hash = "sha256:9835607e22b17a75d460c03c0aa140b4bee5eb0edf892d31e1c20181a06ced0d"},
+    {file = "ccxt-1.39.80-py2.py3-none-any.whl", hash = "sha256:7d1302561e8829ba61665c726233ffb93379b1affcbf363785ec83ce16471e04"},
+    {file = "ccxt-1.39.80.tar.gz", hash = "sha256:d9c91c92c247d42b746c9be034cf3d69f54e3c7d8c0b8f598b29d76ff3baf054"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1278,8 +1278,8 @@ importlib-metadata = [
     {file = "importlib_metadata-1.7.0.tar.gz", hash = "sha256:90bb658cdbbf6d1735b6341ce708fc7024a3e14e99ffdc5783edea9f9b077f83"},
 ]
 importlib-resources = [
-    {file = "importlib_resources-4.1.0-py3-none-any.whl", hash = "sha256:1de368454cabd37265215f584eaefa92f7ea5dffd1c22c8de48d565431ecd9f1"},
-    {file = "importlib_resources-4.1.0.tar.gz", hash = "sha256:01fe9f1f2000677b2cdc7838473143341401d010eee276d2fcb64c219f624a25"},
+    {file = "importlib_resources-4.1.1-py3-none-any.whl", hash = "sha256:0a948d0c8c3f9344de62997e3f73444dbba233b1eaf24352933c2d264b9e4182"},
+    {file = "importlib_resources-4.1.1.tar.gz", hash = "sha256:6b45007a479c4ec21165ae3ffbe37faf35404e2041fac6ae1da684f38530ca73"},
 ]
 iniconfig = [
     {file = "iniconfig-1.1.1-py2.py3-none-any.whl", hash = "sha256:011e24c64b7f47f6ebd835bb12a743f2fbe9a26d4cecaa7f53bc4f35ee9da8b3"},

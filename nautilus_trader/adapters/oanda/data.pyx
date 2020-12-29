@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 import os
+from asyncio import Future
+from asyncio import CancelledError
+from cpython.datetime cimport datetime
 
 import pandas as pd
 import oandapyV20
@@ -91,7 +93,7 @@ cdef class OandaDataClient(LiveDataClient):
         )
 
         self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = set()
+        self._subscribed_quote_ticks = {}  # type: dict[Symbol, Future]
 
         # Schedule subscribed instruments update in one hour
         self._loop.call_later(60 * 60, self._subscribed_instruments_update)
@@ -126,6 +128,9 @@ cdef class OandaDataClient(LiveDataClient):
         """
         self._log.info("Disconnecting...")
 
+        for symbol in self._subscribed_quote_ticks.copy():
+            self.unsubscribe_quote_ticks(symbol)
+
         self._is_connected = False
 
         self._log.info("Disconnected.")
@@ -142,14 +147,13 @@ cdef class OandaDataClient(LiveDataClient):
         )
 
         self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = set()
+        self._subscribed_quote_ticks = {}
 
     cpdef void dispose(self) except *:
         """
         Dispose the client.
         """
-        self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = set()
+        pass  # Nothing to dispose
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -179,8 +183,11 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        self._subscribed_quote_ticks.add(symbol)
-        self._loop.run_in_executor(None, self._stream_prices, symbol)
+        if symbol not in self._subscribed_quote_ticks:
+            future = self._loop.run_in_executor(None, self._stream_prices, symbol)
+            self._subscribed_quote_ticks[symbol] = future
+
+            self._log.debug(f"Subscribed to quote ticks for {symbol}.")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -237,7 +244,11 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        self._subscribed_quote_ticks.discard(symbol)
+        if symbol in self._subscribed_quote_ticks:
+            future = self._subscribed_quote_ticks.pop(symbol)
+            future.cancel()
+
+            self._log.debug(f"Unsubscribed from quote ticks for {symbol}.")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -398,12 +409,12 @@ cdef class OandaDataClient(LiveDataClient):
         if bar_type.spec.price_type == PriceType.UNDEFINED or bar_type.spec.price_type == PriceType.LAST:
             self._log.error(f"`request_bars` was called with a `price_type` argument "
                             f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
-                            f"when not supported by the exchange (must be BID, ASK or MID).")
+                            f"when not supported by the brokerage (must be BID, ASK or MID).")
             return
 
         if to_datetime is not None:
             self._log.warning(f"`request_bars` was called with a `to_datetime` "
-                              f"argument of `{to_datetime}` when not supported by the exchange "
+                              f"argument of `{to_datetime}` when not supported by the brokerage "
                               f"(will use `limit` of {limit}).")
 
         self._loop.run_in_executor(
@@ -418,24 +429,32 @@ cdef class OandaDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
+    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
+        return QuoteTick(
+            symbol,
+            Price(values["bids"][0]["price"]),
+            Price(values["asks"][0]["price"]),
+            Quantity(1),
+            Quantity(1),
+            pd.to_datetime(values["time"]),
+        )
+
+    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
         cdef dict prices
         if price_type == PriceType.BID:
-            # prices = values.get("bid")  # TODO: Always mid bars?
-            prices = values.get("mid")
+            prices = values["bid"]
         elif price_type == PriceType.ASK:
-            # prices = values.get("ask")  # TODO: Always mid bars?
-            prices = values.get("mid")
+            prices = values["ask"]
         else:
-            prices = values.get("mid")
+            prices = values["mid"]
 
         return Bar(
-            open_price=Price(prices.get("o"), instrument.price_precision),
-            high_price=Price(prices.get("h"), instrument.price_precision),
-            low_price=Price(prices.get("l"), instrument.price_precision),
-            close_price=Price(prices.get("c"), instrument.price_precision),
-            volume=Quantity(values.get("volume"), instrument.size_precision),
-            timestamp=pd.to_datetime(values.get("time")),
+            open_price=Price(prices["o"], instrument.price_precision),
+            high_price=Price(prices["h"], instrument.price_precision),
+            low_price=Price(prices["l"], instrument.price_precision),
+            close_price=Price(prices["c"], instrument.price_precision),
+            volume=Quantity(values["volume"], instrument.size_precision),
+            timestamp=pd.to_datetime(values["time"]),
         )
 
     def _request_instrument(self, Symbol symbol, UUID correlation_id):
@@ -473,8 +492,8 @@ cdef class OandaDataClient(LiveDataClient):
     def _send_bar(self, BarType bar_type, Bar bar):
         self._handle_bar(bar_type, bar)
 
-    def _send_bars(self, BarType bar_type, list bars, UUID correlation_id):
-        self._handle_bars(bar_type, bars, correlation_id)
+    def _send_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
+        self._handle_bars(bar_type, bars, partial, correlation_id)
 
     def _subscribed_instruments_update(self):
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
@@ -493,43 +512,33 @@ cdef class OandaDataClient(LiveDataClient):
         self,
         Symbol symbol,
     ):
-        params = {
-            "instruments": symbol.code.replace('/', '_')
-        }
-
-        req = PricingStream(accountID=self._account_id, params=params)
-
         cdef dict res
         cdef dict best_bid
         cdef dict best_ask
         cdef QuoteTick tick
-        while True:
-            try:
-                if symbol not in self._subscribed_quote_ticks:
-                    break
 
+        try:
+            params = {
+                "instruments": symbol.code.replace('/', '_'),
+                "sessionId": f"{symbol.code}-001",
+            }
+
+            req = PricingStream(accountID=self._account_id, params=params)
+
+            while True:
                 for res in self._client.request(req):
-                    if res.get("type") != "PRICE":
+                    if res["type"] != "PRICE":
                         # Heartbeat
                         continue
 
-                    best_bid = res.get("bids")[0]
-                    best_ask = res.get("asks")[0]
-
-                    tick = QuoteTick(
-                        symbol,
-                        Price(best_bid["price"]),
-                        Price(best_ask["price"]),
-                        Quantity(best_bid["liquidity"]),
-                        Quantity(best_ask["liquidity"]),
-                        pd.to_datetime(res["time"])
-                    )
-
+                    tick = self._parse_quote_tick(symbol, res)
                     self._loop.call_soon_threadsafe(self._send_quote_tick, tick)
-
-            except Exception as ex:
-                self._log.error(str(ex))
-                break
+        except CancelledError:
+            pass
+        except Exception as ex:
+            if str(ex) == "Event loop is closed":
+                return  # Was unsubscribed
+            self._log.exception(ex)
 
     def _request_bars(
         self,
@@ -546,10 +555,12 @@ cdef class OandaDataClient(LiveDataClient):
 
         oanda_name = instrument.info["name"]
 
-        if bar_type.spec.price_type == PriceType.BID or bar_type.spec.price_type == PriceType.ASK:
-            candle_format = "bidask"
+        if bar_type.spec.price_type == PriceType.BID:
+            pricing = "B"
+        elif bar_type.spec.price_type == PriceType.ASK:
+            pricing = "A"
         else:
-            candle_format = "midpoint"
+            pricing = "M"
 
         cdef str granularity
 
@@ -562,9 +573,10 @@ cdef class OandaDataClient(LiveDataClient):
         elif bar_type.spec.aggregation == BarAggregation.DAY:
             granularity = 'D'
         else:
-            self._log.error(f"Requesting bars with aggregation "
+            self._log.error(f"Requesting bars with BarAggregation."
                             f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
                             f"not currently supported in this version.")
+            return
 
         granularity += str(bar_type.spec.step)
         valid_granularities = [
@@ -595,11 +607,15 @@ cdef class OandaDataClient(LiveDataClient):
                             f"interpolation will be available in a future version, "
                             f"valid_granularities={valid_granularities}.")
 
+        # Account for partial bar
+        if limit != -1:
+            limit += 1
+
         cdef dict params = {
-            "dailyAlignment": 0,
+            "dailyAlignment": 0,  # UTC
             "count": limit,
-            "candleFormat": candle_format,
-            "granularity": granularity,  # TODO: Implement
+            "price": pricing,
+            "granularity": granularity,
         }
 
         if from_datetime is not None:
@@ -621,16 +637,24 @@ cdef class OandaDataClient(LiveDataClient):
             self._log.error(f"No data returned for {bar_type}.")
             return
 
+        # Parse all bars except for the last bar
         cdef list bars = []  # type: list[Bar]
         cdef dict values     # type: dict[str, object]
-        for values in data:
+        for values in data[:-1]:
             if not values["complete"]:
                 continue
             bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))
+
+        # Set partial bar if last bar not complete
+        cdef dict last_values = data[-1]
+        cdef Bar partial_bar = None
+        if not last_values["complete"]:
+            partial_bar = self._parse_bar(instrument, last_values, bar_type.spec.price_type)
 
         self._loop.call_soon_threadsafe(
             self._send_bars,
             bar_type,
             bars,
+            partial_bar,
             correlation_id,
         )

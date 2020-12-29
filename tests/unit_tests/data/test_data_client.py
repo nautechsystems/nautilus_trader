@@ -263,7 +263,12 @@ class DataClientTests(unittest.TestCase):
     def test_handle_bars_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_bars(TestStubs.bartype_gbpusd_1sec_mid(), [], self.uuid_factory.generate())
+        self.client._handle_bars(
+            TestStubs.bartype_gbpusd_1sec_mid(),
+            [],
+            None,
+            self.uuid_factory.generate(),
+        )
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
