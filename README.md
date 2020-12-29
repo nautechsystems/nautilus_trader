@@ -111,6 +111,11 @@ Please make all pull requests to the `develop` branch.
 
 Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
 
+## License
+
+`NautilusTrader` is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
+Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through CLAassistant.
+
 ---
 
 Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
