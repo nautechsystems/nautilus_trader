@@ -485,7 +485,8 @@ cdef class BinanceDataClient(LiveDataClient):
         self._handle_trade_ticks(symbol, ticks, correlation_id)
 
     def _send_bars(self, BarType bar_type, list bars, UUID correlation_id):
-        self._handle_bars(bar_type, bars, correlation_id)
+        # TODO: Partial bars
+        self._handle_bars(bar_type, bars, None, correlation_id)
 
     def _subscribed_instruments_update(self):
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)

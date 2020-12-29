@@ -17,7 +17,9 @@ from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class OandaDataClient(LiveDataClient):
@@ -26,8 +28,8 @@ cdef class OandaDataClient(LiveDataClient):
     cdef object _client
     cdef bint _is_connected
     cdef set _subscribed_instruments
-    cdef set _subscribed_quote_ticks
+    cdef dict _subscribed_quote_ticks
     cdef OandaInstrumentProvider _instrument_provider
 
-    # cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
-    cpdef Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)
+    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)
+    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)

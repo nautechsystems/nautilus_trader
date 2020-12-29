@@ -56,6 +56,8 @@ cdef class ExecutionEngine(Component):
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
+    cpdef bint check_initialized(self) except *
+
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client) except *

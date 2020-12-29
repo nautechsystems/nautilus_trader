@@ -293,9 +293,9 @@ class TradingNode:
         self._data_engine.start()
         self._exec_engine.start()
 
-        # Allow engines time to spool up
-        # TODO: Temporary hard-coded delay
-        await asyncio.sleep(2)
+        # Wait for engines to initialize (will hang if never initialized)
+        await self._loop.run_in_executor(None, self._wait_for_engines)
+
         self.trader.start()
 
         if self._loop.is_running():
@@ -305,9 +305,20 @@ class TradingNode:
 
         # Continue to run while engines are running
         await asyncio.gather(
-            self._data_engine.get_run_task(),
-            self._exec_engine.get_run_task(),
+            self._data_engine.get_run_queues_task(),
+            self._exec_engine.get_run_queues_task(),
         )
+
+    def _wait_for_engines(self):
+        self._log.info("Waiting for engines to initialize...")
+
+        while True:
+            if not self._data_engine.check_initialized():
+                continue
+            if not self._exec_engine.check_initialized():
+                continue
+            # Engines initialized
+            break
 
     async def _stop(self):
         self._log.info("state=STOPPING...")

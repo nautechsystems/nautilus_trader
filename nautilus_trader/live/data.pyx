@@ -74,72 +74,6 @@ cdef class LiveDataEngine(DataEngine):
         self._message_queue = asyncio.Queue()
         self.is_running = False
 
-    cpdef void _on_start(self) except *:
-        if not self._loop.is_running():
-            self._log.warning("Started when loop is not running.")
-
-        self.is_running = True
-
-        # Run queues
-        self._task_run = asyncio.gather(
-            self._loop.create_task(self._run_data_queue()),
-            self._loop.create_task(self._run_message_queue()),
-        )
-
-        self._loop.call_later(2, self._check_initialized)
-
-        self._log.debug(f"Scheduled {self._task_run}")
-
-    def _check_initialized(self):
-        for client in self._clients.values():
-            if not client.initialized:
-                self._log.error(f"{type(client).__name__} not initialized after timeout.")
-
-    cpdef void _on_stop(self) except *:
-        self.is_running = False
-        self._data_queue.put_nowait(None)     # Sentinel message pattern
-        self._message_queue.put_nowait(None)  # Sentinel message pattern
-        self._log.debug(f"Sentinel message placed on data queue.")
-        self._log.debug(f"Sentinel message placed on message queue.")
-
-    async def _run_data_queue(self):
-        self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
-        try:
-            while self.is_running:
-                data = await self._data_queue.get()
-                if data is None:  # Sentinel message
-                    continue      # Returns to the top to check `self.is_running`
-                self._handle_data(data)
-        except CancelledError:
-            if self.data_qsize() > 0:
-                self._log.warning(f"Running cancelled "
-                                  f"with {self.data_qsize()} data item(s) on queue.")
-            else:
-                self._log.debug(f"Data queue processing stopped (qsize={self.data_qsize()}).")
-
-    async def _run_message_queue(self):
-        self._log.debug(f"Message queue processing starting (qsize={self.message_qsize()})...")
-        cdef Message message
-        try:
-            while self.is_running:
-                message = await self._message_queue.get()
-                if message is None:  # Sentinel message
-                    continue         # Returns to the top to check `self.is_running`
-                if message.type == MessageType.COMMAND:
-                    self._execute_command(message)
-                elif message.type == MessageType.REQUEST:
-                    self._handle_request(message)
-                elif message.type == MessageType.RESPONSE:
-                    self._handle_response(message)
-                else:
-                    self._log.error(f"Cannot handle unrecognized message {message}.")
-        except CancelledError:
-            if self.message_qsize() > 0:
-                self._log.warning(f"Running cancelled "
-                                  f"with {self.message_qsize()} message(s) on queue.")
-            else:
-                self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
-
     cpdef object get_event_loop(self):
         """
         Return the internal event loop for the engine.
@@ -151,16 +85,16 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._loop
 
-    cpdef object get_run_task(self):
+    cpdef object get_run_queues_task(self):
         """
-        Return the internal run task for the engine.
+        Return the internal run queues task for the engine.
 
         Returns
         -------
         asyncio.Task
 
         """
-        return self._task_run
+        return self._run_queues_task
 
     cpdef int data_qsize(self) except *:
         """
@@ -243,6 +177,66 @@ cdef class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
+
+    cpdef void _on_start(self) except *:
+        if not self._loop.is_running():
+            self._log.warning("Started when loop is not running.")
+
+        # Ensure this is set True so that below queues continue to process
+        self.is_running = True
+
+        # Run queues
+        self._run_queues_task = asyncio.gather(
+            self._loop.create_task(self._run_data_queue()),
+            self._loop.create_task(self._run_message_queue()),
+        )
+
+        self._log.debug(f"Scheduled {self._run_queues_task}")
+
+    cpdef void _on_stop(self) except *:
+        self.is_running = False
+        self._data_queue.put_nowait(None)     # Sentinel message pattern
+        self._message_queue.put_nowait(None)  # Sentinel message pattern
+        self._log.debug(f"Sentinel message placed on data queue.")
+        self._log.debug(f"Sentinel message placed on message queue.")
+
+    async def _run_data_queue(self):
+        self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
+        try:
+            while self.is_running:
+                data = await self._data_queue.get()
+                if data is None:  # Sentinel message
+                    continue      # Returns to the top to check `self.is_running`
+                self._handle_data(data)
+        except CancelledError:
+            if self.data_qsize() > 0:
+                self._log.warning(f"Running cancelled "
+                                  f"with {self.data_qsize()} data item(s) on queue.")
+            else:
+                self._log.debug(f"Data queue processing stopped (qsize={self.data_qsize()}).")
+
+    async def _run_message_queue(self):
+        self._log.debug(f"Message queue processing starting (qsize={self.message_qsize()})...")
+        cdef Message message
+        try:
+            while self.is_running:
+                message = await self._message_queue.get()
+                if message is None:  # Sentinel message
+                    continue         # Returns to the top to check `self.is_running`
+                if message.type == MessageType.COMMAND:
+                    self._execute_command(message)
+                elif message.type == MessageType.REQUEST:
+                    self._handle_request(message)
+                elif message.type == MessageType.RESPONSE:
+                    self._handle_response(message)
+                else:
+                    self._log.error(f"Cannot handle unrecognized message {message}.")
+        except CancelledError:
+            if self.message_qsize() > 0:
+                self._log.warning(f"Running cancelled "
+                                  f"with {self.message_qsize()} message(s) on queue.")
+            else:
+                self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
 
 
 cdef class LiveDataClient(DataClient):
