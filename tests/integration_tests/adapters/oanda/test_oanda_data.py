@@ -16,13 +16,15 @@
 import asyncio
 import unittest
 
-from nautilus_trader.adapters.binance.data import BinanceDataClient
+from nautilus_trader.adapters.oanda.data import OandaDataClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.messages import DataRequest
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
@@ -31,15 +33,19 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.mocks import ObjectStorer
 
 
-BTCUSDT = Symbol("BTC/USDT", Venue("BINANCE"))
+OANDA = Venue("OANDA")
+AUDUSD = Symbol("AUD/USD", OANDA)
 
 # Requirements:
 #    - An internet connection
+#    - Environment variable OANDA_API_TOKEN with a valid practice account api token
+#    - Environment variable OANDA_ACCOUNT_ID with a valid practice `accountID`
 
 
-class BinanceDataClientTests(unittest.TestCase):
+class OandaDataClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -55,7 +61,7 @@ class BinanceDataClientTests(unittest.TestCase):
         logger = LiveLogger(
             clock=self.clock,
             name=self.trader_id.value,
-            level_console=LogLevel.INFO,
+            level_console=LogLevel.DEBUG,
             level_file=LogLevel.DEBUG,
             level_store=LogLevel.WARNING,
         )
@@ -74,15 +80,21 @@ class BinanceDataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.client = BinanceDataClient(
-            credentials={},
+        credentials = {
+            "api_token": "OANDA_API_TOKEN",
+            "account_id": "OANDA_ACCOUNT_ID",
+        }
+
+        self.client = OandaDataClient(
+            credentials=credentials,
             engine=self.data_engine,
             clock=self.clock,
             logger=logger,
         )
 
+        self.data_engine.register_client(self.client)
+
     def tearDown(self):
-        self.data_engine.dispose()
         self.loop.stop()
         self.loop.close()
 
@@ -125,97 +137,107 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.connect()
 
         # Act
-        self.client.subscribe_instrument(BTCUSDT)
+        self.client.subscribe_instrument(AUDUSD)
 
         # Assert
-        self.assertTrue(True)  # Add with further functionality
+        self.assertTrue(True)
 
-    # def test_subscribe_quote_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.subscribe_quote_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.subscribe_quote_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_subscribe_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_subscribe_bars(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-    #     self.client.connect()
-    #     self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
+    def test_subscribe_quote_ticks(self):
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
+
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
+            # Act
+            self.client.subscribe_quote_ticks(AUDUSD)
+
+            # Assert
+            self.assertTrue(True)
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queues_task()
+
+        self.loop.run_until_complete(run_test())
+
+    def test_subscribe_bars(self):
+        # Arrange
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
+
+        # Act
+        self.client.subscribe_bars(bar_type)
+
+        # Assert
+        self.assertTrue(True)
 
     def test_unsubscribe_instrument(self):
         # Arrange
         self.client.connect()
 
         # Act
-        self.client.unsubscribe_instrument(BTCUSDT)
+        self.client.unsubscribe_instrument(AUDUSD)
 
         # Assert
         self.assertTrue(True)
 
-    # def test_unsubscribe_quote_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.unsubscribe_quote_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.unsubscribe_quote_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_unsubscribe_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-    #
-    # def test_unsubscribe_bars(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
-    #     self.client.connect()
-    #     self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
+    def test_unsubscribe_quote_ticks(self):
+        async def run_test():
+            # Arrange
+            self.data_engine.start()
+
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
+            self.client.subscribe_quote_ticks(AUDUSD)
+
+            # Act
+            await asyncio.sleep(0.1)
+            self.client.unsubscribe_quote_ticks(AUDUSD)
+
+            # Assert
+            self.assertTrue(True)
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queues_task()
+            await asyncio.sleep(0.1)
+
+        self.loop.run_until_complete(run_test())
+
+    def test_unsubscribe_bars(self):
+        # Arrange
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
+
+        # Act
+        self.client.unsubscribe_bars(bar_type)
+
+        # Assert
+        self.assertTrue(True)
 
     def test_request_instrument(self):
         async def run_test():
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
-            self.client.request_instrument(BTCUSDT, uuid4())
+            self.client.request_instrument(AUDUSD, uuid4())
 
             await asyncio.sleep(2)
 
             # Assert
-            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
+            # Instruments additionally requested on start
+            self.assertEqual(2, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -224,75 +246,63 @@ class BinanceDataClientTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
+
             # Act
             self.client.request_instruments(uuid4())
-
             await asyncio.sleep(2)
 
             # Assert
-            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
+            # Instruments additionally requested on start
+            self.assertEqual(2, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
-
-        self.loop.run_until_complete(run_test())
-
-    # def test_request_quote_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.request_quote_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
-    #     self.client.connect()
-    #     self.client.request_quote_ticks(USDJPY_SIM.symbol, None, None, 0, uuid4())
-    #
-    #     # Assert
-    #     self.assertTrue(True)  # Add with further functionality
-
-    def test_request_trade_ticks(self):
-        async def run_test():
-            # Arrange
-            self.data_engine.start()
-
-            self.client.request_instruments(uuid4())
-
-            await asyncio.sleep(2)
-
-            # Act
-            self.client.request_trade_ticks(BTCUSDT, None, None, 0, uuid4())
-
-            await asyncio.sleep(1)
-
-            # Assert
-            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
 
         self.loop.run_until_complete(run_test())
 
     def test_request_bars(self):
         async def run_test():
             # Arrange
+            handler = ObjectStorer()
             self.data_engine.start()
 
-            self.client.request_instruments(uuid4())
+            # Allow data engine to spool up and request instruments
+            await asyncio.sleep(3)
 
-            await asyncio.sleep(2)
+            bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+            bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
 
-            bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-            bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
+            request = DataRequest(
+                venue=OANDA,
+                data_type=Bar,
+                metadata={
+                    "BarType": bar_type,
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 1000,
+                },
+                callback=handler.store_2,
+                request_id=self.uuid_factory.generate(),
+                request_timestamp=self.clock.utc_now(),
+            )
 
             # Act
-            self.client.request_bars(bar_type, None, None, 0, uuid4())
+            self.data_engine.send(request)
 
-            await asyncio.sleep(1)
+            # Allow time for request to be sent, processed and response returned
+            await asyncio.sleep(2)
 
             # Assert
-            self.assertEqual(1, self.data_engine.response_count)  # Add with further functionality
+            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, handler.count)
+            self.assertEqual(1000, len(handler.get_store()[0][1]))
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_task()
+            await self.data_engine.get_run_queues_task()
+            self.data_engine.dispose()
 
         self.loop.run_until_complete(run_test())

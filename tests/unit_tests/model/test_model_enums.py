@@ -52,6 +52,7 @@ class AssetClassTests(unittest.TestCase):
         [AssetClass.EQUITY, "EQUITY"],
         [AssetClass.COMMODITY, "COMMODITY"],
         [AssetClass.BOND, "BOND"],
+        [AssetClass.INDEX, "INDEX"],
     ])
     def test_asset_class_to_str(self, enum, expected):
         # Arrange
@@ -69,6 +70,7 @@ class AssetClassTests(unittest.TestCase):
         ["EQUITY", AssetClass.EQUITY],
         ["COMMODITY", AssetClass.COMMODITY],
         ["BOND", AssetClass.BOND],
+        ["INDEX", AssetClass.INDEX],
     ])
     def test_asset_class_from_str(self, string, expected):
         # Arrange

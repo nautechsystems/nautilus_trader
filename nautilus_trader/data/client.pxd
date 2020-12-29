@@ -98,4 +98,4 @@ cdef class DataClient:
     cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
     cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
     cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
-    cpdef void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *

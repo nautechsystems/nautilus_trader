@@ -161,7 +161,7 @@ class QuoteTickTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(Quantity(800000), result1)
-        self.assertEqual(Quantity(1300000), result2)
+        self.assertEqual(Quantity(650000), result2)  # Average size
         self.assertEqual(Quantity(500000), result3)
 
     def test_from_serializable_given_malformed_string_raises_value_error(self):

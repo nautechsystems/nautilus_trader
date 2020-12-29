@@ -16,7 +16,6 @@
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 import asyncio
-import threading
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.messages cimport DataRequest
@@ -75,26 +74,124 @@ cdef class LiveDataEngine(DataEngine):
         self._message_queue = asyncio.Queue()
         self.is_running = False
 
+    cpdef object get_event_loop(self):
+        """
+        Return the internal event loop for the engine.
+
+        Returns
+        -------
+        asyncio.AbstractEventLoop
+
+        """
+        return self._loop
+
+    cpdef object get_run_queues_task(self):
+        """
+        Return the internal run queues task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._run_queues_task
+
+    cpdef int data_qsize(self) except *:
+        """
+        Return the number of objects buffered on the internal data queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._data_queue.qsize()
+
+    cpdef int message_qsize(self) except *:
+        """
+        Return the number of objects buffered on the internal message queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._message_queue.qsize()
+
+    cpdef void execute(self, VenueCommand command) except *:
+        """
+        Execute the given command.
+
+        Parameters
+        ----------
+        command : VenueCommand
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, command)
+
+    cpdef void process(self, data) except *:
+        """
+        Process the given data.
+
+        Parameters
+        ----------
+        data : object
+            The data to process.
+
+        """
+        Condition.not_none(data, "data")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
+
+    cpdef void send(self, DataRequest request) except *:
+        """
+        Handle the given request.
+
+        Parameters
+        ----------
+        request : DataRequest
+            The request to handle.
+
+        """
+        Condition.not_none(request, "request")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, request)
+
+    cpdef void receive(self, DataResponse response) except *:
+        """
+        Handle the given response.
+
+        Parameters
+        ----------
+        response : DataResponse
+            The response to handle.
+
+        """
+        Condition.not_none(response, "response")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
+
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
+        # Ensure this is set True so that below queues continue to process
         self.is_running = True
 
         # Run queues
-        self._task_run = asyncio.gather(
+        self._run_queues_task = asyncio.gather(
             self._loop.create_task(self._run_data_queue()),
             self._loop.create_task(self._run_message_queue()),
         )
 
-        self._loop.call_later(2, self._check_initialized)
-
-        self._log.debug(f"Scheduled {self._task_run}")
-
-    def _check_initialized(self):
-        for client in self._clients.values():
-            if not client.initialized:
-                self._log.error(f"{type(client).__name__} not initialized after timeout.")
+        self._log.debug(f"Scheduled {self._run_queues_task}")
 
     cpdef void _on_stop(self) except *:
         self.is_running = False
@@ -141,110 +238,6 @@ cdef class LiveDataEngine(DataEngine):
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
 
-    cpdef object get_event_loop(self):
-        """
-        Return the internal event loop for the engine.
-
-        Returns
-        -------
-        asyncio.AbstractEventLoop
-
-        """
-        return self._loop
-
-    cpdef object get_run_task(self):
-        """
-        Return the internal run task for the engine.
-
-        Returns
-        -------
-        asyncio.Task
-
-        """
-        return self._task_run
-
-    cpdef int data_qsize(self) except *:
-        """
-        Return the number of objects buffered on the internal data queue.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._data_queue.qsize()
-
-    cpdef int message_qsize(self) except *:
-        """
-        Return the number of objects buffered on the internal message queue.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._message_queue.qsize()
-
-    cpdef void execute(self, VenueCommand command) except *:
-        """
-        Execute the given command.
-
-        Parameters
-        ----------
-        command : VenueCommand
-            The command to execute.
-
-        """
-        Condition.not_none(command, "command")
-        # Do not allow None through as its a sentinel value which stops the queue
-
-        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, command)
-
-    cpdef void process(self, data) except *:
-        """
-        Process the given data.
-
-        Parameters
-        ----------
-        data : object
-            The data to process.
-
-        """
-        Condition.not_none(data, "data")
-        # Do not allow None through as its a sentinel value which stops the queue
-
-        self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
-
-    cpdef void send(self, DataRequest request) except *:
-        """
-        Handle the given request.
-
-        Parameters
-        ----------
-        request : DataRequest
-            The request to handle.
-
-        """
-        Condition.not_none(request, "request")
-        # Do not allow None through as its a sentinel value which stops the queue
-
-        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, request)
-
-    cpdef void receive(self, DataResponse response) except *:
-        """
-        Handle the given response.
-
-        Parameters
-        ----------
-        response : DataResponse
-            The response to handle.
-
-        """
-        Condition.not_none(response, "response")
-        # Do not allow None through as its a sentinel value which stops the queue
-
-        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
-
 
 cdef class LiveDataClient(DataClient):
     """
@@ -282,4 +275,4 @@ cdef class LiveDataClient(DataClient):
             logger,
         )
 
-        self._loop = engine.get_event_loop()
+        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

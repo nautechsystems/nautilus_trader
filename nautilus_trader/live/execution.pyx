@@ -16,7 +16,6 @@
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 import asyncio
-import threading
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -80,21 +79,79 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = asyncio.Queue()
         self.is_running = True
 
+    cpdef object get_event_loop(self):
+        """
+        Return the internal event loop for the engine.
+
+        Returns
+        -------
+        AbstractEventLoop
+
+        """
+        return self._loop
+
+    cpdef object get_run_queues_task(self):
+        """
+        Return the internal run queues task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._run_queues_task
+
+    cpdef int qsize(self) except *:
+        """
+        Return the number of messages buffered on the internal queue.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._queue.qsize()
+
+    cpdef void execute(self, VenueCommand command) except *:
+        """
+        Execute the given command.
+
+        Parameters
+        ----------
+        command : VenueCommand
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        self._loop.call_soon_threadsafe(self._queue.put_nowait, command)
+
+    cpdef void process(self, Event event) except *:
+        """
+        Process the given event.
+
+        Parameters
+        ----------
+        event : Event
+            The event to process.
+
+        """
+        Condition.not_none(event, "event")
+        # Do not allow None through (None is a sentinel value which stops the queue)
+
+        self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
+
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
+        # Ensure this is set True so that below queues continue to process
         self.is_running = True
 
-        self._task_run = self._loop.create_task(self._run())
-        self._loop.call_later(2, self._check_initialized)
+        self._run_queues_task = self._loop.create_task(self._run())
 
-        self._log.debug(f"Scheduled {self._task_run}")
-
-    def _check_initialized(self):
-        for client in self._clients.values():
-            if not client.initialized:
-                self._log.error(f"{type(client).__name__} not initialized after timeout.")
+        self._log.debug(f"Scheduled {self._run_queues_task}")
 
     cpdef void _on_stop(self) except *:
         self.is_running = False
@@ -121,69 +178,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
-
-    cpdef object get_event_loop(self):
-        """
-        Return the internal event loop for the engine.
-
-        Returns
-        -------
-        AbstractEventLoop
-
-        """
-        return self._loop
-
-    cpdef object get_run_task(self):
-        """
-        Return the internal run task for the engine.
-
-        Returns
-        -------
-        asyncio.Task
-
-        """
-        return self._task_run
-
-    cpdef int qsize(self) except *:
-        """
-        Return the number of messages buffered on the internal queue.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._queue.qsize()
-
-    cpdef void execute(self, VenueCommand command) except *:
-        """
-        Execute the given command.
-
-        Parameters
-        ----------
-        command : VenueCommand
-            The command to execute.
-
-        """
-        Condition.not_none(command, "command")
-        # Do not allow None through as its a sentinel value which stops the queue
-
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, command)
-
-    cpdef void process(self, Event event) except *:
-        """
-        Process the given event.
-
-        Parameters
-        ----------
-        event : Event
-            The event to process.
-
-        """
-        Condition.not_none(event, "event")
-        # Do not allow None through as its a sentinel value which stops the queue
-
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -226,4 +220,4 @@ cdef class LiveExecutionClient(ExecutionClient):
             logger,
         )
 
-        self._loop = engine.get_event_loop()
+        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

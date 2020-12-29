@@ -56,8 +56,7 @@ cdef class Instrument:
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        funding_rate_long not None: Decimal,
-        funding_rate_short not None: Decimal,
+        financing not None,
         datetime timestamp not None,
         dict info=None,
     ):
@@ -112,10 +111,8 @@ cdef class Instrument:
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        funding_rate_long : Decimal
-            The funding rate for long positions.
-        funding_rate_short : Decimal
-            The funding rate for short positions.
+        financing : dict[str, object]
+            The financing information for the instrument.
         timestamp : datetime
             The timestamp the instrument was created/updated at.
         info : dict[str, object], optional
@@ -182,8 +179,6 @@ cdef class Instrument:
         Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
-        Condition.type(funding_rate_long, Decimal, "funding_rate_long")
-        Condition.type(funding_rate_short, Decimal, "funding_rate_short")
         if info is None:
             info = {}
 
@@ -195,7 +190,7 @@ cdef class Instrument:
         # Currently not handling quanto settlement
         self.settlement_currency = quote_currency if not is_inverse else base_currency
         self.is_inverse = is_inverse
-        self.is_quanto = settlement_currency not in (base_currency, quote_currency)
+        self.is_quanto = self._is_quanto(base_currency, quote_currency, settlement_currency)
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.tick_size = tick_size
@@ -212,10 +207,20 @@ cdef class Instrument:
         self.margin_maint = margin_maint
         self.maker_fee = maker_fee
         self.taker_fee = taker_fee
-        self.funding_rate_long = funding_rate_long
-        self.funding_rate_short = funding_rate_short
+        self.financing = financing
         self.timestamp = timestamp
         self.info = info
+
+    cdef bint _is_quanto(
+        self,
+        Currency base_currency,
+        Currency quote_currency,
+        Currency settlement_currency,
+    ) except *:
+        if base_currency is None:
+            return False
+
+        return settlement_currency != base_currency and settlement_currency != quote_currency
 
     def __eq__(self, Instrument other) -> bool:
         return self.symbol.value == other.symbol.value

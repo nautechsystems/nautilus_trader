@@ -41,6 +41,7 @@ cdef class BarBuilder:
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
+    cdef bint _partial_set
     cdef Price _last_close
     cdef Price _open
     cdef Price _high
@@ -48,6 +49,7 @@ cdef class BarBuilder:
     cdef Price _close
     cdef object volume
 
+    cpdef void set_partial(self, Bar partial_bar) except *
     cpdef void update(self, Price price, Quantity size, datetime timestamp) except *
     cpdef void reset(self) except *
     cpdef Bar build(self, datetime close_time=*)
@@ -92,6 +94,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly datetime next_close
     """The aggregators next closing time.\n\n:returns: `datetime`"""
 
+    cpdef void set_partial(self, Bar partial_bar) except *
     cpdef datetime get_start_time(self)
     cpdef void stop(self) except *
     cdef timedelta _get_interval(self)

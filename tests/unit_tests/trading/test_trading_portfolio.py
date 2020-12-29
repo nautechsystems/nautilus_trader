@@ -722,7 +722,7 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertEqual({USD: Money("4216.32", USD)}, self.portfolio.market_values(SIM))
         self.assertEqual({USD: Money("10816.00", USD)}, self.portfolio.unrealized_pnls(SIM))
-        self.assertEqual({USD: Money('425.85', USD)}, self.portfolio.maint_margins(SIM))
+        self.assertEqual({USD: Money("130.71", USD)}, self.portfolio.maint_margins(SIM))
         self.assertEqual(Money("1610.02", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
         self.assertEqual(Money("2606.30", USD), self.portfolio.market_value(GBPUSD_SIM.symbol))
         self.assertEqual(Money("-19499.00", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
@@ -802,7 +802,7 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertEqual({USD: Money("805.01", USD)}, self.portfolio.market_values(SIM))
         self.assertEqual({USD: Money("-9749.50", USD)}, self.portfolio.unrealized_pnls(SIM))
-        self.assertEqual({USD: Money("81.31", USD)}, self.portfolio.maint_margins(SIM))
+        self.assertEqual({USD: Money("24.96", USD)}, self.portfolio.maint_margins(SIM))
         self.assertEqual(Money("805.01", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
         self.assertEqual(Money("-9749.50", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
         self.assertEqual(Decimal(50000), self.portfolio.net_position(AUDUSD_SIM.symbol))
@@ -988,7 +988,7 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertEqual({USD: Money("-38998.00", USD)}, self.portfolio.unrealized_pnls(SIM))
         self.assertEqual({USD: Money("3220.04", USD)}, self.portfolio.market_values(SIM))
-        self.assertEqual({USD: Money("325.22", USD)}, self.portfolio.maint_margins(SIM))
+        self.assertEqual({USD: Money("99.82", USD)}, self.portfolio.maint_margins(SIM))
         self.assertEqual(Money("3220.04", USD), self.portfolio.market_value(AUDUSD_SIM.symbol))
         self.assertEqual(Money("-38998.00", USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.symbol))
         self.assertEqual(Money("0", USD), self.portfolio.unrealized_pnl(GBPUSD_SIM.symbol))

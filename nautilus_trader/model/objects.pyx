@@ -107,7 +107,7 @@ cdef class BaseDecimal:
                 self._value = self._make_decimal_with_rounding(value, precision, rounding)
 
     cdef inline object _make_decimal_with_rounding(self, value, int precision, str rounding):
-        exponent = decimal.Decimal(f"{1 / 10 ** precision:.{precision}f}")
+        exponent = decimal.Decimal(f"{1.0 / 10 ** precision:.{precision}f}")
         return decimal.Decimal(value).quantize(exp=exponent, rounding=rounding)
 
     cdef inline object _make_decimal(self, double value, int precision):

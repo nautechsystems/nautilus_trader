@@ -59,6 +59,8 @@ cdef class DataEngine(Component):
     cdef readonly int response_count
     """The total count of responses received by the engine.\n\n:returns: `int`"""
 
+    cpdef bint check_initialized(self) except *
+
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *
@@ -108,7 +110,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_instruments(self, list instruments, UUID correlation_id) except *
     cdef inline void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *
     cdef inline void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *
-    cdef inline void _handle_bars(self, BarType bar_type, list bars, UUID correlation_id) except *
+    cdef inline void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

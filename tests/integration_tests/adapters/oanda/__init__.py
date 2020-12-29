@@ -12,22 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cpdef enum AssetClass:
-    UNDEFINED = 0,  # Invalid value
-    CRYPTO = 1,
-    FX = 2,
-    EQUITY = 3,
-    COMMODITY = 4,
-    BOND = 5,
-    INDEX = 6
-
-
-cdef class AssetClassParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef AssetClass from_str(str value)

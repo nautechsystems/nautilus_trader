@@ -38,7 +38,7 @@ from tests.test_kit.providers import TestDataProvider
 if __name__ == "__main__":
     # Setup trading instruments
     # Requires an internet connection for the instrument loader
-    # Alternatively use the BacktestInstrumentProvider in the test kit
+    # Alternatively use the TestInstrumentProvider in the test kit
     print("Loading instruments...")
     instruments = BinanceInstrumentProvider(load_all=True)
 
