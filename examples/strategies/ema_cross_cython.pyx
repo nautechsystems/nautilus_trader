@@ -22,6 +22,7 @@ from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.tick cimport QuoteTick
@@ -95,6 +96,19 @@ cdef class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
+
+    cpdef void on_instrument(self, Instrument instrument) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
+
+        """
+        pass
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """

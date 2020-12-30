@@ -112,12 +112,21 @@ class MockStrategy(TradingStrategy):
         self.register_indicator_for_bars(self.bar_type, self.ema1)
         self.register_indicator_for_bars(self.bar_type, self.ema2)
 
+    def on_instrument(self, instrument):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(instrument)
+
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(tick)
+
+    def on_trade_tick(self, tick):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(tick)
 
     def on_bar(self, bar_type, bar):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store((bar_type, Bar))
+        self.object_storer.store((bar_type, bar))
 
         if bar_type != self.bar_type:
             return
@@ -141,9 +150,9 @@ class MockStrategy(TradingStrategy):
             self.submit_order(sell_order)
             self.position_id = sell_order.cl_ord_id
 
-    def on_instrument(self, instrument):
+    def on_data(self, data):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instrument)
+        self.object_storer.store(data)
 
     def on_event(self, event):
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -210,6 +219,9 @@ class KaboomStrategy(TradingStrategy):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_instrument(self, instrument):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_quote_tick(self, tick):
