@@ -288,6 +288,23 @@ cdef class TradingStrategy(Component):
         # Should override in subclass
         warnings.warn("on_dispose was called when not overridden")
 
+    cpdef void on_instrument(self, Instrument instrument) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
@@ -669,7 +686,7 @@ cdef class TradingStrategy(Component):
             venue=symbol.venue,
             data_type=Instrument,
             metadata={SYMBOL: symbol},
-            handler=self.handle_data,
+            handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
@@ -773,7 +790,7 @@ cdef class TradingStrategy(Component):
             venue=symbol.venue,
             data_type=Instrument,
             metadata={SYMBOL: symbol},
-            handler=self.handle_data,
+            handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
@@ -1287,6 +1304,31 @@ cdef class TradingStrategy(Component):
             self.flatten_position(position)
 
 # -- HANDLERS --------------------------------------------------------------------------------------
+
+    cpdef void handle_instrument(self, Instrument instrument) except *:
+        """
+        Handle the given instrument.
+
+        Calls `on_instrument` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The received instrument.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_instrument(instrument)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
