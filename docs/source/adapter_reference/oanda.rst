@@ -1,13 +1,13 @@
-Binance Integration
-===================
+CCXT Integration
+================
 
-.. automodule:: nautilus_trader.adapters.binance
+.. automodule:: nautilus_trader.adapters.oanda
 
 
 Providers
 ---------
 
-.. automodule:: nautilus_trader.adapters.binance.providers
+.. automodule:: nautilus_trader.adapters.oanda.providers
    :show-inheritance:
    :inherited-members:
    :members:
@@ -16,7 +16,7 @@ Providers
 Data
 ----
 
-.. automodule:: nautilus_trader.adapters.binance.data
+.. automodule:: nautilus_trader.adapters.oanda.data
    :show-inheritance:
    :inherited-members:
    :members:
