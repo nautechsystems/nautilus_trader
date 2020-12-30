@@ -113,7 +113,8 @@ Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader
 
 ## License
 
-`NautilusTrader` is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
+_NautilusTrader_ is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
+
 Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through CLAassistant.
 
 ---
