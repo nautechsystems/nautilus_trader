@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import os
 from asyncio import Future
 from asyncio import CancelledError
@@ -20,7 +21,7 @@ from cpython.datetime cimport datetime
 
 import pandas as pd
 import oandapyV20
-import oandapyV20.endpoints.instruments as instruments_endpoint
+from oandapyV20.endpoints.instruments import InstrumentsCandles
 from oandapyV20.endpoints.pricing import PricingStream
 
 from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
@@ -95,8 +96,7 @@ cdef class OandaDataClient(LiveDataClient):
         self._subscribed_instruments = set()
         self._subscribed_quote_ticks = {}  # type: dict[Symbol, Future]
 
-        # Schedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        self._update_instruments_handle: asyncio.Handle = None
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -119,6 +119,15 @@ cdef class OandaDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
+        for symbol in self._subscribed_quote_ticks.copy():
+            self.subscribe_quote_ticks(symbol)
+
+        # Schedule subscribed instruments update
+        self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
+            delay=60 * 60,  # Every hour
+            callback=self._subscribed_instruments_update,
+        )
+
         self._is_connected = True
         self._log.info("Connected.")
 
@@ -131,8 +140,12 @@ cdef class OandaDataClient(LiveDataClient):
         for symbol in self._subscribed_quote_ticks.copy():
             self.unsubscribe_quote_ticks(symbol)
 
-        self._is_connected = False
+        if self._update_instruments_handle is not None:
+            self._update_instruments_handle.cancel()
 
+        self._log.debug(f"{self._update_instruments_handle}")
+
+        self._is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -249,6 +262,7 @@ cdef class OandaDataClient(LiveDataClient):
             future.cancel()
 
             self._log.debug(f"Unsubscribed from quote ticks for {symbol}.")
+            self._log.debug(f"{future}")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -449,12 +463,12 @@ cdef class OandaDataClient(LiveDataClient):
             prices = values["mid"]
 
         return Bar(
-            open_price=Price(prices["o"], instrument.price_precision),
-            high_price=Price(prices["h"], instrument.price_precision),
-            low_price=Price(prices["l"], instrument.price_precision),
-            close_price=Price(prices["c"], instrument.price_precision),
-            volume=Quantity(values["volume"], instrument.size_precision),
-            timestamp=pd.to_datetime(values["time"]),
+            Price(prices["o"], instrument.price_precision),
+            Price(prices["h"], instrument.price_precision),
+            Price(prices["l"], instrument.price_precision),
+            Price(prices["c"], instrument.price_precision),
+            Quantity(values["volume"], instrument.size_precision),
+            pd.to_datetime(values["time"]),
         )
 
     def _request_instrument(self, Symbol symbol, UUID correlation_id):
@@ -506,17 +520,13 @@ cdef class OandaDataClient(LiveDataClient):
             self._loop.call_soon_threadsafe(self._send_instrument, symbol)
 
         # Reschedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        self._update_instruments_handle = self._loop.call_later(60 * 60, self._subscribed_instruments_update)
 
-    def _stream_prices(
-        self,
-        Symbol symbol,
-    ):
+    def _stream_prices(self, Symbol symbol):
         cdef dict res
         cdef dict best_bid
         cdef dict best_ask
         cdef QuoteTick tick
-
         try:
             params = {
                 "instruments": symbol.code.replace('/', '_'),
@@ -530,7 +540,6 @@ cdef class OandaDataClient(LiveDataClient):
                     if res["type"] != "PRICE":
                         # Heartbeat
                         continue
-
                     tick = self._parse_quote_tick(symbol, res)
                     self._loop.call_soon_threadsafe(self._send_quote_tick, tick)
         except CancelledError:
@@ -626,7 +635,7 @@ cdef class OandaDataClient(LiveDataClient):
 
         cdef dict res
         try:
-            req = instruments_endpoint.InstrumentsCandles(instrument=oanda_name, params=params)
+            req = InstrumentsCandles(instrument=oanda_name, params=params)
             res = self._client.request(req)
         except Exception as ex:
             self._log.error(str(ex))
@@ -640,7 +649,7 @@ cdef class OandaDataClient(LiveDataClient):
         # Parse all bars except for the last bar
         cdef list bars = []  # type: list[Bar]
         cdef dict values     # type: dict[str, object]
-        for values in data[:-1]:
+        for values in data:
             if not values["complete"]:
                 continue
             bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))

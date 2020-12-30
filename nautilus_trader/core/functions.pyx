@@ -24,6 +24,26 @@ from libc.math cimport sqrt
 from nautilus_trader.core.correctness cimport Condition
 
 
+cpdef inline bint is_ge_python_version(int major, int minor):
+    """
+    Return a value indicating whether the running Python version is greater than
+    or equal to the given arguments.
+
+    Parameters
+    ----------
+    major : int
+        The major Python version.
+    minor : int
+        The minor Python version.
+
+    Returns
+    -------
+    True if greater than or equal, else False.
+
+    """
+    return sys.version_info.major > major or (sys.version_info.major == major and sys.version_info.minor >= minor)
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef inline double fast_mean(list values) except *:
@@ -262,24 +282,3 @@ cpdef inline str pad_string(str string, int final_length, str pad=" "):
     Condition.not_none(pad, "pad")
 
     return ((final_length - len(string)) * pad) + string
-
-
-# Closures in cpdef functions not yet supported (21/6/19)
-def max_in_dict(dict dictionary):
-    """
-    Return the key for the maximum value held in the given dictionary.
-
-    Parameters
-    ----------
-    dictionary : dict
-        The dictionary to check.
-
-    Returns
-    -------
-    object
-        The key for the maximum value.
-
-    """
-    Condition.not_none(dictionary, "dictionary")
-
-    return max(dictionary.items(), key=lambda x: x[1])[0]

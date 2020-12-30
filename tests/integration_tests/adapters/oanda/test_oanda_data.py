@@ -158,7 +158,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -202,7 +202,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
             await asyncio.sleep(0.1)
 
         self.loop.run_until_complete(run_test())
@@ -237,7 +237,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -259,7 +259,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -302,7 +302,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
             self.data_engine.dispose()
 
         self.loop.run_until_complete(run_test())
