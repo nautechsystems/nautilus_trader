@@ -112,6 +112,7 @@ Index
 
     adapter_reference/binance
     adapter_reference/ccxt
+    adapter_reference/oanda
     adapter_reference/tda
 
 .. toctree::
@@ -123,4 +124,5 @@ Index
     developer_guide/overview
     developer_guide/environment
     developer_guide/coding_standards
+    developer_guide/developing_adapters
     developer_guide/testing
