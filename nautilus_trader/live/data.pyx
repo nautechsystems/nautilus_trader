@@ -85,9 +85,9 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._loop
 
-    cpdef object get_run_queues_task(self):
+    cpdef object get_run_queue_task(self):
         """
-        Return the internal run queues task for the engine.
+        Return the internal run queue task for the engine.
 
         Returns
         -------

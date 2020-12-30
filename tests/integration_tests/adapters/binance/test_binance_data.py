@@ -225,7 +225,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -248,7 +248,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -294,7 +294,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -326,10 +326,8 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Act
             self.data_engine.send(request)
-            # Act
-            self.client.request_bars(bar_type, None, None, 0, uuid4())
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
             # Assert
             self.assertEqual(2, self.data_engine.response_count)
@@ -337,6 +335,6 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
