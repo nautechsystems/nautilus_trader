@@ -36,14 +36,14 @@ cdef class BinanceInstrumentProvider:
     Provides a means of loading Binance `Instrument` objects.
     """
 
-    def __init__(self, client: ccxt.Exchange=None, bint load_all=False):
+    def __init__(self, client not None: ccxt.binance, bint load_all=False):
         """
         Initialize a new instance of the `BinanceInstrumentProvider` class.
 
         Parameters
         ----------
-        client : ccxt.Exchange, optional
-            The client for the provider. If None then one will be created.
+        client : ccxt.binance
+            The client for the provider.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
@@ -53,10 +53,7 @@ cdef class BinanceInstrumentProvider:
             If client.name != 'Binance'.
 
         """
-        if client is None:
-            client = ccxt.binance()
-        else:
-            Condition.true(client.name == "Binance", "client.name == `Binance`")
+        Condition.true(client.name == "Binance", "client.name == `Binance`")
 
         self.venue = Venue("BINANCE")
         self.count = 0

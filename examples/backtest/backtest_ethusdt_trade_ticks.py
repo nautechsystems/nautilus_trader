@@ -16,6 +16,7 @@
 
 from decimal import Decimal
 
+import ccxt
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -40,7 +41,7 @@ if __name__ == "__main__":
     # Requires an internet connection for the instrument loader
     # Alternatively use the TestInstrumentProvider in the test kit
     print("Loading instruments...")
-    instruments = BinanceInstrumentProvider(load_all=True)
+    instruments = BinanceInstrumentProvider(client=ccxt.binance(), load_all=True)
 
     BINANCE = Venue("BINANCE")
     ETHUSDT_BINANCE = instruments.get(Symbol("ETH/USDT", BINANCE))

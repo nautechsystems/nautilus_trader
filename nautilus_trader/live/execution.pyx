@@ -90,16 +90,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._loop
 
-    cpdef object get_run_queues_task(self):
+    cpdef object get_run_queue_task(self):
         """
-        Return the internal run queues task for the engine.
+        Return the internal run queue task for the engine.
 
         Returns
         -------
         asyncio.Task
 
         """
-        return self._run_queues_task
+        return self._run_queue_task
 
     cpdef int qsize(self) except *:
         """
@@ -149,9 +149,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         # Ensure this is set True so that below queues continue to process
         self.is_running = True
 
-        self._run_queues_task = self._loop.create_task(self._run())
+        self._run_queue_task = self._loop.create_task(self._run())
 
-        self._log.debug(f"Scheduled {self._run_queues_task}")
+        self._log.debug(f"Scheduled {self._run_queue_task}")
 
     cpdef void _on_stop(self) except *:
         self.is_running = False

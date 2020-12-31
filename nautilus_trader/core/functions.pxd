@@ -16,6 +16,7 @@
 import pandas as pd
 
 
+cpdef bint is_ge_python_version(int major, int minor)
 cpdef double fast_mean(list values) except *
 cpdef double fast_mean_iterated(
     list values,

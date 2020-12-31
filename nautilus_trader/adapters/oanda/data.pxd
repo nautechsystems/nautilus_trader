@@ -23,13 +23,13 @@ from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class OandaDataClient(LiveDataClient):
-    cdef str _api_token
-    cdef str _account_id
     cdef object _client
+    cdef str _account_id
     cdef bint _is_connected
     cdef set _subscribed_instruments
     cdef dict _subscribed_quote_ticks
     cdef OandaInstrumentProvider _instrument_provider
+    cdef object _update_instruments_handle
 
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)
     cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)

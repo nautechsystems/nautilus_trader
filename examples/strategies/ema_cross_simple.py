@@ -21,6 +21,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -86,14 +87,15 @@ class EMACross(TradingStrategy):
         self.subscribe_bars(self.bar_type)
         # self.subscribe_quote_ticks(self.symbol)  # For debugging
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_instrument(self, instrument: Instrument):
         """
-        Actions to be performed when the strategy is running and receives a trade tick.
+        Actions to be performed when the strategy is running and receives an
+        instrument.
 
         Parameters
         ----------
-        tick : TradeTick
-            The tick received.
+        instrument : Instrument
+            The instrument received.
 
         """
         pass
@@ -109,6 +111,18 @@ class EMACross(TradingStrategy):
 
         """
         # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        pass
+
+    def on_trade_tick(self, tick: TradeTick):
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick received.
+
+        """
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):

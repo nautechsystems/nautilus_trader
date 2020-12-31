@@ -49,18 +49,18 @@ cdef class BinanceDataClient(LiveDataClient):
 
     def __init__(
         self,
-        dict credentials,
-        LiveDataEngine engine,
-        LiveClock clock,
-        Logger logger,
+        client not None: ccxt.binance,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `BinanceDataClient` class.
 
         Parameters
         ----------
-        credentials : dict[str, str]
-            The API credentials for the client.
+        client : ccxt.binance
+            The Binance client.
         engine : LiveDataEngine
             The live data engine for the client.
         clock : LiveClock
@@ -69,7 +69,6 @@ cdef class BinanceDataClient(LiveDataClient):
             The logger for the client.
 
         """
-        Condition.not_none(credentials, "credentials")
         super().__init__(
             Venue("BINANCE"),
             engine,
@@ -77,18 +76,10 @@ cdef class BinanceDataClient(LiveDataClient):
             logger,
         )
 
-        cdef dict config = {
-            "apiKey": os.getenv(credentials.get("api_key", "")),
-            "secret": os.getenv(credentials.get("api_secret", "")),
-            "timeout": 10000,
-            "enableRateLimit": True,
-        }
-
         self._is_connected = False
-        self._config = config
-        self._client = ccxt.binance(config=config)
+        self._client = client
         self._instrument_provider = BinanceInstrumentProvider(
-            client=self._client,
+            client=client,
             load_all=False,
         )
 
@@ -137,7 +128,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Reset the client.
         """
-        self._client = ccxt.binance(config=self._config)
+        # TODO: Reset client
         self._instrument_provider = BinanceInstrumentProvider(
             client=self._client,
             load_all=False,
@@ -434,22 +425,22 @@ cdef class BinanceDataClient(LiveDataClient):
 
     cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
         return TradeTick(
-            symbol=instrument.symbol,
-            price=Price(trade['price'], instrument.price_precision),
-            size=Quantity(trade['amount'], instrument.size_precision),
-            side=OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
-            match_id=TradeMatchId(trade["id"]),
-            timestamp=from_posix_ms(trade["timestamp"]),
+            instrument.symbol,
+            Price(trade['price'], instrument.price_precision),
+            Quantity(trade['amount'], instrument.size_precision),
+            OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
+            TradeMatchId(trade["id"]),
+            from_posix_ms(trade["timestamp"]),
         )
 
     cpdef Bar _parse_bar(self, Instrument instrument, list values):
         return Bar(
-            open_price=Price(values[1], instrument.price_precision),
-            high_price=Price(values[2], instrument.price_precision),
-            low_price=Price(values[3], instrument.price_precision),
-            close_price=Price(values[4], instrument.price_precision),
-            volume=Quantity(values[5], instrument.size_precision),
-            timestamp=from_posix_ms(values[0]),
+            Price(values[1], instrument.price_precision),
+            Price(values[2], instrument.price_precision),
+            Price(values[3], instrument.price_precision),
+            Price(values[4], instrument.price_precision),
+            Quantity(values[5], instrument.size_precision),
+            from_posix_ms(values[0]),
         )
 
     def _request_instrument(self, Symbol symbol, UUID correlation_id):
@@ -571,7 +562,7 @@ cdef class BinanceDataClient(LiveDataClient):
 
         cdef list bars = []  # type: list[Bar]
         cdef list values     # type: list[object]
-        for values in data[:-1]:
+        for values in data[:-1]:  # TODO: Remove this slice
             bars.append(self._parse_bar(instrument, values))
 
         self._loop.call_soon_threadsafe(

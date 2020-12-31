@@ -17,7 +17,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import oandapyV20
-import oandapyV20.endpoints.accounts as accounts_endpoint
+from oandapyV20.endpoints.accounts import AccountInstruments
 
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -47,7 +47,9 @@ cdef class OandaInstrumentProvider:
         Parameters
         ----------
         client : oandapyV20.API
-            The client for the provider.
+            The Oanda client.
+        account_id : str
+            The Oanda account identifier.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
@@ -65,7 +67,7 @@ cdef class OandaInstrumentProvider:
         """
         Pre-load all instruments.
         """
-        req = accounts_endpoint.AccountInstruments(accountID=self._account_id)
+        req = AccountInstruments(accountID=self._account_id)
         res = self._client.request(req)
 
         cdef list instruments = res.get("instruments", {})

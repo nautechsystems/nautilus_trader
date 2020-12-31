@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import threading
 import time
 import unittest
 
@@ -141,21 +142,17 @@ class TradingNodeOperationTests(unittest.TestCase):
         if self.node.trader.state == ComponentState.RUNNING:
             self.node.stop()
 
+        self.node.shutdown()
         self.node.dispose()
 
-    def stopNode(self):
-        time.sleep(1)
-        loop = self.node.get_event_loop()
-        asyncio.set_event_loop(loop)
+    def test_run(self):
+        # Arrange
+        run = threading.Thread(target=self.node.start, daemon=True)
+        run.start()
 
-    # def test_run(self):
-    #     # Arrange
-    #     stopper = threading.Thread(target=self.stopNode, daemon=True)
-    #     stopper.start()
-    #
-    #     # Act
-    #     self.node.start()
-    #
-    #     # Assert
-    #     self.assertTrue(True)
-    #     self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
+        time.sleep(0.5)
+
+        # Act
+        # Assert
+        self.assertTrue(True)
+        self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
