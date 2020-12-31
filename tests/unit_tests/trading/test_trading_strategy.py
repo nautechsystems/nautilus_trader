@@ -938,6 +938,94 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, ema.count)
 
+    def test_handle_instrument_with_blow_up_logs_exception(self):
+        # Arrange
+        strategy = KaboomStrategy()
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        strategy.set_explode_on_start(False)
+        strategy.start()
+
+        # Act
+        # Assert
+        self.assertRaises(RuntimeError, strategy.handle_instrument, AUDUSD_SIM)
+
+    def test_handle_instrument_when_not_running_does_not_send_to_on_instrument(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        # Act
+        strategy.handle_instrument(AUDUSD_SIM)
+
+        # Assert
+        self.assertEqual([], strategy.calls)
+        self.assertEqual([], strategy.object_storer.get_store())
+
+    def test_handle_instrument_when_running_sends_to_on_instrument(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        strategy.start()
+
+        # Act
+        strategy.handle_instrument(AUDUSD_SIM)
+
+        # Assert
+        self.assertEqual(['on_start', 'on_instrument'], strategy.calls)
+        self.assertEqual(AUDUSD_SIM, strategy.object_storer.get_store()[0])
+
+    def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
+
+        # Act
+        strategy.handle_quote_tick(tick)
+
+        # Assert
+        self.assertEqual([], strategy.calls)
+        self.assertEqual([], strategy.object_storer.get_store())
+
+    def test_handle_quote_tick_when_running_sends_to_on_quote_tick(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        strategy.start()
+
+        tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.symbol)
+
+        # Act
+        strategy.handle_quote_tick(tick)
+
+        # Assert
+        self.assertEqual(['on_start', 'on_quote_tick'], strategy.calls)
+        self.assertEqual(tick, strategy.object_storer.get_store()[0])
+
     def test_handle_quote_ticks_with_no_ticks_logs_and_continues(self):
         # Arrange
         strategy = KaboomStrategy()
@@ -975,6 +1063,44 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(1, ema.count)
+
+    def test_handle_trade_tick_when_not_running_does_not_send_to_on_trade_tick(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
+
+        # Act
+        strategy.handle_trade_tick(tick)
+
+        # Assert
+        self.assertEqual([], strategy.calls)
+        self.assertEqual([], strategy.object_storer.get_store())
+
+    def test_handle_trade_tick_when_running_sends_to_on_trade_tick(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        strategy.start()
+
+        tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.symbol)
+
+        # Act
+        strategy.handle_trade_tick(tick)
+
+        # Assert
+        self.assertEqual(['on_start', 'on_trade_tick'], strategy.calls)
+        self.assertEqual(tick, strategy.object_storer.get_store()[0])
 
     def test_handle_trade_tick_updates_indicator_registered_for_trade_ticks(self):
         # Arrange
@@ -1056,6 +1182,46 @@ class TradingStrategyTests(unittest.TestCase):
         # Assert
         self.assertEqual(2, ema.count)
 
+    def test_handle_bar_when_not_running_does_not_send_to_on_bar(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        strategy.handle_bar(bar_type, bar)
+
+        # Assert
+        self.assertEqual([], strategy.calls)
+        self.assertEqual([], strategy.object_storer.get_store())
+
+    def test_handle_bar_when_running_sends_to_on_bar(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        strategy.start()
+
+        bar = TestStubs.bar_5decimal()
+
+        # Act
+        strategy.handle_bar(bar_type, bar)
+
+        # Assert
+        self.assertEqual(['on_start', 'on_bar'], strategy.calls)
+        self.assertEqual((bar_type, bar), strategy.object_storer.get_store()[0])
+
     def test_handle_bars_updates_indicator_registered_for_bars(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
@@ -1094,6 +1260,42 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, ema.count)
+
+    def test_handle_data_when_not_running_does_not_send_to_on_data(self):
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        data = "SOME_DATA"
+
+        # Act
+        strategy.handle_data(data)
+
+        # Assert
+        self.assertEqual([], strategy.calls)
+        self.assertEqual([], strategy.object_storer.get_store())
+
+    def test_handle_data_when_running_sends_to_on_data(self):
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        strategy.start()
+
+        data = "SOME_DATA"
+
+        # Act
+        strategy.handle_data(data)
+
+        # Assert
+        self.assertEqual(['on_start', 'on_data'], strategy.calls)
+        self.assertEqual(data, strategy.object_storer.get_store()[0])
 
     def test_stop_cancels_a_running_time_alert(self):
         # Arrange

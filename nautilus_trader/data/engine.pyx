@@ -282,6 +282,10 @@ cdef class DataEngine(Component):
         for client in self._clients.values():
             client.disconnect()
 
+        for aggregator in self._bar_aggregators.values():
+            if isinstance(aggregator, TimeBarAggregator):
+                aggregator.stop()
+
         self._on_stop()
 
     cpdef void _reset(self) except *:
@@ -306,6 +310,8 @@ cdef class DataEngine(Component):
         cdef DataClient client
         for client in self._clients.values():
             client.dispose()
+
+        self._clock.cancel_timers()
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -782,7 +788,7 @@ cdef class DataEngine(Component):
             # Update partial time bar
             aggregator = self._bar_aggregators.get(bar_type)
             if aggregator:
-                self._log.critical(f"Applying partial bar {partial} for {bar_type}.")
+                self._log.debug(f"Applying partial bar {partial} for {bar_type}.")
                 aggregator.set_partial(partial)
             else:
                 self._log.error("No aggregator for partial bar update.")

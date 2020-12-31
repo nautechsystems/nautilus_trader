@@ -14,7 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 import unittest
+from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.common.clock import LiveClock
@@ -35,13 +37,11 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import ObjectStorer
-
+from tests import PACKAGE_ROOT
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
-
-# Requirements:
-#    - An internet connection
 
 
 class BinanceDataClientTests(unittest.TestCase):
@@ -79,8 +79,11 @@ class BinanceDataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.mock_binance = MagicMock()
+        self.mock_binance.name = "Binance"
+
         self.client = BinanceDataClient(
-            credentials={},
+            client=self.mock_binance,
             engine=self.data_engine,
             clock=self.clock,
             logger=logger,
@@ -206,51 +209,56 @@ class BinanceDataClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertTrue(True)
 
-    def test_request_instrument(self):
-        async def run_test():
-            # Arrange
-            self.data_engine.start()
-
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            # Act
-            self.client.request_instrument(BTCUSDT, uuid4())
-
-            await asyncio.sleep(3)
-
-            # Assert
-            # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_request_instruments(self):
-        async def run_test():
-            # Arrange
-            self.data_engine.start()
-
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            # Act
-            self.client.request_instruments(uuid4())
-
-            await asyncio.sleep(3)
-
-            # Assert
-            # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_request_instrument(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         self.mock_binance.markets = instruments
+    #
+    #         self.data_engine.start()
+    #
+    #         # Act
+    #         self.client.request_instrument(BTCUSDT, uuid4())
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         # Instruments additionally requested on start
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
+    #
+    # def test_request_instruments(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         self.mock_binance.markets = instruments
+    #
+    #         self.data_engine.start()
+    #
+    #         # Act
+    #         self.client.request_instruments(uuid4())
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         # Instruments additionally requested on start
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
     def test_request_quote_ticks(self):
         # Arrange
@@ -260,83 +268,83 @@ class BinanceDataClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)
 
-    def test_request_trade_ticks(self):
-        async def run_test():
-            # Arrange
-            handler = ObjectStorer()
-            self.data_engine.start()
+    # TODO: WIP
+    # def test_request_trade_ticks(self):
+    #     async def run_test():
+    #         # Arrange
+    #         handler = ObjectStorer()
+    #         self.data_engine.start()
+    #
+    #         # Allow data engine to spool up and request instruments
+    #         await asyncio.sleep(3)
+    #
+    #         request = DataRequest(
+    #             venue=BINANCE,
+    #             data_type=TradeTick,
+    #             metadata={
+    #                 "Symbol": BTCUSDT,
+    #                 "FromDateTime": None,
+    #                 "ToDateTime": None,
+    #                 "Limit": 1000,
+    #             },
+    #             callback=handler.store,
+    #             request_id=self.uuid_factory.generate(),
+    #             request_timestamp=self.clock.utc_now(),
+    #         )
+    #
+    #         # Act
+    #         self.data_engine.send(request)
+    #
+    #         await asyncio.sleep(1)
+    #
+    #         # Assert
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #         self.assertEqual(1, handler.count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            request = DataRequest(
-                venue=BINANCE,
-                data_type=TradeTick,
-                metadata={
-                    "Symbol": BTCUSDT,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                },
-                callback=handler.store,
-                request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
-            )
-
-            # Act
-            self.data_engine.send(request)
-
-            await asyncio.sleep(1)
-
-            # Assert
-            self.assertEqual(2, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_request_bars(self):
-        async def run_test():
-            # Arrange
-            handler = ObjectStorer()
-            self.data_engine.start()
-
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-            bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
-
-            request = DataRequest(
-                venue=BINANCE,
-                data_type=Bar,
-                metadata={
-                    "BarType": bar_type,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                },
-                callback=handler.store_2,
-                request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
-            )
-
-            # Act
-            self.data_engine.send(request)
-            # Act
-            self.client.request_bars(bar_type, None, None, 0, uuid4())
-
-            await asyncio.sleep(1)
-
-            # Assert
-            self.assertEqual(2, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_request_bars(self):
+    #     async def run_test():
+    #         # Arrange
+    #         handler = ObjectStorer()
+    #         self.data_engine.start()
+    #
+    #         # Allow data engine to spool up and request instruments
+    #         await asyncio.sleep(3)
+    #
+    #         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+    #         bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
+    #
+    #         request = DataRequest(
+    #             venue=BINANCE,
+    #             data_type=Bar,
+    #             metadata={
+    #                 "BarType": bar_type,
+    #                 "FromDateTime": None,
+    #                 "ToDateTime": None,
+    #                 "Limit": 1000,
+    #             },
+    #             callback=handler.store_2,
+    #             request_id=self.uuid_factory.generate(),
+    #             request_timestamp=self.clock.utc_now(),
+    #         )
+    #
+    #         # Act
+    #         self.data_engine.send(request)
+    #
+    #         await asyncio.sleep(2)
+    #
+    #         # Assert
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #         self.assertEqual(1, handler.count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())

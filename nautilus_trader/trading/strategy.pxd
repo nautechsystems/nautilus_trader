@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
@@ -84,6 +85,7 @@ cdef class TradingStrategy(Component):
     cpdef dict on_save(self)
     cpdef void on_load(self, dict state) except *
     cpdef void on_dispose(self) except *
+    cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *
@@ -153,6 +155,7 @@ cdef class TradingStrategy(Component):
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 
+    cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *
