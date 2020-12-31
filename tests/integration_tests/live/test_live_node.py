@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import time
 import threading
+import time
 import unittest
 
 from nautilus_trader.common.enums import ComponentState

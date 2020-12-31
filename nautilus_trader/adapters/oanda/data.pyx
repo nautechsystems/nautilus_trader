@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
 from asyncio import Future
 from asyncio import CancelledError
 from cpython.datetime cimport datetime
@@ -54,18 +53,21 @@ cdef class OandaDataClient(LiveDataClient):
 
     def __init__(
         self,
-        dict credentials,
-        LiveDataEngine engine,
-        LiveClock clock,
-        Logger logger,
+        client not None: oandapyV20.API,
+        str account_id not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `OandaDataClient` class.
 
         Parameters
         ----------
-        credentials : dict[str, str]
-            The API credentials for the client.
+        client : oandapyV20.API
+            The Oanda client.
+        account_id : str
+            The Oanda account identifier.
         engine : LiveDataEngine
             The live data engine for the client.
         clock : LiveClock
@@ -74,7 +76,6 @@ cdef class OandaDataClient(LiveDataClient):
             The logger for the client.
 
         """
-        Condition.not_none(credentials, "credentials")
         super().__init__(
             Venue("OANDA"),
             engine,
@@ -82,11 +83,9 @@ cdef class OandaDataClient(LiveDataClient):
             logger,
         )
 
-        self._api_token = os.getenv(credentials.get("api_token", ""))
-        self._account_id = os.getenv(credentials.get("account_id", ""))
-
         self._is_connected = False
-        self._client = oandapyV20.API(access_token=self._api_token)
+        self._client = client
+        self._account_id = account_id
         self._instrument_provider = OandaInstrumentProvider(
             client=self._client,
             account_id=self._account_id,
@@ -152,7 +151,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Reset the client.
         """
-        self._client = oandapyV20.API(access_token=self._api_token)
+        self._client = oandapyV20.API(access_token=self._client.access_token)
         self._instrument_provider = OandaInstrumentProvider(
             client=self._client,
             account_id=self._account_id,

@@ -23,7 +23,6 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import Symbol

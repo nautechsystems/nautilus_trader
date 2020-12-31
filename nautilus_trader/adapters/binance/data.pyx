@@ -49,18 +49,18 @@ cdef class BinanceDataClient(LiveDataClient):
 
     def __init__(
         self,
-        dict credentials,
-        LiveDataEngine engine,
-        LiveClock clock,
-        Logger logger,
+        client not None: ccxt.binance,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `BinanceDataClient` class.
 
         Parameters
         ----------
-        credentials : dict[str, str]
-            The API credentials for the client.
+        client : ccxt.binance
+            The Binance client.
         engine : LiveDataEngine
             The live data engine for the client.
         clock : LiveClock
@@ -69,7 +69,6 @@ cdef class BinanceDataClient(LiveDataClient):
             The logger for the client.
 
         """
-        Condition.not_none(credentials, "credentials")
         super().__init__(
             Venue("BINANCE"),
             engine,
@@ -77,18 +76,10 @@ cdef class BinanceDataClient(LiveDataClient):
             logger,
         )
 
-        cdef dict config = {
-            "apiKey": os.getenv(credentials.get("api_key", "")),
-            "secret": os.getenv(credentials.get("api_secret", "")),
-            "timeout": 10000,
-            "enableRateLimit": True,
-        }
-
         self._is_connected = False
-        self._config = config
-        self._client = ccxt.binance(config=config)
+        self._client = client
         self._instrument_provider = BinanceInstrumentProvider(
-            client=self._client,
+            client=client,
             load_all=False,
         )
 
@@ -137,7 +128,7 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Reset the client.
         """
-        self._client = ccxt.binance(config=self._config)
+        # TODO: Reset client
         self._instrument_provider = BinanceInstrumentProvider(
             client=self._client,
             load_all=False,
