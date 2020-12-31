@@ -22,8 +22,8 @@ import redis
 import signal
 import time
 
-from nautilus_trader.adapters.binance.data import BinanceDataClient
-from nautilus_trader.adapters.oanda.data import OandaDataClient
+from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
+from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -268,33 +268,23 @@ class TradingNode:
     def _setup_data_clients(self, config, logger):
         for name, config in config.items():
             if name == "binance":
-                credentials = {
-                    "api_key": config.get("api_key"),
-                    "api_secret": config.get("api_secret"),
-                }
-
-                client = BinanceDataClient(
-                    credentials=credentials,
-                    engine=self._data_engine,
+                data_client = BinanceDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
                     clock=self._clock,
                     logger=logger,
                 )
 
-                self._data_engine.register_client(client)
+                self._data_engine.register_client(data_client)
             elif name == "oanda":
-                credentials = {
-                    "api_token": config.get("api_token"),
-                    "account_id": config.get("account_id"),
-                }
-
-                client = OandaDataClient(
-                    credentials=credentials,
-                    engine=self._data_engine,
+                data_client = OandaDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
                     clock=self._clock,
                     logger=logger,
                 )
 
-                self._data_engine.register_client(client)
+                self._data_engine.register_client(data_client)
             else:
                 self._log.error(f"No DataClient for `{name}`.")
 

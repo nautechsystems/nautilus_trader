@@ -37,7 +37,7 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
 
 # Requirements:
-#    - A Redis instance listening on the default port 6379
+# - A Redis instance listening on the default port 6379
 
 
 class RedisExecutionDatabaseTests(unittest.TestCase):
