@@ -248,7 +248,7 @@ class TradingNode:
             self._log.exception(ex)
         finally:
             if self._loop.is_running():
-                self._log.warning("Cannot close running event loop.")
+                self._log.warning("Cannot close a running event loop.")
             else:
                 self._log.info("Closing event loop...")
                 self._loop.close()
@@ -398,12 +398,12 @@ class TradingNode:
             self._log.warning(f"Cancelling pending task {task}")
             task.cancel()
 
-        finish_all_tasks = tasks.gather(*to_cancel, loop=self._loop, return_exceptions=True)
-
         if self._loop.is_running():
-            self._loop.create_task(finish_all_tasks)
-        else:
-            self._loop.run_until_complete(finish_all_tasks)
+            self._log.warning("Event loop still running during `cancel_all_tasks`.")
+            return
+
+        finish_all_tasks = tasks.gather(*to_cancel, loop=self._loop, return_exceptions=True)
+        self._loop.run_until_complete(finish_all_tasks)
 
         self._log.debug(f"{finish_all_tasks}")
 
