@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef inline Exception make_exception(ex_default, ex_type, msg):
+cdef inline Exception make_exception(ex_default, ex_type, str msg):
     if type(ex_type) == type(Exception):
         return ex_type(msg)
     else:
