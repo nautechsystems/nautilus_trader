@@ -86,6 +86,7 @@ class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         # self.subscribe_quote_ticks(self.symbol)  # For debugging
+        # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """

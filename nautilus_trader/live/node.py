@@ -233,12 +233,12 @@ class TradingNode:
     def dispose(self):
         try:
             # TODO: Find pending future
-            # self._log.info("Shutting down executor...")
-            # if is_ge_python_version(major=3, minor=9):
-            #     # cancel_futures added in Python 3.9
-            #     self._executor.shutdown(wait=True, cancel_futures=True)
-            # else:
-            #     self._executor.shutdown(wait=True)
+            self._log.info("Shutting down executor...")
+            if is_ge_python_version(major=3, minor=9):
+                # cancel_futures added in Python 3.9
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            else:
+                self._executor.shutdown(wait=True)
 
             self._loop.stop()
 
