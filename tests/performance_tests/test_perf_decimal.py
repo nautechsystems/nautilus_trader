@@ -105,17 +105,17 @@ class DecimalPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_make_builtin_decimal():
         PerformanceHarness.profile_function(DecimalTesting.make_builtin_decimal, 3, 100000)
-        # ~23ms (23412μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~20ms (20605μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_make_decimal():
         PerformanceHarness.profile_function(DecimalTesting.make_decimal, 3, 100000)
-        # ~26ms (26918μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~29ms (29376μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_make_price():
         PerformanceHarness.profile_function(DecimalTesting.make_price, 3, 100000)
-        # ~42ms (42906μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~44ms (44346μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_float_comparisons():
@@ -125,12 +125,12 @@ class DecimalPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_decimal_comparisons():
         PerformanceHarness.profile_function(DecimalTesting.decimal_comparisons, 3, 100000)
-        # ~38ms (38318μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~44ms (44222μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_builtin_decimal_comparisons():
         PerformanceHarness.profile_function(DecimalTesting.builtin_decimal_comparisons, 3, 100000)
-        # ~21ms (21719μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~16ms (16410μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_float_arithmetic():
@@ -145,9 +145,9 @@ class DecimalPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_decimal_arithmetic():
         PerformanceHarness.profile_function(DecimalTesting.decimal_arithmetic, 3, 100000)
-        # ~112ms (112669μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~86ms (86808μs) minimum of 3 runs @ 100,000 iterations each run.
 
     @staticmethod
     def test_decimal_arithmetic_with_floats():
         PerformanceHarness.profile_function(DecimalTesting.decimal_arithmetic_with_floats, 3, 100000)
-        # ~62ms (62553μs) minimum of 3 runs @ 100,000 iterations each run.
+        # ~50ms (50253μs) minimum of 3 runs @ 100,000 iterations each run.

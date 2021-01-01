@@ -13,14 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from asyncio import tasks
-from typing import Dict, List
 import asyncio
+from asyncio import tasks
 import concurrent.futures
-import msgpack
-import redis
 import signal
 import time
+from typing import Dict, List
+
+import msgpack
+import redis
 
 from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
 from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
