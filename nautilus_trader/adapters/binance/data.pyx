@@ -91,6 +91,18 @@ cdef class BinanceDataClient(LiveDataClient):
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
 
+    @property
+    def subscribed_instruments(self):
+        """
+        The instruments subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return sorted(list(self._subscribed_instruments))
+
     cpdef bint is_connected(self) except *:
         """
         Return a value indicating whether the client is connected.
