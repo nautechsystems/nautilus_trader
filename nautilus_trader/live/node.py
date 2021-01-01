@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,14 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from asyncio import tasks
-from typing import Dict, List
 import asyncio
+from asyncio import tasks
 import concurrent.futures
-import msgpack
-import redis
+from datetime import timedelta
 import signal
 import time
+from typing import Dict, List
+
+import msgpack
+import redis
 
 from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
 from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
@@ -80,6 +82,7 @@ class TradingNode:
         config_exec_db = config.get("exec_database", {})
         config_strategy = config.get("strategy", {})
         config_data_clients = config.get("data_clients", {})
+        config_exec_clients = config.get("exec_clients", {})
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
@@ -87,6 +90,7 @@ class TradingNode:
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
         self._loop.set_debug(False)  # TODO: Development
+        self._is_running = False
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -152,6 +156,7 @@ class TradingNode:
 
         self._exec_engine.load_cache()
         self._setup_data_clients(config_data_clients, logger)
+        self._setup_exec_clients(config_exec_clients, logger)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -213,32 +218,37 @@ class TradingNode:
         except RuntimeError as ex:
             self._log.exception(ex)
 
-    def shutdown(self):
-        """
-        Shutdown the trading node.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-
-        """
-        try:
-            if self._loop.is_running():
-                self._loop.create_task(self._shutdown())
-            else:
-                self._loop.run_until_complete(self._shutdown())
-        except RuntimeError as ex:
-            self._log.exception(ex)
-
+    # noinspection PyTypeChecker
+    # Expected timedelta, got datetime.pyi instead
     def dispose(self):
-        try:
-            # TODO: Find pending future
-            # self._log.info("Shutting down executor...")
-            # if is_ge_python_version(major=3, minor=9):
-            #     # cancel_futures added in Python 3.9
-            #     self._executor.shutdown(wait=True, cancel_futures=True)
-            # else:
-            #     self._executor.shutdown(wait=True)
+        """
+        Dispose of the trading node.
 
+        Gracefully shuts down the executor and event loop.
+
+        """
+        try:
+            timeout = self._clock.utc_now() + timedelta(seconds=5)
+            while self._is_running:
+                time.sleep(0.1)
+                if self._clock.utc_now() >= timeout:
+                    self._log.warning("Timed out (5s) waiting for node to stop.")
+                    break
+
+            self._log.info("state=DISPOSING...")
+
+            self.trader.dispose()
+            self._data_engine.dispose()
+            self._exec_engine.dispose()
+
+            self._log.info("Shutting down executor...")
+            if is_ge_python_version(major=3, minor=9):
+                # cancel_futures added in Python 3.9
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            else:
+                self._executor.shutdown(wait=True)
+
+            self._log.info("Stopping event loop...")
             self._loop.stop()
 
             if is_ge_python_version(major=3, minor=7):
@@ -252,8 +262,19 @@ class TradingNode:
             else:
                 self._log.info("Closing event loop...")
                 self._loop.close()
-            self._log.info(f"loop.is_running={self._loop.is_running()}")
-            self._log.info(f"loop.is_closed={self._loop.is_closed()}")
+
+            # Check and log if event loop is running
+            if self._loop.is_running():
+                self._log.warning(f"loop.is_running={self._loop.is_running()}")
+            else:
+                self._log.info(f"loop.is_running={self._loop.is_running()}")
+
+            # Check and log if event loop is closed
+            if not self._loop.is_closed():
+                self._log.warning(f"loop.is_closed={self._loop.is_closed()}")
+            else:
+                self._log.info(f"loop.is_closed={self._loop.is_closed()}")
+
             self._log.info("state=DISPOSED.")
             time.sleep(0.1)  # Assist final logging to daemonic logging thread
 
@@ -266,27 +287,44 @@ class TradingNode:
         self._log.info("=================================================================")
 
     def _setup_data_clients(self, config, logger):
-        for name, config in config.items():
-            if name == "binance":
-                data_client = BinanceDataClientFactory.create(
-                    config=config,
-                    data_engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
+        try:
+            # Setup each data
+            for name, config in config.items():
+                if name == "binance":
+                    data_client = BinanceDataClientFactory.create(
+                        config=config,
+                        data_engine=self._data_engine,
+                        clock=self._clock,
+                        logger=logger,
+                    )
 
-                self._data_engine.register_client(data_client)
-            elif name == "oanda":
-                data_client = OandaDataClientFactory.create(
-                    config=config,
-                    data_engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
+                    self._data_engine.register_client(data_client)
+                elif name == "oanda":
+                    data_client = OandaDataClientFactory.create(
+                        config=config,
+                        data_engine=self._data_engine,
+                        clock=self._clock,
+                        logger=logger,
+                    )
 
-                self._data_engine.register_client(data_client)
-            else:
-                self._log.error(f"No DataClient for `{name}`.")
+                    self._data_engine.register_client(data_client)
+                else:
+                    self._log.error(f"No DataClient available for `{name}`.")
+        except RuntimeError as ex:
+            self._log.exception(ex)
+
+    def _setup_exec_clients(self, config, logger):
+        try:
+            # Setup each data
+            for name, config in config.items():
+                if name == "binance":
+                    pass
+                elif name == "oanda":
+                    pass
+                else:
+                    self._log.error(f"No ExecutionClient available for `{name}`.")
+        except RuntimeError as ex:
+            self._log.exception(ex)
 
     def _setup_loop(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -301,9 +339,11 @@ class TradingNode:
         self._log.debug(f"Event loop {signals} handling setup.")
 
     def _loop_sig_handler(self, sig):
+        self._loop.remove_signal_handler(signal.SIGTERM)
+        self._loop.add_signal_handler(signal.SIGINT, lambda: None)
+
         self._log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
-        self.shutdown()
 
     async def _run(self):
         try:
@@ -321,6 +361,8 @@ class TradingNode:
                 self._log.info("state=RUNNING.")
             else:
                 self._log.warning("Event loop is not running.")
+
+            self._is_running = True
 
             # Continue to run loop while engines are running...
             await self._data_engine.get_run_queue_task()
@@ -346,13 +388,13 @@ class TradingNode:
             return True  # Engines initialized
 
     async def _stop(self):
+        self._is_stopping = True
         self._log.info("state=STOPPING...")
 
         self.trader.stop()
 
-        # TODO: Refactor shutdown - check completely flat before stopping engines
         self._log.info("Awaiting residual state...")
-        time.sleep(self._check_residuals_delay)
+        await asyncio.sleep(self._check_residuals_delay)
         self.trader.check_residuals()
 
         if self._save_strategy_state:
@@ -363,6 +405,8 @@ class TradingNode:
 
         await self._data_engine.get_run_queue_task()
         await self._exec_engine.get_run_queue_task()
+        self._log.debug(f"{self._data_engine.get_run_queue_task()}")
+        self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
 
         # Clean up remaining timers
         timer_names = self._clock.timer_names()
@@ -372,21 +416,7 @@ class TradingNode:
             self._log.info(f"Cancelled Timer(name={name}).")
 
         self._log.info("state=STOPPED.")
-
-    async def _shutdown(self):
-        try:
-            self._log.info("state=DISPOSING...")
-
-            await self._data_engine.get_run_queue_task()
-            await self._exec_engine.get_run_queue_task()
-            self._log.debug(f"{self._data_engine.get_run_queue_task()}")
-            self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
-
-            self.trader.dispose()
-            self._data_engine.dispose()
-            self._exec_engine.dispose()
-        except RuntimeError as ex:
-            self._log.exception(ex)
+        self._is_running = False
 
     def _cancel_all_tasks(self):
         to_cancel = tasks.all_tasks(self._loop)
