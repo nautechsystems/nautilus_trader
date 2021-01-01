@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -198,3 +198,4 @@ class BacktestEnginePerformanceTests(unittest.TestCase):
         # 29/11/20  4374015 function calls (4348306 primitive calls) in 5.753 seconds (performance check)
         # 09/12/20  4294769 function calls (4268911 primitive calls) in 5.858 seconds (performance check)
         # 14/12/20  5685767 function calls (5648057 primitive calls) in 6.484 seconds (multi-asset accounts)
+        # 01/01/20  5657521 function calls (5615526 primitive calls) in 6.960 seconds (performance check)

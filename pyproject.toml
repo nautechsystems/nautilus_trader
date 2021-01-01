@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.94.9"
+version = "1.94.10"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -34,8 +34,8 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.6.1"
-ccxt = "^1.39.53"
-cython = "^0.29.21"
+ccxt = "^1.40.3"
+cython = "^3.0a6"
 empyrical = "^0.5.5"
 # `importlib.metadata` is in the Python stdlib from 3.8 onwards
 importlib-metadata = { version = "^1.2.0", python = "<3.8" }

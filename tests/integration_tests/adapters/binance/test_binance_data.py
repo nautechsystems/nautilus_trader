@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,8 +36,10 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.mocks import ObjectStorer
 from tests import PACKAGE_ROOT
+from tests.test_kit.mocks import ObjectStorer
+
+
 TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
 
 BINANCE = Venue("BINANCE")
@@ -119,7 +121,7 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.reset()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertFalse(self.client.is_connected())
 
     def test_dispose(self):
         # Arrange
@@ -127,7 +129,7 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.dispose()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertFalse(self.client.is_connected())
 
     def test_subscribe_instrument(self):
         # Arrange
@@ -137,7 +139,7 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.subscribe_instrument(BTCUSDT)
 
         # Assert
-        self.assertTrue(True)
+        self.assertIn(BTCUSDT, self.client.subscribed_instruments)
 
     # def test_subscribe_quote_ticks(self):
     #     # Arrange
@@ -177,7 +179,7 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.unsubscribe_instrument(BTCUSDT)
 
         # Assert
-        self.assertTrue(True)
+        self.assertNotIn(BTCUSDT, self.client.subscribed_instruments)
 
     # def test_unsubscribe_quote_ticks(self):
     #     # Arrange
@@ -210,55 +212,57 @@ class BinanceDataClientTests(unittest.TestCase):
     #     self.assertTrue(True)
 
     # TODO: WIP
-    # def test_request_instrument(self):
-    #     async def run_test():
-    #         # Arrange
-    #         with open(TEST_PATH + "res_instruments.json") as response:
-    #             instruments = json.load(response)
-    #
-    #         self.mock_binance.markets = instruments
-    #
-    #         self.data_engine.start()
-    #
-    #         # Act
-    #         self.client.request_instrument(BTCUSDT, uuid4())
-    #
-    #         await asyncio.sleep(0.3)
-    #
-    #         # Assert
-    #         # Instruments additionally requested on start
-    #         self.assertEqual(2, self.data_engine.response_count)
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #         await self.data_engine.get_run_queue_task()
-    #
-    #     self.loop.run_until_complete(run_test())
-    #
-    # def test_request_instruments(self):
-    #     async def run_test():
-    #         # Arrange
-    #         with open(TEST_PATH + "res_instruments.json") as response:
-    #             instruments = json.load(response)
-    #
-    #         self.mock_binance.markets = instruments
-    #
-    #         self.data_engine.start()
-    #
-    #         # Act
-    #         self.client.request_instruments(uuid4())
-    #
-    #         await asyncio.sleep(0.3)
-    #
-    #         # Assert
-    #         # Instruments additionally requested on start
-    #         self.assertEqual(2, self.data_engine.response_count)
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #         await self.data_engine.get_run_queue_task()
-    #
-    #     self.loop.run_until_complete(run_test())
+    def test_request_instrument(self):
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
+
+            self.mock_binance.markets = instruments
+
+            self.data_engine.start()
+            await asyncio.sleep(0.3)
+
+            # Act
+            self.client.request_instrument(BTCUSDT, uuid4())
+
+            await asyncio.sleep(0.3)
+
+            # Assert
+            # Instruments additionally requested on start
+            self.assertEqual(2, self.data_engine.response_count)
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())
+
+    def test_request_instruments(self):
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
+
+            self.mock_binance.markets = instruments
+
+            self.data_engine.start()
+            await asyncio.sleep(0.3)
+
+            # Act
+            self.client.request_instruments(uuid4())
+
+            await asyncio.sleep(0.3)
+
+            # Assert
+            # Instruments additionally requested on start
+            self.assertEqual(2, self.data_engine.response_count)
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())
 
     def test_request_quote_ticks(self):
         # Arrange

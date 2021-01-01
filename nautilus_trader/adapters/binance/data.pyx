@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -90,6 +90,18 @@ cdef class BinanceDataClient(LiveDataClient):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
+
+    @property
+    def subscribed_instruments(self):
+        """
+        The instruments subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return sorted(list(self._subscribed_instruments))
 
     cpdef bint is_connected(self) except *:
         """

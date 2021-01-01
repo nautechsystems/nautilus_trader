@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,9 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import Future
-from asyncio import CancelledError
 from cpython.datetime cimport datetime
+import threading
 
 import pandas as pd
 import oandapyV20
@@ -93,12 +92,36 @@ cdef class OandaDataClient(LiveDataClient):
         )
 
         self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = {}  # type: dict[Symbol, Future]
+        self._subscribed_quote_ticks = {}  # type: dict[Symbol, (threading.Event, asyncio.Future)]
 
         self._update_instruments_handle: asyncio.Handle = None
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
+
+    @property
+    def subscribed_instruments(self):
+        """
+        The instruments subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return sorted(list(self._subscribed_instruments))
+
+    @property
+    def subscribed_quote_ticks(self):
+        """
+        The quote tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return sorted(list(self._subscribed_quote_ticks.keys()))
 
     cpdef bint is_connected(self) except *:
         """
@@ -165,7 +188,10 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Dispose the client.
         """
-        pass  # Nothing to dispose
+        if self._is_connected:
+            self.disconnect()
+
+        self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -196,8 +222,9 @@ cdef class OandaDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
 
         if symbol not in self._subscribed_quote_ticks:
-            future = self._loop.run_in_executor(None, self._stream_prices, symbol)
-            self._subscribed_quote_ticks[symbol] = future
+            event = threading.Event()
+            future = self._loop.run_in_executor(None, self._stream_prices, symbol, event)
+            self._subscribed_quote_ticks[symbol] = (event, future)
 
             self._log.debug(f"Subscribed to quote ticks for {symbol}.")
 
@@ -257,11 +284,11 @@ cdef class OandaDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
 
         if symbol in self._subscribed_quote_ticks:
-            future = self._subscribed_quote_ticks.pop(symbol)
+            event, future = self._subscribed_quote_ticks.pop(symbol)
+            event.set()
             future.cancel()
 
             self._log.debug(f"Unsubscribed from quote ticks for {symbol}.")
-            self._log.debug(f"{future}")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -521,7 +548,7 @@ cdef class OandaDataClient(LiveDataClient):
         # Reschedule subscribed instruments update in one hour
         self._update_instruments_handle = self._loop.call_later(60 * 60, self._subscribed_instruments_update)
 
-    def _stream_prices(self, Symbol symbol):
+    def _stream_prices(self, Symbol symbol, event: threading.Event):
         cdef dict res
         cdef dict best_bid
         cdef dict best_ask
@@ -536,16 +563,16 @@ cdef class OandaDataClient(LiveDataClient):
 
             while True:
                 for res in self._client.request(req):
+                    if event.is_set():
+                        raise asyncio.CancelledError("Price stream stopped")
                     if res["type"] != "PRICE":
                         # Heartbeat
                         continue
                     tick = self._parse_quote_tick(symbol, res)
                     self._loop.call_soon_threadsafe(self._send_quote_tick, tick)
-        except CancelledError:
-            pass
+        except asyncio.CancelledError:
+            pass  # Expected cancellation
         except Exception as ex:
-            if str(ex) == "Event loop is closed":
-                return  # Was unsubscribed
             self._log.exception(ex)
 
     def _request_bars(

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -19,6 +19,7 @@ import pytz
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+from cpython.datetime cimport total_seconds
 from cpython.datetime cimport tzinfo
 
 from nautilus_trader.common.timer cimport TestTimer
@@ -251,7 +252,7 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        Condition.true(interval.total_seconds() > 0, "interval positive")
+        Condition.true(total_seconds(interval) > 0, "interval positive")
         Condition.callable(handler, "handler")
 
         cdef datetime now = self.utc_now()

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -86,6 +86,7 @@ class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         # self.subscribe_quote_ticks(self.symbol)  # For debugging
+        # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
         """

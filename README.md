@@ -119,7 +119,7 @@ Contributors are also required to sign a standard Contributor License Agreement 
 
 ---
 
-Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io
 
