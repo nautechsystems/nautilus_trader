@@ -36,8 +36,10 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.test_kit.mocks import ObjectStorer
 from tests import PACKAGE_ROOT
+from tests.test_kit.mocks import ObjectStorer
+
+
 TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/"
 
 OANDA = Venue("OANDA")
@@ -123,7 +125,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.reset()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertFalse(self.client.is_connected())
 
     def test_dispose(self):
         # Arrange
@@ -131,7 +133,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.dispose()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertFalse(self.client.is_connected())
 
     def test_subscribe_instrument(self):
         # Arrange
@@ -141,25 +143,25 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.subscribe_instrument(AUDUSD)
 
         # Assert
-        self.assertTrue(True)
+        self.assertIn(AUDUSD, self.client.subscribed_instruments)
 
-    # TODO: Hanging on price stream Future
-    # def test_subscribe_quote_ticks(self):
-    #     async def run_test():
-    #         # Arrange
-    #         self.data_engine.start()
-    #
-    #         # Act
-    #         self.client.subscribe_quote_ticks(AUDUSD)
-    #         await asyncio.sleep(0.3)
-    #
-    #         # Assert
-    #         self.assertTrue(True)
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #
-    #     self.loop.run_until_complete(run_test())
+    def test_subscribe_quote_ticks(self):
+        async def run_test():
+            # Arrange
+            self.mock_oanda.request.return_value = {"type": {"HEARTBEAT": "0"}}
+            self.data_engine.start()
+
+            # Act
+            self.client.subscribe_quote_ticks(AUDUSD)
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertIn(AUDUSD, self.client.subscribed_quote_ticks)
+
+            # Tear Down
+            self.data_engine.stop()
+
+        self.loop.run_until_complete(run_test())
 
     def test_subscribe_bars(self):
         # Arrange
@@ -182,28 +184,26 @@ class OandaDataClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)
 
-    # TODO: Hanging on price stream Future
-    # def test_unsubscribe_quote_ticks(self):
-    #     async def run_test():
-    #         # Arrange
-    #         self.data_engine.start()
-    #
-    #         self.client.subscribe_quote_ticks(AUDUSD)
-    #
-    #         await asyncio.sleep(1)
-    #
-    #         # Act
-    #         self.client.unsubscribe_quote_ticks(AUDUSD)
-    #
-    #         await asyncio.sleep(1)
-    #
-    #         # Assert
-    #         self.assertTrue(True)
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #
-    #     self.loop.run_until_complete(run_test())
+    def test_unsubscribe_quote_ticks(self):
+        async def run_test():
+            # Arrange
+            self.mock_oanda.request.return_value = {"type": {"HEARTBEAT": "0"}}
+            self.data_engine.start()
+
+            self.client.subscribe_quote_ticks(AUDUSD)
+            await asyncio.sleep(0.3)
+
+            # # Act
+            self.client.unsubscribe_quote_ticks(AUDUSD)
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertNotIn(AUDUSD, self.client.subscribed_quote_ticks)
+
+            # Tear Down
+            self.data_engine.stop()
+
+        self.loop.run_until_complete(run_test())
 
     def test_unsubscribe_bars(self):
         # Arrange
@@ -224,10 +224,11 @@ class OandaDataClientTests(unittest.TestCase):
 
             self.mock_oanda.request.return_value = instruments
             self.data_engine.start()
+            await asyncio.sleep(0.3)
 
             # Act
             self.client.request_instrument(AUDUSD, uuid4())
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             # Instruments additionally requested on start
@@ -247,10 +248,11 @@ class OandaDataClientTests(unittest.TestCase):
 
             self.mock_oanda.request.return_value = instruments
             self.data_engine.start()
+            await asyncio.sleep(0.3)
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             # Instruments additionally requested on start
@@ -277,6 +279,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             handler = ObjectStorer()
             self.data_engine.start()
+            await asyncio.sleep(0.3)
 
             bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
             bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
@@ -299,7 +302,7 @@ class OandaDataClientTests(unittest.TestCase):
             self.data_engine.send(request)
 
             # Allow time for request to be sent, processed and response returned
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             self.assertEqual(2, self.data_engine.response_count)

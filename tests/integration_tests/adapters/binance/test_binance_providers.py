@@ -28,6 +28,8 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import PACKAGE_ROOT
+
+
 TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
 
 

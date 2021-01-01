@@ -15,8 +15,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import threading
-import time
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.live.node import TradingNode
@@ -104,25 +102,9 @@ node = TradingNode(
 )
 
 
-def run_node():
-    # Run node in a background thread
-    run = threading.Thread(target=node.start, daemon=True)
-    run.start()
-
-
-def stop_and_dispose_node():
-    # Get the event loop for the node
-    loop = node.get_event_loop()
-    loop.call_soon_threadsafe(node.stop)
-    loop.call_soon_threadsafe(node.shutdown)
-
-    time.sleep(5)  # Hard coded shutdown time-out
-    node.dispose()
-
-
+# Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
-    run_node()
-
-    # Stop and dispose of the node by pressing any key or SIGINT/CTRL+C
-    input()
-    stop_and_dispose_node()
+    try:
+        node.start()
+    finally:
+        node.dispose()
