@@ -111,7 +111,6 @@ Index
     :hidden:
 
     adapter_reference/binance
-    adapter_reference/ccxt
     adapter_reference/oanda
     adapter_reference/tda
 

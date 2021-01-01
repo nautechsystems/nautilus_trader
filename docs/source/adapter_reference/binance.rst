@@ -4,6 +4,15 @@ Binance Integration
 .. automodule:: nautilus_trader.adapters.binance
 
 
+Client
+------
+
+.. automodule:: nautilus_trader.adapters.binance.client
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Providers
 ---------
 
