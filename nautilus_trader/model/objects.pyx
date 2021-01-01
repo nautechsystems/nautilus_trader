@@ -132,52 +132,76 @@ cdef class BaseDecimal:
         return BaseDecimal._compare(self, other, Py_GE)
 
     def __add__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float):
-            return self + float(other)
-        elif isinstance(other, float):
+        if isinstance(other, float):
             return float(self) + other
         else:
             return BaseDecimal._extract_value(self) + BaseDecimal._extract_value(other)
 
+    def __radd__(self, other) -> decimal.Decimal or float:
+        if isinstance(other, float):
+            return other + float(self)
+        else:
+            return BaseDecimal._extract_value(other) + BaseDecimal._extract_value(self)
+
     def __sub__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float):
-            return self - float(other)
-        elif isinstance(other, float):
+        if isinstance(other, float):
             return float(self) - other
         else:
             return BaseDecimal._extract_value(self) - BaseDecimal._extract_value(other)
 
+    def __rsub__(self, other) -> decimal.Decimal or float:
+        if isinstance(other, float):
+            return other - float(self)
+        else:
+            return BaseDecimal._extract_value(other) - BaseDecimal._extract_value(self)
+
     def __mul__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float):
-            return self * float(other)
-        elif isinstance(other, float):
+        if isinstance(other, float):
             return float(self) * other
         else:
             return BaseDecimal._extract_value(self) * BaseDecimal._extract_value(other)
 
+    def __rmul__(self, other) -> decimal.Decimal or float:
+        if isinstance(other, float):
+            return other * float(self)
+        else:
+            return BaseDecimal._extract_value(other) * BaseDecimal._extract_value(self)
+
     def __truediv__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float):
-            return self / float(other)
-        elif isinstance(other, float):
+        if isinstance(other, float):
             return float(self) / other
         else:
             return BaseDecimal._extract_value(self) / BaseDecimal._extract_value(other)
 
+    def __rtruediv__(self, other) -> decimal.Decimal or float:
+        if isinstance(other, float):
+            return other / float(self)
+        else:
+            return BaseDecimal._extract_value(other) / BaseDecimal._extract_value(self)
+
     def __floordiv__(self, other) -> decimal.Decimal or float:
-        if isinstance(self, float):
-            return self // float(other)
-        elif isinstance(other, float):
+        if isinstance(other, float):
             return float(self) // other
         else:
             return BaseDecimal._extract_value(self) // BaseDecimal._extract_value(other)
 
+    def __rfloordiv__(self, other) -> decimal.Decimal or float:
+        if isinstance(other, float):
+            return other // float(self)
+        else:
+            return BaseDecimal._extract_value(other) // BaseDecimal._extract_value(self)
+
     def __mod__(self, other) -> decimal.Decimal:
-        if isinstance(self, float):
-            return self % float(other)
-        elif isinstance(other, float):
+        if isinstance(other, float):
             return float(self) % other
         else:
             return BaseDecimal._extract_value(self) % BaseDecimal._extract_value(other)
+
+    def __rmod__(self, other) -> decimal.Decimal:
+        if isinstance(other, float):
+            return other % float(self)
+        else:
+            return BaseDecimal._extract_value(other) % BaseDecimal._extract_value(self)
 
     def __neg__(self) -> decimal.Decimal:
         return self._value.__neg__()
