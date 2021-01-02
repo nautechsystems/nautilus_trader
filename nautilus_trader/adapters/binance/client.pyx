@@ -54,8 +54,8 @@ cdef class BinanceDataClientFactory:
         """
         # Create client
         client = ccxt.binance({
-            "apiKey": os.getenv(config.get("api_key", "")),
-            "secret": os.getenv(config.get("api_secret", "")),
+            "apiKey": os.getenv(config.get("api_key", ""), ""),
+            "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
         })

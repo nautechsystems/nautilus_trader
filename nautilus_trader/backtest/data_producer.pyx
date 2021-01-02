@@ -24,7 +24,6 @@ import pandas as pd
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from cpython.datetime cimport total_seconds
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -117,7 +116,7 @@ cdef class BacktestDataProducer:
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
                 self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {symbol} quote tick rows in "
-                               f"{round(total_seconds(datetime.utcnow() - timing_start), 2)}s.")
+                               f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
@@ -135,7 +134,7 @@ cdef class BacktestDataProducer:
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
                 self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {symbol} trade tick rows in "
-                               f"{round(total_seconds(datetime.utcnow() - timing_start), 2)}s.")
+                               f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
@@ -198,7 +197,7 @@ cdef class BacktestDataProducer:
 
         self.has_tick_data = False
 
-        processing_time = round(total_seconds(datetime.utcnow() - timing_start_total), 2)
+        processing_time = round((datetime.utcnow() - timing_start_total).total_seconds(), 2)
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
                        f"total tick rows in {processing_time}s.")
 
