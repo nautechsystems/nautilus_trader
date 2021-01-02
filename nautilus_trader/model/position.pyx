@@ -312,6 +312,10 @@ cdef class Position:
             The order fill event to apply.
 
         """
+        # Fast C method to avoid overhead of subclassing
+        self.apply_c(event)
+
+    cdef void apply_c(self, OrderFilled event) except *:
         Condition.not_none(event, "event")
 
         self._events.append(event)

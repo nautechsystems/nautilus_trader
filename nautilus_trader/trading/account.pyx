@@ -152,6 +152,9 @@ cdef class Account:
         System method (not intended to be called by user code).
 
         """
+        self.apply_c(event)
+
+    cdef void apply_c(self, AccountState event) except*:
         Condition.not_none(event, "event")
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 
