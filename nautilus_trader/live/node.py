@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import tasks
 import concurrent.futures
 from datetime import timedelta
 import signal
@@ -419,7 +418,7 @@ class TradingNode:
         self._is_running = False
 
     def _cancel_all_tasks(self):
-        to_cancel = tasks.all_tasks(self._loop)
+        to_cancel = asyncio.tasks.all_tasks(self._loop)
         if not to_cancel:
             self._log.info("All tasks finished.")
             return
@@ -432,7 +431,11 @@ class TradingNode:
             self._log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
-        finish_all_tasks = tasks.gather(*to_cancel, loop=self._loop, return_exceptions=True)
+        finish_all_tasks = asyncio.tasks.gather(
+            *to_cancel,
+            loop=self._loop,
+            return_exceptions=True,
+        )
         self._loop.run_until_complete(finish_all_tasks)
 
         self._log.debug(f"{finish_all_tasks}")
