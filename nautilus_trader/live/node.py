@@ -236,6 +236,9 @@ class TradingNode:
 
             self._log.info("state=DISPOSING...")
 
+            self._log.debug(f"{self._data_engine.get_run_queue_task()}")
+            self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
+
             self.trader.dispose()
             self._data_engine.dispose()
             self._exec_engine.dispose()
@@ -363,7 +366,7 @@ class TradingNode:
 
             self._is_running = True
 
-            # Continue to run loop while engines are running...
+            # Continue to run while engines are running...
             await self._data_engine.get_run_queue_task()
             await self._exec_engine.get_run_queue_task()
         except asyncio.exceptions.CancelledError as ex:
@@ -404,8 +407,6 @@ class TradingNode:
 
         await self._data_engine.get_run_queue_task()
         await self._exec_engine.get_run_queue_task()
-        self._log.debug(f"{self._data_engine.get_run_queue_task()}")
-        self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
 
         # Clean up remaining timers
         timer_names = self._clock.timer_names()
@@ -431,7 +432,7 @@ class TradingNode:
             self._log.warning("Event loop still running during `cancel_all_tasks`.")
             return
 
-        finish_all_tasks = asyncio.tasks.gather(
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(
             *to_cancel,
             loop=self._loop,
             return_exceptions=True,

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-import os
 
 import ccxt
 
@@ -40,6 +39,8 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport TradeTick
+
+cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
 cdef class BinanceDataClient(LiveDataClient):
@@ -86,7 +87,7 @@ cdef class BinanceDataClient(LiveDataClient):
         self._subscribed_instruments = set()
 
         # Schedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -502,7 +503,7 @@ cdef class BinanceDataClient(LiveDataClient):
             self._loop.call_soon_threadsafe(self._send_instrument, symbol)
 
         # Reschedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
 
     def _request_trade_ticks(
         self,
