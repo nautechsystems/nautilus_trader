@@ -13,9 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.adapters.binance.providers cimport BinanceInstrumentProvider
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -26,5 +31,26 @@ cdef class BinanceDataClient(LiveDataClient):
     cdef set _subscribed_instruments
     cdef BinanceInstrumentProvider _instrument_provider
 
-    cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
-    cpdef Bar _parse_bar(self, Instrument instrument, list values)
+    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *
+    cpdef void _request_instruments(self, UUID correlation_id) except *
+    cpdef void _subscribed_instruments_update(self) except *
+    cpdef void _subscribed_instruments_load_and_send(self) except *
+    cpdef void _request_trade_ticks(
+            self,
+            Symbol symbol,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            UUID correlation_id,
+    ) except *
+    cpdef void _request_bars(
+            self,
+            BarType bar_type,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            UUID correlation_id,
+    ) except *
+
+    cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
+    cdef inline Bar _parse_bar(self, Instrument instrument, list values)

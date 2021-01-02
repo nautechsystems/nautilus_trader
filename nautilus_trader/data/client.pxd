@@ -90,12 +90,12 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument) except *
-    cpdef void _handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void _handle_trade_tick(self, TradeTick tick) except *
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *
+    cdef void _handle_instrument(self, Instrument instrument) except *
+    cdef void _handle_quote_tick(self, QuoteTick tick) except *
+    cdef void _handle_trade_tick(self, TradeTick tick) except *
+    cdef void _handle_bar(self, BarType bar_type, Bar bar) except *
 
-    cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
-    cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
-    cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
+    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
+    cdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *

@@ -13,9 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+import threading
+
 from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
@@ -31,5 +36,18 @@ cdef class OandaDataClient(LiveDataClient):
     cdef OandaInstrumentProvider _instrument_provider
     cdef object _update_instruments_handle
 
+    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *
+    cpdef void _request_instruments(self, UUID correlation_id) except *
+    cpdef void _subscribed_instruments_update(self) except *
+    cpdef void _subscribed_instruments_load_and_send(self) except *
+    cpdef void _request_bars(
+            self,
+            BarType bar_type,
+            datetime from_datetime,
+            datetime to_datetime,
+            int limit,
+            UUID correlation_id,
+    ) except *
+    cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)
     cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)

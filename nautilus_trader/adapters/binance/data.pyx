@@ -436,83 +436,48 @@ cdef class BinanceDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
-        return TradeTick(
-            instrument.symbol,
-            Price(trade['price'], instrument.price_precision),
-            Quantity(trade['amount'], instrument.size_precision),
-            OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
-            TradeMatchId(trade["id"]),
-            from_posix_ms(trade["timestamp"]),
-        )
-
-    cpdef Bar _parse_bar(self, Instrument instrument, list values):
-        return Bar(
-            Price(values[1], instrument.price_precision),
-            Price(values[2], instrument.price_precision),
-            Price(values[3], instrument.price_precision),
-            Price(values[4], instrument.price_precision),
-            Quantity(values[5], instrument.size_precision),
-            from_posix_ms(values[0]),
-        )
-
-    def _request_instrument(self, Symbol symbol, UUID correlation_id):
+    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
         self._instrument_provider.load_all()
-        self._loop.call_soon_threadsafe(self._send_instrument_with_correlation, symbol, correlation_id)
-
-    def _request_instruments(self, UUID correlation_id):
-        self._instrument_provider.load_all()
-        self._loop.call_soon_threadsafe(self._send_instruments, correlation_id)
-
-    def _send_instrument_with_correlation(self, Symbol symbol, UUID correlation_id):
-        cdef Instrument instrument = self._instrument_provider.get_all().get(symbol)
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is not None:
-            self._handle_instruments([instrument], correlation_id)
+            self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
         else:
             self._log.error(f"Could not find instrument {symbol.code}.")
 
-    def _send_instrument(self, Symbol symbol):
-        cdef Instrument instrument = self._instrument_provider.get_all().get(symbol)
-        if instrument is not None:
-            self._handle_instrument(instrument)
-        else:
-            self._log.error(f"Could not find instrument {symbol.code}.")
-
-    def _send_instruments(self, UUID correlation_id):
+    cpdef void _request_instruments(self, UUID correlation_id) except *:
+        self._instrument_provider.load_all()
         cdef list instruments = list(self._instrument_provider.get_all().values())
-        self._handle_instruments(instruments, correlation_id)
+        self._loop.call_soon_threadsafe(self._handle_instruments_py, instruments, correlation_id)
 
         self._log.info(f"Updated {len(instruments)} instruments.")
         self.initialized = True
 
-    def _send_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id):
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
-
-    def _send_bars(self, BarType bar_type, list bars, UUID correlation_id):
-        # TODO: Partial bars
-        self._handle_bars(bar_type, bars, None, correlation_id)
-
-    def _subscribed_instruments_update(self):
+    cpdef void _subscribed_instruments_update(self) except *:
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
 
-    def _subscribed_instruments_load_and_send(self):
+    cpdef void _subscribed_instruments_load_and_send(self) except *:
         self._instrument_provider.load_all()
 
         cdef Symbol symbol
+        cdef Instrument instrument
         for symbol in self._subscribed_instruments:
-            self._loop.call_soon_threadsafe(self._send_instrument, symbol)
+            instrument = self._instrument_provider.get(symbol)
+            if instrument is not None:
+                self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
+            else:
+                self._log.error(f"Could not find instrument {symbol.code}.")
 
         # Reschedule subscribed instruments update in one hour
         self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
 
-    def _request_trade_ticks(
+    cpdef void _request_trade_ticks(
         self,
         Symbol symbol,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ):
+    ) except *:
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
             self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
@@ -539,20 +504,20 @@ cdef class BinanceDataClient(LiveDataClient):
             ticks.append(self._parse_trade_tick(instrument, trade))
 
         self._loop.call_soon_threadsafe(
-            self._send_trade_ticks,
+            self._handle_trade_ticks_py,
             symbol,
             ticks,
             correlation_id,
         )
 
-    def _request_bars(
+    cpdef void _request_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ):
+    ) except *:
         cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
@@ -579,8 +544,29 @@ cdef class BinanceDataClient(LiveDataClient):
             bars.append(self._parse_bar(instrument, values))
 
         self._loop.call_soon_threadsafe(
-            self._send_bars,
+            self._handle_bars_py,
             bar_type,
             bars,
+            None,
             correlation_id,
+        )
+
+    cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
+        return TradeTick(
+            instrument.symbol,
+            Price(trade['price'], instrument.price_precision),
+            Quantity(trade['amount'], instrument.size_precision),
+            OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
+            TradeMatchId(trade["id"]),
+            from_posix_ms(trade["timestamp"]),
+        )
+
+    cdef inline Bar _parse_bar(self, Instrument instrument, list values):
+        return Bar(
+            Price(values[1], instrument.price_precision),
+            Price(values[2], instrument.price_precision),
+            Price(values[3], instrument.price_precision),
+            Price(values[4], instrument.price_precision),
+            Quantity(values[5], instrument.size_precision),
+            from_posix_ms(values[0]),
         )
