@@ -115,14 +115,8 @@ cdef class ExecutionClient:
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_event(self, Event event) except *:
-        """
-        Handle the event by sending it to the execution engine for processing.
+    def _handle_event_py(self, Event event):
+        self._engine.process(event)
 
-        Parameters
-        ----------
-        event : Event
-            The event to handle.
-
-        """
+    cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)
