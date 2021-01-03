@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from cpython.datetime cimport datetime
 
 from cryptofeed.callback import TradeCallback
@@ -36,6 +38,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -43,6 +46,7 @@ from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -103,8 +107,8 @@ cdef class BinanceDataClient(LiveDataClient):
         self._subscribed_instruments = set()
         self._feeds = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
-        # Schedule subscribed instruments update in one hour
         try:
+            # Schedule subscribed instruments update in one hour
             self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
         except RuntimeError as ex:
             self._log.error(str(ex))
@@ -170,9 +174,10 @@ cdef class BinanceDataClient(LiveDataClient):
         )
 
         self._subscribed_instruments = set()
+        self._feeds = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
-        # Schedule subscribed instruments update in one hour
         try:
+            # Schedule subscribed instruments update in one hour
             self._loop.call_later(60 * 60, self._subscribed_instruments_update)
         except RuntimeError as ex:
             self._log.error(str(ex))
@@ -228,13 +233,13 @@ cdef class BinanceDataClient(LiveDataClient):
         feed = cryptofeed.exchanges.Binance(
             pairs=[symbol.code.replace('/', '-')],
             channels=[TRADES],
-            callbacks={TRADES: TradeCallback(self._trade)},
+            callbacks={TRADES: TradeCallback(self._on_trade_tick)},
         )
 
         # TODO: WIP
         self._feeds[symbol] = feed
         self._client_feed.add_feed(feed)
-        # self._client_feed.create_stream(self._loop, feed)
+        self._client_feed.create_stream(self._loop, feed)
 
         self._log.debug(f"Added TRADES feed for {symbol.code}.")
 
@@ -587,25 +592,29 @@ cdef class BinanceDataClient(LiveDataClient):
             correlation_id,
         )
 
-    def _trade(self, feed, pair, order_id, timestamp, side, amount, price, receipt_timestamp):
+    cpdef void _on_trade_tick(
+        self,
+        str feed,
+        str pair,
+        int order_id,
+        double timestamp,
+        str side,
+        amount: Decimal,
+        price: Decimal,
+        double receipt_timestamp,
+    ) except *:
+        cdef Symbol symbol = Symbol(pair.replace('-', '/', 1), self.venue)
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
         cdef TradeTick tick = TradeTick(
-            Symbol(pair.replace('-', '/'), self.venue),
-            Price(price),
-            Quantity(amount),
+            symbol,
+            Price(price, instrument.price_precision),
+            Quantity(amount, instrument.size_precision),
             OrderSide.BUY if side == "buy" else OrderSide.SELL,
             TradeMatchId(str(order_id)),
-            from_posix_ms(int(timestamp * 1000))
+            from_posix_ms(<long>(timestamp * 1000))
         )
 
         self._handle_trade_tick_py(tick)
-        # print(f"pair {pair} {type(pair)}")
-        # print(f"order_id {order_id} {type(order_id)}")
-        # print(f"timestamp {timestamp} {type(timestamp)}")
-        # print(f"side {side} {type(side)}")
-        # print(f"amount {amount} {type(amount)}")
-        # print(f"price {price} {type(price)}")
-        # print(f"receipt_timestamp {receipt_timestamp} {type(receipt_timestamp)}")
-        # #print(f"Timestamp: {timestamp} Feed: {feed} Pair: {pair} ID: {order_id} Side: {side} Amount: {amount} Price: {price}")
 
     cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
         return TradeTick(
@@ -626,3 +635,29 @@ cdef class BinanceDataClient(LiveDataClient):
             Quantity(values[5], instrument.size_precision),
             from_posix_ms(values[0]),
         )
+
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
+        self._engine.process(instrument)
+
+    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
+        self._engine.process(tick)
+
+    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
+        self._engine.process(tick)
+
+    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
+        self._engine.process(BarData(bar_type, bar))
+
+    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
+        self._handle_instruments(instruments, correlation_id)
+
+    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        self._handle_quote_ticks(symbol, ticks, correlation_id)
+
+    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
+
+    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
+        self._handle_bars(bar_type, bars, partial, correlation_id)

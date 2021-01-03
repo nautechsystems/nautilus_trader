@@ -64,7 +64,7 @@ cpdef datetime from_posix_ms(long posix):
     datetime
 
     """
-    return UNIX_EPOCH + timedelta(milliseconds=round(posix, -3))  # Round off thousands
+    return UNIX_EPOCH + timedelta(milliseconds=posix)  # Round off thousands
 
 
 cpdef bint is_datetime_utc(datetime timestamp) except *:
@@ -207,7 +207,7 @@ cpdef str format_iso8601(datetime dt):
 
     # Note the below is faster than .isoformat() or string formatting by 25%
     # Have not tried char* manipulation
-    cdef str tz_stripped = str(dt).replace(' ', 'T').rpartition('+')[0]
+    cdef str tz_stripped = str(dt).replace(' ', 'T', 1).rpartition('+')[0]
 
     if not PyUnicode_Contains(tz_stripped, '.'):
         return f"{tz_stripped}.000Z"

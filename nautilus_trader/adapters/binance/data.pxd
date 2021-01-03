@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.binance.providers cimport BinanceInstrumentProvider
@@ -22,6 +24,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
@@ -55,5 +58,27 @@ cdef class BinanceDataClient(LiveDataClient):
         UUID correlation_id,
     ) except *
 
+    cpdef void _on_trade_tick(
+        self,
+        str feed,
+        str pair,
+        int order_id,
+        double timestamp,
+        str side,
+        amount: Decimal,
+        price: Decimal,
+        double receipt_timestamp,
+    ) except *
     cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
     cdef inline Bar _parse_bar(self, Instrument instrument, list values)
+
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    cpdef void _handle_instrument_py(self, Instrument instrument) except *
+    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *
+    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *
+    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *
+    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *
+    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
