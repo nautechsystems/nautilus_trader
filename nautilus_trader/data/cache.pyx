@@ -53,7 +53,7 @@ cdef class DataCache(DataCacheFacade):
         ----------
         logger : Logger
             The logger for the component.
-        config : dict, optional
+        config : dict[str, object], optional
             The configuration options.
 
         """

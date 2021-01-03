@@ -93,6 +93,11 @@ cdef class BinanceDataClient(LiveDataClient):
             engine,
             clock,
             logger,
+            config={
+                "unavailable_methods": [
+                    self.request_quote_ticks.__name__,
+                ],
+            }
         )
 
         self._is_connected = False

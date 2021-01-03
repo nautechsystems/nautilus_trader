@@ -83,6 +83,13 @@ cdef class OandaDataClient(LiveDataClient):
             engine,
             clock,
             logger,
+            config={
+                "unavailable_methods": [
+                    self.subscribe_trade_ticks.__name__,
+                    self.request_quote_ticks.__name__,
+                    self.request_trade_ticks.__name__,
+                ],
+            }
         )
 
         self._is_connected = False

@@ -61,7 +61,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict, option
+        config : dict[str, object], optional
             The configuration options.
 
         """
