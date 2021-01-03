@@ -85,7 +85,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_quote_ticks(self.symbol)  # For debugging
+        self.subscribe_quote_ticks(self.symbol)  # For debugging
         # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
@@ -111,7 +111,7 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -124,7 +124,7 @@ class EMACross(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):

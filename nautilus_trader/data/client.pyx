@@ -53,6 +53,7 @@ cdef class DataClient:
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `DataClient` class.
@@ -65,12 +66,18 @@ cdef class DataClient:
             The clock for the component.
         logger : Logger
             The logger for the component.
+        config : dict[str, object], optional
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"DataClient-{venue.value}", logger)
         self._engine = engine
+        self._config = config
 
         self.venue = venue
         self.initialized = False
@@ -79,6 +86,18 @@ cdef class DataClient:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
+
+    cpdef list unavailable_methods(self):
+        """
+        Return a list of unavailable methods for this data client.
+
+        Returns
+        -------
+        list[str]
+            The names of the unavailable methods.
+
+        """
+        return self._config.get("unavailable_methods", []).copy()
 
     cpdef bint is_connected(self) except *:
         """Abstract method (implement in subclass)."""

@@ -18,6 +18,7 @@ from nautilus_trader.data.engine cimport DataEngine
 
 
 cdef class LiveDataEngine(DataEngine):
+    cdef dict _config
     cdef object _loop
     cdef object _data_queue
     cdef object _message_queue
