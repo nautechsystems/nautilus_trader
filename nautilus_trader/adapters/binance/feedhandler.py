@@ -1,3 +1,4 @@
+# flake8: noqa
 '''
 Copyright (C) 2017-2021  Bryant Moscon - bmoscon@gmail.com
 

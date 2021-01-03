@@ -15,11 +15,13 @@
 
 import json
 
-from cryptofeed.callback import TickerCallback, TradeCallback, BookCallback, FundingCallback
-from cryptofeed import FeedHandler
-from cryptofeed.exchanges import Binance
-from cryptofeed.defines import TRADES, TICKER
 import ccxt
+from cryptofeed import FeedHandler
+from cryptofeed.callback import TickerCallback
+from cryptofeed.callback import TradeCallback
+from cryptofeed.defines import TICKER
+from cryptofeed.defines import TRADES
+from cryptofeed.exchanges import Binance
 
 
 # Requirements:

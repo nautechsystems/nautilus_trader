@@ -153,8 +153,8 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Disconnecting...")
 
-        self._log.error("STOPPING STREAM HERE")  # TODO!
-        self._client_feed.stop_stream(self._loop)
+        # TODO: WIP
+        # self._client_feed.stop_stream(self._loop)
         self._is_connected = False
 
         self._log.info("Disconnected.")
@@ -234,7 +234,7 @@ cdef class BinanceDataClient(LiveDataClient):
         # TODO: WIP
         self._feeds[symbol] = feed
         self._client_feed.add_feed(feed)
-        self._client_feed.create_stream(self._loop, feed)
+        # self._client_feed.create_stream(self._loop, feed)
 
         self._log.debug(f"Added TRADES feed for {symbol.code}.")
 

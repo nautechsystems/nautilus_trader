@@ -78,7 +78,7 @@ To install the latest package from PyPI, run:
 
     pip install -U nautilus_trader
 
-Alternatively, to install from source using _pip_, run:
+Alternatively, to install from source using pip, run:
 
     pip install .
 
