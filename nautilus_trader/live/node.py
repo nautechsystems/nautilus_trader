@@ -47,6 +47,7 @@ from nautilus_trader.trading.trader import Trader
 
 try:
     import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     uvloop_version = uvloop.__version__
 except ImportError:
     uvloop_version = None
@@ -88,8 +89,10 @@ class TradingNode:
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(False)  # TODO: Development
         self._is_running = False
+
+        # Uncomment for debugging
+        # self._loop.set_debug(True)
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -252,10 +255,7 @@ class TradingNode:
 
             self._log.info("Stopping event loop...")
             self._loop.stop()
-
-            if is_ge_python_version(major=3, minor=7):
-                # tasks.all_tasks added in Python 3.7
-                self._cancel_all_tasks()
+            self._cancel_all_tasks()
         except RuntimeError as ex:
             self._log.exception(ex)
         finally:
@@ -289,31 +289,28 @@ class TradingNode:
         self._log.info("=================================================================")
 
     def _setup_data_clients(self, config, logger):
-        try:
-            # Setup each data
-            for name, config in config.items():
-                if name == "binance":
-                    data_client = BinanceDataClientFactory.create(
-                        config=config,
-                        data_engine=self._data_engine,
-                        clock=self._clock,
-                        logger=logger,
-                    )
+        # Setup each data
+        for name, config in config.items():
+            if name == "binance":
+                data_client = BinanceDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
 
-                    self._data_engine.register_client(data_client)
-                elif name == "oanda":
-                    data_client = OandaDataClientFactory.create(
-                        config=config,
-                        data_engine=self._data_engine,
-                        clock=self._clock,
-                        logger=logger,
-                    )
+                self._data_engine.register_client(data_client)
+            elif name == "oanda":
+                data_client = OandaDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
 
-                    self._data_engine.register_client(data_client)
-                else:
-                    self._log.error(f"No DataClient available for `{name}`.")
-        except RuntimeError as ex:
-            self._log.exception(ex)
+                self._data_engine.register_client(data_client)
+            else:
+                self._log.error(f"No DataClient available for `{name}`.")
 
     def _setup_exec_clients(self, config, logger):
         try:
@@ -329,13 +326,12 @@ class TradingNode:
             self._log.exception(ex)
 
     def _setup_loop(self):
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signals = (signal.SIGTERM, signal.SIGINT)
-
         if self._loop.is_closed():
             self._log.error("Cannot setup signal handling (event loop was closed).")
             return
 
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")

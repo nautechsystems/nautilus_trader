@@ -81,11 +81,14 @@ class BinanceDataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.mock_binance = MagicMock()
-        self.mock_binance.name = "Binance"
+        self.mock_binance_rest = MagicMock()
+        self.mock_binance_rest.name = "Binance"
+
+        self.mock_binance_feed = MagicMock()
 
         self.client = BinanceDataClient(
-            client=self.mock_binance,
+            client_rest=self.mock_binance_rest,
+            client_feed=self.mock_binance_feed,
             engine=self.data_engine,
             clock=self.clock,
             logger=logger,
@@ -218,7 +221,7 @@ class BinanceDataClientTests(unittest.TestCase):
             with open(TEST_PATH + "res_instruments.json") as response:
                 instruments = json.load(response)
 
-            self.mock_binance.markets = instruments
+            self.mock_binance_rest.markets = instruments
 
             self.data_engine.start()
             await asyncio.sleep(0.3)
@@ -244,7 +247,7 @@ class BinanceDataClientTests(unittest.TestCase):
             with open(TEST_PATH + "res_instruments.json") as response:
                 instruments = json.load(response)
 
-            self.mock_binance.markets = instruments
+            self.mock_binance_rest.markets = instruments
 
             self.data_engine.start()
             await asyncio.sleep(0.3)

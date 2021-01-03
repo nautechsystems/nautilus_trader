@@ -41,12 +41,12 @@ cdef class OandaDataClient(LiveDataClient):
     cpdef void _subscribed_instruments_update(self) except *
     cpdef void _subscribed_instruments_load_and_send(self) except *
     cpdef void _request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            UUID correlation_id,
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
     ) except *
     cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)

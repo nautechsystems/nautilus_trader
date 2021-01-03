@@ -15,6 +15,11 @@
 
 from cpython.datetime cimport datetime
 
+from cryptofeed.callback import TradeCallback
+from cryptofeed.exchanges import Binance
+from cryptofeed.defines import TRADES
+import cryptofeed
+import cryptofeed.feed
 import ccxt
 
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
@@ -50,7 +55,8 @@ cdef class BinanceDataClient(LiveDataClient):
 
     def __init__(
         self,
-        client not None: ccxt.binance,
+        client_rest not None: ccxt.Exchange,
+        client_feed not None: cryptofeed.FeedHandler,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -60,8 +66,10 @@ cdef class BinanceDataClient(LiveDataClient):
 
         Parameters
         ----------
-        client : ccxt.binance
-            The Binance client.
+        client_rest : ccxt.Exchange
+            The Binance REST client.
+        client_feed : cryptofeed.FeedHandler
+            The Binance streaming feed client.
         engine : LiveDataEngine
             The live data engine for the client.
         clock : LiveClock
@@ -69,7 +77,13 @@ cdef class BinanceDataClient(LiveDataClient):
         logger : Logger
             The logger for the client.
 
+        Raises
+        ------
+        ValueError
+            If client_rest.name != 'Binance'.
+
         """
+        Condition.true(client_rest.name == "Binance", "client.name == `Binance`")
         super().__init__(
             Venue("BINANCE"),
             engine,
@@ -78,16 +92,22 @@ cdef class BinanceDataClient(LiveDataClient):
         )
 
         self._is_connected = False
-        self._client = client
+        self._is_feed_running = False
+        self._client_rest = client_rest
+        self._client_feed = client_feed
         self._instrument_provider = BinanceInstrumentProvider(
-            client=client,
+            client=client_rest,
             load_all=False,
         )
 
         self._subscribed_instruments = set()
+        self._feeds = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
         # Schedule subscribed instruments update in one hour
-        self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
+        try:
+            self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
+        except RuntimeError as ex:
+            self._log.error(str(ex))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -133,6 +153,8 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Disconnecting...")
 
+        self._log.error("STOPPING STREAM HERE")  # TODO!
+        self._client_feed.stop_stream(self._loop)
         self._is_connected = False
 
         self._log.info("Disconnected.")
@@ -143,14 +165,17 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         # TODO: Reset client
         self._instrument_provider = BinanceInstrumentProvider(
-            client=self._client,
+            client=self._client_rest,
             load_all=False,
         )
 
         self._subscribed_instruments = set()
 
         # Schedule subscribed instruments update in one hour
-        self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        try:
+            self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        except RuntimeError as ex:
+            self._log.error(str(ex))
 
     cpdef void dispose(self) except *:
         """
@@ -200,7 +225,18 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        feed = cryptofeed.exchanges.Binance(
+            pairs=[symbol.code.replace('/', '-')],
+            channels=[TRADES],
+            callbacks={TRADES: TradeCallback(self._trade)},
+        )
+
+        # TODO: WIP
+        self._feeds[symbol] = feed
+        self._client_feed.add_feed(feed)
+        self._client_feed.create_stream(self._loop, feed)
+
+        self._log.debug(f"Added TRADES feed for {symbol.code}.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -485,7 +521,7 @@ cdef class BinanceDataClient(LiveDataClient):
 
         cdef list trades
         try:
-            trades = self._client.fetch_trades(
+            trades = self._client_rest.fetch_trades(
                 symbol=symbol.code,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
@@ -525,7 +561,7 @@ cdef class BinanceDataClient(LiveDataClient):
 
         cdef list data
         try:
-            data = self._client.fetch_ohlcv(
+            data = self._client_rest.fetch_ohlcv(
                 symbol=bar_type.symbol.code,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
@@ -550,6 +586,26 @@ cdef class BinanceDataClient(LiveDataClient):
             None,
             correlation_id,
         )
+
+    def _trade(self, feed, pair, order_id, timestamp, side, amount, price, receipt_timestamp):
+        cdef TradeTick tick = TradeTick(
+            Symbol(pair.replace('-', '/'), self.venue),
+            Price(price),
+            Quantity(amount),
+            OrderSide.BUY if side == "buy" else OrderSide.SELL,
+            TradeMatchId(str(order_id)),
+            from_posix_ms(int(timestamp * 1000))
+        )
+
+        self._handle_trade_tick_py(tick)
+        # print(f"pair {pair} {type(pair)}")
+        # print(f"order_id {order_id} {type(order_id)}")
+        # print(f"timestamp {timestamp} {type(timestamp)}")
+        # print(f"side {side} {type(side)}")
+        # print(f"amount {amount} {type(amount)}")
+        # print(f"price {price} {type(price)}")
+        # print(f"receipt_timestamp {receipt_timestamp} {type(receipt_timestamp)}")
+        # #print(f"Timestamp: {timestamp} Feed: {feed} Pair: {pair} ID: {order_id} Side: {side} Amount: {amount} Price: {price}")
 
     cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
         return TradeTick(

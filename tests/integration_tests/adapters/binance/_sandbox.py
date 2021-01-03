@@ -15,6 +15,10 @@
 
 import json
 
+from cryptofeed.callback import TickerCallback, TradeCallback, BookCallback, FundingCallback
+from cryptofeed import FeedHandler
+from cryptofeed.exchanges import Binance
+from cryptofeed.defines import TRADES, TICKER
 import ccxt
 
 
@@ -57,6 +61,20 @@ def request_instruments():
 #     with open('bars.json', 'w') as json_file:
 #         json.dump(res, json_file)
 
+async def ticker(feed, pair, bid, ask, timestamp, receipt_timestamp):
+    print(f'Timestamp: {timestamp} Feed: {feed} Pair: {pair} Bid: {bid} Ask: {ask}')
+
+
+async def trade(feed, pair, order_id, timestamp, side, amount, price, receipt_timestamp):
+    print(f"Timestamp: {timestamp} Feed: {feed} Pair: {pair} ID: {order_id} Side: {side} Amount: {amount} Price: {price}")
+
+
+def streaming_ticker():
+    f = FeedHandler()
+    f.add_feed(Binance(pairs=['BTC-USDT'], channels=[TRADES, TICKER], callbacks={TICKER: TickerCallback(ticker), TRADES: TradeCallback(trade)}))
+
+    f.run()
+
 
 if __name__ == "__main__":
-    request_instruments()
+    streaming_ticker()
