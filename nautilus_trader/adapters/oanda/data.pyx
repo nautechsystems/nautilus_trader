@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -631,7 +632,7 @@ cdef class OandaDataClient(LiveDataClient):
         cdef QuoteTick tick
         try:
             params = {
-                "instruments": symbol.code.replace('/', '_'),
+                "instruments": symbol.code.replace('/', '_', 1),
                 "sessionId": f"{symbol.code}-001",
             }
 
@@ -678,3 +679,29 @@ cdef class OandaDataClient(LiveDataClient):
             Quantity(values["volume"], instrument.size_precision),
             pd.to_datetime(values["time"]),
         )
+
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
+        self._engine.process(instrument)
+
+    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
+        self._engine.process(tick)
+
+    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
+        self._engine.process(tick)
+
+    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
+        self._engine.process(BarData(bar_type, bar))
+
+    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
+        self._handle_instruments(instruments, correlation_id)
+
+    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        self._handle_quote_ticks(symbol, ticks, correlation_id)
+
+    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
+
+    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
+        self._handle_bars(bar_type, bars, partial, correlation_id)

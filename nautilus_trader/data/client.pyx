@@ -205,7 +205,7 @@ cdef class DataClient:
     def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
-# -- C DATA HANDLERS ---------------------------------------------------------------------------------
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_instrument(self, Instrument instrument) except *:
         self._engine.process(instrument)

@@ -108,7 +108,7 @@ cdef class OandaInstrumentProvider:
         cdef str oanda_type = values["type"]
         cdef list symbol_pieces = values["name"].split('_', maxsplit=1)
 
-        cdef Symbol symbol = Symbol(oanda_name.replace('_', '/'), self.venue)
+        cdef Symbol symbol = Symbol(oanda_name.replace('_', '/', 1), self.venue)
         cdef Currency base_currency = None
         cdef Currency quote_currency = Currency(symbol_pieces[1], 2, CurrencyType.FIAT)
 
