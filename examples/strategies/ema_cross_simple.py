@@ -124,6 +124,7 @@ class EMACross(TradingStrategy):
             The tick received.
 
         """
+        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):

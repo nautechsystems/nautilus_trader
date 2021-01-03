@@ -1,8 +1,8 @@
 Installation
 ============
 
-The package is tested against Python versions 3.6 - 3.9 on both Linux and
-MacOS. Windows support is in the pipeline.
+The package is tested against Python versions 3.7 - 3.9 on both Linux and
+MacOS. Users are encouraged to use the latest stable version of Python.
 
 It is a goal for the project to keep dependencies focused, however there are
 still a large number of dependencies as found in the `pyproject.toml` file. Therefore we recommend you create a new

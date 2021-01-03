@@ -69,8 +69,8 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Installation
 
-The latest version is tested against Python 3.6 - 3.9 on Linux and MacOS.
-Windows support is in the pipeline.
+The latest version is tested against Python 3.7 - 3.9 on Linux and MacOS.
+Users are encouraged to use the latest stable version of Python.
 
 We recommend you setup a virtual environment to isolate the dependencies.
 
