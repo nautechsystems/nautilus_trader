@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from decimal import Decimal
 
 from cpython.datetime cimport datetime
@@ -162,10 +163,11 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Disconnecting...")
 
-        # TODO: WIP
-        # self._client_feed.stop_stream(self._loop)
-        self._is_connected = False
+        self._loop.create_task(self._await_disconnect())
 
+    async def _await_disconnect(self):
+        await self._client_feed.async_stop_feeds(self._loop)
+        self._is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -244,7 +246,7 @@ cdef class BinanceDataClient(LiveDataClient):
         # TODO: WIP
         self._feeds[symbol] = feed
         self._client_feed.add_feed(feed)
-        self._client_feed.create_stream(self._loop, feed)
+        self._client_feed.run_feed(self._loop, feed)
 
         self._log.debug(f"Added TRADES feed for {symbol.code}.")
 

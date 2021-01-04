@@ -203,6 +203,22 @@ cdef class DataEngine(Component):
                 return False
         return True
 
+    cpdef bint check_disconnected(self) except *:
+        """
+        Check all clients are disconnected.
+
+        Returns
+        -------
+        bool
+            True if all data clients disconnected, else False.
+
+        """
+        cdef DataClient client
+        for client in self._clients.values():
+            if client.is_connected():
+                return False
+        return True
+
 # --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:

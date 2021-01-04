@@ -257,6 +257,7 @@ class TradingNode:
             self._loop.stop()
             self._cancel_all_tasks()
         except RuntimeError as ex:
+            self._log.error("Shutdown coro issues will be fixed soon...")
             self._log.exception(ex)
         finally:
             if self._loop.is_running():
@@ -383,7 +384,9 @@ class TradingNode:
                 continue
             if not self._exec_engine.check_initialized():
                 continue
-            return True  # Engines initialized
+            break
+
+        return True  # Engines initialized
 
     async def _stop(self):
         self._is_stopping = True
@@ -410,6 +413,20 @@ class TradingNode:
 
         for name in timer_names:
             self._log.info(f"Cancelled Timer(name={name}).")
+
+        # Wait for engines to disconnect (will hang if never disconnected)
+        self._log.info("Waiting for engines to disconnect...")
+        timeout = self._clock.utc_now() + timedelta(seconds=5)
+        while True:
+            time.sleep(0.1)
+            if self._clock.utc_now() >= timeout:
+                self._log.warning("Timed out (5s) waiting for engines to disconnect.")
+                break
+            if not self._data_engine.check_disconnected():
+                continue
+            # if not self._exec_engine.check_disconnected():
+            #     continue
+            break
 
         self._log.info("state=STOPPED.")
         self._is_running = False
