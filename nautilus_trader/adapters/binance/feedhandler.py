@@ -1,4 +1,10 @@
 # flake8: noqa
+
+# ******************************************************************************
+# The following is experimental code which will not be included in a stable
+# release. There has been various modifications to the original code.
+# ******************************************************************************
+
 '''
 Copyright (C) 2017-2021  Bryant Moscon - bmoscon@gmail.com
 
@@ -131,6 +137,7 @@ class FeedHandler:
         self.raw_message_capture = raw_message_capture
         self.handler_enabled = handler_enabled
         self.config = Config(file_name=config)
+        self._futures = []
 
         # lfile = 'feedhandler.log' if not self.config or not self.config.log.filename else self.config.log.filename
         # level = logging.WARNING if not self.config or not self.config.log.level else self.config.log.level
@@ -202,14 +209,25 @@ class FeedHandler:
         for feed in feeds:
             self.add_feed(feed(channels=[L2_BOOK], pairs=pairs, callbacks={L2_BOOK: cb}), timeout=timeout)
 
-    def create_stream(self, loop, feed, timeout=120):
+    def run_feed(self, loop, feed, timeout=120):
         for conn, sub, handler in feed.connect():
             loop.create_task(self._connect(conn, sub, handler))
             self.timeout[conn.uuid] = timeout
 
-    def stop_stream(self, loop):
+    def stop_feeds(self, loop):
         for feed, _ in self.feeds:
             loop.create_task(feed.stop())
+
+        for future in self._futures:
+            future.cancel()
+
+    async def async_stop_feeds(self, loop):
+        tasks = []
+        for feed, _ in self.feeds:
+            task = loop.create_task(feed.stop())
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
     def run(self, start_loop: bool = True):
         """
@@ -280,7 +298,8 @@ class FeedHandler:
             self.last_msg[conn.uuid] = None
             try:
                 async with conn.connect() as connection:
-                    asyncio.ensure_future(self._watch(connection))
+                    future = asyncio.ensure_future(self._watch(connection))
+                    self._futures.append(future)
                     # connection was successful, reset retry count and delay
                     retries = 0
                     delay = 1  # conn.delay

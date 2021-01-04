@@ -46,6 +46,13 @@ BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
 
 
+# Monkey patch magic mock
+async def async_magic():
+    pass
+
+MagicMock.__await__ = lambda x: async_magic().__await__()
+
+
 class BinanceDataClientTests(unittest.TestCase):
 
     def setUp(self):
@@ -109,14 +116,23 @@ class BinanceDataClientTests(unittest.TestCase):
         self.assertTrue(self.client.is_connected())
 
     def test_disconnect(self):
-        # Arrange
-        self.client.connect()
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
 
-        # Act
-        self.client.disconnect()
+            self.mock_binance_rest.markets = instruments
 
-        # Assert
-        self.assertFalse(self.client.is_connected())
+            self.client.connect()
+
+            # Act
+            self.client.disconnect()
+            await self.loop.create_task(self.client._await_disconnect())
+
+            # Assert
+            self.assertFalse(self.client.is_connected())
+
+        self.loop.run_until_complete(run_test())
 
     def test_reset(self):
         # Arrange
