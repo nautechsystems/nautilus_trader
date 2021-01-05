@@ -348,7 +348,6 @@ cdef class BacktestDataClient(DataClient):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self._is_connected:  # Simulate connection behaviour

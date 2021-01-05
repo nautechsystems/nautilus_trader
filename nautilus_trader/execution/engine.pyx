@@ -492,7 +492,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
         if isinstance(event, OrderCancelReject):
             self._handle_order_cancel_reject(event)
-            return  # Sent to strategy
+            return  # Event has been sent to strategy
 
         cdef Order order = self.cache.order(event.cl_ord_id)
         if order is None:
@@ -504,7 +504,7 @@ cdef class ExecutionEngine(Component):
             order.apply_c(event)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            # Not re-raising to avoid crashing engine
+            return  # Not re-raising to avoid crashing engine
 
         self.cache.update_order(order)
 
@@ -514,7 +514,7 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
-            return  # Sent to strategy
+            return  # Event has been sent to strategy
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
@@ -718,7 +718,7 @@ cdef class ExecutionEngine(Component):
                             f"({repr(strategy_id)} not registered), {event}.")
             return  # Cannot send to strategy
 
-        strategy.handle_event(event)
+        strategy.handle_event_c(event)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

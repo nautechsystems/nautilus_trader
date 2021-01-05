@@ -1578,6 +1578,9 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
+        self.handle_event_c(event)
+
+    cdef void handle_event_c(self, Event event) except *:
         Condition.not_none(event, "event")
 
         if isinstance(event, (OrderRejected, OrderCancelReject)):
