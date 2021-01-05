@@ -36,6 +36,7 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -43,6 +44,8 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
+
+cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
 cdef class OandaDataClient(LiveDataClient):
@@ -80,6 +83,13 @@ cdef class OandaDataClient(LiveDataClient):
             engine,
             clock,
             logger,
+            config={
+                "unavailable_methods": [
+                    self.subscribe_trade_ticks.__name__,
+                    self.request_quote_ticks.__name__,
+                    self.request_trade_ticks.__name__,
+                ],
+            }
         )
 
         self._is_connected = False
@@ -91,6 +101,7 @@ cdef class OandaDataClient(LiveDataClient):
             load_all=False,
         )
 
+        # Subscriptions
         self._subscribed_instruments = set()
         self._subscribed_quote_ticks = {}  # type: dict[Symbol, (threading.Event, asyncio.Future)]
 
@@ -146,7 +157,7 @@ cdef class OandaDataClient(LiveDataClient):
 
         # Schedule subscribed instruments update
         self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
-            delay=60 * 60,  # Every hour
+            delay=_SECONDS_IN_HOUR,  # Every hour
             callback=self._subscribed_instruments_update,
         )
 
@@ -368,7 +379,7 @@ cdef class OandaDataClient(LiveDataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -400,7 +411,7 @@ cdef class OandaDataClient(LiveDataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -432,7 +443,7 @@ cdef class OandaDataClient(LiveDataClient):
         bar_type : BarType
             The bar type for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -469,120 +480,48 @@ cdef class OandaDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
-        return QuoteTick(
-            symbol,
-            Price(values["bids"][0]["price"]),
-            Price(values["asks"][0]["price"]),
-            Quantity(1),
-            Quantity(1),
-            pd.to_datetime(values["time"]),
-        )
-
-    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
-        cdef dict prices
-        if price_type == PriceType.BID:
-            prices = values["bid"]
-        elif price_type == PriceType.ASK:
-            prices = values["ask"]
-        else:
-            prices = values["mid"]
-
-        return Bar(
-            Price(prices["o"], instrument.price_precision),
-            Price(prices["h"], instrument.price_precision),
-            Price(prices["l"], instrument.price_precision),
-            Price(prices["c"], instrument.price_precision),
-            Quantity(values["volume"], instrument.size_precision),
-            pd.to_datetime(values["time"]),
-        )
-
-    def _request_instrument(self, Symbol symbol, UUID correlation_id):
+    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
         self._instrument_provider.load_all()
-        self._loop.call_soon_threadsafe(self._send_instrument_with_correlation, symbol, correlation_id)
-
-    def _request_instruments(self, UUID correlation_id):
-        self._instrument_provider.load_all()
-        self._loop.call_soon_threadsafe(self._send_instruments, correlation_id)
-
-    def _send_instrument_with_correlation(self, Symbol symbol, UUID correlation_id):
-        cdef Instrument instrument = self._instrument_provider.get_all().get(symbol)
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is not None:
-            self._handle_instruments([instrument], correlation_id)
+            self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
         else:
             self._log.error(f"Could not find instrument {symbol.code}.")
 
-    def _send_instrument(self, Symbol symbol):
-        cdef Instrument instrument = self._instrument_provider.get_all().get(symbol)
-        if instrument is not None:
-            self._handle_instrument(instrument)
-        else:
-            self._log.error(f"Could not find instrument {symbol.code}.")
-
-    def _send_instruments(self, UUID correlation_id):
+    cpdef void _request_instruments(self, UUID correlation_id) except *:
+        self._instrument_provider.load_all()
         cdef list instruments = list(self._instrument_provider.get_all().values())
-        self._handle_instruments(instruments, correlation_id)
+        self._loop.call_soon_threadsafe(self._handle_instruments_py, instruments, correlation_id)
 
         self._log.info(f"Updated {len(instruments)} instruments.")
         self.initialized = True
 
-    def _send_quote_tick(self, QuoteTick tick):
-        self._handle_quote_tick(tick)
-
-    def _send_bar(self, BarType bar_type, Bar bar):
-        self._handle_bar(bar_type, bar)
-
-    def _send_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
-        self._handle_bars(bar_type, bars, partial, correlation_id)
-
-    def _subscribed_instruments_update(self):
+    cpdef void _subscribed_instruments_update(self) except *:
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
 
-    def _subscribed_instruments_load_and_send(self):
+    cpdef void _subscribed_instruments_load_and_send(self) except *:
         self._instrument_provider.load_all()
 
         cdef Symbol symbol
+        cdef Instrument instrument
         for symbol in self._subscribed_instruments:
-            self._loop.call_soon_threadsafe(self._send_instrument, symbol)
+            instrument = self._instrument_provider.get(symbol)
+            if instrument is not None:
+                self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
+            else:
+                self._log.error(f"Could not find instrument {symbol.code}.")
 
         # Reschedule subscribed instruments update in one hour
-        self._update_instruments_handle = self._loop.call_later(60 * 60, self._subscribed_instruments_update)
+        self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
 
-    def _stream_prices(self, Symbol symbol, event: threading.Event):
-        cdef dict res
-        cdef dict best_bid
-        cdef dict best_ask
-        cdef QuoteTick tick
-        try:
-            params = {
-                "instruments": symbol.code.replace('/', '_'),
-                "sessionId": f"{symbol.code}-001",
-            }
-
-            req = PricingStream(accountID=self._account_id, params=params)
-
-            while True:
-                for res in self._client.request(req):
-                    if event.is_set():
-                        raise asyncio.CancelledError("Price stream stopped")
-                    if res["type"] != "PRICE":
-                        # Heartbeat
-                        continue
-                    tick = self._parse_quote_tick(symbol, res)
-                    self._loop.call_soon_threadsafe(self._send_quote_tick, tick)
-        except asyncio.CancelledError:
-            pass  # Expected cancellation
-        except Exception as ex:
-            self._log.exception(ex)
-
-    def _request_bars(
+    cpdef void _request_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ):
+    ) except *:
         cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
@@ -642,16 +581,16 @@ cdef class OandaDataClient(LiveDataClient):
                             f"interpolation will be available in a future version, "
                             f"valid_granularities={valid_granularities}.")
 
-        # Account for partial bar
-        if limit != -1:
-            limit += 1
-
         cdef dict params = {
             "dailyAlignment": 0,  # UTC
             "count": limit,
             "price": pricing,
             "granularity": granularity,
         }
+
+        # Account for partial bar
+        if limit != -1:
+            params["count"] = limit + 1
 
         if from_datetime is not None:
             params["start"] = format_iso8601(from_datetime)
@@ -687,9 +626,90 @@ cdef class OandaDataClient(LiveDataClient):
             partial_bar = self._parse_bar(instrument, last_values, bar_type.spec.price_type)
 
         self._loop.call_soon_threadsafe(
-            self._send_bars,
+            self._handle_bars_py,
             bar_type,
             bars,
             partial_bar,
             correlation_id,
         )
+
+    cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *:
+        cdef dict res
+        cdef dict best_bid
+        cdef dict best_ask
+        cdef QuoteTick tick
+        try:
+            params = {
+                "instruments": symbol.code.replace('/', '_', 1),
+                "sessionId": f"{symbol.code}-001",
+            }
+
+            req = PricingStream(accountID=self._account_id, params=params)
+
+            while True:
+                for res in self._client.request(req):
+                    if event.is_set():
+                        raise asyncio.CancelledError("Price stream stopped")
+                    if res["type"] != "PRICE":
+                        # Heartbeat
+                        continue
+                    tick = self._parse_quote_tick(symbol, res)
+                    self._handle_quote_tick_py(tick)
+        except asyncio.CancelledError:
+            pass  # Expected cancellation
+        except Exception as ex:
+            self._log.exception(ex)
+
+    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
+        return QuoteTick(
+            symbol,
+            Price(values["bids"][0]["price"]),
+            Price(values["asks"][0]["price"]),
+            Quantity(1),
+            Quantity(1),
+            pd.to_datetime(values["time"]),
+        )
+
+    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
+        cdef dict prices
+        if price_type == PriceType.BID:
+            prices = values["bid"]
+        elif price_type == PriceType.ASK:
+            prices = values["ask"]
+        else:
+            prices = values["mid"]
+
+        return Bar(
+            Price(prices["o"], instrument.price_precision),
+            Price(prices["h"], instrument.price_precision),
+            Price(prices["l"], instrument.price_precision),
+            Price(prices["c"], instrument.price_precision),
+            Quantity(values["volume"], instrument.size_precision),
+            pd.to_datetime(values["time"]),
+        )
+
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
+        self._engine.process(instrument)
+
+    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
+        self._engine.process(tick)
+
+    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
+        self._engine.process(tick)
+
+    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
+        self._engine.process(BarData(bar_type, bar))
+
+    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
+        self._handle_instruments(instruments, correlation_id)
+
+    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        self._handle_quote_ticks(symbol, ticks, correlation_id)
+
+    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
+
+    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
+        self._handle_bars(bar_type, bars, partial, correlation_id)

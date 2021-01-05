@@ -11,6 +11,7 @@
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
+![pypi-format](https://img.shields.io/pypi/format/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 **BETA**
@@ -68,8 +69,8 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Installation
 
-The latest version is tested against Python 3.6 - 3.9 on Linux and MacOS.
-Windows support is in the pipeline.
+The latest version is tested against Python 3.7 - 3.9 on Linux and MacOS.
+Users are encouraged to use the latest stable version of Python.
 
 We recommend you setup a virtual environment to isolate the dependencies.
 
@@ -77,7 +78,7 @@ To install the latest package from PyPI, run:
 
     pip install -U nautilus_trader
 
-Alternatively, to install from source using _pip_, run:
+Alternatively, to install from source using pip, run:
 
     pip install .
 

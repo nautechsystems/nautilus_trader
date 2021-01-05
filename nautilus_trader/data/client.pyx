@@ -53,6 +53,7 @@ cdef class DataClient:
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `DataClient` class.
@@ -65,12 +66,18 @@ cdef class DataClient:
             The clock for the component.
         logger : Logger
             The logger for the component.
+        config : dict[str, object], optional
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
+
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"DataClient-{venue.value}", logger)
         self._engine = engine
+        self._config = config
 
         self.venue = venue
         self.initialized = False
@@ -79,6 +86,18 @@ cdef class DataClient:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
+
+    cpdef list unavailable_methods(self):
+        """
+        Return a list of unavailable methods for this data client.
+
+        Returns
+        -------
+        list[str]
+            The names of the unavailable methods.
+
+        """
+        return self._config.get("unavailable_methods", []).copy()
 
     cpdef bint is_connected(self) except *:
         """Abstract method (implement in subclass)."""
@@ -177,21 +196,49 @@ cdef class DataClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-# -- DATA HANDLERS ---------------------------------------------------------------------------------
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument) except *:
+    # Pure Python wrappers for thread safe calls
+
+    def _handle_instrument_py(self, Instrument instrument):
         self._engine.process(instrument)
 
-    cpdef void _handle_quote_tick(self, QuoteTick tick) except *:
+    def _handle_quote_tick_py(self, QuoteTick tick):
         self._engine.process(tick)
 
-    cpdef void _handle_trade_tick(self, TradeTick tick) except *:
+    def _handle_trade_tick_py(self, TradeTick tick):
         self._engine.process(tick)
 
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
+    def _handle_bar_py(self, BarType bar_type, Bar bar):
         self._engine.process(BarData(bar_type, bar))
 
-    cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
+    def _handle_instruments_py(self, list instruments, UUID correlation_id):
+        self._handle_instruments(instruments, correlation_id)
+
+    def _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id):
+        self._handle_quote_ticks(symbol, ticks, correlation_id)
+
+    def _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id):
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
+
+    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
+        self._handle_bars(bar_type, bars, partial, correlation_id)
+
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
+
+    cdef void _handle_instrument(self, Instrument instrument) except *:
+        self._engine.process(instrument)
+
+    cdef void _handle_quote_tick(self, QuoteTick tick) except *:
+        self._engine.process(tick)
+
+    cdef void _handle_trade_tick(self, TradeTick tick) except *:
+        self._engine.process(tick)
+
+    cdef void _handle_bar(self, BarType bar_type, Bar bar) except *:
+        self._engine.process(BarData(bar_type, bar))
+
+    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             venue=self.venue,
             data_type=Instrument,
@@ -204,7 +251,7 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+    cdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             venue=self.venue,
             data_type=QuoteTick,
@@ -217,7 +264,7 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
+    cdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             venue=self.venue,
             data_type=TradeTick,
@@ -230,7 +277,7 @@ cdef class DataClient:
 
         self._engine.receive(response)
 
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
+    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             venue=self.venue,
             data_type=Bar,

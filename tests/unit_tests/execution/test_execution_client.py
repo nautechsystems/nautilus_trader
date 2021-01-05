@@ -199,7 +199,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_event(fill)  # Accessing protected method
+        self.client._handle_event_py(fill)  # Accessing protected method
 
         # Assert
         self.assertEqual(1, self.exec_engine.event_count)

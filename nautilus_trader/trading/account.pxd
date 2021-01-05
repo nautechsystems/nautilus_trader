@@ -43,6 +43,7 @@ cdef class Account:
 
     cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *
+    cdef void apply_c(self, AccountState event) except *
     cpdef void update_init_margin(self, Money margin) except *
     cpdef void update_maint_margin(self, Money margin) except *
 

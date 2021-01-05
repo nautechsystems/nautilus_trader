@@ -1073,7 +1073,7 @@ cdef class PositionClosed(PositionEvent):
         )
 
     def __repr__(self) -> str:
-        cdef str duration = str(self.position.open_duration).replace("0 days ", "")
+        cdef str duration = str(self.position.open_duration).replace("0 days ", "", 1)
         return (f"{type(self).__name__}("
                 f"account_id={self.position.account_id}, "
                 f"position_id={self.position.id}, "

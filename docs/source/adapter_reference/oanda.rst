@@ -1,5 +1,5 @@
-CCXT Integration
-================
+Oanda Integration
+=================
 
 .. automodule:: nautilus_trader.adapters.oanda
 
