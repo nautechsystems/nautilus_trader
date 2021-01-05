@@ -16,6 +16,7 @@
 import asyncio
 import json
 import unittest
+import time
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.binance.data import BinanceDataClient
@@ -107,13 +108,14 @@ class BinanceDataClientTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    def test_connect(self):
-        # Arrange
-        # Act
-        self.client.connect()
-
-        # Assert
-        self.assertTrue(self.client.is_connected())
+    # def test_connect(self):
+    #     # Arrange
+    #     # Act
+    #     self.client.connect()
+    #
+    #     # Assert
+    #     self.assertTrue(self.client.is_connected())
+    #     self.client._stop_feed_loop()
 
     def test_disconnect(self):
         async def run_test():
@@ -123,11 +125,9 @@ class BinanceDataClientTests(unittest.TestCase):
 
             self.mock_binance_rest.markets = instruments
 
-            self.client.connect()
-
             # Act
             self.client.disconnect()
-            await self.loop.create_task(self.client._await_disconnect())
+            await asyncio.sleep(0.3)
 
             # Assert
             self.assertFalse(self.client.is_connected())
@@ -152,8 +152,6 @@ class BinanceDataClientTests(unittest.TestCase):
 
     def test_subscribe_instrument(self):
         # Arrange
-        self.client.connect()
-
         # Act
         self.client.subscribe_instrument(BTCUSDT)
 
@@ -170,16 +168,14 @@ class BinanceDataClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertTrue(True)
     #
-    # def test_subscribe_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)
-    #
+    def test_subscribe_trade_ticks(self):
+        # Arrange
+        # Act
+        self.client.subscribe_trade_ticks(BTCUSDT)
+
+        # Assert
+        self.assertIn(BTCUSDT, self.client.subscribed_trade_ticks)
+
     # def test_subscribe_bars(self):
     #     # Arrange
     #     # Act
@@ -192,8 +188,6 @@ class BinanceDataClientTests(unittest.TestCase):
 
     def test_unsubscribe_instrument(self):
         # Arrange
-        self.client.connect()
-
         # Act
         self.client.unsubscribe_instrument(BTCUSDT)
 
@@ -210,16 +204,16 @@ class BinanceDataClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertTrue(True)
     #
-    # def test_unsubscribe_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)
-    #
+
+    def test_unsubscribe_trade_ticks(self):
+        # Arrange
+        # Act
+        self.client.subscribe_trade_ticks(BTCUSDT)
+        self.client.unsubscribe_trade_ticks(BTCUSDT)
+
+        # Assert
+        self.assertNotIn(BTCUSDT, self.client.subscribed_trade_ticks)
+
     # def test_unsubscribe_bars(self):
     #     # Arrange
     #     # Act
@@ -231,57 +225,58 @@ class BinanceDataClientTests(unittest.TestCase):
     #     self.assertTrue(True)
 
     # TODO: WIP
-    def test_request_instrument(self):
-        async def run_test():
-            # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
+    # def test_request_instrument(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         self.mock_binance_rest.markets = instruments
+    #
+    #         self.data_engine.start()
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Act
+    #         self.client.request_instrument(BTCUSDT, uuid4())
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         # Instruments additionally requested on start
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            self.mock_binance_rest.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.3)
-
-            # Act
-            self.client.request_instrument(BTCUSDT, uuid4())
-
-            await asyncio.sleep(0.3)
-
-            # Assert
-            # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_request_instruments(self):
-        async def run_test():
-            # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_binance_rest.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.3)
-
-            # Act
-            self.client.request_instruments(uuid4())
-
-            await asyncio.sleep(0.3)
-
-            # Assert
-            # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_request_instruments(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         self.mock_binance_rest.markets = instruments
+    #
+    #         self.data_engine.start()
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Act
+    #         self.client.request_instruments(uuid4())
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         # Instruments additionally requested on start
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
     def test_request_quote_ticks(self):
         # Arrange

@@ -218,6 +218,10 @@ class EMACross(TradingStrategy):
         self.cancel_all_orders(self.symbol)
         self.flatten_all_positions(self.symbol)
 
+        # Unsubscribe from data
+        self.unsubscribe_bars(self.bar_type)
+        # self.unsubscribe_trade_ticks(self.symbol)
+
     def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
@@ -262,4 +266,4 @@ class EMACross(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_bars(self.bar_type)
+        pass

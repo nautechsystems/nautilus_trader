@@ -31,11 +31,13 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class BinanceDataClient(LiveDataClient):
     cdef object _client_rest
     cdef object _client_feed
+    cdef object _feed_loop
+    cdef BinanceInstrumentProvider _instrument_provider
     cdef bint _is_connected
     cdef bint _is_feed_running
+
     cdef set _subscribed_instruments
-    cdef dict _feeds
-    cdef BinanceInstrumentProvider _instrument_provider
+    cdef dict _feeds_trade_ticks
 
     cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *
     cpdef void _request_instruments(self, UUID correlation_id) except *
@@ -57,7 +59,15 @@ cdef class BinanceDataClient(LiveDataClient):
         int limit,
         UUID correlation_id,
     ) except *
-
+    cpdef void _request_time_bars(
+        self,
+        Instrument instrument,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ) except *
     cpdef void _on_trade_tick(
         self,
         str feed,

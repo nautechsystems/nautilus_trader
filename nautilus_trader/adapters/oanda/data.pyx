@@ -101,6 +101,7 @@ cdef class OandaDataClient(LiveDataClient):
             load_all=False,
         )
 
+        # Subscriptions
         self._subscribed_instruments = set()
         self._subscribed_quote_ticks = {}  # type: dict[Symbol, (threading.Event, asyncio.Future)]
 
@@ -378,7 +379,7 @@ cdef class OandaDataClient(LiveDataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -410,7 +411,7 @@ cdef class OandaDataClient(LiveDataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -442,7 +443,7 @@ cdef class OandaDataClient(LiveDataClient):
         bar_type : BarType
             The bar type for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -580,16 +581,16 @@ cdef class OandaDataClient(LiveDataClient):
                             f"interpolation will be available in a future version, "
                             f"valid_granularities={valid_granularities}.")
 
-        # Account for partial bar
-        if limit != -1:
-            limit += 1
-
         cdef dict params = {
             "dailyAlignment": 0,  # UTC
             "count": limit,
             "price": pricing,
             "granularity": granularity,
         }
+
+        # Account for partial bar
+        if limit != -1:
+            params["count"] = limit + 1
 
         if from_datetime is not None:
             params["start"] = format_iso8601(from_datetime)
