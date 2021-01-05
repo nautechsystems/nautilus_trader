@@ -655,7 +655,7 @@ cdef class DataEngine(Component):
                 request.metadata.get(SYMBOL),
                 request.metadata.get(FROM_DATETIME),
                 request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT),
+                request.metadata.get(LIMIT, 0),
                 request.id,
             )
         elif request.data_type == TradeTick:
@@ -663,7 +663,7 @@ cdef class DataEngine(Component):
                 request.metadata.get(SYMBOL),
                 request.metadata.get(FROM_DATETIME),
                 request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT),
+                request.metadata.get(LIMIT, 0),
                 request.id,
             )
         elif request.data_type == Bar:
@@ -671,7 +671,7 @@ cdef class DataEngine(Component):
                 request.metadata.get(BAR_TYPE),
                 request.metadata.get(FROM_DATETIME),
                 request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT),
+                request.metadata.get(LIMIT, 0),
                 request.id,
             )
         else:
@@ -889,7 +889,6 @@ cdef class DataEngine(Component):
                 SYMBOL: bar_type.symbol,
                 FROM_DATETIME: aggregator.get_start_time(),
                 TO_DATETIME: None,
-                LIMIT: -1,  # No limit
             },
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),

@@ -390,7 +390,6 @@ cdef class OandaDataClient(LiveDataClient):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         self._log.error(f"`request_quote_ticks` was called when not supported by the brokerage.")
@@ -589,7 +588,7 @@ cdef class OandaDataClient(LiveDataClient):
         }
 
         # Account for partial bar
-        if limit != -1:
+        if limit > 0:
             params["count"] = limit + 1
 
         if from_datetime is not None:

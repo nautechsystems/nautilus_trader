@@ -469,7 +469,6 @@ cdef class BinanceDataClient(LiveDataClient):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if to_datetime is not None:
@@ -514,7 +513,6 @@ cdef class BinanceDataClient(LiveDataClient):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if bar_type.spec.price_type != PriceType.LAST:
@@ -586,6 +584,13 @@ cdef class BinanceDataClient(LiveDataClient):
         if instrument is None:
             self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
             return
+
+        if limit == 0:
+            limit = 1000
+
+        if limit > 1000:
+            self._log.warning(f"Requested trades with limit of {limit} when Binance limit=1000.")
+            limit = 1000
 
         cdef list trades
         try:
@@ -661,8 +666,10 @@ cdef class BinanceDataClient(LiveDataClient):
                             f"not currently supported in this version.")
             return
 
-        # Account for partial bar
-        if limit != -1:
+        if limit == 0:
+            limit = 1000
+        elif limit > 0:
+            # Account for partial bar
             limit += 1
 
         if limit > 1001:
@@ -675,7 +682,7 @@ cdef class BinanceDataClient(LiveDataClient):
                 symbol=bar_type.symbol.code,
                 timeframe=timeframe,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit if limit != -1 else None,
+                limit=limit,
             )
         except Exception as ex:
             self._log.error(str(ex))
