@@ -667,7 +667,6 @@ cdef class DataEngine(Component):
                 request.id,
             )
         elif request.data_type == Bar:
-            # TODO: Handle cases other than time bars direct from exchange/broker
             client.request_bars(
                 request.metadata.get(BAR_TYPE),
                 request.metadata.get(FROM_DATETIME),
@@ -890,7 +889,7 @@ cdef class DataEngine(Component):
                 SYMBOL: bar_type.symbol,
                 FROM_DATETIME: aggregator.get_start_time(),
                 TO_DATETIME: None,
-                LIMIT: 999999,  # TODO: Temporary value
+                LIMIT: -1,  # No limit
             },
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
