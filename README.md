@@ -82,6 +82,21 @@ Alternatively, to install from source using pip, run:
 
     pip install .
 
+## CCXT-Pro Integration
+Currently under development is an integration adapter for CCXT-Pro. A user requires
+a license to access the CCXT private repository to install the `ccxtpro` package.
+
+There are two options for satisfying the dependency, either ensure `ccxtpro` is installed already.
+
+Or, allow [Poetry](https://python-poetry.org/) to install the dependency by adding your GitHub credentials for the
+private repository, run once:
+
+    poetry config http-basic.ccxtpro <username> <password>
+
+And then you can run:
+
+    poetry install --extras ccxtpro
+
 ## Development
 
 We recommend the PyCharm _Professional_ edition IDE as it interprets Cython syntax.

@@ -18,8 +18,8 @@ from decimal import Decimal
 
 import ccxt
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
@@ -31,14 +31,14 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef class BinanceInstrumentProvider:
+cdef class CCXTInstrumentProvider:
     """
-    Provides a means of loading Binance `Instrument` objects.
+    Provides a means of loading `Instrument` from a unified CCXT exchange.
     """
 
     def __init__(self, client not None: ccxt.binance, bint load_all=False):
         """
-        Initialize a new instance of the `BinanceInstrumentProvider` class.
+        Initialize a new instance of the `CCXTInstrumentProvider` class.
 
         Parameters
         ----------
@@ -47,15 +47,8 @@ cdef class BinanceInstrumentProvider:
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
-        Raises
-        ------
-        ValueError
-            If client.name != 'Binance'.
-
         """
-        Condition.true(client.name == "Binance", "client.name == `Binance`")
-
-        self.venue = Venue("BINANCE")
+        self.venue = Venue(client.name.upper())
         self.count = 0
         self._instruments = {}  # type: dict[Symbol: Instrument]
         self._client = client
@@ -78,7 +71,11 @@ cdef class BinanceInstrumentProvider:
         cdef Instrument instrument
         for k, v in self._client.markets.items():
             symbol = Symbol(k, self.venue)
-            instrument = self._parse_instrument(symbol, v)
+            try:
+                instrument = self._parse_instrument(symbol, v)
+            except Exception as ex:
+                print(f"Exception on parsing {symbol.code} instrument: {ex}")
+                continue
 
             self._instruments[symbol] = instrument
 
@@ -110,10 +107,10 @@ cdef class BinanceInstrumentProvider:
 
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values):
         # Precisions
-        base_precision = values["precision"]["base"]
-        quote_precision = values["precision"]["quote"]
-        price_precision = values["precision"]["price"]
-        size_precision = values["precision"]["amount"]
+        base_precision = values["precision"].get("base", 8)
+        quote_precision = values["precision"].get("quote", 8)
+        price_precision = values["precision"].get("price")
+        size_precision = values["precision"].get("amount", 8)
 
         base_currency = Currency.from_str_c(values["base"])
         if base_currency is None:
@@ -125,35 +122,37 @@ cdef class BinanceInstrumentProvider:
 
         tick_size = Decimal(f"{values['limits']['amount']['min']:{price_precision}f}")
 
-        lot_size_filter = values["info"]["filters"][2]
-        assert lot_size_filter["filterType"] == "LOT_SIZE"
-        lot_size = Quantity(lot_size_filter["stepSize"])
-
-        max_quantity = values["limits"]["amount"]["max"]
+        max_quantity = values["limits"].get("amount").get("max")
         if max_quantity is not None:
             max_quantity = Quantity(max_quantity, precision=size_precision)
 
-        min_quantity = values["limits"]["amount"]["min"]
+        min_quantity = values["limits"].get("amount").get("min")
         if min_quantity is not None:
             min_quantity = Quantity(min_quantity, precision=size_precision)
+            lot_size = Quantity(min_quantity, precision=size_precision)
+        else:
+            lot_size = Quantity(1)
 
-        max_notional = values["limits"]["cost"]["max"]
+        max_notional = values["limits"].get("cost").get("max")
         if max_notional is not None:
             max_notional = Money(max_notional, currency=quote_currency)
 
-        min_notional = values["limits"]["cost"]["min"]
+        min_notional = values["limits"].get("cost").get("min")
         if min_notional is not None:
             min_notional = Money(min_notional, currency=quote_currency)
 
-        max_price = values["limits"]["cost"]["max"]
+        max_price = values["limits"].get("cost").get("max")
         if max_price is not None:
             max_price = Price(max_price, precision=price_precision)
 
-        min_price = values["limits"]["cost"]["min"]
+        min_price = values["limits"].get("cost").get("min")
         if min_price is not None:
             min_price = Price(min_price, precision=price_precision)
 
-        asset_type = AssetTypeParser.from_str(values["type"].upper())
+        if values.get("type") is not None:
+            asset_type = AssetTypeParser.from_str(values["type"].upper())
+        else:
+            asset_type = AssetType.UNDEFINED
 
         maker_fee = Decimal(values["maker"])
         taker_fee = Decimal(values["taker"])
@@ -170,7 +169,7 @@ cdef class BinanceInstrumentProvider:
             size_precision=size_precision,
             tick_size=tick_size,
             multiplier=Decimal(1),
-            leverage=Decimal(1),  # TODO: Refactor this out of instrument
+            leverage=Decimal(1),
             lot_size=lot_size,
             max_quantity=max_quantity,
             min_quantity=min_quantity,

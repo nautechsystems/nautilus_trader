@@ -33,15 +33,15 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-ccxt = "^1.40.10"
+ccxt = "^1.40.19"
+ccxtpro = { version = "^1.0.1", optional = true }
 cryptofeed = "^1.6.2"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 # `importlib.metadata` is in the Python stdlib from 3.8 onwards
 importlib-metadata = { version = "^1.2.0", python = "<3.8" }
 msgpack = "^1.0.2"
-numpy = "^1.19.4"
-numpydoc = { version = "^1.1.0", optional = true }
+numpy = "^1.19.5"
 oandapyV20 = "^0.6.3"
 pandas = "^1.2.0"
 psutil = "^5.8.0"
@@ -57,7 +57,8 @@ coverage = "^4.5.4"
 flake8 = "^3.8.4"
 isort = "^5.6.4"
 nox = "^2020.8.22"
-parameterized = "^0.7.4"
+numpydoc = { version = "^1.1.0", optional = true }
+parameterized = "^0.7.5"
 pre-commit = "^2.7.1"
 pytest = "^6.2.1"
 pytest-cov = "^2.10.1"
@@ -67,6 +68,12 @@ sphinx-rtd-theme = { version = "^0.5.0", optional = true }
 
 [tool.poetry.extras]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
+ccxtpro = ["ccxtpro"]
+
+[[tool.poetry.source]]
+name = "ccxtpro"
+url = "https://github.com/kroitor/ccxt.pro"
+secondary = true
 
 
 #################
