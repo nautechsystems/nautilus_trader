@@ -41,6 +41,7 @@ cdef class ExecutionClient:
         ExecutionEngine engine not None,
         Clock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `ExecutionClient` class.
@@ -57,14 +58,19 @@ cdef class ExecutionClient:
             The clock for the component.
         logger : Logger
             The logger for the component.
+        config : dict[str, object], optional
+            The configuration options.
 
         """
+        if config is None:
+            config = {}
         Condition.equal(venue, account_id.issuer_as_venue(), "venue", "account_id.issuer_as_venue()")
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(f"ExecClient-{venue.value}", logger)
         self._engine = engine
+        self._config = config
 
         self.venue = venue
         self.account_id = account_id
@@ -113,16 +119,14 @@ cdef class ExecutionClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    # Pure Python wrappers for thread safe calls
+
+    def _handle_event_py(self, Event event):
+        self._engine.process(event)
+
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_event(self, Event event) except *:
-        """
-        Handle the event by sending it to the execution engine for processing.
-
-        Parameters
-        ----------
-        event : Event
-            The event to handle.
-
-        """
+    cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)

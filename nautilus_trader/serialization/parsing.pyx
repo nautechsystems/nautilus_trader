@@ -32,9 +32,6 @@ cdef class ObjectParser:
     @staticmethod
     cdef datetime string_to_datetime(str time_string):
         Condition.valid_string(time_string, "time_string")
-
-        # noinspection long
-        # noinspection PyUnresolvedReferences
         return None if time_string == NONE else from_posix_ms(long(time_string))
 
     @staticmethod

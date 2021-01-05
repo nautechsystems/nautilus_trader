@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.binance.data cimport BinanceDataClient
+from nautilus_trader.adapters.binance.feedhandler import FeedHandler
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -53,15 +54,18 @@ cdef class BinanceDataClientFactory:
 
         """
         # Create client
-        client = ccxt.binance({
-            "apiKey": os.getenv(config.get("api_key", "")),
-            "secret": os.getenv(config.get("api_secret", "")),
+        client_rest = ccxt.binance({
+            "apiKey": os.getenv(config.get("api_key", ""), ""),
+            "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
         })
 
+        client_feed = FeedHandler()
+
         return BinanceDataClient(
-            client=client,
+            client_rest=client_rest,
+            client_feed=client_feed,
             engine=data_engine,
             clock=clock,
             logger=logger,

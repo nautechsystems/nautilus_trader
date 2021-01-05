@@ -381,7 +381,7 @@ cdef class SimulatedExchange:
         cdef OrderCancelled cancelled = OrderCancelled(
             command.account_id,
             order.cl_ord_id,
-            OrderId(order.cl_ord_id.value.replace('O', 'B')),
+            OrderId(order.cl_ord_id.value.replace('O', 'B', 1)),
             self._clock.utc_now(),
             self._uuid_factory.generate(),
             self._clock.utc_now(),

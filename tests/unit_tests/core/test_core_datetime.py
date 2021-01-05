@@ -38,7 +38,7 @@ class TestFunctionsTests(unittest.TestCase):
         [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc), -2674800000],
         [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc), 0],
         [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc), 1357002000000],
-        [datetime(2020, 1, 2, 3, 2, microsecond=1001, tzinfo=pytz.utc), 1577934120001],
+        [datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc), 1577934120001],
     ])
     def test_to_posix_ms_with_various_values_returns_expected_long(self, value, expected):
         # Arrange
@@ -52,7 +52,7 @@ class TestFunctionsTests(unittest.TestCase):
         [-2674800000, datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc)],
         [0, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
         [1357002000000, datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)],
-        [1577934120001, datetime(2020, 1, 2, 3, 2, tzinfo=pytz.utc)],
+        [1577934120001, datetime(2020, 1, 2, 3, 2, 0, 1000, tzinfo=pytz.utc)],
     ])
     def test_from_posix_ms_with_various_values_returns_expected_datetime(self, value, expected):
         # Arrange

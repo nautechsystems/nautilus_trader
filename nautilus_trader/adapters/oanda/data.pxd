@@ -13,13 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+import threading
+
 from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OandaDataClient(LiveDataClient):
@@ -31,5 +37,29 @@ cdef class OandaDataClient(LiveDataClient):
     cdef OandaInstrumentProvider _instrument_provider
     cdef object _update_instruments_handle
 
+    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *
+    cpdef void _request_instruments(self, UUID correlation_id) except *
+    cpdef void _subscribed_instruments_update(self) except *
+    cpdef void _subscribed_instruments_load_and_send(self) except *
+    cpdef void _request_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ) except *
+    cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values)
     cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type)
+
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    cpdef void _handle_instrument_py(self, Instrument instrument) except *
+    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *
+    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *
+    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *
+    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *
+    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
