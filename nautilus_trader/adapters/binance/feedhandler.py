@@ -64,7 +64,7 @@ from cryptofeed.log import get_logger
 from cryptofeed.nbbo import NBBO
 
 
-LOG = logging.getLogger('feedhandler')
+# LOG = logging.getLogger('feedhandler')
 
 
 # Maps string name to class name for use with config
@@ -142,9 +142,9 @@ class FeedHandler:
         self.handler_enabled = handler_enabled
         self.config = Config(file_name=config)
 
-        lfile = 'feedhandler.log' if not self.config or not self.config.log.filename else self.config.log.filename
-        level = logging.WARNING if not self.config or not self.config.log.level else self.config.log.level
-        get_logger('feedhandler', lfile, level)
+        # lfile = 'feedhandler.log' if not self.config or not self.config.log.filename else self.config.log.filename
+        # level = logging.WARNING if not self.config or not self.config.log.level else self.config.log.level
+        # get_logger('feedhandler', lfile, level)
 
     def playback(self, feed, filenames):
         loop = asyncio.get_event_loop()
@@ -230,7 +230,7 @@ class FeedHandler:
             be called from the main/parent thread's event loop
         """
         if len(self.feeds) == 0:
-            LOG.error('No feeds specified')
+            # LOG.error('No feeds specified')
             raise ValueError("No feeds specified")
 
         try:
@@ -257,9 +257,11 @@ class FeedHandler:
                 loop.run_forever()
 
         except SystemExit:
-            LOG.info("System Exit received - shutting down")
+            pass
+            # LOG.info("System Exit received - shutting down")
         except Exception:
-            LOG.error("Unhandled exception", exc_info=True)
+            pass
+            # LOG.error("Unhandled exception", exc_info=True)
         finally:
             for feed, _ in self.feeds:
                 loop.run_until_complete(feed.stop())
@@ -271,7 +273,7 @@ class FeedHandler:
         while connection.open:
             if self.last_msg[connection.uuid]:
                 if time() - self.last_msg[connection.uuid] > self.timeout[connection.uuid]:
-                    LOG.warning("%s: received no messages within timeout, restarting connection", connection.uuid)
+                    # LOG.warning("%s: received no messages within timeout, restarting connection", connection.uuid)
                     await connection.close()
                     break
             await asyncio.sleep(self.timeout_interval)
@@ -293,17 +295,17 @@ class FeedHandler:
                     await subscribe(connection)
                     await self._handler(connection, handler)
             except (ConnectionClosed, ConnectionAbortedError, ConnectionResetError, socket_error) as e:
-                LOG.warning("%s: encountered connection issue %s - reconnecting...", conn.uuid, str(e), exc_info=True)
+                # LOG.warning("%s: encountered connection issue %s - reconnecting...", conn.uuid, str(e), exc_info=True)
                 await asyncio.sleep(delay)
                 retries += 1
                 delay *= 2
             except Exception:
-                LOG.error("%s: encountered an exception, reconnecting", conn.uuid, exc_info=True)
+                # LOG.error("%s: encountered an exception, reconnecting", conn.uuid, exc_info=True)
                 await asyncio.sleep(delay)
                 retries += 1
                 delay *= 2
 
-        LOG.error("%s: failed to reconnect after %d retries - exiting", conn.uuid, retries)
+        # LOG.error("%s: failed to reconnect after %d retries - exiting", conn.uuid, retries)
         raise ExhaustedRetries()
 
     async def _handler(self, connection, handler):
@@ -327,7 +329,7 @@ class FeedHandler:
                     message = zlib.decompress(message, 16 + zlib.MAX_WBITS)
                 elif connection.uuid in {OKCOIN, OKEX}:
                     message = zlib.decompress(message, -15)
-                LOG.error("%s: error handling message %s", connection.uuid, message)
+                # LOG.error("%s: error handling message %s", connection.uuid, message)
             # exception will be logged with traceback when connection handler
             # retries the connection
             raise
