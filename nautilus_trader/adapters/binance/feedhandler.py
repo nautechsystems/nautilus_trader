@@ -7,35 +7,28 @@
 
 '''
 Copyright (C) 2017-2021  Bryant Moscon - bmoscon@gmail.com
-
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to
  deal in the Software without restriction, including without limitation the
  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  sell copies of the Software, and to permit persons to whom the Software is
  furnished to do so, subject to the following conditions:
-
  1. Redistributions of source code must retain the above copyright notice,
     this list of conditions, and the following disclaimer.
-
  2. Redistributions in binary form must reproduce the above copyright notice,
     this list of conditions and the following disclaimer in the documentation
     and/or other materials provided with the distribution, and in the same
     place and form as other copyright, license and disclaimer information.
-
  3. The end-user documentation included with the redistribution, if any, must
     include the following acknowledgment: "This product includes software
     developed by Bryant Moscon (http://www.bryantmoscon.com/)", in the same
     place and form as other third-party acknowledgments. Alternately, this
     acknowledgment may appear in the software itself, in the same form and
     location as other such third-party acknowledgments.
-
  4. Except as contained in this notice, the name of the author, Bryant Moscon,
     shall not be used in advertising or otherwise to promote the sale, use or
     other dealings in this Software without prior written authorization from
     the author.
-
-
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
@@ -71,7 +64,7 @@ from cryptofeed.log import get_logger
 from cryptofeed.nbbo import NBBO
 
 
-# LOG = logging.getLogger('feedhandler')
+LOG = logging.getLogger('feedhandler')
 
 
 # Maps string name to class name for use with config
@@ -112,6 +105,17 @@ _EXCHANGES = {
 }
 
 
+def setup_signal_handlers(loop):
+    """
+    This must be run from the loop in the main thread
+    """
+    def handle_stop_signals():
+        raise SystemExit
+
+    for signal in (SIGTERM, SIGINT, SIGHUP, SIGABRT):
+        loop.add_signal_handler(signal, handle_stop_signals)
+
+
 class FeedHandler:
     def __init__(self, retries=10, timeout_interval=10, log_messages_on_error=False, raw_message_capture=None, handler_enabled=True, config=None):
         """
@@ -137,11 +141,10 @@ class FeedHandler:
         self.raw_message_capture = raw_message_capture
         self.handler_enabled = handler_enabled
         self.config = Config(file_name=config)
-        self._futures = []
 
-        # lfile = 'feedhandler.log' if not self.config or not self.config.log.filename else self.config.log.filename
-        # level = logging.WARNING if not self.config or not self.config.log.level else self.config.log.level
-        # get_logger('feedhandler', lfile, level)
+        lfile = 'feedhandler.log' if not self.config or not self.config.log.filename else self.config.log.filename
+        level = logging.WARNING if not self.config or not self.config.log.level else self.config.log.level
+        get_logger('feedhandler', lfile, level)
 
     def playback(self, feed, filenames):
         loop = asyncio.get_event_loop()
@@ -214,30 +217,20 @@ class FeedHandler:
             loop.create_task(self._connect(conn, sub, handler))
             self.timeout[conn.uuid] = timeout
 
-    def stop_feeds(self, loop):
-        for feed, _ in self.feeds:
-            loop.create_task(feed.stop())
-
-        for future in self._futures:
-            future.cancel()
-
-    async def async_stop_feeds(self, loop):
-        tasks = []
-        for feed, _ in self.feeds:
-            task = loop.create_task(feed.stop())
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
-    def run(self, start_loop: bool = True):
+    def run(self, loop, start_loop: bool = True, install_signal_handlers: bool = True):
         """
         start_loop: bool, default True
             if false, will not start the event loop. Also, will not
             use uvlib/uvloop if false, the caller will
             need to init uvloop if desired.
+        install_signal_handlers: bool, default True
+            if True, will install the signal handlers on the event loop. This
+            can only be done from the main thread's loop, so if running cryptofeed on
+            a child thread, this must be set to false, and setup_signal_handlers must
+            be called from the main/parent thread's event loop
         """
         if len(self.feeds) == 0:
-            # LOG.error('No feeds specified')
+            LOG.error('No feeds specified')
             raise ValueError("No feeds specified")
 
         try:
@@ -252,11 +245,8 @@ class FeedHandler:
             # Good to enable when debugging
             # loop.set_debug(True)
 
-            def handle_stop_signals():
-                raise SystemExit
-
-            for signal in (SIGTERM, SIGINT, SIGHUP, SIGABRT):
-                loop.add_signal_handler(signal, handle_stop_signals)
+            if install_signal_handlers:
+                setup_signal_handlers(loop)
 
             for feed, timeout in self.feeds:
                 for conn, sub, handler in feed.connect():
@@ -267,11 +257,9 @@ class FeedHandler:
                 loop.run_forever()
 
         except SystemExit:
-            # LOG.info("System Exit received - shutting down")
-            pass
+            LOG.info("System Exit received - shutting down")
         except Exception:
-            # LOG.error("Unhandled exception", exc_info=True)
-            pass
+            LOG.error("Unhandled exception", exc_info=True)
         finally:
             for feed, _ in self.feeds:
                 loop.run_until_complete(feed.stop())
@@ -283,7 +271,7 @@ class FeedHandler:
         while connection.open:
             if self.last_msg[connection.uuid]:
                 if time() - self.last_msg[connection.uuid] > self.timeout[connection.uuid]:
-                    # LOG.warning("%s: received no messages within timeout, restarting connection", connection.uuid)
+                    LOG.warning("%s: received no messages within timeout, restarting connection", connection.uuid)
                     await connection.close()
                     break
             await asyncio.sleep(self.timeout_interval)
@@ -298,25 +286,24 @@ class FeedHandler:
             self.last_msg[conn.uuid] = None
             try:
                 async with conn.connect() as connection:
-                    future = asyncio.ensure_future(self._watch(connection))
-                    self._futures.append(future)
+                    asyncio.ensure_future(self._watch(connection))
                     # connection was successful, reset retry count and delay
                     retries = 0
                     delay = 1  # conn.delay
                     await subscribe(connection)
                     await self._handler(connection, handler)
             except (ConnectionClosed, ConnectionAbortedError, ConnectionResetError, socket_error) as e:
-                # LOG.warning("%s: encountered connection issue %s - reconnecting...", conn.uuid, str(e), exc_info=True)
+                LOG.warning("%s: encountered connection issue %s - reconnecting...", conn.uuid, str(e), exc_info=True)
                 await asyncio.sleep(delay)
                 retries += 1
                 delay *= 2
             except Exception:
-                # LOG.error("%s: encountered an exception, reconnecting", conn.uuid, exc_info=True)
+                LOG.error("%s: encountered an exception, reconnecting", conn.uuid, exc_info=True)
                 await asyncio.sleep(delay)
                 retries += 1
                 delay *= 2
 
-        # LOG.error("%s: failed to reconnect after %d retries - exiting", conn.uuid, retries)
+        LOG.error("%s: failed to reconnect after %d retries - exiting", conn.uuid, retries)
         raise ExhaustedRetries()
 
     async def _handler(self, connection, handler):
@@ -340,7 +327,7 @@ class FeedHandler:
                     message = zlib.decompress(message, 16 + zlib.MAX_WBITS)
                 elif connection.uuid in {OKCOIN, OKEX}:
                     message = zlib.decompress(message, -15)
-                # LOG.error("%s: error handling message %s", connection.uuid, message)
+                LOG.error("%s: error handling message %s", connection.uuid, message)
             # exception will be logged with traceback when connection handler
             # retries the connection
             raise

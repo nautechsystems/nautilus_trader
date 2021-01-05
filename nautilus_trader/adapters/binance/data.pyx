@@ -15,9 +15,9 @@
 
 import asyncio
 from decimal import Decimal
+import time
 
 from cpython.datetime cimport datetime
-
 from cryptofeed.callback import TradeCallback
 from cryptofeed.exchanges import Binance
 from cryptofeed.defines import TRADES
@@ -35,6 +35,8 @@ from nautilus_trader.core.datetime cimport to_posix_ms
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
@@ -105,13 +107,17 @@ cdef class BinanceDataClient(LiveDataClient):
         self._is_feed_running = False
         self._client_rest = client_rest
         self._client_feed = client_feed
+        self._feed_loop = asyncio.new_event_loop()
         self._instrument_provider = BinanceInstrumentProvider(
             client=client_rest,
             load_all=False,
         )
 
+        # Subscriptions
         self._subscribed_instruments = set()
-        self._feeds = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
+
+        # Streams
+        self._feeds_trade_ticks = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
         try:
             # Schedule subscribed instruments update in one hour
@@ -134,6 +140,18 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         return sorted(list(self._subscribed_instruments))
 
+    @property
+    def subscribed_trade_ticks(self):
+        """
+        The quote tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        return sorted(list(self._feeds_trade_ticks.keys()))
+
     cpdef bint is_connected(self) except *:
         """
         Return a value indicating whether the client is connected.
@@ -152,7 +170,8 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
-        # TODO: Connect websocket here
+        if not self._feed_loop.is_running():
+            self._loop.run_in_executor(None, self._run_feed_loop)
 
         self._is_connected = True
         self._log.info("Connected.")
@@ -163,10 +182,34 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         self._log.info("Disconnecting...")
 
-        self._loop.create_task(self._await_disconnect())
+        self._loop.run_in_executor(None, self._stop_feed_loop)
 
-    async def _await_disconnect(self):
-        await self._client_feed.async_stop_feeds(self._loop)
+    def _run_feed_loop(self):
+        asyncio.set_event_loop(self._feed_loop)
+        self._log.info("Running feed loop...")
+        self._feed_loop.run_forever()
+
+    def _stop_feed_loop(self):
+        if not self._feed_loop.is_running():
+            self._feed_loop.run_until_complete(self._stop_feeds())
+        else:
+            self._feed_loop.create_task(self._stop_feeds())
+            while self._is_connected:
+                time.sleep(0.1)
+
+        self._log.info("Stopping feed loop...")
+        self._feed_loop.stop()
+        self._log.debug(f"feed_loop.is_running()={self._feed_loop.is_running()}")
+
+    async def _stop_feeds(self):
+        stop_tasks = []
+        for symbol, feed in self._feeds_trade_ticks.items():
+            self._log.debug(f"Stopping <TradeTick> feed for {symbol.code}...")
+            stop_tasks.append(self._feed_loop.create_task(feed.stop()))
+
+        if stop_tasks:
+            await asyncio.gather(*stop_tasks)
+
         self._is_connected = False
         self._log.info("Disconnected.")
 
@@ -181,7 +224,7 @@ cdef class BinanceDataClient(LiveDataClient):
         )
 
         self._subscribed_instruments = set()
-        self._feeds = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
+        self._feeds_trade_ticks = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
         try:
             # Schedule subscribed instruments update in one hour
@@ -237,18 +280,22 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
+        if symbol in self._feeds_trade_ticks:
+            return
+
         feed = cryptofeed.exchanges.Binance(
             pairs=[symbol.code.replace('/', '-')],
             channels=[TRADES],
             callbacks={TRADES: TradeCallback(self._on_trade_tick)},
         )
 
-        # TODO: WIP
-        self._feeds[symbol] = feed
-        self._client_feed.add_feed(feed)
-        self._client_feed.run_feed(self._loop, feed)
+        self._feeds_trade_ticks[symbol] = feed
+        self._feed_loop.call_soon_threadsafe(self._add_feed, feed)
 
-        self._log.debug(f"Added TRADES feed for {symbol.code}.")
+    def _add_feed(self, feed):
+        self._client_feed.add_feed(feed)
+        self._client_feed.run_feed(self._feed_loop, feed)
+        self._log.debug(f"Added {feed}.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -304,7 +351,16 @@ cdef class BinanceDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if symbol not in self._feeds_trade_ticks:
+            return
+
+        feed = self._feeds_trade_ticks.get(symbol)
+        self._feed_loop.call_soon_threadsafe(self._remove_feed, feed)
+        del self._feeds_trade_ticks[symbol]
+
+    def _remove_feed(self, feed):
+        self._feed_loop.create_task(feed.stop())
+        self._log.debug(f"Removed {feed}.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -369,7 +425,7 @@ cdef class BinanceDataClient(LiveDataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -402,7 +458,7 @@ cdef class BinanceDataClient(LiveDataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -447,7 +503,7 @@ cdef class BinanceDataClient(LiveDataClient):
         bar_type : BarType
             The bar type for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -571,12 +627,55 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
             return
 
+        if bar_type.spec.is_time_aggregated():
+            self._request_time_bars(
+                instrument,
+                bar_type,
+                from_datetime,
+                to_datetime,
+                limit,
+                correlation_id,
+            )
+
+    cpdef void _request_time_bars(
+        self,
+        Instrument instrument,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ) except *:
+        # Build timeframe
+        cdef str timeframe = str(bar_type.spec.step)
+
+        if bar_type.spec.aggregation == BarAggregation.MINUTE:
+            timeframe += 'm'
+        elif bar_type.spec.aggregation == BarAggregation.HOUR:
+            timeframe += 'h'
+        elif bar_type.spec.aggregation == BarAggregation.DAY:
+            timeframe += 'd'
+        else:
+            self._log.error(f"Requesting bars with BarAggregation."
+                            f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                            f"not currently supported in this version.")
+            return
+
+        # Account for partial bar
+        if limit != -1:
+            limit += 1
+
+        if limit > 1001:
+            self._log.warning(f"Requested bars {bar_type} with limit of {limit} when Binance limit=1000.")
+            limit = 1000
+
         cdef list data
         try:
             data = self._client_rest.fetch_ohlcv(
                 symbol=bar_type.symbol.code,
+                timeframe=timeframe,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit,
+                limit=limit if limit != -1 else None,
             )
         except Exception as ex:
             self._log.error(str(ex))
@@ -586,16 +685,22 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(f"No data returned for {bar_type}.")
             return
 
+        # Set partial bar
+        cdef Bar partial_bar = self._parse_bar(instrument, data[-1])
+
+        # Delete last values
+        del data[-1]
+
         cdef list bars = []  # type: list[Bar]
         cdef list values     # type: list[object]
-        for values in data[:-1]:  # TODO: Remove this slice
+        for values in data:
             bars.append(self._parse_bar(instrument, values))
 
         self._loop.call_soon_threadsafe(
             self._handle_bars_py,
             bar_type,
             bars,
-            None,
+            partial_bar,
             correlation_id,
         )
 

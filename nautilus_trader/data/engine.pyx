@@ -914,6 +914,35 @@ cdef class DataEngine(Component):
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
 
+    cdef inline void _bulk_build_tick_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
+    ) except *:
+        # Bulk build tick bars
+        cdef int ticks_to_order = bar_type.spec.step * limit
+
+        cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
+            bar_type,
+            self._log.get_logger(),
+            callback,
+        )
+
+        # noinspection bar_builder.receive
+        # noinspection PyUnresolvedReferences
+        self._handle_request_quote_ticks(
+            bar_type.symbol,
+            from_datetime,
+            to_datetime,
+            ticks_to_order,
+            bar_builder.receive,
+        )
+
+# -- HANDLERS --------------------------------------------------------------------------------------
+
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._instrument_handlers:
             self._instrument_handlers[symbol] = []  # type: list[callable]
@@ -1028,30 +1057,3 @@ cdef class DataEngine(Component):
         if not self._bar_handlers[bar_type]:
             del self._bar_handlers[bar_type]
             self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
-
-    cdef inline void _bulk_build_tick_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
-    ) except *:
-        # Bulk build tick bars
-        cdef int ticks_to_order = bar_type.spec.step * limit
-
-        cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
-            bar_type,
-            self._log.get_logger(),
-            callback,
-        )
-
-        # noinspection bar_builder.receive
-        # noinspection PyUnresolvedReferences
-        self._handle_request_quote_ticks(
-            bar_type.symbol,
-            from_datetime,
-            to_datetime,
-            ticks_to_order,
-            bar_builder.receive,
-        )
