@@ -53,7 +53,7 @@ def tests(session: Session) -> None:
 @nox.session
 def tests_with_integration(session: Session) -> None:
     """Run the test suite."""
-    _setup_poetry(session)
+    _setup_poetry(session, "-E", "ccxtpro")
     _run_pytest(
         session, "--ignore=tests/performance_tests/",
     )
@@ -73,7 +73,7 @@ def tests_without_integration(session: Session) -> None:
 @nox.session
 def integration_tests(session: Session) -> None:
     """Run the integration test suite."""
-    _setup_poetry(session)
+    _setup_poetry(session, "-E", "ccxtpro")
     _run_pytest(session, "tests/integration_tests/")
 
 
