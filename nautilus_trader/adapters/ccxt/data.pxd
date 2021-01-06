@@ -29,9 +29,7 @@ from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class CCXTDataClient(LiveDataClient):
-    cdef object _client_rest
-    cdef object _client_feed
-    cdef object _feed_loop
+    cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
     cdef bint _is_connected
 
