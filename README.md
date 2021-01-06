@@ -88,8 +88,8 @@ a license to access the CCXT private repository to install the `ccxtpro` package
 
 There are two options for satisfying the dependency, either ensure `ccxtpro` is installed already.
 
-Or, allow [Poetry](https://python-poetry.org/) to install the dependency by adding your GitHub credentials for the
-private repository, run once:
+Or, allow [Poetry](https://python-poetry.org/) to install the package by adding your GitHub credentials for the
+private repository, just run once:
 
     poetry config http-basic.ccxtpro <username> <password>
 
