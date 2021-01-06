@@ -17,9 +17,12 @@ from decimal import Decimal
 
 from cpython.datetime cimport datetime
 
-import ccxtpro
+try:
+    import ccxtpro
+except ImportError:
+    raise ImportError("ccxtpro is not installed, installation instructions at https://ccxt.pro")
 
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -171,8 +174,8 @@ cdef class CCXTDataClient(LiveDataClient):
         Reset the client.
         """
         # TODO: Reset client
-        self._instrument_provider = BinanceInstrumentProvider(
-            client=self._client_rest,
+        self._instrument_provider = CCXTInstrumentProvider(
+            client=self._client,
             load_all=False,
         )
 
@@ -232,13 +235,6 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
-
-    def _add_feed(self, feed):
-        self._client_feed.add_feed(feed)
-        self._client_feed.run_feed(self._feed_loop, feed)
-        self._log.debug(f"Added {feed}.")
-
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
         Subscribe to `Bar` data for the given bar type.
@@ -294,10 +290,6 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
 
         # TODO: Implement
-
-    def _remove_feed(self, feed):
-        self._feed_loop.create_task(feed.stop())
-        self._log.debug(f"Removed {feed}.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -531,7 +523,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
         cdef list trades
         try:
-            trades = self._client_rest.fetch_trades(
+            trades = self._client.fetch_trades(
                 symbol=symbol.code,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
@@ -615,7 +607,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
         cdef list data
         try:
-            data = self._client_rest.fetch_ohlcv(
+            data = self._client.fetch_ohlcv(
                 symbol=bar_type.symbol.code,
                 timeframe=timeframe,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,

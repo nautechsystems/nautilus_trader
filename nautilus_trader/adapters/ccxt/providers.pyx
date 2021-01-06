@@ -36,7 +36,7 @@ cdef class CCXTInstrumentProvider:
     Provides a means of loading `Instrument` from a unified CCXT exchange.
     """
 
-    def __init__(self, client not None: ccxt.binance, bint load_all=False):
+    def __init__(self, client not None: ccxt.Exchange, bint load_all=False):
         """
         Initialize a new instance of the `CCXTInstrumentProvider` class.
 
@@ -60,7 +60,7 @@ cdef class CCXTInstrumentProvider:
         """
         Pre-load all instruments.
         """
-        self._client.load_markets()
+        self._client.load_markets(reload=True)
 
         if self._client.markets is None:
             return  # No markets
