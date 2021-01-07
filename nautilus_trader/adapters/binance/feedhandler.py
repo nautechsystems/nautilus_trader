@@ -39,29 +39,58 @@ Copyright (C) 2017-2021  Bryant Moscon - bmoscon@gmail.com
 '''
 
 import asyncio
-import logging
-from signal import SIGTERM, SIGINT, SIGHUP, SIGABRT
-import zlib
 from collections import defaultdict
+import functools
+import logging
+from signal import SIGABRT
+from signal import SIGHUP
+from signal import SIGINT
+from signal import SIGTERM
 from socket import error as socket_error
 from time import time
-import functools
-
-from websockets import ConnectionClosed
+import zlib
 
 from cryptofeed.config import Config
-from cryptofeed.defines import (BINANCE, BINANCE_DELIVERY, BINANCE_FUTURES, BINANCE_US, BITCOINCOM, BITFINEX, BITFLYER,
-                                BITMAX, BITMEX, BITSTAMP, BITTREX, BLOCKCHAIN, BYBIT, COINBASE, COINGECKO,
-                                DERIBIT, FTX_US, GATEIO, GEMINI, HITBTC, HUOBI, HUOBI_DM, HUOBI_SWAP,
-                                KRAKEN, KRAKEN_FUTURES, OKCOIN, OKEX, POLONIEX, PROBIT, UPBIT, WHALE_ALERT)
+from cryptofeed.defines import BINANCE
+from cryptofeed.defines import BINANCE_DELIVERY
+from cryptofeed.defines import BINANCE_FUTURES
+from cryptofeed.defines import BINANCE_US
+from cryptofeed.defines import BITCOINCOM
+from cryptofeed.defines import BITFINEX
+from cryptofeed.defines import BITFLYER
+from cryptofeed.defines import BITMAX
+from cryptofeed.defines import BITMEX
+from cryptofeed.defines import BITSTAMP
+from cryptofeed.defines import BITTREX
+from cryptofeed.defines import BLOCKCHAIN
+from cryptofeed.defines import BYBIT
+from cryptofeed.defines import COINBASE
+from cryptofeed.defines import COINGECKO
+from cryptofeed.defines import DERIBIT
 from cryptofeed.defines import EXX as EXX_str
 from cryptofeed.defines import FTX as FTX_str
+from cryptofeed.defines import FTX_US
+from cryptofeed.defines import GATEIO
+from cryptofeed.defines import GEMINI
+from cryptofeed.defines import HITBTC
+from cryptofeed.defines import HUOBI
+from cryptofeed.defines import HUOBI_DM
+from cryptofeed.defines import HUOBI_SWAP
+from cryptofeed.defines import KRAKEN
+from cryptofeed.defines import KRAKEN_FUTURES
 from cryptofeed.defines import L2_BOOK
+from cryptofeed.defines import OKCOIN
+from cryptofeed.defines import OKEX
+from cryptofeed.defines import POLONIEX
+from cryptofeed.defines import PROBIT
+from cryptofeed.defines import UPBIT
+from cryptofeed.defines import WHALE_ALERT
 from cryptofeed.exceptions import ExhaustedRetries
 from cryptofeed.exchanges import *
-from cryptofeed.providers import *
 from cryptofeed.log import get_logger
 from cryptofeed.nbbo import NBBO
+from cryptofeed.providers import *
+from websockets import ConnectionClosed
 
 
 # LOG = logging.getLogger('feedhandler')
