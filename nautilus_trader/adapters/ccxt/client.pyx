@@ -13,17 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+import sys
+
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataEngine
-import ccxtpro
-import os
+
+try:
+    import ccxtpro
+except ImportError:
+    if "pytest" in sys.modules:
+        # Currently under test so continue
+        import ccxt as ccxtpro
+    else:
+        raise RuntimeError("ccxtpro is not installed, "
+                           "installation instructions can be found at https://ccxt.pro")
 
 
 cdef class CCXTDataClientFactory:
     """
-    Provides data clients for the Binance exchange.
+    Provides data clients for the unified CCXT Pro API.
     """
 
     @staticmethod
@@ -35,7 +46,7 @@ cdef class CCXTDataClientFactory:
         LiveLogger logger not None,
     ):
         """
-        Create a new data client for the Binance exchange.
+        Create a new data client.
 
         Parameters
         ----------

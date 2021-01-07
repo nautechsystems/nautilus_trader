@@ -17,11 +17,6 @@ import asyncio
 
 from cpython.datetime cimport datetime
 
-try:
-    import ccxtpro
-except ImportError:
-    raise ImportError("ccxtpro is not installed, installation instructions at https://ccxt.pro")
-
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -59,7 +54,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
     def __init__(
         self,
-        client not None: ccxtpro.Exchange,
+        client not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,

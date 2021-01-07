@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
+import ccxt
+
 from nautilus_trader.adapters.binance.data cimport BinanceDataClient
 from nautilus_trader.adapters.binance.feedhandler import FeedHandler
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataEngine
-import ccxt
-import os
 
 
 cdef class BinanceDataClientFactory:
@@ -35,7 +37,7 @@ cdef class BinanceDataClientFactory:
         LiveLogger logger not None,
     ):
         """
-        Create a new data client for the Binance exchange.
+        Create a new data client.
 
         Parameters
         ----------
