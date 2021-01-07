@@ -24,6 +24,7 @@ import msgpack
 import redis
 
 from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
+from nautilus_trader.adapters.ccxt.client import CCXTDataClientFactory
 from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
@@ -257,7 +258,7 @@ class TradingNode:
             self._loop.stop()
             self._cancel_all_tasks()
         except RuntimeError as ex:
-            self._log.error("Shutdown coro issues will be fixed soon...")
+            self._log.error("Shutdown coro issues will be fixed soon...")  # TODO: Remove when fixed
             self._log.exception(ex)
         finally:
             if self._loop.is_running():
@@ -290,17 +291,23 @@ class TradingNode:
         self._log.info("=================================================================")
 
     def _setup_data_clients(self, config, logger):
-        # Setup each data
+        # Setup each data client
         for name, config in config.items():
-            if name == "binance":
+            if name.startswith("ccxt-"):
+                data_client = CCXTDataClientFactory.create(
+                    exchange_name=name.partition('-')[2],
+                    config=config,
+                    data_engine=self._data_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
+            elif name == "binance":
                 data_client = BinanceDataClientFactory.create(
                     config=config,
                     data_engine=self._data_engine,
                     clock=self._clock,
                     logger=logger,
                 )
-
-                self._data_engine.register_client(data_client)
             elif name == "oanda":
                 data_client = OandaDataClientFactory.create(
                     config=config,
@@ -308,16 +315,20 @@ class TradingNode:
                     clock=self._clock,
                     logger=logger,
                 )
-
-                self._data_engine.register_client(data_client)
             else:
                 self._log.error(f"No DataClient available for `{name}`.")
+                continue
+
+            # Register client with engine
+            self._data_engine.register_client(data_client)
 
     def _setup_exec_clients(self, config, logger):
         try:
             # Setup each data
             for name, config in config.items():
-                if name == "binance":
+                if name.startswith("ccxt-"):
+                    pass
+                elif name == "binance":
                     pass
                 elif name == "oanda":
                     pass
@@ -366,7 +377,7 @@ class TradingNode:
             # Continue to run while engines are running...
             await self._data_engine.get_run_queue_task()
             await self._exec_engine.get_run_queue_task()
-        except asyncio.exceptions.CancelledError as ex:
+        except asyncio.CancelledError as ex:
             self._log.error(str(ex))
 
     def _wait_for_engines(self):
@@ -424,7 +435,7 @@ class TradingNode:
                 break
             if not self._data_engine.check_disconnected():
                 continue
-            # if not self._exec_engine.check_disconnected():
+            # if not self._exec_engine.check_disconnected():  # TODO: Implement
             #     continue
             break
 

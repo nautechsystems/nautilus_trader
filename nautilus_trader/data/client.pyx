@@ -75,7 +75,7 @@ cdef class DataClient:
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(f"DataClient-{venue.value}", logger)
+        self._log = LoggerAdapter(config.get("name", f"DataClient-{venue.value}"), logger)
         self._engine = engine
         self._config = config
 
@@ -197,8 +197,6 @@ cdef class DataClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    # Pure Python wrappers for thread safe calls
 
     def _handle_instrument_py(self, Instrument instrument):
         self._engine.process(instrument)
