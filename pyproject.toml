@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.95.1"
+version = "1.95.2"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -34,7 +34,6 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 ccxt = "^1.40.23"
-ccxtpro = { version = "^1.0.1", optional = true }
 cryptofeed = "^1.6.2"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
@@ -67,14 +66,7 @@ sphinx = { version = "^3.2.1", optional = true }
 sphinx-rtd-theme = { version = "^0.5.0", optional = true }
 
 [tool.poetry.extras]
-ccxtpro = ["ccxtpro"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
-all = ["ccxtpro", "numpydoc", "sphinx", "sphinx-rtd-theme"]
-
-[[tool.poetry.source]]
-name = "ccxtpro"
-url = "https://github.com/kroitor/ccxt.pro"
-secondary = true
 
 
 #################
