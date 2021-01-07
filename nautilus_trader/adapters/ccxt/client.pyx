@@ -14,35 +14,47 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
+import sys
 
-import oandapyV20
-
-from nautilus_trader.adapters.oanda.data cimport OandaDataClient
-from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
+from nautilus_trader.live.data cimport LiveDataEngine
+
+try:
+    import ccxtpro
+except ImportError:
+    if "pytest" in sys.modules:
+        # Currently under test so continue
+        import ccxt as ccxtpro
+    else:
+        raise RuntimeError("ccxtpro is not installed, "
+                           "installation instructions can be found at https://ccxt.pro")
 
 
-cdef class OandaDataClientFactory:
+cdef class CCXTDataClientFactory:
     """
-    Provides data clients for the Oanda brokerage.
+    Provides data clients for the unified CCXT Pro API.
     """
 
     @staticmethod
     def create(
-        dict config,
-        DataEngine data_engine,
-        LiveClock clock,
-        LiveLogger logger,
+        str exchange_name not None,
+        dict config not None,
+        LiveDataEngine data_engine not None,
+        LiveClock clock not None,
+        LiveLogger logger not None,
     ):
         """
         Create a new data client.
 
         Parameters
         ----------
+        exchange_name : str
+            The name of the exchange
         config : dict
             The configuration dictionary.
-        data_engine : DataEngine
+        data_engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
             The clock for the client.
@@ -51,19 +63,20 @@ cdef class OandaDataClientFactory:
 
         Returns
         -------
-        OandaDataClient
+        CCXTDataClient
 
         """
-        # Get credentials
-        oanda_api_token = os.getenv(config.get("api_token", ""), "")
-        oanda_account_id = os.getenv(config.get("account_id", ""), "")
-
         # Create client
-        client = oandapyV20.API(access_token=oanda_api_token)
+        client: ccxtpro.Exchange = getattr(ccxtpro, exchange_name.lower())({
+            "apiKey": os.getenv(config.get("api_key", ""), ""),
+            "secret": os.getenv(config.get("api_secret", ""), ""),
+            "timeout": 10000,         # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
+            "asyncio_loop": data_engine.get_event_loop(),
+        })
 
-        return OandaDataClient(
+        return CCXTDataClient(
             client=client,
-            account_id=oanda_account_id,
             engine=data_engine,
             clock=clock,
             logger=logger,

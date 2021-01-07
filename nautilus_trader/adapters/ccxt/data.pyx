@@ -13,14 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
+import asyncio
 
 from cpython.datetime cimport datetime
-
-try:
-    import ccxtpro
-except ImportError:
-    raise ImportError("ccxtpro is not installed, installation instructions at https://ccxt.pro")
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
@@ -59,7 +54,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
     def __init__(
         self,
-        client not None: ccxtpro.Exchange,
+        client not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -90,6 +85,7 @@ cdef class CCXTDataClient(LiveDataClient):
             clock,
             logger,
             config={
+                "name": f"CCXTDataClient-{client.name.upper()}",
                 "unavailable_methods": [
                     self.request_quote_ticks.__name__,
                 ],
@@ -104,18 +100,22 @@ cdef class CCXTDataClient(LiveDataClient):
         )
 
         # Subscriptions
-        self._subscribed_instruments = set()
+        self._subscribed_instruments = set()   # type: set[Symbol]
+        self._subscribed_trade_ticks = {}      # type: dict[Symbol, asyncio.Task]
 
-        try:
-            # Schedule subscribed instruments update in one hour
-            self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
-        except RuntimeError as ex:
-            self._log.error(str(ex))
+        # Schedule subscribed instruments update
+        delay = _SECONDS_IN_HOUR
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
 
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
+
+    async def _run_after_delay(self, double delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
 
     @property
     def subscribed_instruments(self):
@@ -139,7 +139,7 @@ cdef class CCXTDataClient(LiveDataClient):
         list[Symbol]
 
         """
-        return []
+        return sorted(list(self._subscribed_trade_ticks.keys()))
 
     cpdef bint is_connected(self) except *:
         """
@@ -165,7 +165,25 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Disconnect the client.
         """
+        self._loop.create_task(self._disconnect())
+
+    async def _disconnect(self):
         self._log.info("Disconnecting...")
+
+        # Cancel update instruments
+        if self._update_instruments_task:
+            self._update_instruments_task.cancel()
+
+        # Cancel residual tasks
+        for task in self._subscribed_trade_ticks.values():
+            if not task.cancelled():
+                self._log.debug(f"Cancelling {task}...")
+                task.cancel()
+
+        # Ensure ccxt streams closed
+        self._log.info("Closing exchange...")
+        await self._client.close()
+
         self._is_connected = False
         self._log.info("Disconnected.")
 
@@ -181,11 +199,10 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._subscribed_instruments = set()
 
-        try:
-            # Schedule subscribed instruments update in one hour
-            self._loop.call_later(60 * 60, self._subscribed_instruments_update)
-        except RuntimeError as ex:
-            self._log.error(str(ex))
+        # Schedule subscribed instruments update
+        delay = _SECONDS_IN_HOUR
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
 
     cpdef void dispose(self) except *:
         """
@@ -234,6 +251,21 @@ cdef class CCXTDataClient(LiveDataClient):
 
         """
         Condition.not_none(symbol, "symbol")
+
+        if not self._client.has["watchTrades"]:
+            self._log.error("`subscribe_trade_ticks` was called "
+                            "when not supported by the exchange.")
+            return
+
+        if symbol in self._subscribed_trade_ticks:
+            # TODO: Only call if not already subscribed
+            self._log.debug(f"Already subscribed {symbol.code} <TradeTick> data.")
+            return
+
+        task = self._loop.create_task(self._watch_trades(symbol))
+        self._subscribed_trade_ticks[symbol] = task
+
+        self._log.info(f"Subscribed to {symbol.code} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -289,7 +321,15 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if symbol not in self._subscribed_trade_ticks:
+            # TODO: Only call if subscribed
+            self._log.debug(f"Not subscribed to {symbol.code} <TradeTick> data.")
+            return
+
+        task = self._subscribed_trade_ticks.pop(symbol)
+        task.cancel()
+        self._log.debug(f"Cancelled {task}.")
+        self._log.info(f"Unsubscribed from {symbol.code} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -322,7 +362,7 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._loop.run_in_executor(None, self._request_instrument, symbol, correlation_id)
+        self._loop.create_task(self._request_instrument(symbol, correlation_id))
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
         """
@@ -336,7 +376,7 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._loop.run_in_executor(None, self._request_instruments, correlation_id)
+        self._loop.create_task(self._request_instruments(correlation_id))
 
     cpdef void request_quote_ticks(
         self,
@@ -405,15 +445,13 @@ cdef class CCXTDataClient(LiveDataClient):
                               f"argument of {to_datetime} when not supported by the exchange "
                               f"(will use `limit` of {limit}).")
 
-        self._loop.run_in_executor(
-            None,
-            self._request_trade_ticks,
+        self._loop.create_task(self._request_trade_ticks(
             symbol,
             from_datetime,
             to_datetime,
             limit,
             correlation_id,
-        )
+        ))
 
     cpdef void request_bars(
         self,
@@ -455,60 +493,110 @@ cdef class CCXTDataClient(LiveDataClient):
                               f"argument of `{to_datetime}` when not supported by the exchange "
                               f"(will use `limit` of {limit}).")
 
-        self._loop.run_in_executor(
-            None,
-            self._request_bars,
+        self._loop.create_task(self._request_bars(
             bar_type,
             from_datetime,
             to_datetime,
             limit,
             correlation_id,
-        )
+        ))
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
-        self._instrument_provider.load_all()
+    async def _watch_trades(self, Symbol symbol):
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe to trade ticks (no instrument for {symbol}).")
+            return
+
+        cdef trades  # TODO: Type ArrayCache
+        cdef dict trade
+        try:
+            while True:
+                trades = await self._client.watch_trades(symbol.code)
+                for trade in trades:
+                    self._on_trade_tick(
+                        instrument,
+                        trade["price"],
+                        trade["amount"],
+                        trade["side"],
+                        trade["takerOrMaker"],
+                        trade["id"],
+                        trade["timestamp"],
+                    )
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled _watch_trades for {symbol.code}.")
+        except Exception as ex:
+            self._log.exception(ex)
+        # Finally close stream
+        await self._client.close()
+
+    cdef void _on_trade_tick(
+        self,
+        Instrument instrument,
+        double price,
+        double amount,
+        str order_side,
+        str liquidity_side,
+        str trade_match_id,
+        long timestamp,
+    ) except *:
+        # Determine liquidity side
+        cdef OrderSide side = OrderSide.BUY if order_side == "buy" else OrderSide.SELL
+        if liquidity_side == "maker":
+            side = OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.BUY
+
+        cdef TradeTick tick = TradeTick(
+            instrument.symbol,
+            Price(price, instrument.price_precision),
+            Quantity(amount, instrument.size_precision),
+            side,
+            TradeMatchId(trade_match_id),
+            from_posix_ms(timestamp)
+        )
+
+        self._handle_trade_tick(tick)
+
+    async def _request_instrument(self, Symbol symbol, UUID correlation_id):
+        await self._instrument_provider.load_all_async()
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is not None:
-            self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
+            self._handle_instruments([instrument], correlation_id)
         else:
             self._log.error(f"Could not find instrument {symbol.code}.")
 
-    cpdef void _request_instruments(self, UUID correlation_id) except *:
-        self._instrument_provider.load_all()
+    async def _request_instruments(self, correlation_id):
+        await self._instrument_provider.load_all_async()
         cdef list instruments = list(self._instrument_provider.get_all().values())
-        self._loop.call_soon_threadsafe(self._handle_instruments_py, instruments, correlation_id)
+        self._handle_instruments(instruments, correlation_id)
 
         self._log.info(f"Updated {len(instruments)} instruments.")
         self.initialized = True
 
-    cpdef void _subscribed_instruments_update(self) except *:
-        self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
-
-    cpdef void _subscribed_instruments_load_and_send(self) except *:
-        self._instrument_provider.load_all()
+    async def _subscribed_instruments_update(self, delay):
+        await self._instrument_provider.load_all_async()
 
         cdef Symbol symbol
         cdef Instrument instrument
         for symbol in self._subscribed_instruments:
             instrument = self._instrument_provider.get(symbol)
             if instrument is not None:
-                self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
+                self._handle_instrument(instrument)
             else:
                 self._log.error(f"Could not find instrument {symbol.code}.")
 
-        # Reschedule subscribed instruments update in one hour
-        self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
+        # Reschedule subscribed instruments update
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
 
-    cpdef void _request_trade_ticks(
+    async def _request_trade_ticks(
         self,
         Symbol symbol,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ) except *:
+    ):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
             self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
@@ -523,16 +611,19 @@ cdef class CCXTDataClient(LiveDataClient):
 
         cdef list trades
         try:
-            trades = self._client.fetch_trades(
+            trades = await self._client.fetch_trades(
                 symbol=symbol.code,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
+        except TypeError:
+            # TODO: Temporary work around for testing
+            trades = self._client.fetch_trades
         except Exception as ex:
-            self._log.error(str(ex))
+            self._log.exception(ex)
             return
 
-        if len(trades) == 0:
+        if not trades:
             self._log.error("No data returned from fetch_trades.")
             return
 
@@ -541,28 +632,23 @@ cdef class CCXTDataClient(LiveDataClient):
         for trade in trades:
             ticks.append(self._parse_trade_tick(instrument, trade))
 
-        self._loop.call_soon_threadsafe(
-            self._handle_trade_ticks_py,
-            symbol,
-            ticks,
-            correlation_id,
-        )
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
 
-    cpdef void _request_bars(
+    async def _request_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ) except *:
+    ):
         cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
             return
 
         if bar_type.spec.is_time_aggregated():
-            self._request_time_bars(
+            await self._request_time_bars(
                 instrument,
                 bar_type,
                 from_datetime,
@@ -571,7 +657,7 @@ cdef class CCXTDataClient(LiveDataClient):
                 correlation_id,
             )
 
-    cpdef void _request_time_bars(
+    async def _request_time_bars(
         self,
         Instrument instrument,
         BarType bar_type,
@@ -579,7 +665,7 @@ cdef class CCXTDataClient(LiveDataClient):
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ) except *:
+    ):
         # Build timeframe
         cdef str timeframe = str(bar_type.spec.step)
 
@@ -607,17 +693,20 @@ cdef class CCXTDataClient(LiveDataClient):
 
         cdef list data
         try:
-            data = self._client.fetch_ohlcv(
+            data = await self._client.fetch_ohlcv(
                 symbol=bar_type.symbol.code,
                 timeframe=timeframe,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
+        except TypeError:
+            # TODO: Temporary work around for testing
+            data = self._client.fetch_ohlcv
         except Exception as ex:
-            self._log.error(str(ex))
+            self._log.exception(ex)
             return
 
-        if len(data) == 0:
+        if not data:
             self._log.error(f"No data returned for {bar_type}.")
             return
 
@@ -632,37 +721,12 @@ cdef class CCXTDataClient(LiveDataClient):
         for values in data:
             bars.append(self._parse_bar(instrument, values))
 
-        self._loop.call_soon_threadsafe(
-            self._handle_bars_py,
+        self._handle_bars(
             bar_type,
             bars,
             partial_bar,
             correlation_id,
         )
-
-    cpdef void _on_trade_tick(
-        self,
-        str feed,
-        str pair,
-        int order_id,
-        double timestamp,
-        str side,
-        amount: Decimal,
-        price: Decimal,
-        double receipt_timestamp,
-    ) except *:
-        cdef Symbol symbol = Symbol(pair.replace('-', '/', 1), self.venue)
-        cdef Instrument instrument = self._instrument_provider.get(symbol)
-        cdef TradeTick tick = TradeTick(
-            symbol,
-            Price(price, instrument.price_precision),
-            Quantity(amount, instrument.size_precision),
-            OrderSide.BUY if side == "buy" else OrderSide.SELL,
-            TradeMatchId(str(order_id)),
-            from_posix_ms(<long>(timestamp * 1000))
-        )
-
-        self._handle_trade_tick_py(tick)
 
     cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
         return TradeTick(
@@ -675,37 +739,12 @@ cdef class CCXTDataClient(LiveDataClient):
         )
 
     cdef inline Bar _parse_bar(self, Instrument instrument, list values):
+        cdef int price_precision = instrument.price_precision
         return Bar(
-            Price(values[1], instrument.price_precision),
-            Price(values[2], instrument.price_precision),
-            Price(values[3], instrument.price_precision),
-            Price(values[4], instrument.price_precision),
+            Price(values[1], price_precision),
+            Price(values[2], price_precision),
+            Price(values[3], price_precision),
+            Price(values[4], price_precision),
             Quantity(values[5], instrument.size_precision),
             from_posix_ms(values[0]),
         )
-
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
-        self._engine.process(instrument)
-
-    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
-        self._engine.process(BarData(bar_type, bar))
-
-    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
-        self._handle_instruments(instruments, correlation_id)
-
-    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
-        self._handle_quote_ticks(symbol, ticks, correlation_id)
-
-    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
-
-    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
-        self._handle_bars(bar_type, bars, partial, correlation_id)

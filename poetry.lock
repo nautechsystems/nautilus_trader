@@ -142,7 +142,7 @@ python-versions = "*"
 
 [[package]]
 name = "ccxt"
-version = "1.40.20"
+version = "1.40.23"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -157,16 +157,8 @@ requests = ">=2.18.4"
 yarl = {version = "1.1.0", markers = "python_version >= \"3.5.2\""}
 
 [package.extras]
-doc = ["Sphinx (1.7.0)"]
-qa = ["flake8 (3.7.9)"]
-
-[[package]]
-name = "ccxtpro"
-version = "1.0.1"
-description = "CCXT Pro"
-category = "main"
-optional = true
-python-versions = "*"
+doc = ["Sphinx (==1.7.0)"]
+qa = ["flake8 (==3.7.9)"]
 
 [[package]]
 name = "certifi"
@@ -274,11 +266,11 @@ cffi = ">=1.12"
 six = ">=1.4.1"
 
 [package.extras]
-docs = ["sphinx (>=1.6.5,<1.8.0 || >1.8.0,<3.1.0 || >3.1.0,<3.1.1 || >3.1.1)", "sphinx-rtd-theme"]
+docs = ["sphinx (>=1.6.5,!=1.8.0,!=3.1.0,!=3.1.1)", "sphinx-rtd-theme"]
 docstest = ["doc8", "pyenchant (>=1.6.11)", "twine (>=1.12.0)", "sphinxcontrib-spelling (>=4.0.1)"]
 pep8test = ["black", "flake8", "flake8-import-order", "pep8-naming"]
 ssh = ["bcrypt (>=3.1.5)"]
-test = ["pytest (>=3.6.0,<3.9.0 || >3.9.0,<3.9.1 || >3.9.1,<3.9.2 || >3.9.2)", "pretend", "iso8601", "pytz", "hypothesis (>=1.11.4,<3.79.2 || >3.79.2)"]
+test = ["pytest (>=3.6.0,!=3.9.0,!=3.9.1,!=3.9.2)", "pretend", "iso8601", "pytz", "hypothesis (>=1.11.4,!=3.79.2)"]
 
 [[package]]
 name = "cython"
@@ -319,7 +311,7 @@ pandas-datareader = ">=0.2"
 scipy = ">=0.15.1"
 
 [package.extras]
-dev = ["nose (1.3.7)", "parameterized (0.6.1)", "flake8 (2.5.1)"]
+dev = ["nose (==1.3.7)", "parameterized (==0.6.1)", "flake8 (==2.5.1)"]
 
 [[package]]
 name = "execnet"
@@ -727,7 +719,7 @@ coverage = ">=4.4"
 pytest = ">=4.6"
 
 [package.extras]
-testing = ["fields", "hunter", "process-tests (2.0.2)", "six", "pytest-xdist", "virtualenv"]
+testing = ["fields", "hunter", "process-tests (==2.0.2)", "six", "pytest-xdist", "virtualenv"]
 
 [[package]]
 name = "pytest-forked"
@@ -813,7 +805,7 @@ urllib3 = ">=1.21.1,<1.27"
 
 [package.extras]
 security = ["pyOpenSSL (>=0.14)", "cryptography (>=1.3.4)"]
-socks = ["PySocks (>=1.5.6,<1.5.7 || >1.5.7)", "win-inet-pton"]
+socks = ["PySocks (>=1.5.6,!=1.5.7)", "win-inet-pton"]
 
 [[package]]
 name = "scipy"
@@ -993,7 +985,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, <4"
 [package.extras]
 brotli = ["brotlipy (>=0.6.0)"]
 secure = ["pyOpenSSL (>=0.14)", "cryptography (>=1.3.4)", "idna (>=2.0.0)", "certifi", "ipaddress"]
-socks = ["PySocks (>=1.5.6,<1.5.7 || >1.5.7,<2.0)"]
+socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 
 [[package]]
 name = "uvloop"
@@ -1063,16 +1055,15 @@ python-versions = ">=3.6"
 
 [package.extras]
 docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
-testing = ["pytest (>=3.5,<3.7.3 || >3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
+testing = ["pytest (>=3.5,!=3.7.3)", "pytest-checkdocs (>=1.2.3)", "pytest-flake8", "pytest-cov", "jaraco.test (>=3.2.0)", "jaraco.itertools", "func-timeout", "pytest-black (>=0.3.7)", "pytest-mypy"]
 
 [extras]
-ccxtpro = ["ccxtpro"]
 docs = ["numpydoc"]
 
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "28c63979e38e5c3aed6eb517104ccd203bf365586ba2e1324c622ac17accb0df"
+content-hash = "97aa4943cd8b7d8169919308cef71ca2976b19bc95f2dcf0c879ccc9a81b5dd5"
 
 [metadata.files]
 aiodns = [
@@ -1199,12 +1190,8 @@ cchardet = [
     {file = "cchardet-2.1.7.tar.gz", hash = "sha256:c428b6336545053c2589f6caf24ea32276c6664cb86db817e03a94c60afa0eaf"},
 ]
 ccxt = [
-    {file = "ccxt-1.40.20-py2.py3-none-any.whl", hash = "sha256:5e9f5dbbda2f34b5362e949bb6a9331dab8d291b6f08f102107c6eec85d07858"},
-    {file = "ccxt-1.40.20.tar.gz", hash = "sha256:f2d0d7c5bba3693133c31b52f75a3a50612a1ee6cdfd5622d8e48c66deecf074"},
-]
-ccxtpro = [
-    {file = "ccxtpro-1.0.1-py2.py3-none-any.whl", hash = "sha256:efc310fc31bb1f3a9f4518bdf8738c67db286eeda67e6a75617a1aec96f18abe"},
-    {file = "ccxtpro-1.0.1.tar.gz", hash = "sha256:859529394d8354580fc3e1f8db58280942a3b6109d02a53b4f8540d60c6be240"},
+    {file = "ccxt-1.40.23-py2.py3-none-any.whl", hash = "sha256:d7e480c26d4a29d15c2b320a2102c7430d4fe8167918b54f5f13336dfa43411a"},
+    {file = "ccxt-1.40.23.tar.gz", hash = "sha256:187e325e8ca995d2f7184c4dd11ad419ca61713c012fd9590192efffc247e796"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1769,6 +1756,8 @@ pyyaml = [
     {file = "PyYAML-5.3.1-cp37-cp37m-win_amd64.whl", hash = "sha256:73f099454b799e05e5ab51423c7bcf361c58d3206fa7b0d555426b1f4d9a3eaf"},
     {file = "PyYAML-5.3.1-cp38-cp38-win32.whl", hash = "sha256:06a0d7ba600ce0b2d2fe2e78453a470b5a6e000a985dd4a4e54e436cc36b0e97"},
     {file = "PyYAML-5.3.1-cp38-cp38-win_amd64.whl", hash = "sha256:95f71d2af0ff4227885f7a6605c37fd53d3a106fcab511b8860ecca9fcf400ee"},
+    {file = "PyYAML-5.3.1-cp39-cp39-win32.whl", hash = "sha256:ad9c67312c84def58f3c04504727ca879cb0013b2517c85a9a253f0cb6380c0a"},
+    {file = "PyYAML-5.3.1-cp39-cp39-win_amd64.whl", hash = "sha256:6034f55dab5fea9e53f436aa68fa3ace2634918e8b5994d82f3621c04ff5ed2e"},
     {file = "PyYAML-5.3.1.tar.gz", hash = "sha256:b8eac752c5e14d3eca0e6dd9199cd627518cb5ec06add0de9d32baeee6fe645d"},
 ]
 redis = [

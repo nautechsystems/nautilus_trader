@@ -15,8 +15,8 @@
 
 import asyncio
 import json
-import unittest
 import time
+import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
@@ -41,15 +41,16 @@ from tests import PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
+ETHUSDT = Symbol("ETH/USDT", BINANCE)
 
 
 # Monkey patch magic mock
 async def async_magic():
-    pass
+    return
 
 MagicMock.__await__ = lambda x: async_magic().__await__()
 
@@ -288,82 +289,97 @@ class CCXTDataClientTests(unittest.TestCase):
         self.assertTrue(True)
 
     # TODO: WIP
-    # def test_request_trade_ticks(self):
-    #     async def run_test():
-    #         # Arrange
-    #         handler = ObjectStorer()
-    #         self.data_engine.start()
-    #
-    #         # Allow data engine to spool up and request instruments
-    #         await asyncio.sleep(3)
-    #
-    #         request = DataRequest(
-    #             venue=BINANCE,
-    #             data_type=TradeTick,
-    #             metadata={
-    #                 "Symbol": BTCUSDT,
-    #                 "FromDateTime": None,
-    #                 "ToDateTime": None,
-    #                 "Limit": 1000,
-    #             },
-    #             callback=handler.store,
-    #             request_id=self.uuid_factory.generate(),
-    #             request_timestamp=self.clock.utc_now(),
-    #         )
-    #
-    #         # Act
-    #         self.data_engine.send(request)
-    #
-    #         await asyncio.sleep(1)
-    #
-    #         # Assert
-    #         self.assertEqual(2, self.data_engine.response_count)
-    #         self.assertEqual(1, handler.count)
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #         await self.data_engine.get_run_queue_task()
-    #
-    #     self.loop.run_until_complete(run_test())
+    def test_request_trade_ticks(self):
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
 
-    # TODO: WIP
-    # def test_request_bars(self):
-    #     async def run_test():
-    #         # Arrange
-    #         handler = ObjectStorer()
-    #         self.data_engine.start()
-    #
-    #         # Allow data engine to spool up and request instruments
-    #         await asyncio.sleep(3)
-    #
-    #         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-    #         bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
-    #
-    #         request = DataRequest(
-    #             venue=BINANCE,
-    #             data_type=Bar,
-    #             metadata={
-    #                 "BarType": bar_type,
-    #                 "FromDateTime": None,
-    #                 "ToDateTime": None,
-    #                 "Limit": 1000,
-    #             },
-    #             callback=handler.store_2,
-    #             request_id=self.uuid_factory.generate(),
-    #             request_timestamp=self.clock.utc_now(),
-    #         )
-    #
-    #         # Act
-    #         self.data_engine.send(request)
-    #
-    #         await asyncio.sleep(2)
-    #
-    #         # Assert
-    #         self.assertEqual(2, self.data_engine.response_count)
-    #         self.assertEqual(1, handler.count)
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #         await self.data_engine.get_run_queue_task()
-    #
-    #     self.loop.run_until_complete(run_test())
+            with open(TEST_PATH + "res_trades.json") as response:
+                trades = json.load(response)
+
+            self.mock_ccxt.markets = instruments
+            self.mock_ccxt.fetch_trades = trades
+
+            handler = ObjectStorer()
+            self.data_engine.start()
+            await asyncio.sleep(0.3)
+
+            request = DataRequest(
+                venue=BINANCE,
+                data_type=TradeTick,
+                metadata={
+                    "Symbol": ETHUSDT,
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 100,
+                },
+                callback=handler.store,
+                request_id=self.uuid_factory.generate(),
+                request_timestamp=self.clock.utc_now(),
+            )
+
+            # Act
+            self.data_engine.send(request)
+
+            await asyncio.sleep(1)
+
+            # Assert
+            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, handler.count)
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())
+
+    def test_request_bars(self):
+
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
+
+            with open(TEST_PATH + "res_bars.json") as response:
+                bars = json.load(response)
+
+            self.mock_ccxt.markets = instruments
+            self.mock_ccxt.fetch_ohlcv = bars
+
+            handler = ObjectStorer()
+            self.data_engine.start()
+            await asyncio.sleep(0.3)
+
+            bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+            bar_type = BarType(symbol=ETHUSDT, bar_spec=bar_spec)
+
+            request = DataRequest(
+                venue=BINANCE,
+                data_type=Bar,
+                metadata={
+                    "BarType": bar_type,
+                    "FromDateTime": None,
+                    "ToDateTime": None,
+                    "Limit": 100,
+                },
+                callback=handler.store_2,
+                request_id=self.uuid_factory.generate(),
+                request_timestamp=self.clock.utc_now(),
+            )
+
+            # Act
+            self.data_engine.send(request)
+
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, handler.count)
+            self.assertEqual(100, len(handler.get_store()[0][1]))
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())

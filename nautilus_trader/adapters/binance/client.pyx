@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
+import ccxt
+
 from nautilus_trader.adapters.binance.data cimport BinanceDataClient
 from nautilus_trader.adapters.binance.feedhandler import FeedHandler
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
-import ccxt
-import os
+from nautilus_trader.live.data cimport LiveDataEngine
 
 
 cdef class BinanceDataClientFactory:
@@ -29,19 +31,19 @@ cdef class BinanceDataClientFactory:
 
     @staticmethod
     def create(
-        dict config,
-        DataEngine data_engine,
-        LiveClock clock,
-        LiveLogger logger,
+        dict config not None,
+        LiveDataEngine data_engine not None,
+        LiveClock clock not None,
+        LiveLogger logger not None,
     ):
         """
-        Create a new data client for the Binance exchange.
+        Create a new data client.
 
         Parameters
         ----------
         config : dict
             The configuration dictionary.
-        data_engine : DataEngine
+        data_engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
             The clock for the client.
@@ -54,7 +56,7 @@ cdef class BinanceDataClientFactory:
 
         """
         # Create client
-        client_rest = ccxt.binance({
+        client_rest: ccxt.Exchange = ccxt.binance({
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,         # Hard coded for now

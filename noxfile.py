@@ -6,6 +6,73 @@ from nox.sessions import Session
 nox.options.error_on_external_run = True
 
 
+@nox.session
+def tests(session: Session) -> None:
+    """Run the test suite."""
+    _setup_poetry(session)
+    _run_pytest(
+        session,
+        "--ignore=tests/integration_tests/",
+        "--ignore=tests/performance_tests/",
+    )
+
+
+@nox.session
+def tests_with_integration(session: Session) -> None:
+    """Run the test suite."""
+    _setup_poetry(session)
+    _run_pytest(
+        session, "--ignore=tests/performance_tests/",
+    )
+
+
+@nox.session
+def tests_without_integration(session: Session) -> None:
+    """Run the test suite."""
+    _setup_poetry(session)
+    _run_pytest(
+        session,
+        "--ignore=tests/integration_tests/",
+        "--ignore=tests/performance_tests/",
+    )
+
+
+@nox.session
+def integration_tests(session: Session) -> None:
+    """Run the integration test suite."""
+    _setup_poetry(session)
+    _run_pytest(session, "tests/integration_tests/")
+
+
+@nox.session
+def performance_tests(session: Session) -> None:
+    """Run the performance test suite."""
+    _setup_poetry(session)
+    _run_pytest(session, "tests/performance_tests/")
+
+
+@nox.session
+def coverage(session: Session) -> None:
+    """Annotate with coverage."""
+    _setup_poetry(session, env={"PROFILING_MODE": "true"})
+    _run_coverage(session)
+
+
+@nox.session
+def coverage_and_annotation(session: Session) -> None:
+    """Annotate with coverage."""
+    _setup_poetry(session, env={"PROFILING_MODE": "true"})
+    _run_coverage(session)
+    session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
+
+
+@nox.session
+def build_docs(session: Session) -> None:
+    """Run the performance test suite."""
+    _setup_poetry(session, "-E", "docs")
+    session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
+
+
 def _setup_poetry(session: Session, *args, **kwargs) -> None:
     """Ensure that our environment is peaceful before running the session."""
     # Makes sure that poetry and our build requirements are installed.
@@ -39,67 +106,7 @@ def _run_pytest(session: Session, *args, parallel: bool = True) -> None:
     session.run(*pytest_args)
 
 
-@nox.session
-def tests(session: Session) -> None:
-    """Run the test suite."""
-    _setup_poetry(session)
-    _run_pytest(
-        session,
-        "--ignore=tests/integration_tests/",
-        "--ignore=tests/performance_tests/",
-    )
-
-
-@nox.session
-def tests_with_integration(session: Session) -> None:
-    """Run the test suite."""
-    _setup_poetry(session, "-E", "ccxtpro")
-    _run_pytest(
-        session, "--ignore=tests/performance_tests/",
-    )
-
-
-@nox.session
-def tests_without_integration(session: Session) -> None:
-    """Run the test suite."""
-    _setup_poetry(session)
-    _run_pytest(
-        session,
-        "--ignore=tests/integration_tests/",
-        "--ignore=tests/performance_tests/",
-    )
-
-
-@nox.session
-def integration_tests(session: Session) -> None:
-    """Run the integration test suite."""
-    _setup_poetry(session, "-E", "ccxtpro")
-    _run_pytest(session, "tests/integration_tests/")
-
-
-@nox.session
-def performance_tests(session: Session) -> None:
-    """Run the performance test suite."""
-    _setup_poetry(session)
-    _run_pytest(session, "tests/performance_tests/")
-
-
-@nox.session
-def coverage(session: Session) -> None:
-    """Annotate with coverage."""
-    _setup_poetry(session, env={"PROFILING_MODE": "true"})
-    _run_coverage(session)
-
-
-@nox.session
-def coverage_and_annotation(session: Session) -> None:
-    """Annotate with coverage."""
-    _setup_poetry(session, env={"PROFILING_MODE": "true"})
-    _run_coverage(session)
-    session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
-
-
-def _run_coverage(session):
+def _run_coverage(session: Session):
     _run_pytest(
         session,
         "--ignore=tests/performance_tests/",
@@ -110,10 +117,3 @@ def _run_coverage(session):
         # so we have to run tests single-threaded here.
         parallel=False,
     )
-
-
-@nox.session
-def build_docs(session: Session) -> None:
-    """Run the performance test suite."""
-    _setup_poetry(session, "-E", "docs")
-    session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")

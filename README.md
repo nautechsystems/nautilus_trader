@@ -52,7 +52,7 @@ The documentation for the latest version of the package is available at _readthe
 ## Features
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
-- **Reliable:** Redis or Postgres backed performant state persistence for live implementations.
+- **Reliable:** Redis backed performant state persistence for live implementations.
 - **Flexible:** Any FIX, REST or WebSockets API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
@@ -82,20 +82,11 @@ Alternatively, to install from source using pip, run:
 
     pip install .
 
-## CCXT-Pro Integration
-Currently under development is an integration adapter for CCXT-Pro. A user requires
-a license to access the CCXT private repository to install the `ccxtpro` package.
+## CCXT Pro Integration
+An integration adapter for CCXT Pro is currently under development.
+The adapter requires the `ccxtpro` package, which in turn requires a license.
+See https://ccxt.pro for more information.
 
-There are two options for satisfying the dependency, either ensure `ccxtpro` is installed already.
-
-Or, allow [Poetry](https://python-poetry.org/) to install the package by adding your GitHub credentials for the
-private repository, just run once:
-
-    poetry config http-basic.ccxtpro <username> <password>
-
-And then you can run:
-
-    poetry install --extras ccxtpro
 
 ## Development
 

@@ -33,7 +33,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class CCXTInstrumentProvider:
     """
-    Provides a means of loading `Instrument` from a unified CCXT exchange.
+    Provides a means of loading `Instrument` objects from a unified CCXT exchange.
     """
 
     def __init__(self, client not None: ccxt.Exchange, bint load_all=False):
@@ -56,30 +56,16 @@ cdef class CCXTInstrumentProvider:
         if load_all:
             self.load_all()
 
+    async def load_all_async(self):
+        await self._client.load_markets(reload=True)
+        self._load_instruments()
+
     cpdef void load_all(self) except *:
         """
         Pre-load all instruments.
         """
         self._client.load_markets(reload=True)
-
-        if self._client.markets is None:
-            return  # No markets
-
-        cdef str k
-        cdef dict v
-        cdef Symbol symbol
-        cdef Instrument instrument
-        for k, v in self._client.markets.items():
-            symbol = Symbol(k, self.venue)
-            try:
-                instrument = self._parse_instrument(symbol, v)
-            except Exception as ex:
-                print(f"Exception on parsing {symbol.code} instrument: {ex}")
-                continue
-
-            self._instruments[symbol] = instrument
-
-        self.count = len(self._instruments)
+        self._load_instruments()
 
     cpdef dict get_all(self):
         """
@@ -104,6 +90,22 @@ cdef class CCXTInstrumentProvider:
 
         """
         return self._instruments.get(symbol)
+
+    cdef void _load_instruments(self) except *:
+        if self._client.markets is None:
+            return  # No markets
+
+        cdef str k
+        cdef dict v
+        cdef Symbol symbol
+        cdef Instrument instrument
+        for k, v in self._client.markets.items():
+            symbol = Symbol(k, self.venue)
+            instrument = self._parse_instrument(symbol, v)
+
+            self._instruments[symbol] = instrument
+
+        self.count = len(self._instruments)
 
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values):
         # Precisions
