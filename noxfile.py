@@ -20,7 +20,7 @@ def tests(session: Session) -> None:
 @nox.session
 def tests_with_integration(session: Session) -> None:
     """Run the test suite."""
-    _setup_poetry(session, "-E", "ccxtpro")
+    _setup_poetry(session)
     _run_pytest(
         session, "--ignore=tests/performance_tests/",
     )
@@ -40,28 +40,28 @@ def tests_without_integration(session: Session) -> None:
 @nox.session
 def integration_tests(session: Session) -> None:
     """Run the integration test suite."""
-    _setup_poetry(session, "-E", "ccxtpro")
+    _setup_poetry(session)
     _run_pytest(session, "tests/integration_tests/")
 
 
 @nox.session
 def performance_tests(session: Session) -> None:
     """Run the performance test suite."""
-    _setup_poetry(session, "-E", "ccxtpro")
+    _setup_poetry(session)
     _run_pytest(session, "tests/performance_tests/")
 
 
 @nox.session
 def coverage(session: Session) -> None:
     """Annotate with coverage."""
-    _setup_poetry(session, "-E", "ccxtpro", env={"PROFILING_MODE": "true"})
+    _setup_poetry(session, env={"PROFILING_MODE": "true"})
     _run_coverage(session)
 
 
 @nox.session
 def coverage_and_annotation(session: Session) -> None:
     """Annotate with coverage."""
-    _setup_poetry(session, "-E", "ccxtpro", env={"PROFILING_MODE": "true"})
+    _setup_poetry(session, env={"PROFILING_MODE": "true"})
     _run_coverage(session)
     session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
 
@@ -69,7 +69,7 @@ def coverage_and_annotation(session: Session) -> None:
 @nox.session
 def build_docs(session: Session) -> None:
     """Run the performance test suite."""
-    _setup_poetry(session, "-E", "all")
+    _setup_poetry(session, "-E", "docs")
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 
@@ -106,7 +106,7 @@ def _run_pytest(session: Session, *args, parallel: bool = True) -> None:
     session.run(*pytest_args)
 
 
-def _run_coverage(session):
+def _run_coverage(session: Session):
     _run_pytest(
         session,
         "--ignore=tests/performance_tests/",
