@@ -1,5 +1,5 @@
 CCXT Pro Integration
-===================+
+====================
 
 .. automodule:: nautilus_trader.adapters.ccxt
 

@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
+import oandapyV20
+
 from nautilus_trader.adapters.oanda.data cimport OandaDataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
-import oandapyV20
-import os
 
 
 cdef class OandaDataClientFactory:
@@ -34,7 +36,7 @@ cdef class OandaDataClientFactory:
         LiveLogger logger,
     ):
         """
-        Create a new data client for Oanda.
+        Create a new data client.
 
         Parameters
         ----------
