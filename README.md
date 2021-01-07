@@ -82,8 +82,8 @@ Alternatively, to install from source using pip, run:
 
     pip install .
 
-## CCXT-Pro Integration
-Currently under development is an integration adapter for CCXT-Pro. A user requires
+## CCXT Pro Integration
+Currently under development is an integration adapter for CCXT Pro. A user requires
 a license to access the CCXT private repository to install the `ccxtpro` package.
 
 There are two options for satisfying the dependency, either ensure `ccxtpro` is installed already.
