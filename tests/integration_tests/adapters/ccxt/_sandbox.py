@@ -16,12 +16,6 @@
 import json
 
 import ccxt
-from cryptofeed import FeedHandler
-from cryptofeed.callback import TickerCallback
-from cryptofeed.callback import TradeCallback
-from cryptofeed.defines import TICKER
-from cryptofeed.defines import TRADES
-from cryptofeed.exchanges import Binance
 
 
 # Requirements:
@@ -54,7 +48,7 @@ def request_bars():
     client.load_markets()
 
     bars = client.fetch_ohlcv(
-        "BTC/USDT",
+        "ETH/USDT",
         "1m",
         limit=101,  # Simulate a user request of 100 accounting for partial bar
     )
@@ -73,26 +67,11 @@ def request_trades():
     client.load_markets()
 
     trades = client.fetch_trades(
-        "BTC/USDT",
+        "ETH/USDT",
         limit=100,
     )
     with open('res_trades.json', 'w') as json_file:
         json.dump(trades, json_file)
-
-
-async def ticker(feed, pair, bid, ask, timestamp, receipt_timestamp):
-    print(f'Timestamp: {timestamp} Feed: {feed} Pair: {pair} Bid: {bid} Ask: {ask}')
-
-
-async def trade(feed, pair, order_id, timestamp, side, amount, price, receipt_timestamp):
-    print(f"Timestamp: {timestamp} Feed: {feed} Pair: {pair} ID: {order_id} Side: {side} Amount: {amount} Price: {price}")
-
-
-def streaming_ticker():
-    f = FeedHandler()
-    f.add_feed(Binance(pairs=['BTC-USDT'], channels=[TRADES, TICKER], callbacks={TICKER: TickerCallback(ticker), TRADES: TradeCallback(trade)}))
-
-    f.run()
 
 
 if __name__ == "__main__":

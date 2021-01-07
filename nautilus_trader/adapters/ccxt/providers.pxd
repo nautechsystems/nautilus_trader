@@ -30,4 +30,6 @@ cdef class CCXTInstrumentProvider:
     cpdef void load_all(self) except *
     cpdef dict get_all(self)
     cpdef Instrument get(self, Symbol symbol)
+
+    cdef void _load_instruments(self) except *
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

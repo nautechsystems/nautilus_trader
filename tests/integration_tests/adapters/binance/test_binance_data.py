@@ -15,8 +15,8 @@
 
 import asyncio
 import json
-import unittest
 import time
+import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.binance.data import BinanceDataClient
@@ -329,13 +329,19 @@ class BinanceDataClientTests(unittest.TestCase):
     # def test_request_bars(self):
     #     async def run_test():
     #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         with open(TEST_PATH + "res_bars.json") as response:
+    #             bars = json.load(response)
+    #
+    #         self.mock_binance_rest.markets = instruments
+    #         self.mock_binance_rest.fetch_ohlcv.return_value = bars
+    #
     #         handler = ObjectStorer()
     #         self.data_engine.start()
     #
-    #         # Allow data engine to spool up and request instruments
-    #         await asyncio.sleep(3)
-    #
-    #         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+    #         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
     #         bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
     #
     #         request = DataRequest(
@@ -345,7 +351,7 @@ class BinanceDataClientTests(unittest.TestCase):
     #                 "BarType": bar_type,
     #                 "FromDateTime": None,
     #                 "ToDateTime": None,
-    #                 "Limit": 1000,
+    #                 "Limit": 100,
     #             },
     #             callback=handler.store_2,
     #             request_id=self.uuid_factory.generate(),
@@ -355,11 +361,12 @@ class BinanceDataClientTests(unittest.TestCase):
     #         # Act
     #         self.data_engine.send(request)
     #
-    #         await asyncio.sleep(2)
+    #         await asyncio.sleep(0.3)
     #
     #         # Assert
     #         self.assertEqual(2, self.data_engine.response_count)
     #         self.assertEqual(1, handler.count)
+    #         self.assertEqual(100, len(handler.get_store()[0][1]))
     #
     #         # Tear Down
     #         self.data_engine.stop()

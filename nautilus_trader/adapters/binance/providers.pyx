@@ -63,26 +63,16 @@ cdef class BinanceInstrumentProvider:
         if load_all:
             self.load_all()
 
+    async def load_all_async(self):
+        await self._client.load_markets(reload=True)
+        self._load_instruments()
+
     cpdef void load_all(self) except *:
         """
         Pre-load all instruments.
         """
-        self._client.load_markets()
-
-        if self._client.markets is None:
-            return  # No markets
-
-        cdef str k
-        cdef dict v
-        cdef Symbol symbol
-        cdef Instrument instrument
-        for k, v in self._client.markets.items():
-            symbol = Symbol(k, self.venue)
-            instrument = self._parse_instrument(symbol, v)
-
-            self._instruments[symbol] = instrument
-
-        self.count = len(self._instruments)
+        self._client.load_markets(reload=True)
+        self._load_instruments()
 
     cpdef dict get_all(self):
         """
@@ -107,6 +97,22 @@ cdef class BinanceInstrumentProvider:
 
         """
         return self._instruments.get(symbol)
+
+    cdef void _load_instruments(self) except *:
+        if self._client.markets is None:
+            return  # No markets
+
+        cdef str k
+        cdef dict v
+        cdef Symbol symbol
+        cdef Instrument instrument
+        for k, v in self._client.markets.items():
+            symbol = Symbol(k, self.venue)
+            instrument = self._parse_instrument(symbol, v)
+
+            self._instruments[symbol] = instrument
+
+        self.count = len(self._instruments)
 
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values):
         # Precisions

@@ -175,8 +175,7 @@ cdef class OandaDataClient(LiveDataClient):
 
         if self._update_instruments_handle is not None:
             self._update_instruments_handle.cancel()
-
-        self._log.debug(f"{self._update_instruments_handle}")
+            self._log.debug(f"{self._update_instruments_handle}")
 
         self._is_connected = False
         self._log.info("Disconnected.")
