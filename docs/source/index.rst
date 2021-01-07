@@ -99,7 +99,6 @@ Index
     api_reference/indicators
     api_reference/live
     api_reference/model
-    api_reference/postgres
     api_reference/redis
     api_reference/serialization
     api_reference/trading
@@ -111,6 +110,7 @@ Index
     :hidden:
 
     adapter_reference/binance
+    adapter_reference/ccxtpro
     adapter_reference/oanda
     adapter_reference/tda
 
