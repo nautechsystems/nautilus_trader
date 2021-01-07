@@ -14,25 +14,27 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+
 from cpython.datetime cimport datetime
-import threading
 
-import pandas as pd
-import oandapyV20
-from oandapyV20.endpoints.instruments import InstrumentsCandles
-from oandapyV20.endpoints.pricing import PricingStream
+try:
+    import ccxtpro
+except ImportError:
+    raise ImportError("ccxtpro is not installed, installation instructions at https://ccxt.pro")
 
-from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
+from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
-from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport from_posix_ms
+from nautilus_trader.core.datetime cimport to_posix_ms
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.live.data cimport LiveDataEngine
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
@@ -40,36 +42,35 @@ from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport TradeTick
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
-cdef class OandaDataClient(LiveDataClient):
+cdef class CCXTDataClient(LiveDataClient):
     """
-    Provides a data client for the `Oanda` brokerage.
+    Provides a data client for the `Binance` exchange.
     """
 
     def __init__(
         self,
-        client not None: oandapyV20.API,
-        str account_id not None,
+        client not None: ccxtpro.Exchange,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `OandaDataClient` class.
+        Initialize a new instance of the `CCXTDataClient` class.
 
         Parameters
         ----------
-        client : oandapyV20.API
-            The Oanda client.
-        account_id : str
-            The Oanda account identifier.
+        client : ccxtpro.Exchange
+            The unified CCXT client.
         engine : LiveDataEngine
             The live data engine for the client.
         clock : LiveClock
@@ -77,38 +78,49 @@ cdef class OandaDataClient(LiveDataClient):
         logger : Logger
             The logger for the client.
 
+        Raises
+        ------
+        ValueError
+            If client_rest.name != 'Binance'.
+
         """
         super().__init__(
-            Venue("OANDA"),
+            Venue(client.name.upper()),
             engine,
             clock,
             logger,
             config={
+                "name": f"CCXTDataClient-{client.name.upper()}",
                 "unavailable_methods": [
-                    self.subscribe_trade_ticks.__name__,
                     self.request_quote_ticks.__name__,
-                    self.request_trade_ticks.__name__,
                 ],
             }
         )
 
         self._is_connected = False
         self._client = client
-        self._account_id = account_id
-        self._instrument_provider = OandaInstrumentProvider(
-            client=self._client,
-            account_id=self._account_id,
+        self._instrument_provider = CCXTInstrumentProvider(
+            client=client,
             load_all=False,
         )
 
         # Subscriptions
-        self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = {}  # type: dict[Symbol, (threading.Event, asyncio.Future)]
+        self._subscribed_instruments = set()   # type: set[Symbol]
+        self._subscribed_trade_ticks = {}      # type: dict[Symbol, asyncio.Task]
 
-        self._update_instruments_handle: asyncio.Handle = None
+        # Schedule subscribed instruments update
+        delay = _SECONDS_IN_HOUR
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
+
+        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
+
+    async def _run_after_delay(self, double delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
 
     @property
     def subscribed_instruments(self):
@@ -123,7 +135,7 @@ cdef class OandaDataClient(LiveDataClient):
         return sorted(list(self._subscribed_instruments))
 
     @property
-    def subscribed_quote_ticks(self):
+    def subscribed_trade_ticks(self):
         """
         The quote tick symbols subscribed to.
 
@@ -132,7 +144,7 @@ cdef class OandaDataClient(LiveDataClient):
         list[Symbol]
 
         """
-        return sorted(list(self._subscribed_quote_ticks.keys()))
+        return sorted(list(self._subscribed_trade_ticks.keys()))
 
     cpdef bint is_connected(self) except *:
         """
@@ -151,16 +163,6 @@ cdef class OandaDataClient(LiveDataClient):
         Connect the client.
         """
         self._log.info("Connecting...")
-
-        for symbol in self._subscribed_quote_ticks.copy():
-            self.subscribe_quote_ticks(symbol)
-
-        # Schedule subscribed instruments update
-        self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
-            delay=_SECONDS_IN_HOUR,  # Every hour
-            callback=self._subscribed_instruments_update,
-        )
-
         self._is_connected = True
         self._log.info("Connected.")
 
@@ -168,14 +170,24 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Disconnect the client.
         """
+        self._loop.create_task(self._disconnect())
+
+    async def _disconnect(self):
         self._log.info("Disconnecting...")
 
-        for symbol in self._subscribed_quote_ticks.copy():
-            self.unsubscribe_quote_ticks(symbol)
+        # Cancel update instruments
+        if self._update_instruments_task:
+            self._update_instruments_task.cancel()
 
-        if self._update_instruments_handle is not None:
-            self._update_instruments_handle.cancel()
-            self._log.debug(f"{self._update_instruments_handle}")
+        # Cancel residual tasks
+        for task in self._subscribed_trade_ticks.values():
+            if not task.cancelled():
+                self._log.debug(f"Cancelling {task}...")
+                task.cancel()
+
+        # Ensure ccxt streams closed
+        self._log.info("Closing exchange...")
+        await self._client.close()
 
         self._is_connected = False
         self._log.info("Disconnected.")
@@ -184,24 +196,24 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Reset the client.
         """
-        self._client = oandapyV20.API(access_token=self._client.access_token)
-        self._instrument_provider = OandaInstrumentProvider(
+        # TODO: Reset client
+        self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
-            account_id=self._account_id,
             load_all=False,
         )
 
         self._subscribed_instruments = set()
-        self._subscribed_quote_ticks = {}
+
+        # Schedule subscribed instruments update
+        delay = _SECONDS_IN_HOUR
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
 
     cpdef void dispose(self) except *:
         """
         Dispose the client.
         """
-        if self._is_connected:
-            self.disconnect()
-
-        self._log.info("Disposed.")
+        pass  # Nothing to dispose yet
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -231,12 +243,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if symbol not in self._subscribed_quote_ticks:
-            event = threading.Event()
-            future = self._loop.run_in_executor(None, self._stream_prices, symbol, event)
-            self._subscribed_quote_ticks[symbol] = (event, future)
-
-            self._log.debug(f"Subscribed to quote ticks for {symbol}.")
+        # TODO: Implement
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -250,7 +257,20 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        self._log.error(f"`subscribe_trade_ticks` was called when not supported by the brokerage.")
+        if not self._client.has["watchTrades"]:
+            self._log.error("`subscribe_trade_ticks` was called "
+                            "when not supported by the exchange.")
+            return
+
+        if symbol in self._subscribed_trade_ticks:
+            # TODO: Only call if not already subscribed
+            self._log.debug(f"Already subscribed {symbol.code} <TradeTick> data.")
+            return
+
+        task = self._loop.create_task(self._watch_trades(symbol))
+        self._subscribed_trade_ticks[symbol] = task
+
+        self._log.info(f"Subscribed to {symbol.code} <TradeTick> data.")
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -264,8 +284,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        self._log.error(f"`subscribe_bars` was called when not supported by the brokerage "
-                        f"(use internal aggregation).")
+        # TODO: Implement
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -293,12 +312,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if symbol in self._subscribed_quote_ticks:
-            event, future = self._subscribed_quote_ticks.pop(symbol)
-            event.set()
-            future.cancel()
-
-            self._log.debug(f"Unsubscribed from quote ticks for {symbol}.")
+        # TODO: Implement
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -312,7 +326,15 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        self._log.error(f"`unsubscribe_trade_ticks` was called when not supported by the brokerage.")
+        if symbol not in self._subscribed_trade_ticks:
+            # TODO: Only call if subscribed
+            self._log.debug(f"Not subscribed to {symbol.code} <TradeTick> data.")
+            return
+
+        task = self._subscribed_trade_ticks.pop(symbol)
+        task.cancel()
+        self._log.debug(f"Cancelled {task}.")
+        self._log.info(f"Unsubscribed from {symbol.code} <TradeTick> data.")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -326,8 +348,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        self._log.error(f"`unsubscribe_bars` was called when not supported by the brokerage "
-                        f"(use internal aggregation).")
+        # TODO: Implement
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -346,7 +367,7 @@ cdef class OandaDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._loop.run_in_executor(None, self._request_instrument, symbol, correlation_id)
+        self._loop.create_task(self._request_instrument(symbol, correlation_id))
 
     cpdef void request_instruments(self, UUID correlation_id) except *:
         """
@@ -360,7 +381,7 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._loop.run_in_executor(None, self._request_instruments, correlation_id)
+        self._loop.create_task(self._request_instruments(correlation_id))
 
     cpdef void request_quote_ticks(
         self,
@@ -389,9 +410,11 @@ cdef class OandaDataClient(LiveDataClient):
 
         """
         Condition.not_none(symbol, "symbol")
+        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.error(f"`request_quote_ticks` was called when not supported by the brokerage.")
+        self._log.error("`request_quote_ticks` was called when not supported "
+                        "by the exchange, use trade ticks.")
 
     cpdef void request_trade_ticks(
         self,
@@ -420,10 +443,20 @@ cdef class OandaDataClient(LiveDataClient):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.error(f"`request_trade_ticks` was called when not supported by the brokerage.")
+        if to_datetime is not None:
+            self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
+                              f"argument of {to_datetime} when not supported by the exchange "
+                              f"(will use `limit` of {limit}).")
+
+        self._loop.create_task(self._request_trade_ticks(
+            symbol,
+            from_datetime,
+            to_datetime,
+            limit,
+            correlation_id,
+        ))
 
     cpdef void request_bars(
         self,
@@ -452,262 +485,271 @@ cdef class OandaDataClient(LiveDataClient):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if bar_type.spec.price_type == PriceType.UNDEFINED or bar_type.spec.price_type == PriceType.LAST:
+        if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(f"`request_bars` was called with a `price_type` argument "
                             f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
-                            f"when not supported by the brokerage (must be BID, ASK or MID).")
+                            f"when not supported by the exchange (must be LAST).")
             return
 
         if to_datetime is not None:
             self._log.warning(f"`request_bars` was called with a `to_datetime` "
-                              f"argument of `{to_datetime}` when not supported by the brokerage "
+                              f"argument of `{to_datetime}` when not supported by the exchange "
                               f"(will use `limit` of {limit}).")
 
-        self._loop.run_in_executor(
-            None,
-            self._request_bars,
+        self._loop.create_task(self._request_bars(
             bar_type,
             from_datetime,
             to_datetime,
             limit,
             correlation_id,
-        )
+        ))
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
-        self._instrument_provider.load_all()
+    async def _watch_trades(self, Symbol symbol):
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe to trade ticks (no instrument for {symbol}).")
+            return
+
+        cdef trades  # TODO: Type ArrayCache
+        cdef dict trade
+        try:
+            while True:
+                trades = await self._client.watch_trades(symbol.code)
+                for trade in trades:
+                    self._on_trade_tick(
+                        instrument,
+                        trade["price"],
+                        trade["amount"],
+                        trade["side"],
+                        trade["takerOrMaker"],
+                        trade["id"],
+                        trade["timestamp"],
+                    )
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled _watch_trades for {symbol.code}.")
+        except Exception as ex:
+            self._log.exception(ex)
+        # Finally close stream
+        await self._client.close()
+
+    cdef void _on_trade_tick(
+        self,
+        Instrument instrument,
+        double price,
+        double amount,
+        str order_side,
+        str liquidity_side,
+        str trade_match_id,
+        long timestamp,
+    ) except *:
+        # Determine liquidity side
+        cdef OrderSide side = OrderSide.BUY if order_side == "buy" else OrderSide.SELL
+        if liquidity_side == "maker":
+            side = OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.BUY
+
+        cdef TradeTick tick = TradeTick(
+            instrument.symbol,
+            Price(price, instrument.price_precision),
+            Quantity(amount, instrument.size_precision),
+            side,
+            TradeMatchId(trade_match_id),
+            from_posix_ms(timestamp)
+        )
+
+        self._handle_trade_tick(tick)
+
+    async def _request_instrument(self, Symbol symbol, UUID correlation_id):
+        await self._instrument_provider.load_all_async()
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is not None:
-            self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
+            self._handle_instruments([instrument], correlation_id)
         else:
             self._log.error(f"Could not find instrument {symbol.code}.")
 
-    cpdef void _request_instruments(self, UUID correlation_id) except *:
-        self._instrument_provider.load_all()
+    async def _request_instruments(self, correlation_id):
+        await self._instrument_provider.load_all_async()
         cdef list instruments = list(self._instrument_provider.get_all().values())
-        self._loop.call_soon_threadsafe(self._handle_instruments_py, instruments, correlation_id)
+        self._handle_instruments(instruments, correlation_id)
 
         self._log.info(f"Updated {len(instruments)} instruments.")
         self.initialized = True
 
-    cpdef void _subscribed_instruments_update(self) except *:
-        self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)
-
-    cpdef void _subscribed_instruments_load_and_send(self) except *:
-        self._instrument_provider.load_all()
+    async def _subscribed_instruments_update(self, delay):
+        await self._instrument_provider.load_all_async()
 
         cdef Symbol symbol
         cdef Instrument instrument
         for symbol in self._subscribed_instruments:
             instrument = self._instrument_provider.get(symbol)
             if instrument is not None:
-                self._loop.call_soon_threadsafe(self._handle_instrument_py, instrument)
+                self._handle_instrument(instrument)
             else:
                 self._log.error(f"Could not find instrument {symbol.code}.")
 
-        # Reschedule subscribed instruments update in one hour
-        self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
+        # Reschedule subscribed instruments update
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
 
-    cpdef void _request_bars(
+    async def _request_trade_ticks(
+        self,
+        Symbol symbol,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ):
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
+            return
+
+        if limit == 0:
+            limit = 1000
+
+        if limit > 1000:
+            self._log.warning(f"Requested trades with limit of {limit} when Binance limit=1000.")
+            limit = 1000
+
+        cdef list trades
+        try:
+            trades = await self._client.fetch_trades(
+                symbol=symbol.code,
+                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
+                limit=limit,
+            )
+        except TypeError:
+            # TODO: Temporary work around for testing
+            trades = self._client.fetch_trades
+        except Exception as ex:
+            self._log.exception(ex)
+            return
+
+        if not trades:
+            self._log.error("No data returned from fetch_trades.")
+            return
+
+        cdef list ticks = []  # type: list[TradeTick]
+        cdef dict trade       # type: dict[str, object]
+        for trade in trades:
+            ticks.append(self._parse_trade_tick(instrument, trade))
+
+        self._handle_trade_ticks(symbol, ticks, correlation_id)
+
+    async def _request_bars(
         self,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
         int limit,
         UUID correlation_id,
-    ) except *:
+    ):
         cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
         if instrument is None:
             self._log.error(f"Cannot request bars (no instrument for {bar_type.symbol}).")
             return
 
-        oanda_name = instrument.info["name"]
+        if bar_type.spec.is_time_aggregated():
+            await self._request_time_bars(
+                instrument,
+                bar_type,
+                from_datetime,
+                to_datetime,
+                limit,
+                correlation_id,
+            )
 
-        if bar_type.spec.price_type == PriceType.BID:
-            pricing = "B"
-        elif bar_type.spec.price_type == PriceType.ASK:
-            pricing = "A"
-        else:
-            pricing = "M"
+    async def _request_time_bars(
+        self,
+        Instrument instrument,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        UUID correlation_id,
+    ):
+        # Build timeframe
+        cdef str timeframe = str(bar_type.spec.step)
 
-        cdef str granularity
-
-        if bar_type.spec.aggregation == BarAggregation.SECOND:
-            granularity = 'S'
-        elif bar_type.spec.aggregation == BarAggregation.MINUTE:
-            granularity = 'M'
+        if bar_type.spec.aggregation == BarAggregation.MINUTE:
+            timeframe += 'm'
         elif bar_type.spec.aggregation == BarAggregation.HOUR:
-            granularity = 'H'
+            timeframe += 'h'
         elif bar_type.spec.aggregation == BarAggregation.DAY:
-            granularity = 'D'
+            timeframe += 'd'
         else:
             self._log.error(f"Requesting bars with BarAggregation."
                             f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
                             f"not currently supported in this version.")
             return
 
-        granularity += str(bar_type.spec.step)
-        valid_granularities = [
-            "S5",
-            "S10",
-            "S15",
-            "S30",
-            "M1",
-            "M2",
-            "M3",
-            "M4",
-            "M5",
-            "M10",
-            "M15",
-            "M30",
-            "H1",
-            "H2",
-            "H3",
-            "H4",
-            "H6",
-            "H8",
-            "H12",
-            "D1",
-        ]
+        if limit == 0:
+            limit = 1000
+        elif limit > 0:
+            # Account for partial bar
+            limit += 1
 
-        if granularity not in valid_granularities:
-            self._log.error(f"Requesting bars with invalid granularity `{granularity}`, "
-                            f"interpolation will be available in a future version, "
-                            f"valid_granularities={valid_granularities}.")
+        if limit > 1001:
+            self._log.warning(f"Requested bars {bar_type} with limit of {limit} when Binance limit=1000.")
+            limit = 1000
 
-        cdef dict params = {
-            "dailyAlignment": 0,  # UTC
-            "count": limit,
-            "price": pricing,
-            "granularity": granularity,
-        }
-
-        # Account for partial bar
-        if limit > 0:
-            params["count"] = limit + 1
-
-        if from_datetime is not None:
-            params["start"] = format_iso8601(from_datetime)
-
-        if to_datetime is not None:
-            params["end"] = format_iso8601(to_datetime)
-
-        cdef dict res
+        cdef list data
         try:
-            req = InstrumentsCandles(instrument=oanda_name, params=params)
-            res = self._client.request(req)
+            data = await self._client.fetch_ohlcv(
+                symbol=bar_type.symbol.code,
+                timeframe=timeframe,
+                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
+                limit=limit,
+            )
+        except TypeError:
+            # TODO: Temporary work around for testing
+            data = self._client.fetch_ohlcv
         except Exception as ex:
-            self._log.error(str(ex))
+            self._log.exception(ex)
             return
 
-        cdef list data = res.get("candles", [])
-        if len(data) == 0:
+        if not data:
             self._log.error(f"No data returned for {bar_type}.")
             return
 
-        # Parse all bars except for the last bar
+        # Set partial bar
+        cdef Bar partial_bar = self._parse_bar(instrument, data[-1])
+
+        # Delete last values
+        del data[-1]
+
         cdef list bars = []  # type: list[Bar]
-        cdef dict values     # type: dict[str, object]
+        cdef list values     # type: list[object]
         for values in data:
-            if not values["complete"]:
-                continue
-            bars.append(self._parse_bar(instrument, values, bar_type.spec.price_type))
+            bars.append(self._parse_bar(instrument, values))
 
-        # Set partial bar if last bar not complete
-        cdef dict last_values = data[-1]
-        cdef Bar partial_bar = None
-        if not last_values["complete"]:
-            partial_bar = self._parse_bar(instrument, last_values, bar_type.spec.price_type)
-
-        self._loop.call_soon_threadsafe(
-            self._handle_bars_py,
+        self._handle_bars(
             bar_type,
             bars,
             partial_bar,
             correlation_id,
         )
 
-    cpdef void _stream_prices(self, Symbol symbol, event: threading.Event) except *:
-        cdef dict res
-        cdef dict best_bid
-        cdef dict best_ask
-        cdef QuoteTick tick
-        try:
-            params = {
-                "instruments": symbol.code.replace('/', '_', 1),
-                "sessionId": f"{symbol.code}-001",
-            }
-
-            req = PricingStream(accountID=self._account_id, params=params)
-
-            while True:
-                for res in self._client.request(req):
-                    if event.is_set():
-                        raise asyncio.CancelledError("Price stream stopped")
-                    if res["type"] != "PRICE":
-                        # Heartbeat
-                        continue
-                    tick = self._parse_quote_tick(symbol, res)
-                    self._handle_quote_tick_py(tick)
-        except asyncio.CancelledError:
-            pass  # Expected cancellation
-        except Exception as ex:
-            self._log.exception(ex)
-
-    cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
-        return QuoteTick(
-            symbol,
-            Price(values["bids"][0]["price"]),
-            Price(values["asks"][0]["price"]),
-            Quantity(1),
-            Quantity(1),
-            pd.to_datetime(values["time"]),
+    cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
+        return TradeTick(
+            instrument.symbol,
+            Price(trade['price'], instrument.price_precision),
+            Quantity(trade['amount'], instrument.size_precision),
+            OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
+            TradeMatchId(trade["id"]),
+            from_posix_ms(trade["timestamp"]),
         )
 
-    cdef inline Bar _parse_bar(self, Instrument instrument, dict values, PriceType price_type):
-        cdef dict prices
-        if price_type == PriceType.BID:
-            prices = values["bid"]
-        elif price_type == PriceType.ASK:
-            prices = values["ask"]
-        else:
-            prices = values["mid"]
-
+    cdef inline Bar _parse_bar(self, Instrument instrument, list values):
+        cdef int price_precision = instrument.price_precision
         return Bar(
-            Price(prices["o"], instrument.price_precision),
-            Price(prices["h"], instrument.price_precision),
-            Price(prices["l"], instrument.price_precision),
-            Price(prices["c"], instrument.price_precision),
-            Quantity(values["volume"], instrument.size_precision),
-            pd.to_datetime(values["time"]),
+            Price(values[1], price_precision),
+            Price(values[2], price_precision),
+            Price(values[3], price_precision),
+            Price(values[4], price_precision),
+            Quantity(values[5], instrument.size_precision),
+            from_posix_ms(values[0]),
         )
-
-# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    cpdef void _handle_instrument_py(self, Instrument instrument) except *:
-        self._engine.process(instrument)
-
-    cpdef void _handle_quote_tick_py(self, QuoteTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_trade_tick_py(self, TradeTick tick) except *:
-        self._engine.process(tick)
-
-    cpdef void _handle_bar_py(self, BarType bar_type, Bar bar) except *:
-        self._engine.process(BarData(bar_type, bar))
-
-    cpdef void _handle_instruments_py(self, list instruments, UUID correlation_id) except *:
-        self._handle_instruments(instruments, correlation_id)
-
-    cpdef void _handle_quote_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
-        self._handle_quote_ticks(symbol, ticks, correlation_id)
-
-    cpdef void _handle_trade_ticks_py(self, Symbol symbol, list ticks, UUID correlation_id) except *:
-        self._handle_trade_ticks(symbol, ticks, correlation_id)
-
-    cpdef void _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
-        self._handle_bars(bar_type, bars, partial, correlation_id)

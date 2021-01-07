@@ -13,23 +13,33 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
+
+from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
+from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class BinanceInstrumentProvider:
-    cdef dict _instruments
+cdef class CCXTDataClient(LiveDataClient):
     cdef object _client
+    cdef CCXTInstrumentProvider _instrument_provider
+    cdef bint _is_connected
+    cdef object _update_instruments_task
 
-    cdef readonly Venue venue
-    """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
+    cdef set _subscribed_instruments
+    cdef dict _subscribed_trade_ticks
 
-    cpdef void load_all(self) except *
-    cpdef dict get_all(self)
-    cpdef Instrument get(self, Symbol symbol)
+    cdef void _on_trade_tick(
+        self,
+        Instrument instrument,
+        double price,
+        double amount,
+        str order_side,
+        str liquidity_side,
+        str trade_match_id,
+        long timestamp,
+    ) except *
 
-    cdef void _load_instruments(self) except *
-    cdef Instrument _parse_instrument(self, Symbol symbol, dict values)
+    cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
+    cdef inline Bar _parse_bar(self, Instrument instrument, list values)

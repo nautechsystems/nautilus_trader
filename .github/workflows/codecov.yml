@@ -52,8 +52,8 @@ jobs:
           nox -s coverage --reuse-existing-virtualenvs
           redis-cli shutdown
         env:
-          OANDA_API_TOKEN: ${{secrets.OANDA_API_TOKEN}}
-          OANDA_ACCOUNT_ID: ${{secrets.OANDA_ACCOUNT_ID}}
+          POETRY_HTTP_BASIC_CCXTPRO_USERNAME: ${{secrets.POETRY_HTTP_BASIC_CCXTPRO_USERNAME}}
+          POETRY_HTTP_BASIC_CCXTPRO_PASSWORD: ${{secrets.POETRY_HTTP_BASIC_CCXTPRO_PASSWORD}}
 
       # Upload to codecov
       - uses: codecov/codecov-action@v1
