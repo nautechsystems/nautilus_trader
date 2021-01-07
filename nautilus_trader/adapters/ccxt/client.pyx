@@ -13,22 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.binance.data cimport BinanceDataClient
-from nautilus_trader.adapters.binance.feedhandler import FeedHandler
+from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataEngine
-import ccxt
+import ccxtpro
 import os
 
 
-cdef class BinanceDataClientFactory:
+cdef class CCXTDataClientFactory:
     """
     Provides data clients for the Binance exchange.
     """
 
     @staticmethod
     def create(
+        str exchange_name not None,
         dict config not None,
         LiveDataEngine data_engine not None,
         LiveClock clock not None,
@@ -39,6 +39,8 @@ cdef class BinanceDataClientFactory:
 
         Parameters
         ----------
+        exchange_name : str
+            The name of the exchange
         config : dict
             The configuration dictionary.
         data_engine : LiveDataEngine
@@ -50,22 +52,20 @@ cdef class BinanceDataClientFactory:
 
         Returns
         -------
-        BinanceDataClient
+        CCXTDataClient
 
         """
         # Create client
-        client_rest: ccxt.Exchange = ccxt.binance({
+        client: ccxtpro.Exchange = getattr(ccxtpro, exchange_name.lower())({
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
+            "asyncio_loop": data_engine.get_event_loop(),
         })
 
-        client_feed = FeedHandler()
-
-        return BinanceDataClient(
-            client_rest=client_rest,
-            client_feed=client_feed,
+        return CCXTDataClient(
+            client=client,
             engine=data_engine,
             clock=clock,
             logger=logger,

@@ -119,12 +119,6 @@ cdef class BinanceDataClient(LiveDataClient):
         # Streams
         self._feeds_trade_ticks = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
-        try:
-            # Schedule subscribed instruments update in one hour
-            self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
-        except RuntimeError as ex:
-            self._log.error(str(ex))
-
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
@@ -174,6 +168,12 @@ cdef class BinanceDataClient(LiveDataClient):
 
         if not self._feed_loop.is_running():
             self._loop.run_in_executor(None, self._run_feed_loop)
+
+        try:
+            # Schedule subscribed instruments update in one hour
+            self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
+        except RuntimeError as ex:
+            self._log.error(str(ex))
 
         self._is_connected = True
         self._log.info("Connected.")
@@ -605,7 +605,7 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(str(ex))
             return
 
-        if len(trades) == 0:
+        if not trades:
             self._log.error("No data returned from fetch_trades.")
             return
 
@@ -690,7 +690,7 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(str(ex))
             return
 
-        if len(data) == 0:
+        if not data:
             self._log.error(f"No data returned for {bar_type}.")
             return
 

@@ -899,7 +899,11 @@ cdef class DataEngine(Component):
         self._handle_request(request)
 
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *:
-        cdef aggregator = self._bar_aggregators[bar_type]
+        cdef aggregator = self._bar_aggregators.get(bar_type)
+        if aggregator is None:
+            self._log.warning(f"No bar aggregator to stop for {bar_type}")
+            return
+
         if isinstance(aggregator, TimeBarAggregator):
             aggregator.stop()
 

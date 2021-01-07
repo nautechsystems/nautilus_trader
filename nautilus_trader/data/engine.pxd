@@ -121,12 +121,12 @@ cdef class DataEngine(Component):
     cdef inline void _hydrate_aggregator(self, DataClient client, TimeBarAggregator aggregator, BarType bar_type) except *
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *
     cdef inline void _bulk_build_tick_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime,
-            datetime to_datetime,
-            int limit,
-            callback: callable,
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
     ) except *
 
 # -- HANDLERS --------------------------------------------------------------------------------------

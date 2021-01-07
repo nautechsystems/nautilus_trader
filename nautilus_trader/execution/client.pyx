@@ -68,7 +68,7 @@ cdef class ExecutionClient:
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(f"ExecClient-{venue.value}", logger)
+        self._log = LoggerAdapter(config.get("name", f"ExecClient-{venue.value}"), logger)
         self._engine = engine
         self._config = config
 
@@ -120,8 +120,6 @@ cdef class ExecutionClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
-
-    # Pure Python wrappers for thread safe calls
 
     def _handle_event_py(self, Event event):
         self._engine.process(event)

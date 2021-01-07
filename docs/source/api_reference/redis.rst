@@ -12,12 +12,3 @@ Execution
    :inherited-members:
    :members:
    :member-order: bysource
-
-Redis
------
-
-.. automodule:: nautilus_trader.redis
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource

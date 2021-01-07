@@ -52,7 +52,7 @@ The documentation for the latest version of the package is available at _readthe
 ## Features
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
-- **Reliable:** Redis or Postgres backed performant state persistence for live implementations.
+- **Reliable:** Redis backed performant state persistence for live implementations.
 - **Flexible:** Any FIX, REST or WebSockets API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
