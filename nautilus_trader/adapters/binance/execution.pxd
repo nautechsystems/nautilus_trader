@@ -13,23 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.live.execution cimport LiveExecutionClient
 
 
-cdef class BinanceInstrumentProvider:
-    cdef dict _instruments
+cdef class BinanceExecutionClient(LiveExecutionClient):
     cdef object _client
-
-    cdef readonly Venue venue
-    """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
-
-    cpdef void load_all(self) except *
-    cpdef dict get_all(self)
-    cpdef Instrument get(self, Symbol symbol)
-
-    cdef void _load_instruments(self) except *
-    cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

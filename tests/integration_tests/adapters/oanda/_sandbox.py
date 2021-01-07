@@ -28,7 +28,6 @@ from oandapyV20.endpoints.instruments import InstrumentsCandles
 
 
 def request_instruments():
-    # Arrange
     api_token = os.getenv("OANDA_API_TOKEN")
     account_id = os.getenv("OANDA_ACCOUNT_ID")
 
@@ -42,7 +41,6 @@ def request_instruments():
 
 
 def request_bars():
-    # Arrange
     api_token = os.getenv("OANDA_API_TOKEN")
 
     client = oandapyV20.API(access_token=api_token)
@@ -62,4 +60,5 @@ def request_bars():
 
 
 if __name__ == "__main__":
-    request_bars()
+    # Enter function to run
+    pass

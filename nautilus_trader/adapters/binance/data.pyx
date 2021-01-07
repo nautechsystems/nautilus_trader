@@ -119,11 +119,7 @@ cdef class BinanceDataClient(LiveDataClient):
         # Streams
         self._feeds_trade_ticks = {}  # type: dict[Symbol, cryptofeed.feed.Feed]
 
-        try:
-            # Schedule subscribed instruments update in one hour
-            self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
-        except RuntimeError as ex:
-            self._log.error(str(ex))
+        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -172,6 +168,12 @@ cdef class BinanceDataClient(LiveDataClient):
 
         if not self._feed_loop.is_running():
             self._loop.run_in_executor(None, self._run_feed_loop)
+
+        try:
+            # Schedule subscribed instruments update in one hour
+            self._loop.call_later(_SECONDS_IN_HOUR, self._subscribed_instruments_update)
+        except RuntimeError as ex:
+            self._log.error(str(ex))
 
         self._is_connected = True
         self._log.info("Connected.")
@@ -469,7 +471,6 @@ cdef class BinanceDataClient(LiveDataClient):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if to_datetime is not None:
@@ -514,7 +515,6 @@ cdef class BinanceDataClient(LiveDataClient):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if bar_type.spec.price_type != PriceType.LAST:
@@ -587,6 +587,13 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(f"Cannot request trade ticks (no instrument for {symbol}).")
             return
 
+        if limit == 0:
+            limit = 1000
+
+        if limit > 1000:
+            self._log.warning(f"Requested trades with limit of {limit} when Binance limit=1000.")
+            limit = 1000
+
         cdef list trades
         try:
             trades = self._client_rest.fetch_trades(
@@ -598,7 +605,7 @@ cdef class BinanceDataClient(LiveDataClient):
             self._log.error(str(ex))
             return
 
-        if len(trades) == 0:
+        if not trades:
             self._log.error("No data returned from fetch_trades.")
             return
 
@@ -661,8 +668,10 @@ cdef class BinanceDataClient(LiveDataClient):
                             f"not currently supported in this version.")
             return
 
-        # Account for partial bar
-        if limit != -1:
+        if limit == 0:
+            limit = 1000
+        elif limit > 0:
+            # Account for partial bar
             limit += 1
 
         if limit > 1001:
@@ -675,13 +684,13 @@ cdef class BinanceDataClient(LiveDataClient):
                 symbol=bar_type.symbol.code,
                 timeframe=timeframe,
                 since=to_posix_ms(from_datetime) if from_datetime is not None else None,
-                limit=limit if limit != -1 else None,
+                limit=limit,
             )
         except Exception as ex:
             self._log.error(str(ex))
             return
 
-        if len(data) == 0:
+        if not data:
             self._log.error(f"No data returned for {bar_type}.")
             return
 

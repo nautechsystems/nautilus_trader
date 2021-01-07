@@ -13,8 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `postgres` sub-package groups all `Postgres` implementations for the platform.
+from nautilus_trader.common.logging cimport LogMessage
 
-More information to follow.
-"""
+
+cdef class LogQueue:
+
+    cdef object _internal
+    cdef object _mutex
+    cdef object _not_empty
+
+    cpdef void put(self, LogMessage message) except *
+    cpdef LogMessage get(self)

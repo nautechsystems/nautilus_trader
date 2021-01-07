@@ -17,7 +17,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AssetClass
@@ -28,19 +28,23 @@ from nautilus_trader.model.instrument import Instrument
 from tests import PACKAGE_ROOT
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/"
+
+# import ccxt
 
 
-class BinanceInstrumentProviderTests(unittest.TestCase):
+class CCXTInstrumentProviderTests(unittest.TestCase):
 
-    def test_instantiate_with_none_binance_client_raises_value_error(self):
-        # Arrange
-        mock_client = MagicMock()
-        mock_client.name = "Bitfinex"
-
-        # Act
-        # Assert
-        self.assertRaises(ValueError, BinanceInstrumentProvider, mock_client)
+    # Uncomment to test real API
+    # def test_real_api(self):
+    #     client = ccxt.bitfinex()
+    #     provider = CCXTInstrumentProvider(client=client)
+    #
+    #     # Act
+    #     provider.load_all()
+    #
+    #     # Assert
+    #     self.assertTrue(provider.count > 0)  # No exceptions raised
 
     def test_load_all(self):
         # Arrange
@@ -52,7 +56,7 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
         mock_client.markets = instruments
 
-        provider = BinanceInstrumentProvider(client=mock_client)
+        provider = CCXTInstrumentProvider(client=mock_client)
 
         # Act
         provider.load_all()
@@ -65,7 +69,7 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.name = "Binance"
 
-        provider = BinanceInstrumentProvider(client=mock_client)
+        provider = CCXTInstrumentProvider(client=mock_client)
 
         # Act
         instruments = provider.get_all()
@@ -83,7 +87,7 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
         mock_client.markets = instruments
 
-        provider = BinanceInstrumentProvider(client=mock_client)
+        provider = CCXTInstrumentProvider(client=mock_client)
         provider.load_all()
 
         # Act
@@ -99,7 +103,7 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.name = "Binance"
 
-        provider = BinanceInstrumentProvider(client=mock_client)
+        provider = CCXTInstrumentProvider(client=mock_client)
 
         symbol = Symbol("BTC/USDT", Venue("BINANCE"))
 
@@ -119,7 +123,7 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
         mock_client.markets = instruments
 
-        provider = BinanceInstrumentProvider(client=mock_client)
+        provider = CCXTInstrumentProvider(client=mock_client)
         provider.load_all()
 
         symbol = Symbol("BTC/USDT", Venue("BINANCE"))
