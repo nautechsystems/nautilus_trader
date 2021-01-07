@@ -59,7 +59,7 @@ class CCXTDataClientFactoryTests(unittest.TestCase):
         }
 
         client = CCXTDataClientFactory.create(
-            exchange_name="bitmex",
+            exchange_name="binance",
             config=config,
             data_engine=self.data_engine,
             clock=self.clock,
