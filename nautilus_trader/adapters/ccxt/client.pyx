@@ -28,8 +28,8 @@ except ImportError:
         # Currently under test so continue
         import ccxt as ccxtpro
     else:
-        raise RuntimeError("ccxtpro is not installed, "
-                           "installation instructions can be found at https://ccxt.pro")
+        raise ImportError("ccxtpro is not installed, "
+                          "installation instructions can be found at https://ccxt.pro")
 
 
 cdef class CCXTDataClientFactory:

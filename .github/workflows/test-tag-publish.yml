@@ -57,9 +57,6 @@ jobs:
           redis-server --daemonize yes
           nox -s tests_with_integration --reuse-existing-virtualenvs
           redis-cli shutdown
-        env:
-          POETRY_HTTP_BASIC_CCXTPRO_USERNAME: ${{secrets.POETRY_HTTP_BASIC_CCXTPRO_USERNAME}}
-          POETRY_HTTP_BASIC_CCXTPRO_PASSWORD: ${{secrets.POETRY_HTTP_BASIC_CCXTPRO_PASSWORD}}
 
       - name: Run tests (without integrations test suite) [Windows]
         if: runner.os == 'Windows'

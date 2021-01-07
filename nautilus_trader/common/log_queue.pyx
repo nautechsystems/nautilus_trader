@@ -26,15 +26,7 @@ cdef class LogQueue:
 
     def __init__(self):
         self._internal = deque()
-
-        # The mutex must be held whenever the queue is mutating. All methods
-        # that acquire mutex must release it before returning. The mutex
-        # is shared between the three conditions, so acquiring and
-        # releasing the conditions also acquires and releases the mutex.
         self._mutex = threading.Lock()
-
-        # Notify not_empty whenever an item is added to the queue; a
-        # thread waiting to get is notified then.
         self._not_empty = threading.Condition(self._mutex)
 
     cpdef void put(self, LogMessage message) except *:
