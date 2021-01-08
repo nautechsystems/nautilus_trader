@@ -27,12 +27,13 @@ cdef class CCXTDataClient(LiveDataClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
     cdef bint _is_connected
-    cdef object _update_instruments_task
 
     cdef set _subscribed_instruments
     cdef dict _subscribed_quote_ticks
     cdef dict _subscribed_trade_ticks
     cdef dict _subscribed_bars
+
+    cdef object _update_instruments_task
 
     cdef inline void _on_quote_tick(
         self,
