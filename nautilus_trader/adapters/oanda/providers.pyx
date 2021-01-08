@@ -65,7 +65,7 @@ cdef class OandaInstrumentProvider:
 
     cpdef void load_all(self) except *:
         """
-        Pre-load all instruments.
+        Load all instruments for the venue.
         """
         req = AccountInstruments(accountID=self._account_id)
         res = self._client.request(req)
@@ -81,9 +81,9 @@ cdef class OandaInstrumentProvider:
 
     cpdef dict get_all(self):
         """
-        Get all loaded instruments.
+        Return all loaded instruments.
 
-        If no instruments loaded will return the empty dict.
+        If no instruments loaded, will return an empty dict.
 
         Returns
         -------
@@ -94,7 +94,7 @@ cdef class OandaInstrumentProvider:
 
     cpdef Instrument get(self, Symbol symbol):
         """
-        Get the instrument for the given symbol (if found).
+        Return the instrument for the given symbol (if found).
 
         Returns
         -------
@@ -144,7 +144,7 @@ cdef class OandaInstrumentProvider:
             size_precision=size_precision,
             tick_size=tick_size,
             multiplier=Decimal(1),
-            leverage=Decimal(1),  # TODO: Refactor this out of instrument
+            leverage=Decimal(1),
             lot_size=Quantity(1),
             max_quantity=Quantity(values["maximumOrderUnits"]),
             min_quantity=Quantity(values["minimumTradeSize"]),

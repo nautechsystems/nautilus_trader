@@ -72,13 +72,18 @@ config = {
 # custom options into the configuration file or even use another configuration
 # file.
 
-# BarSpecification option examples:
+# BarSpecification options;
+# price types include BID, ASK, MID, LAST
+# Current aggregations TICK, MINUTE, HOUR, DAY, VOLUME, VALUE
+# These can be combined in any way for example
 tick_bars = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+volu_bars = BarSpecification(100, BarAggregation.VOLUME, PriceType.MID)
+valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 
 strategy1 = EMACross(
     symbol=Symbol("BTC/USDT", Venue("BINANCE")),
-    bar_spec=time_bars,
+    bar_spec=tick_bars,
     fast_ema=10,
     slow_ema=20,
     trade_size=Decimal("0.001"),
@@ -86,7 +91,7 @@ strategy1 = EMACross(
 
 strategy2 = EMACross(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=time_bars,
+    bar_spec=tick_bars,
     fast_ema=10,
     slow_ema=20,
     trade_size=Decimal("0.1"),

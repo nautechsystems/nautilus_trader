@@ -48,10 +48,13 @@ BTCUSDT = Symbol("BTC/USDT", BINANCE)
 
 
 # Monkey patch magic mock
-async def async_magic():
-    pass
-
+# This allows the stubbing of calls to coroutines
 MagicMock.__await__ = lambda x: async_magic().__await__()
+
+
+# Dummy method for above
+async def async_magic():
+    return
 
 
 class BinanceDataClientTests(unittest.TestCase):

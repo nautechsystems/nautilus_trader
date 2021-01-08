@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import json
 import unittest
 from unittest.mock import MagicMock
@@ -28,9 +29,20 @@ from nautilus_trader.model.instrument import Instrument
 from tests import PACKAGE_ROOT
 
 
+# import ccxt  # uncomment to test against real API
+
+
 TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/"
 
-# import ccxt
+
+# Monkey patch magic mock
+# This allows the stubbing of calls to coroutines
+MagicMock.__await__ = lambda x: async_magic().__await__()
+
+
+# Dummy method for above
+async def async_magic():
+    return
 
 
 class CCXTInstrumentProviderTests(unittest.TestCase):
@@ -63,6 +75,33 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(provider.count > 0)  # No exceptions raised
+
+    def test_load_all_async(self):
+        # Fresh isolated loop testing pattern
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
+
+            mock_client = MagicMock()
+            mock_client.name = "Binance"
+            mock_client.markets = instruments
+
+            provider = CCXTInstrumentProvider(client=mock_client)
+
+            # Act
+            await provider.load_all_async()
+            await asyncio.sleep(0.5)
+
+            # Assert
+            self.assertTrue(provider.count > 0)  # No exceptions raised
+
+        loop.run_until_complete(run_test())
+        loop.stop()
+        loop.close()
 
     def test_get_all_when_not_loaded_returns_empty_dict(self):
         # Arrange
