@@ -53,11 +53,13 @@ class BinanceDataClientFactoryTests(unittest.TestCase):
         )
 
     def test_create(self):
+        # Arrange
         config = {
             "api_key": "BINANCE_API_KEY",        # value is the environment variable name
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
         }
 
+        # Act
         client = BinanceDataClientFactory.create(
             config=config,
             data_engine=self.data_engine,
@@ -65,4 +67,5 @@ class BinanceDataClientFactoryTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Assert
         self.assertEqual(BinanceDataClient, type(client))

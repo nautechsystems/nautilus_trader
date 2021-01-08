@@ -15,6 +15,7 @@
 
 import asyncio
 import unittest
+from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ccxt.client import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
@@ -53,17 +54,28 @@ class CCXTDataClientFactoryTests(unittest.TestCase):
         )
 
     def test_create(self):
+        # Arrange
         config = {
             "api_key": "BITMEX_API_KEY",        # value is the environment variable name
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable name
         }
 
+        # Mock client
+        mock_bitmex = MagicMock()
+        mock_bitmex.name = "bitmex"
+
+        # Mock constructor method to return the mock client
+        client_cls = MagicMock()
+        client_cls.return_value = mock_bitmex
+
+        # Act
         client = CCXTDataClientFactory.create(
-            exchange_name="bitmex",
+            client_cls=client_cls,
             config=config,
             data_engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
         )
 
+        # Assert
         self.assertEqual(CCXTDataClient, type(client))

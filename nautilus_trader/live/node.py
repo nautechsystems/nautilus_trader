@@ -294,8 +294,14 @@ class TradingNode:
         # Setup each data client
         for name, config in config.items():
             if name.startswith("ccxt-"):
+                try:
+                    import ccxtpro  # TODO: Find a better way of doing this
+                except ImportError:
+                    raise ImportError("ccxtpro is not installed, "
+                                      "installation instructions can be found at https://ccxt.pro")
+                client_cls = getattr(ccxtpro, name.partition('-')[2].lower())
                 data_client = CCXTDataClientFactory.create(
-                    exchange_name=name.partition('-')[2],
+                    client_cls=client_cls,
                     config=config,
                     data_engine=self._data_engine,
                     clock=self._clock,
