@@ -452,11 +452,11 @@ class CCXTDataClientTests(unittest.TestCase):
 
             self.mock_ccxt.markets = instruments
             self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             # Act
             self.client.request_instrument(BTCUSDT, uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
@@ -476,11 +476,11 @@ class CCXTDataClientTests(unittest.TestCase):
 
             self.mock_ccxt.markets = instruments
             self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
