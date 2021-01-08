@@ -92,11 +92,14 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
             # Act
             await provider.load_all_async()
+            await asyncio.sleep(0.5)
 
             # Assert
             self.assertTrue(provider.count > 0)  # No exceptions raised
 
         loop.run_until_complete(run_test())
+        loop.stop()
+        loop.close()
 
     def test_get_all_when_not_loaded_returns_empty_dict(self):
         # Arrange
