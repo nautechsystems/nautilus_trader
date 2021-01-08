@@ -85,6 +85,7 @@ Alternatively, to install from source using pip, run:
 ## CCXT Pro Integration
 An integration adapter for CCXT Pro is currently under development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
+
 See https://ccxt.pro for more information.
 
 

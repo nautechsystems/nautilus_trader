@@ -28,8 +28,8 @@ except ImportError:
         # Currently under test so continue
         import ccxt as ccxtpro
     else:
-        raise RuntimeError("ccxtpro is not installed, "
-                           "installation instructions can be found at https://ccxt.pro")
+        raise ImportError("ccxtpro is not installed, "
+                          "installation instructions can be found at https://ccxt.pro")
 
 
 cdef class CCXTDataClientFactory:
@@ -39,7 +39,7 @@ cdef class CCXTDataClientFactory:
 
     @staticmethod
     def create(
-        str exchange_name not None,
+        client_cls not None,
         dict config not None,
         LiveDataEngine data_engine not None,
         LiveClock clock not None,
@@ -50,8 +50,8 @@ cdef class CCXTDataClientFactory:
 
         Parameters
         ----------
-        exchange_name : str
-            The name of the exchange
+        client_cls : class
+            The class to call to return a new client.
         config : dict
             The configuration dictionary.
         data_engine : LiveDataEngine
@@ -67,7 +67,7 @@ cdef class CCXTDataClientFactory:
 
         """
         # Create client
-        client: ccxtpro.Exchange = getattr(ccxtpro, exchange_name.lower())({
+        client: ccxtpro.Exchange = client_cls({
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,         # Hard coded for now

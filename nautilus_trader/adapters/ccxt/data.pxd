@@ -17,7 +17,9 @@
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.data cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.bar cimport BarSpecification
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.tick cimport TradeTick
 
 
@@ -28,18 +30,61 @@ cdef class CCXTDataClient(LiveDataClient):
     cdef object _update_instruments_task
 
     cdef set _subscribed_instruments
+    cdef dict _subscribed_quote_ticks
     cdef dict _subscribed_trade_ticks
+    cdef dict _subscribed_bars
 
-    cdef void _on_trade_tick(
+    cdef inline void _on_quote_tick(
         self,
-        Instrument instrument,
+        Symbol symbol,
+        double best_bid,
+        double best_ask,
+        double best_bid_size,
+        double best_ask_size,
+        long timestamp,
+        int price_precision,
+        int size_precision,
+    ) except *
+
+    cdef inline void _on_trade_tick(
+        self,
+        Symbol symbol,
         double price,
         double amount,
         str order_side,
         str liquidity_side,
         str trade_match_id,
         long timestamp,
+        int price_precision,
+        int size_precision,
     ) except *
 
-    cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade)
-    cdef inline Bar _parse_bar(self, Instrument instrument, list values)
+    cdef inline void _on_bar(
+        self,
+        BarType bar_type,
+        double open_price,
+        double high_price,
+        double low_price,
+        double close_price,
+        double volume,
+        long timestamp,
+        int price_precision,
+        int size_precision,
+    ) except *
+
+    cdef inline TradeTick _parse_trade_tick(
+        self,
+        Symbol symbol,
+        dict trade,
+        int price_precision,
+        int size_precision,
+    )
+
+    cdef inline Bar _parse_bar(
+        self,
+        list values,
+        int price_precision,
+        int size_precision,
+    )
+
+    cdef str _make_timeframe(self, BarSpecification bar_spec)

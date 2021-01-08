@@ -33,7 +33,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
+from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -101,7 +101,9 @@ cdef class CCXTDataClient(LiveDataClient):
 
         # Subscriptions
         self._subscribed_instruments = set()   # type: set[Symbol]
+        self._subscribed_quote_ticks = {}      # type: dict[Symbol, asyncio.Task]
         self._subscribed_trade_ticks = {}      # type: dict[Symbol, asyncio.Task]
+        self._subscribed_bars = {}             # type: dict[BarType, asyncio.Task]
 
         # Schedule subscribed instruments update
         delay = _SECONDS_IN_HOUR
@@ -130,7 +132,7 @@ cdef class CCXTDataClient(LiveDataClient):
         return sorted(list(self._subscribed_instruments))
 
     @property
-    def subscribed_trade_ticks(self):
+    def subscribed_quote_ticks(self):
         """
         The quote tick symbols subscribed to.
 
@@ -139,7 +141,31 @@ cdef class CCXTDataClient(LiveDataClient):
         list[Symbol]
 
         """
+        return sorted(list(self._subscribed_quote_ticks.keys()))
+
+    @property
+    def subscribed_trade_ticks(self):
+        """
+        The trade tick symbols subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
         return sorted(list(self._subscribed_trade_ticks.keys()))
+
+    @property
+    def subscribed_bars(self):
+        """
+        The bar types subscribed to.
+
+        Returns
+        -------
+        list[BarType]
+
+        """
+        return sorted(list(self._subscribed_bars.keys()))
 
     cpdef bint is_connected(self) except *:
         """
@@ -158,7 +184,9 @@ cdef class CCXTDataClient(LiveDataClient):
         Connect the client.
         """
         self._log.info("Connecting...")
+
         self._is_connected = True
+
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
@@ -185,12 +213,19 @@ cdef class CCXTDataClient(LiveDataClient):
         await self._client.close()
 
         self._is_connected = False
+
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
         """
         Reset the client.
         """
+        if self._is_connected:
+            self._log.error("Cannot reset a connected data client.")
+            return
+
+        self._log.info("Resetting...")
+
         # TODO: Reset client
         self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
@@ -199,16 +234,31 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._subscribed_instruments = set()
 
+        # Check all tasks have been popped and cancelled
+        assert len(self._subscribed_quote_ticks) == 0
+        assert len(self._subscribed_trade_ticks) == 0
+        assert len(self._subscribed_bars) == 0
+
         # Schedule subscribed instruments update
         delay = _SECONDS_IN_HOUR
         update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
+        self._log.info("Reset.")
+
     cpdef void dispose(self) except *:
         """
         Dispose the client.
         """
-        pass  # Nothing to dispose yet
+        if self._is_connected:
+            self._log.error("Cannot dispose a connected data client.")
+            return
+
+        self._log.info("Disposing...")
+
+        # Nothing to dispose yet
+
+        self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -238,7 +288,20 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if not self._client.has["watchOrderBook"]:
+            self._log.error("`subscribe_quote_ticks` was called "
+                            "when not supported by the exchange.")
+            return
+
+        if symbol in self._subscribed_quote_ticks:
+            # TODO: Only call if not already subscribed
+            self._log.debug(f"Already subscribed {symbol.code} <TradeTick> data.")
+            return
+
+        task = self._loop.create_task(self._watch_quotes(symbol))
+        self._subscribed_quote_ticks[symbol] = task
+
+        self._log.info(f"Subscribed to {symbol.code} <QuoteTick> data.")
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -279,7 +342,26 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        if not self._client.has["watchOHLCV"]:
+            self._log.error("`subscribe_bars` was called "
+                            "when not supported by the exchange.")
+            return
+
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.warning(f"`request_bars` was called with a `price_type` argument "
+                              f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
+                              f"when not supported by the exchange (must be LAST).")
+            return
+
+        if bar_type in self._subscribed_bars:
+            # TODO: Only call if not already subscribed
+            self._log.debug(f"Already subscribed {bar_type} <Bar> data.")
+            return
+
+        task = self._loop.create_task(self._watch_ohlcv(bar_type))
+        self._subscribed_bars[bar_type] = task
+
+        self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -307,7 +389,15 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        # TODO: Implement
+        if symbol not in self._subscribed_quote_ticks:
+            # TODO: Only call if subscribed
+            self._log.debug(f"Not subscribed to {symbol.code} <QuoteTick> data.")
+            return
+
+        task = self._subscribed_quote_ticks.pop(symbol)
+        task.cancel()
+        self._log.debug(f"Cancelled {task}.")
+        self._log.info(f"Unsubscribed from {symbol.code} <QuoteTick> data.")
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -343,7 +433,15 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        # TODO: Implement
+        if bar_type not in self._subscribed_bars:
+            # TODO: Only call if subscribed
+            self._log.debug(f"Not subscribed to {bar_type} <Bar> data.")
+            return
+
+        task = self._subscribed_bars.pop(bar_type)
+        task.cancel()
+        self._log.debug(f"Cancelled {task}.")
+        self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
@@ -408,8 +506,8 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.error("`request_quote_ticks` was called when not supported "
-                        "by the exchange, use trade ticks.")
+        self._log.warning("`request_quote_ticks` was called when not supported "
+                          "by the exchange.")
 
     cpdef void request_trade_ticks(
         self,
@@ -483,9 +581,9 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_none(correlation_id, "correlation_id")
 
         if bar_type.spec.price_type != PriceType.LAST:
-            self._log.error(f"`request_bars` was called with a `price_type` argument "
-                            f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
-                            f"when not supported by the exchange (must be LAST).")
+            self._log.warning(f"`request_bars` was called with a `price_type` argument "
+                              f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
+                              f"when not supported by the exchange (must be LAST).")
             return
 
         if to_datetime is not None:
@@ -503,43 +601,132 @@ cdef class CCXTDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
+    async def _watch_quotes(self, Symbol symbol):
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe to quote ticks (no instrument for {symbol.code}).")
+            return
+
+        # Setup precisions
+        cdef int price_precision = instrument.price_precision
+        cdef int size_precision = instrument.size_precision
+
+        cdef list best_bid
+        cdef list best_ask
+        cdef bint exiting = False  # Flag to stop loop
+        try:
+            while True:
+                try:
+                    order_book = await self._client.watch_order_book(symbol.code, limit=5)
+                except TypeError:
+                    # Temporary workaround for testing
+                    order_book = self._client.watch_order_book
+                    exiting = True
+
+                best_bid = order_book["bids"][0]
+                best_ask = order_book["asks"][0]
+                timestamp = order_book["timestamp"]
+                if timestamp is None:  # Compiled to fast C check
+                    # First quote timestamp often None
+                    timestamp = self._client.milliseconds()
+                self._on_quote_tick(
+                    symbol,
+                    best_bid[0],
+                    best_ask[0],
+                    best_bid[1],
+                    best_ask[1],
+                    timestamp,
+                    price_precision,
+                    size_precision,
+                )
+
+                if exiting:
+                    break
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled `_watch_ticker` for {symbol.code}.")
+        except Exception as ex:
+            self._log.exception(ex)
+        finally:
+            # Finally close stream
+            await self._client.close()
+
+    cdef inline void _on_quote_tick(
+        self,
+        Symbol symbol,
+        double best_bid,
+        double best_ask,
+        double best_bid_size,
+        double best_ask_size,
+        long timestamp,
+        int price_precision,
+        int size_precision,
+    ) except *:
+        cdef QuoteTick tick = QuoteTick(
+            symbol,
+            Price(best_bid, price_precision),
+            Price(best_ask, price_precision),
+            Quantity(best_bid_size, size_precision),
+            Quantity(best_ask_size, size_precision),
+            from_posix_ms(timestamp),
+        )
+
+        self._handle_quote_tick(tick)
+
     async def _watch_trades(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
-            self._log.error(f"Cannot subscribe to trade ticks (no instrument for {symbol}).")
+            self._log.error(f"Cannot subscribe to trade ticks (no instrument for {symbol.code}).")
             return
+
+        cdef int price_precision = instrument.price_precision
+        cdef int size_precision = instrument.size_precision
 
         cdef trades  # TODO: Type ArrayCache
         cdef dict trade
+        cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
-                trades = await self._client.watch_trades(symbol.code)
+                try:
+                    trades = await self._client.watch_trades(symbol.code)
+                except TypeError:
+                    # Temporary workaround for testing
+                    trades = self._client.watch_trades
+                    exiting = True
+
                 for trade in trades:
                     self._on_trade_tick(
-                        instrument,
+                        symbol,
                         trade["price"],
                         trade["amount"],
                         trade["side"],
                         trade["takerOrMaker"],
                         trade["id"],
                         trade["timestamp"],
+                        price_precision,
+                        size_precision,
                     )
+
+                if exiting:
+                    break
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled _watch_trades for {symbol.code}.")
+            self._log.debug(f"Cancelled `_watch_trades` for {symbol.code}.")
         except Exception as ex:
             self._log.exception(ex)
-        # Finally close stream
-        await self._client.close()
+        finally:
+            # Finally close stream
+            await self._client.close()
 
-    cdef void _on_trade_tick(
+    cdef inline void _on_trade_tick(
         self,
-        Instrument instrument,
+        Symbol symbol,
         double price,
         double amount,
         str order_side,
         str liquidity_side,
         str trade_match_id,
         long timestamp,
+        int price_precision,
+        int size_precision,
     ) except *:
         # Determine liquidity side
         cdef OrderSide side = OrderSide.BUY if order_side == "buy" else OrderSide.SELL
@@ -547,15 +734,103 @@ cdef class CCXTDataClient(LiveDataClient):
             side = OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.BUY
 
         cdef TradeTick tick = TradeTick(
-            instrument.symbol,
-            Price(price, instrument.price_precision),
-            Quantity(amount, instrument.size_precision),
+            symbol,
+            Price(price, price_precision),
+            Quantity(amount, size_precision),
             side,
             TradeMatchId(trade_match_id),
-            from_posix_ms(timestamp)
+            from_posix_ms(timestamp),
         )
 
         self._handle_trade_tick(tick)
+
+    async def _watch_ohlcv(self, BarType bar_type):
+        cdef Instrument instrument = self._instrument_provider.get(bar_type.symbol)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe to bars (no instrument for {bar_type.symbol}).")
+            return
+
+        # Build timeframe
+        cdef str timeframe = self._make_timeframe(bar_type.spec)
+        if timeframe is None:
+            self._log.warning(f"Requesting bars with BarAggregation."
+                              f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                              f"not currently supported in this version.")
+            return
+
+        # Setup symbol constant and precisions
+        cdef Symbol symbol = bar_type.symbol
+        cdef int price_precision = instrument.price_precision
+        cdef int size_precision = instrument.size_precision
+
+        cdef long last_timestamp = 0
+        cdef long this_timestamp = 0
+        cdef bars  # TODO: Type ArrayCache
+        cdef bar   # TODO: Type ArrayCache
+        cdef bint exiting = False  # Flag to stop loop
+        try:
+            while True:
+                try:
+                    bars = await self._client.watch_ohlcv(symbol.code, timeframe=timeframe, limit=1)
+                except TypeError:
+                    # Temporary workaround for testing
+                    bars = self._client.watch_ohlvc
+                    exiting = True
+
+                bar = bars[0]  # Last closed bar
+                this_timestamp = bar[0]
+                if last_timestamp == 0:
+                    # Initialize last timestamp
+                    last_timestamp = this_timestamp
+                    continue
+                elif this_timestamp != last_timestamp:
+                    last_timestamp = this_timestamp
+
+                    # Create new bar
+                    self._on_bar(
+                        bar_type,
+                        bar[1],
+                        bar[2],
+                        bar[3],
+                        bar[4],
+                        bar[5],
+                        this_timestamp,
+                        price_precision,
+                        size_precision,
+                    )
+
+                if exiting:
+                    break
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled `_watch_ohlcv` for {symbol.code}.")
+        except Exception as ex:
+            self._log.exception(ex)
+        finally:
+            # Finally close stream
+            await self._client.close()
+
+    cdef inline void _on_bar(
+        self,
+        BarType bar_type,
+        double open_price,
+        double high_price,
+        double low_price,
+        double close_price,
+        double volume,
+        long timestamp,
+        int price_precision,
+        int size_precision,
+    ) except *:
+        cdef Bar bar = Bar(
+            Price(open_price, price_precision),
+            Price(high_price, price_precision),
+            Price(low_price, price_precision),
+            Price(close_price, price_precision),
+            Quantity(volume, size_precision),
+            from_posix_ms(timestamp),
+        )
+
+        self._handle_bar(bar_type, bar)
 
     async def _request_instrument(self, Symbol symbol, UUID correlation_id):
         await self._instrument_provider.load_all_async()
@@ -617,7 +892,7 @@ cdef class CCXTDataClient(LiveDataClient):
                 limit=limit,
             )
         except TypeError:
-            # TODO: Temporary work around for testing
+            # Temporary work around for testing
             trades = self._client.fetch_trades
         except Exception as ex:
             self._log.exception(ex)
@@ -627,10 +902,14 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.error("No data returned from fetch_trades.")
             return
 
+        # Setup precisions
+        cdef int price_precision = instrument.price_precision
+        cdef int size_precision = instrument.size_precision
+
         cdef list ticks = []  # type: list[TradeTick]
         cdef dict trade       # type: dict[str, object]
         for trade in trades:
-            ticks.append(self._parse_trade_tick(instrument, trade))
+            ticks.append(self._parse_trade_tick(symbol, trade, price_precision, size_precision))
 
         self._handle_trade_ticks(symbol, ticks, correlation_id)
 
@@ -667,15 +946,8 @@ cdef class CCXTDataClient(LiveDataClient):
         UUID correlation_id,
     ):
         # Build timeframe
-        cdef str timeframe = str(bar_type.spec.step)
-
-        if bar_type.spec.aggregation == BarAggregation.MINUTE:
-            timeframe += 'm'
-        elif bar_type.spec.aggregation == BarAggregation.HOUR:
-            timeframe += 'h'
-        elif bar_type.spec.aggregation == BarAggregation.DAY:
-            timeframe += 'd'
-        else:
+        cdef str timeframe = self._make_timeframe(bar_type.spec)
+        if timeframe is None:
             self._log.error(f"Requesting bars with BarAggregation."
                             f"{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
                             f"not currently supported in this version.")
@@ -700,7 +972,7 @@ cdef class CCXTDataClient(LiveDataClient):
                 limit=limit,
             )
         except TypeError:
-            # TODO: Temporary work around for testing
+            # Temporary work around for testing
             data = self._client.fetch_ohlcv
         except Exception as ex:
             self._log.exception(ex)
@@ -710,8 +982,12 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.error(f"No data returned for {bar_type}.")
             return
 
+        # Setup precisions
+        cdef int price_precision = instrument.price_precision
+        cdef int size_precision = instrument.size_precision
+
         # Set partial bar
-        cdef Bar partial_bar = self._parse_bar(instrument, data[-1])
+        cdef Bar partial_bar = self._parse_bar(data[-1], price_precision, size_precision)
 
         # Delete last values
         del data[-1]
@@ -719,7 +995,7 @@ cdef class CCXTDataClient(LiveDataClient):
         cdef list bars = []  # type: list[Bar]
         cdef list values     # type: list[object]
         for values in data:
-            bars.append(self._parse_bar(instrument, values))
+            bars.append(self._parse_bar(values, price_precision, size_precision))
 
         self._handle_bars(
             bar_type,
@@ -728,23 +1004,48 @@ cdef class CCXTDataClient(LiveDataClient):
             correlation_id,
         )
 
-    cdef inline TradeTick _parse_trade_tick(self, Instrument instrument, dict trade):
+    cdef inline TradeTick _parse_trade_tick(
+        self,
+        Symbol symbol,
+        dict trade,
+        int price_precision,
+        int size_precision,
+    ):
         return TradeTick(
-            instrument.symbol,
-            Price(trade['price'], instrument.price_precision),
-            Quantity(trade['amount'], instrument.size_precision),
+            symbol,
+            Price(trade['price'], price_precision),
+            Quantity(trade['amount'], size_precision),
             OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
             TradeMatchId(trade["id"]),
             from_posix_ms(trade["timestamp"]),
         )
 
-    cdef inline Bar _parse_bar(self, Instrument instrument, list values):
-        cdef int price_precision = instrument.price_precision
+    cdef inline Bar _parse_bar(
+        self,
+        list values,
+        int price_precision,
+        int size_precision,
+    ):
         return Bar(
             Price(values[1], price_precision),
             Price(values[2], price_precision),
             Price(values[3], price_precision),
             Price(values[4], price_precision),
-            Quantity(values[5], instrument.size_precision),
+            Quantity(values[5], size_precision),
             from_posix_ms(values[0]),
         )
+
+    cdef str _make_timeframe(self, BarSpecification bar_spec):
+        # Build timeframe
+        cdef str timeframe = str(bar_spec.step)
+
+        if bar_spec.aggregation == BarAggregation.MINUTE:
+            timeframe += 'm'
+        elif bar_spec.aggregation == BarAggregation.HOUR:
+            timeframe += 'h'
+        elif bar_spec.aggregation == BarAggregation.DAY:
+            timeframe += 'd'
+        else:
+            return None  # Invalid aggregation
+
+        return timeframe
