@@ -145,7 +145,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Act
             self.client.disconnect()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             self.assertFalse(self.client.is_connected())
@@ -168,7 +168,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.1)  # Allow engine message queue to start
 
             self.data_engine.stop()
-            await asyncio.sleep(0.1)  # Allow engine message queue to stop
+            await asyncio.sleep(0.3)  # Allow engine message queue to stop
 
             # Act
             self.client.reset()
@@ -264,7 +264,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Act
             self.client.subscribe_quote_ticks(ETHUSDT)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             self.assertIn(ETHUSDT, self.client.subscribed_quote_ticks)
@@ -293,7 +293,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Act
             self.client.subscribe_trade_ticks(ETHUSDT)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             self.assertIn(ETHUSDT, self.client.subscribed_trade_ticks)
@@ -371,7 +371,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.1)  # Allow engine message queue to start
 
             self.client.subscribe_quote_ticks(ETHUSDT)
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Act
             self.client.unsubscribe_quote_ticks(ETHUSDT)
@@ -456,7 +456,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Act
             self.client.request_instrument(BTCUSDT, uuid4())
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             # Instruments additionally requested on start
@@ -480,7 +480,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.3)
 
             # Assert
             # Instruments additionally requested on start
