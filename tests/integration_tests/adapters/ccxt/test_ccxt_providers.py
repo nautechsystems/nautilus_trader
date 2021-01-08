@@ -77,7 +77,9 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         self.assertTrue(provider.count > 0)  # No exceptions raised
 
     def test_load_all_async(self):
-        loop = asyncio.get_event_loop()
+        # Fresh isolated loop testing pattern
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
         async def run_test():
             # Arrange
