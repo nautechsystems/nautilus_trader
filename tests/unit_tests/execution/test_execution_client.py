@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -199,7 +199,7 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_event(fill)  # Accessing protected method
+        self.client._handle_event_py(fill)  # Accessing protected method
 
         # Assert
         self.assertEqual(1, self.exec_engine.event_count)

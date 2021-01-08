@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -367,6 +367,10 @@ cdef class Order:
             If event is not a valid trigger from the current order.state.
 
         """
+        # Fast C method to avoid overhead of subclassing
+        self.apply_c(event)
+
+    cdef void apply_c(self, OrderEvent event) except *:
         Condition.not_none(event, "event")
         Condition.equal(self.cl_ord_id, event.cl_ord_id, "id", "event.order_id")
 

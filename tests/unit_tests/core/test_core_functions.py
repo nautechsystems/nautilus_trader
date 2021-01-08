@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -24,11 +24,18 @@ from nautilus_trader.core.functions import fast_mean_iterated
 from nautilus_trader.core.functions import fast_std
 from nautilus_trader.core.functions import fast_std_with_mean
 from nautilus_trader.core.functions import format_bytes
-from nautilus_trader.core.functions import max_in_dict
+from nautilus_trader.core.functions import is_ge_python_version
 from nautilus_trader.core.functions import pad_string
 
 
 class TestFunctionsTests(unittest.TestCase):
+
+    def test_is_python_version(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(is_ge_python_version(major=3, minor=6))
+        self.assertFalse(is_ge_python_version(major=4, minor=0))
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
@@ -130,16 +137,3 @@ class TestFunctionsTests(unittest.TestCase):
         self.assertEqual("953.67 MB", result3)
         self.assertEqual("9.31 GB", result4)
         self.assertEqual("90.95 TB", result5)
-
-    def test_max_in_dict_with_various_dictionaries_returns_expected_key(self):
-        # Arrange
-        dict1 = {1: 10, 2: 20, 3: 30}
-        dict2 = {"a": 10.1, "c": 30.1, "b": 20.1, }
-
-        # Act
-        result1 = max_in_dict(dict1)
-        result2 = max_in_dict(dict2)
-
-        # Assert
-        self.assertEqual(3, result1)
-        self.assertEqual("c", result2)

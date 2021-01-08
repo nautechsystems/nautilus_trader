@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -312,6 +312,10 @@ cdef class Position:
             The order fill event to apply.
 
         """
+        # Fast C method to avoid overhead of subclassing
+        self.apply_c(event)
+
+    cdef void apply_c(self, OrderFilled event) except *:
         Condition.not_none(event, "event")
 
         self._events.append(event)

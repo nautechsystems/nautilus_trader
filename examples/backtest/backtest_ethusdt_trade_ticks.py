@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -16,6 +16,7 @@
 
 from decimal import Decimal
 
+import ccxt
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -40,7 +41,7 @@ if __name__ == "__main__":
     # Requires an internet connection for the instrument loader
     # Alternatively use the TestInstrumentProvider in the test kit
     print("Loading instruments...")
-    instruments = BinanceInstrumentProvider(load_all=True)
+    instruments = BinanceInstrumentProvider(client=ccxt.binance(), load_all=True)
 
     BINANCE = Venue("BINANCE")
     ETHUSDT_BINANCE = instruments.get(Symbol("ETH/USDT", BINANCE))

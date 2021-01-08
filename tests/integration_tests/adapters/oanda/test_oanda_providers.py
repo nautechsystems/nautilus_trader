@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
+import json
 import unittest
-
-import oandapyV20
+from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
 from nautilus_trader.model.currencies import AUD
@@ -26,23 +25,24 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
+from tests import PACKAGE_ROOT
 
 
-# Requirements:
-#    - An internet connection
-#    - Environment variable OANDA_API_TOKEN with a valid practice account api token
-#    - Environment variable OANDA_ACCOUNT_ID with a valid practice `accountID`
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/"
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):
 
     def test_load_all(self):
         # Arrange
-        oanda_api_token = os.getenv("OANDA_API_TOKEN")
-        oanda_account_id = os.getenv("OANDA_ACCOUNT_ID")
+        mock_client = MagicMock()
 
-        client = oandapyV20.API(access_token=oanda_api_token)
-        provider = OandaInstrumentProvider(client=client, account_id=oanda_account_id)
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.request.return_value = instruments
+
+        provider = OandaInstrumentProvider(client=mock_client, account_id="001")
 
         # Act
         provider.load_all()
@@ -52,11 +52,9 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
     def test_get_all_when_not_loaded_returns_empty_dict(self):
         # Arrange
-        oanda_api_token = os.getenv("OANDA_API_TOKEN")
-        oanda_account_id = os.getenv("OANDA_ACCOUNT_ID")
+        mock_client = MagicMock()
 
-        client = oandapyV20.API(access_token=oanda_api_token)
-        provider = OandaInstrumentProvider(client=client, account_id=oanda_account_id)
+        provider = OandaInstrumentProvider(client=mock_client, account_id="001")
 
         # Act
         instruments = provider.get_all()
@@ -66,11 +64,15 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
-        oanda_api_token = os.getenv("OANDA_API_TOKEN")
-        oanda_account_id = os.getenv("OANDA_ACCOUNT_ID")
+        mock_client = MagicMock()
 
-        client = oandapyV20.API(access_token=oanda_api_token)
-        provider = OandaInstrumentProvider(client=client, account_id=oanda_account_id, load_all=True)
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.request.return_value = instruments
+
+        provider = OandaInstrumentProvider(client=mock_client, account_id="001")
+        provider.load_all()
 
         # Act
         instruments = provider.get_all()
@@ -82,11 +84,14 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
     def test_get_audusd_when_not_loaded_returns_none(self):
         # Arrange
-        oanda_api_token = os.getenv("OANDA_API_TOKEN")
-        oanda_account_id = os.getenv("OANDA_ACCOUNT_ID")
+        mock_client = MagicMock()
 
-        client = oandapyV20.API(access_token=oanda_api_token)
-        provider = OandaInstrumentProvider(client=client, account_id=oanda_account_id)
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.request.return_value = instruments
+
+        provider = OandaInstrumentProvider(client=mock_client, account_id="001")
 
         symbol = Symbol("AUD/USD", Venue("OANDA"))
 
@@ -98,11 +103,14 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
     def test_get_audusd_when_loaded_returns_expected_instrument(self):
         # Arrange
-        oanda_api_token = os.getenv("OANDA_API_TOKEN")
-        oanda_account_id = os.getenv("OANDA_ACCOUNT_ID")
+        mock_client = MagicMock()
 
-        client = oandapyV20.API(access_token=oanda_api_token)
-        provider = OandaInstrumentProvider(client=client, account_id=oanda_account_id, load_all=True)
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.request.return_value = instruments
+
+        provider = OandaInstrumentProvider(client=mock_client, account_id="001", load_all=True)
 
         symbol = Symbol("AUD/USD", Venue("OANDA"))
 

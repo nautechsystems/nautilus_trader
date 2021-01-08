@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.tick cimport QuoteTick
@@ -95,6 +96,19 @@ cdef class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
+
+    cpdef void on_instrument(self, Instrument instrument) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
+
+        """
+        pass
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """

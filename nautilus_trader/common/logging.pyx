@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,6 @@ import logging
 import os
 import platform
 from platform import python_version
-import queue
 import sys
 import threading
 import traceback
@@ -33,6 +32,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.log_queue cimport LogQueue
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
@@ -679,7 +679,7 @@ cdef class LiveLogger(Logger):
             log_file_path,
         )
 
-        self._queue = queue.Queue()
+        self._queue = LogQueue()
         self._thread = threading.Thread(target=self._consume_messages, daemon=True)
         self._thread.start()
 
@@ -695,7 +695,7 @@ cdef class LiveLogger(Logger):
         """
         Condition.not_none(message, "message")
 
-        self._queue.put_nowait(message)
+        self._queue.put(message)
 
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message

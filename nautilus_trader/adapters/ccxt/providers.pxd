@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,8 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `postgres` sub-package groups all `Postgres` implementations for the platform.
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 
-More information to follow.
-"""
+
+cdef class CCXTInstrumentProvider:
+    cdef dict _instruments
+    cdef object _client
+
+    cdef readonly Venue venue
+    """The venue of the provider.\n\n:returns: `Venue`"""
+    cdef readonly int count
+    """The count of instruments held by the provider.\n\n:returns: `int`"""
+
+    cpdef void load_all(self) except *
+    cpdef dict get_all(self)
+    cpdef Instrument get(self, Symbol symbol)
+
+    cdef void _load_instruments(self) except *
+    cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

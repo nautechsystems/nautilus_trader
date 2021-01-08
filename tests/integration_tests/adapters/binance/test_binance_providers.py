@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 import unittest
-
-import ccxt
+from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
 from nautilus_trader.model.currencies import BTC
@@ -25,25 +25,34 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
+from tests import PACKAGE_ROOT
 
 
-# Requirements:
-#    - An internet connection
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
 
 
 class BinanceInstrumentProviderTests(unittest.TestCase):
 
     def test_instantiate_with_none_binance_client_raises_value_error(self):
         # Arrange
-        client = ccxt.bitfinex
+        mock_client = MagicMock()
+        mock_client.name = "Bitfinex"
 
         # Act
         # Assert
-        self.assertRaises(ValueError, BinanceInstrumentProvider, client)
+        self.assertRaises(ValueError, BinanceInstrumentProvider, mock_client)
 
     def test_load_all(self):
         # Arrange
-        provider = BinanceInstrumentProvider()
+        mock_client = MagicMock()
+        mock_client.name = "Binance"
+
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.markets = instruments
+
+        provider = BinanceInstrumentProvider(client=mock_client)
 
         # Act
         provider.load_all()
@@ -53,7 +62,10 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
     def test_get_all_when_not_loaded_returns_empty_dict(self):
         # Arrange
-        provider = BinanceInstrumentProvider()
+        mock_client = MagicMock()
+        mock_client.name = "Binance"
+
+        provider = BinanceInstrumentProvider(client=mock_client)
 
         # Act
         instruments = provider.get_all()
@@ -63,7 +75,15 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
-        provider = BinanceInstrumentProvider()
+        mock_client = MagicMock()
+        mock_client.name = "Binance"
+
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.markets = instruments
+
+        provider = BinanceInstrumentProvider(client=mock_client)
         provider.load_all()
 
         # Act
@@ -76,7 +96,10 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
-        provider = BinanceInstrumentProvider()
+        mock_client = MagicMock()
+        mock_client.name = "Binance"
+
+        provider = BinanceInstrumentProvider(client=mock_client)
 
         symbol = Symbol("BTC/USDT", Venue("BINANCE"))
 
@@ -88,7 +111,15 @@ class BinanceInstrumentProviderTests(unittest.TestCase):
 
     def test_get_btcusdt_when_loaded_returns_expected_instrument(self):
         # Arrange
-        provider = BinanceInstrumentProvider()
+        mock_client = MagicMock()
+        mock_client.name = "Binance"
+
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.markets = instruments
+
+        provider = BinanceInstrumentProvider(client=mock_client)
         provider.load_all()
 
         symbol = Symbol("BTC/USDT", Venue("BINANCE"))

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -165,6 +165,7 @@ cdef class ReportProvider:
         return {
             "position_id": position.id.value,
             "symbol": position.symbol.code,
+            "strategy_id": position.strategy_id.tag.value,
             "entry": OrderSideParser.to_str(position.entry),
             "peak_quantity": position.peak_quantity,
             "opened_time": position.opened_time,

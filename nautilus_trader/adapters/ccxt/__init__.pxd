@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -12,19 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.execution.database cimport ExecutionDatabase
-from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.base cimport EventSerializer
-
-
-cdef class PostgresExecutionDatabase(ExecutionDatabase):
-    cdef readonly str _key_trader
-    cdef readonly str _key_accounts
-    cdef readonly str _key_orders
-    cdef readonly str _key_positions
-    cdef readonly str _key_strategies
-
-    cdef CommandSerializer _command_serializer
-    cdef EventSerializer _event_serializer
-    cdef object _postgres

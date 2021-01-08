@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -102,10 +102,9 @@ node = TradingNode(
 )
 
 
-# Stop the node with a SIGINT or CTRL+C
-def main():
-    node.start()
-
-
+# Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
-    main()
+    try:
+        node.start()
+    finally:
+        node.dispose()

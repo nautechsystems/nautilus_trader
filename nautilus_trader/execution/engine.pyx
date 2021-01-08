@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -101,7 +101,7 @@ cdef class ExecutionEngine(Component):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict, option
+        config : dict[str, object], optional
             The configuration options.
 
         """
@@ -482,7 +482,7 @@ cdef class ExecutionEngine(Component):
             self.cache.add_account(account)
             self.portfolio.register_account(account)
         else:
-            account.apply(event)
+            account.apply_c(event)
             self.cache.update_account(account)
 
     cdef inline void _handle_position_event(self, PositionEvent event) except *:
@@ -492,7 +492,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_event(self, OrderEvent event) except *:
         if isinstance(event, OrderCancelReject):
             self._handle_order_cancel_reject(event)
-            return  # Sent to strategy
+            return  # Event has been sent to strategy
 
         cdef Order order = self.cache.order(event.cl_ord_id)
         if order is None:
@@ -501,10 +501,10 @@ cdef class ExecutionEngine(Component):
             return  # Cannot process event further
 
         try:
-            order.apply(event)
+            order.apply_c(event)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            # Not re-raising to avoid crashing engine
+            return  # Not re-raising to avoid crashing engine
 
         self.cache.update_order(order)
 
@@ -514,7 +514,7 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
-            return  # Sent to strategy
+            return  # Event has been sent to strategy
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
@@ -596,7 +596,7 @@ cdef class ExecutionEngine(Component):
             self._flip_position(position, fill)
             return  # Handled in flip
 
-        position.apply(fill)
+        position.apply_c(fill)
         self.cache.update_position(position)
 
         cdef PositionEvent position_event
@@ -643,7 +643,7 @@ cdef class ExecutionEngine(Component):
         )
 
         # Close original position
-        position.apply(fill_split1)
+        position.apply_c(fill_split1)
         self.cache.update_position(position)
 
         self._send_to_strategy(fill, fill.strategy_id)
@@ -718,7 +718,7 @@ cdef class ExecutionEngine(Component):
                             f"({repr(strategy_id)} not registered), {event}.")
             return  # Cannot send to strategy
 
-        strategy.handle_event(event)
+        strategy.handle_event_c(event)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

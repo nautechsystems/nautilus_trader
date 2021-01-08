@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import threading
 import time
 import unittest
 
@@ -47,8 +48,19 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "save_state": True,
             },
 
-            "data_clients": {},
-            "exec_clients": {},
+            "data_clients": {
+                "binance": {
+                    "api_key": "BINANCE_API_KEY",        # value is the environment variable name
+                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
+                },
+            },
+
+            "exec_clients": {
+                "binance": {
+                    "api_key": "BINANCE_API_KEY",        # value is the environment variable name
+                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
+                },
+            }
         }
 
         # Act
@@ -85,8 +97,19 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "save_state": True,
             },
 
-            "data_clients": {},
-            "exec_clients": {},
+            "data_clients": {
+                "oanda": {
+                    "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+                    "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+                },
+            },
+
+            "exec_clients": {
+                "oanda": {
+                    "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+                    "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+                },
+            }
         }
 
         # Act
@@ -137,25 +160,56 @@ class TradingNodeOperationTests(unittest.TestCase):
             config=config,
         )
 
-    def tearDown(self):
-        if self.node.trader.state == ComponentState.RUNNING:
-            self.node.stop()
+    def test_get_event_loop_returns_a_loop(self):
+        # Arrange
+        # Act
+        loop = self.node.get_event_loop()
+
+        # Assert
+        self.assertTrue(isinstance(loop, asyncio.AbstractEventLoop))
+
+    def test_start(self):
+        # Arrange
+        run = threading.Thread(target=self.node.start, daemon=True)
+        run.start()
+
+        time.sleep(0.3)
+
+        # Act
+        # Assert
+        self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
+        self.node.stop()
+
+    def test_stop(self):
+        # Arrange
+        run = threading.Thread(target=self.node.start, daemon=True)
+        run.start()
+
+        # Allow node to start
+        time.sleep(0.3)
+        self.loop.call_soon_threadsafe(self.node.stop)
+
+        # Allow node to stop
+        time.sleep(3)
+
+        # Act
+        # Assert
+        self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+
+    def test_dispose(self):
+        # Arrange
+        run = threading.Thread(target=self.node.start, daemon=True)
+        run.start()
+
+        # Allow node to start
+        time.sleep(0.3)
+        self.loop.call_soon_threadsafe(self.node.stop)
+
+        # Allow node to stop
+        time.sleep(3)
 
         self.node.dispose()
 
-    def stopNode(self):
-        time.sleep(1)
-        loop = self.node.get_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # def test_run(self):
-    #     # Arrange
-    #     stopper = threading.Thread(target=self.stopNode, daemon=True)
-    #     stopper.start()
-    #
-    #     # Act
-    #     self.node.start()
-    #
-    #     # Assert
-    #     self.assertTrue(True)
-    #     self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
+        # Act
+        # Assert
+        self.assertEqual(ComponentState.DISPOSED, self.node.trader.state)

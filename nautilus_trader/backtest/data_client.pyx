@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -337,7 +337,7 @@ cdef class BacktestDataClient(DataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -348,7 +348,6 @@ cdef class BacktestDataClient(DataClient):
 
         """
         Condition.not_none(symbol, "symbol")
-        Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self._is_connected:  # Simulate connection behaviour
@@ -373,7 +372,7 @@ cdef class BacktestDataClient(DataClient):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -409,7 +408,7 @@ cdef class BacktestDataClient(DataClient):
         bar_type : BarType
             The bar type for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.

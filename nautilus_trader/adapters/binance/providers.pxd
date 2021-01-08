@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -30,4 +30,6 @@ cdef class BinanceInstrumentProvider:
     cpdef void load_all(self) except *
     cpdef dict get_all(self)
     cpdef Instrument get(self, Symbol symbol)
+
+    cdef void _load_instruments(self) except *
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

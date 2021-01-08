@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -13,18 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from asyncio import tasks
-from typing import Dict, List
-from concurrent.futures import ThreadPoolExecutor as Executor
 import asyncio
+import concurrent.futures
+from datetime import timedelta
 import signal
-import sys
-import msgpack
 import time
+from typing import Dict, List
+
+import msgpack
 import redis
 
-from nautilus_trader.adapters.binance.data import BinanceDataClient
-from nautilus_trader.adapters.oanda.data import OandaDataClient
+from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
+from nautilus_trader.adapters.ccxt.client import CCXTDataClientFactory
+from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -32,6 +33,7 @@ from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.functions import is_ge_python_version
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data import LiveDataEngine
 from nautilus_trader.live.execution import LiveExecutionEngine
@@ -46,6 +48,7 @@ from nautilus_trader.trading.trader import Trader
 
 try:
     import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     uvloop_version = uvloop.__version__
 except ImportError:
     uvloop_version = None
@@ -80,13 +83,17 @@ class TradingNode:
         config_exec_db = config.get("exec_database", {})
         config_strategy = config.get("strategy", {})
         config_data_clients = config.get("data_clients", {})
+        config_exec_clients = config.get("exec_clients", {})
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()
-        self._executor = Executor()
+        self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(True)  # TODO: Development
+        self._is_running = False
+
+        # Uncomment for debugging
+        # self._loop.set_debug(True)
 
         # Setup identifiers
         self.trader_id = TraderId(
@@ -152,6 +159,7 @@ class TradingNode:
 
         self._exec_engine.load_cache()
         self._setup_data_clients(config_data_clients, logger)
+        self._setup_exec_clients(config_exec_clients, logger)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -188,10 +196,13 @@ class TradingNode:
         Start the trading node.
         """
         try:
-            self._loop.run_until_complete(self._run())
+            if self._loop.is_running():
+                self._loop.create_task(self._run())
+            else:
+                self._loop.run_until_complete(self._run())
+
         except RuntimeError as ex:
-            self._log.error(str(ex))
-            time.sleep(0.1)  # Assist final logging
+            self._log.exception(ex)
 
     def stop(self):
         """
@@ -210,18 +221,66 @@ class TradingNode:
         except RuntimeError as ex:
             self._log.exception(ex)
 
+    # noinspection PyTypeChecker
+    # Expected timedelta, got datetime.pyi instead
     def dispose(self):
         """
         Dispose of the trading node.
 
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
+        Gracefully shuts down the executor and event loop.
 
         """
-        if self._loop.is_running():
-            self._loop.create_task(self._dispose())
-        else:
-            self._loop.run_until_complete(self._dispose())
+        try:
+            timeout = self._clock.utc_now() + timedelta(seconds=5)
+            while self._is_running:
+                time.sleep(0.1)
+                if self._clock.utc_now() >= timeout:
+                    self._log.warning("Timed out (5s) waiting for node to stop.")
+                    break
+
+            self._log.info("state=DISPOSING...")
+
+            self._log.debug(f"{self._data_engine.get_run_queue_task()}")
+            self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
+
+            self.trader.dispose()
+            self._data_engine.dispose()
+            self._exec_engine.dispose()
+
+            self._log.info("Shutting down executor...")
+            if is_ge_python_version(major=3, minor=9):
+                # cancel_futures added in Python 3.9
+                self._executor.shutdown(wait=True, cancel_futures=True)
+            else:
+                self._executor.shutdown(wait=True)
+
+            self._log.info("Stopping event loop...")
+            self._loop.stop()
+            self._cancel_all_tasks()
+        except RuntimeError as ex:
+            self._log.error("Shutdown coro issues will be fixed soon...")  # TODO: Remove when fixed
+            self._log.exception(ex)
+        finally:
+            if self._loop.is_running():
+                self._log.warning("Cannot close a running event loop.")
+            else:
+                self._log.info("Closing event loop...")
+                self._loop.close()
+
+            # Check and log if event loop is running
+            if self._loop.is_running():
+                self._log.warning(f"loop.is_running={self._loop.is_running()}")
+            else:
+                self._log.info(f"loop.is_running={self._loop.is_running()}")
+
+            # Check and log if event loop is closed
+            if not self._loop.is_closed():
+                self._log.warning(f"loop.is_closed={self._loop.is_closed()}")
+            else:
+                self._log.info(f"loop.is_closed={self._loop.is_closed()}")
+
+            self._log.info("state=DISPOSED.")
+            time.sleep(0.1)  # Assist final logging to daemonic logging thread
 
     def _log_header(self):
         nautilus_header(self._log)
@@ -232,103 +291,128 @@ class TradingNode:
         self._log.info("=================================================================")
 
     def _setup_data_clients(self, config, logger):
+        # Setup each data client
         for name, config in config.items():
-            if name == "binance":
-                credentials = {
-                    "api_key": config.get("api_key"),
-                    "api_secret": config.get("api_secret"),
-                }
-
-                client = BinanceDataClient(
-                    credentials=credentials,
-                    engine=self._data_engine,
+            if name.startswith("ccxt-"):
+                try:
+                    import ccxtpro  # TODO: Find a better way of doing this
+                except ImportError:
+                    raise ImportError("ccxtpro is not installed, "
+                                      "installation instructions can be found at https://ccxt.pro")
+                client_cls = getattr(ccxtpro, name.partition('-')[2].lower())
+                data_client = CCXTDataClientFactory.create(
+                    client_cls=client_cls,
+                    config=config,
+                    data_engine=self._data_engine,
                     clock=self._clock,
                     logger=logger,
                 )
-
-                self._data_engine.register_client(client)
+            elif name == "binance":
+                data_client = BinanceDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
             elif name == "oanda":
-                credentials = {
-                    "api_token": config.get("api_token"),
-                    "account_id": config.get("account_id"),
-                }
-
-                client = OandaDataClient(
-                    credentials=credentials,
-                    engine=self._data_engine,
+                data_client = OandaDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
                     clock=self._clock,
                     logger=logger,
                 )
-
-                self._data_engine.register_client(client)
             else:
-                self._log.error(f"No DataClient for `{name}`.")
+                self._log.error(f"No DataClient available for `{name}`.")
+                continue
+
+            # Register client with engine
+            self._data_engine.register_client(data_client)
+
+    def _setup_exec_clients(self, config, logger):
+        try:
+            # Setup each data
+            for name, config in config.items():
+                if name.startswith("ccxt-"):
+                    pass
+                elif name == "binance":
+                    pass
+                elif name == "oanda":
+                    pass
+                else:
+                    self._log.error(f"No ExecutionClient available for `{name}`.")
+        except RuntimeError as ex:
+            self._log.exception(ex)
 
     def _setup_loop(self):
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signals = (signal.SIGTERM, signal.SIGINT)
-
         if self._loop.is_closed():
             self._log.error("Cannot setup signal handling (event loop was closed).")
             return
 
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGABRT)
         for sig in signals:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
 
     def _loop_sig_handler(self, sig):
-        self._loop.stop()
-        self._log.warning(f"Received {sig!s}, shutting down...")
-
-        # Remove signal handler so shutdown sequence is triggered only once
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
 
+        self._log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
-        self.dispose()
 
     async def _run(self):
-        self._log.info("state=STARTING...")
+        try:
+            self._log.info("state=STARTING...")
 
-        self._data_engine.start()
-        self._exec_engine.start()
+            self._data_engine.start()
+            self._exec_engine.start()
 
-        # Wait for engines to initialize (will hang if never initialized)
-        await self._loop.run_in_executor(None, self._wait_for_engines)
+            # Wait for engines to initialize (will hang if never initialized)
+            await self._loop.run_in_executor(None, self._wait_for_engines)
 
-        self.trader.start()
+            self.trader.start()
 
-        if self._loop.is_running():
-            self._log.info("state=RUNNING.")
-        else:
-            self._log.warning("Event loop is not running.")
+            if self._loop.is_running():
+                self._log.info("state=RUNNING.")
+            else:
+                self._log.warning("Event loop is not running.")
 
-        # Continue to run while engines are running
-        await asyncio.gather(
-            self._data_engine.get_run_queues_task(),
-            self._exec_engine.get_run_queues_task(),
-        )
+            self._is_running = True
+
+            # Continue to run while engines are running...
+            await self._data_engine.get_run_queue_task()
+            await self._exec_engine.get_run_queue_task()
+        except asyncio.CancelledError as ex:
+            self._log.error(str(ex))
 
     def _wait_for_engines(self):
         self._log.info("Waiting for engines to initialize...")
 
+        # The engines require that all of their clients are initialized.
+        # The data engine clients will be set as initialized when all
+        # instruments are received and updated with the data engine.
+        # The execution engine clients will be set as initialized when all
+        # accounts are updated and the current order and position status is
+        # confirmed. Thus any delay here will be due to blocking network IO.
         while True:
+            time.sleep(0.1)
             if not self._data_engine.check_initialized():
                 continue
             if not self._exec_engine.check_initialized():
                 continue
-            # Engines initialized
             break
 
+        return True  # Engines initialized
+
     async def _stop(self):
+        self._is_stopping = True
         self._log.info("state=STOPPING...")
 
         self.trader.stop()
 
         self._log.info("Awaiting residual state...")
-        time.sleep(self._check_residuals_delay)
-
-        # TODO: Refactor shutdown - check completely flat before stopping engines
+        await asyncio.sleep(self._check_residuals_delay)
         self.trader.check_residuals()
 
         if self._save_strategy_state:
@@ -337,48 +421,55 @@ class TradingNode:
         self._data_engine.stop()
         self._exec_engine.stop()
 
+        await self._data_engine.get_run_queue_task()
+        await self._exec_engine.get_run_queue_task()
+
+        # Clean up remaining timers
+        timer_names = self._clock.timer_names()
+        self._clock.cancel_timers()
+
+        for name in timer_names:
+            self._log.info(f"Cancelled Timer(name={name}).")
+
+        # Wait for engines to disconnect (will hang if never disconnected)
+        self._log.info("Waiting for engines to disconnect...")
+        timeout = self._clock.utc_now() + timedelta(seconds=5)
+        while True:
+            time.sleep(0.1)
+            if self._clock.utc_now() >= timeout:
+                self._log.warning("Timed out (5s) waiting for engines to disconnect.")
+                break
+            if not self._data_engine.check_disconnected():
+                continue
+            # if not self._exec_engine.check_disconnected():  # TODO: Implement
+            #     continue
+            break
+
         self._log.info("state=STOPPED.")
-
-    async def _dispose(self):
-        self._log.info("state=DISPOSING...")
-
-        self.trader.dispose()
-        self._data_engine.dispose()
-        self._exec_engine.dispose()
-
-        try:
-            self._loop.call_soon(self._loop.stop)
-            self._loop.call_soon(self._cancel_all_tasks)
-            await self._loop.shutdown_asyncgens()
-
-            # Give blocking calls a chance to shutdown
-            if sys.version_info.major > 3 or (sys.version_info == 3 and sys.version_info.minor >= 9):
-                # cancel_futures added in Python 3.9
-                self._executor.shutdown(wait=True, cancel_futures=True)
-            else:
-                self._executor.shutdown(wait=True)
-
-            if self._loop.is_running():
-                self._log.warning("Cannot close running event loop.")
-            else:
-                self._log.info("Closing event loop...")
-                self._loop.close()
-        except RuntimeError as ex:
-            self._log.exception(ex)
-        finally:
-            self._log.info(f"loop.is_closed={self._loop.is_closed()}")
-            self._log.info("state=DISPOSED.")
+        self._is_running = False
 
     def _cancel_all_tasks(self):
-        to_cancel = tasks.all_tasks(self._loop)
+        to_cancel = asyncio.tasks.all_tasks(self._loop)
         if not to_cancel:
+            self._log.info("All tasks finished.")
             return
 
         for task in to_cancel:
+            self._log.warning(f"Cancelling pending task {task}")
             task.cancel()
 
-        self._loop.run_until_complete(
-            tasks.gather(*to_cancel, loop=self._loop, return_exceptions=True))
+        if self._loop.is_running():
+            self._log.warning("Event loop still running during `cancel_all_tasks`.")
+            return
+
+        finish_all_tasks: asyncio.Future = asyncio.tasks.gather(
+            *to_cancel,
+            loop=self._loop,
+            return_exceptions=True,
+        )
+        self._loop.run_until_complete(finish_all_tasks)
+
+        self._log.debug(f"{finish_all_tasks}")
 
         for task in to_cancel:
             if task.cancelled():
@@ -389,5 +480,3 @@ class TradingNode:
                     'exception': task.exception(),
                     'task': task,
                 })
-
-        self._log.info("Cancelled all tasks.")

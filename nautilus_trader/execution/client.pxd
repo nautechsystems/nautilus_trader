@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -31,6 +31,7 @@ cdef class ExecutionClient:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef ExecutionEngine _engine
+    cdef dict _config
 
     cdef readonly Venue venue
     """The clients venue.\n\n:returns: `Venue`"""
@@ -55,4 +56,4 @@ cdef class ExecutionClient:
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_event(self, Event event) except *
+    cdef void _handle_event(self, Event event) except *

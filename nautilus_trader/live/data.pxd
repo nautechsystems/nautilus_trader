@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -18,6 +18,7 @@ from nautilus_trader.data.engine cimport DataEngine
 
 
 cdef class LiveDataEngine(DataEngine):
+    cdef dict _config
     cdef object _loop
     cdef object _data_queue
     cdef object _message_queue
@@ -26,7 +27,7 @@ cdef class LiveDataEngine(DataEngine):
     cdef readonly bint is_running
 
     cpdef object get_event_loop(self)
-    cpdef object get_run_queues_task(self)
+    cpdef object get_run_queue_task(self)
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *
 

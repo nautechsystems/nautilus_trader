@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -34,12 +34,14 @@ cdef class DataClient:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef DataEngine _engine
+    cdef dict _config
 
     cdef readonly Venue venue
     """The clients venue.\n\n:returns: `Venue`"""
     cdef readonly bint initialized
     """If the client is ready for trading.\n\n:returns: `bool`"""
 
+    cpdef list unavailable_methods(self)
     cpdef bint is_connected(self) except *
 
     cpdef void connect(self) except *
@@ -90,12 +92,12 @@ cdef class DataClient:
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument) except *
-    cpdef void _handle_quote_tick(self, QuoteTick tick) except *
-    cpdef void _handle_trade_tick(self, TradeTick tick) except *
-    cpdef void _handle_bar(self, BarType bar_type, Bar bar) except *
+    cdef void _handle_instrument(self, Instrument instrument) except *
+    cdef void _handle_quote_tick(self, QuoteTick tick) except *
+    cdef void _handle_trade_tick(self, TradeTick tick) except *
+    cdef void _handle_bar(self, BarType bar_type, Bar bar) except *
 
-    cpdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
-    cpdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
-    cpdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
+    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
+    cdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *
+    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *

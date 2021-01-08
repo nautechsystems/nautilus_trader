@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -14,7 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
+import time
 import unittest
+from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.binance.data import BinanceDataClient
 from nautilus_trader.common.clock import LiveClock
@@ -34,14 +37,24 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
+from tests import PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
+
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/binance/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
 
-# Requirements:
-#    - An internet connection
+
+# Monkey patch magic mock
+# This allows the stubbing of calls to coroutines
+MagicMock.__await__ = lambda x: async_magic().__await__()
+
+
+# Dummy method for above
+async def async_magic():
+    return
 
 
 class BinanceDataClientTests(unittest.TestCase):
@@ -79,8 +92,14 @@ class BinanceDataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        self.mock_binance_rest = MagicMock()
+        self.mock_binance_rest.name = "Binance"
+
+        self.mock_binance_feed = MagicMock()
+
         self.client = BinanceDataClient(
-            credentials={},
+            client_rest=self.mock_binance_rest,
+            client_feed=self.mock_binance_feed,
             engine=self.data_engine,
             clock=self.clock,
             logger=logger,
@@ -92,23 +111,31 @@ class BinanceDataClientTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    def test_connect(self):
-        # Arrange
-        # Act
-        self.client.connect()
-
-        # Assert
-        self.assertTrue(self.client.is_connected())
+    # def test_connect(self):
+    #     # Arrange
+    #     # Act
+    #     self.client.connect()
+    #
+    #     # Assert
+    #     self.assertTrue(self.client.is_connected())
+    #     self.client._stop_feed_loop()
 
     def test_disconnect(self):
-        # Arrange
-        self.client.connect()
+        async def run_test():
+            # Arrange
+            with open(TEST_PATH + "res_instruments.json") as response:
+                instruments = json.load(response)
 
-        # Act
-        self.client.disconnect()
+            self.mock_binance_rest.markets = instruments
 
-        # Assert
-        self.assertFalse(self.client.is_connected())
+            # Act
+            self.client.disconnect()
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertFalse(self.client.is_connected())
+
+        self.loop.run_until_complete(run_test())
 
     def test_reset(self):
         # Arrange
@@ -116,7 +143,7 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.reset()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertFalse(self.client.is_connected())
 
     def test_dispose(self):
         # Arrange
@@ -124,17 +151,15 @@ class BinanceDataClientTests(unittest.TestCase):
         self.client.dispose()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        self.assertFalse(self.client.is_connected())
 
     def test_subscribe_instrument(self):
         # Arrange
-        self.client.connect()
-
         # Act
         self.client.subscribe_instrument(BTCUSDT)
 
         # Assert
-        self.assertTrue(True)
+        self.assertIn(BTCUSDT, self.client.subscribed_instruments)
 
     # def test_subscribe_quote_ticks(self):
     #     # Arrange
@@ -146,16 +171,14 @@ class BinanceDataClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertTrue(True)
     #
-    # def test_subscribe_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.subscribe_trade_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)
-    #
+    def test_subscribe_trade_ticks(self):
+        # Arrange
+        # Act
+        self.client.subscribe_trade_ticks(BTCUSDT)
+
+        # Assert
+        self.assertIn(BTCUSDT, self.client.subscribed_trade_ticks)
+
     # def test_subscribe_bars(self):
     #     # Arrange
     #     # Act
@@ -168,13 +191,11 @@ class BinanceDataClientTests(unittest.TestCase):
 
     def test_unsubscribe_instrument(self):
         # Arrange
-        self.client.connect()
-
         # Act
         self.client.unsubscribe_instrument(BTCUSDT)
 
         # Assert
-        self.assertTrue(True)
+        self.assertNotIn(BTCUSDT, self.client.subscribed_instruments)
 
     # def test_unsubscribe_quote_ticks(self):
     #     # Arrange
@@ -186,16 +207,16 @@ class BinanceDataClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertTrue(True)
     #
-    # def test_unsubscribe_trade_ticks(self):
-    #     # Arrange
-    #     # Act
-    #     self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
-    #     self.client.connect()
-    #     self.client.unsubscribe_trade_ticks(USDJPY_SIM.symbol)
-    #
-    #     # Assert
-    #     self.assertTrue(True)
-    #
+
+    def test_unsubscribe_trade_ticks(self):
+        # Arrange
+        # Act
+        self.client.subscribe_trade_ticks(BTCUSDT)
+        self.client.unsubscribe_trade_ticks(BTCUSDT)
+
+        # Assert
+        self.assertNotIn(BTCUSDT, self.client.subscribed_trade_ticks)
+
     # def test_unsubscribe_bars(self):
     #     # Arrange
     #     # Act
@@ -206,51 +227,59 @@ class BinanceDataClientTests(unittest.TestCase):
     #     # Assert
     #     self.assertTrue(True)
 
-    def test_request_instrument(self):
-        async def run_test():
-            # Arrange
-            self.data_engine.start()
+    # TODO: WIP
+    # def test_request_instrument(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         self.mock_binance_rest.markets = instruments
+    #
+    #         self.data_engine.start()
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Act
+    #         self.client.request_instrument(BTCUSDT, uuid4())
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         # Instruments additionally requested on start
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            # Act
-            self.client.request_instrument(BTCUSDT, uuid4())
-
-            await asyncio.sleep(3)
-
-            # Assert
-            # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_request_instruments(self):
-        async def run_test():
-            # Arrange
-            self.data_engine.start()
-
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            # Act
-            self.client.request_instruments(uuid4())
-
-            await asyncio.sleep(3)
-
-            # Assert
-            # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_request_instruments(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         self.mock_binance_rest.markets = instruments
+    #
+    #         self.data_engine.start()
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Act
+    #         self.client.request_instruments(uuid4())
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         # Instruments additionally requested on start
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
     def test_request_quote_ticks(self):
         # Arrange
@@ -260,83 +289,90 @@ class BinanceDataClientTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)
 
-    def test_request_trade_ticks(self):
-        async def run_test():
-            # Arrange
-            handler = ObjectStorer()
-            self.data_engine.start()
+    # TODO: WIP
+    # def test_request_trade_ticks(self):
+    #     async def run_test():
+    #         # Arrange
+    #         handler = ObjectStorer()
+    #         self.data_engine.start()
+    #
+    #         # Allow data engine to spool up and request instruments
+    #         await asyncio.sleep(3)
+    #
+    #         request = DataRequest(
+    #             venue=BINANCE,
+    #             data_type=TradeTick,
+    #             metadata={
+    #                 "Symbol": BTCUSDT,
+    #                 "FromDateTime": None,
+    #                 "ToDateTime": None,
+    #                 "Limit": 1000,
+    #             },
+    #             callback=handler.store,
+    #             request_id=self.uuid_factory.generate(),
+    #             request_timestamp=self.clock.utc_now(),
+    #         )
+    #
+    #         # Act
+    #         self.data_engine.send(request)
+    #
+    #         await asyncio.sleep(1)
+    #
+    #         # Assert
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #         self.assertEqual(1, handler.count)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            request = DataRequest(
-                venue=BINANCE,
-                data_type=TradeTick,
-                metadata={
-                    "Symbol": BTCUSDT,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                },
-                callback=handler.store,
-                request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
-            )
-
-            # Act
-            self.data_engine.send(request)
-
-            await asyncio.sleep(1)
-
-            # Assert
-            self.assertEqual(2, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_request_bars(self):
-        async def run_test():
-            # Arrange
-            handler = ObjectStorer()
-            self.data_engine.start()
-
-            # Allow data engine to spool up and request instruments
-            await asyncio.sleep(3)
-
-            bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-            bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
-
-            request = DataRequest(
-                venue=BINANCE,
-                data_type=Bar,
-                metadata={
-                    "BarType": bar_type,
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
-                },
-                callback=handler.store_2,
-                request_id=self.uuid_factory.generate(),
-                request_timestamp=self.clock.utc_now(),
-            )
-
-            # Act
-            self.data_engine.send(request)
-            # Act
-            self.client.request_bars(bar_type, None, None, 0, uuid4())
-
-            await asyncio.sleep(1)
-
-            # Assert
-            self.assertEqual(2, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
-
-            # Tear Down
-            self.data_engine.stop()
-            await self.data_engine.get_run_queues_task()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_request_bars(self):
+    #     async def run_test():
+    #         # Arrange
+    #         with open(TEST_PATH + "res_instruments.json") as response:
+    #             instruments = json.load(response)
+    #
+    #         with open(TEST_PATH + "res_bars.json") as response:
+    #             bars = json.load(response)
+    #
+    #         self.mock_binance_rest.markets = instruments
+    #         self.mock_binance_rest.fetch_ohlcv.return_value = bars
+    #
+    #         handler = ObjectStorer()
+    #         self.data_engine.start()
+    #
+    #         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+    #         bar_type = BarType(symbol=BTCUSDT, bar_spec=bar_spec)
+    #
+    #         request = DataRequest(
+    #             venue=BINANCE,
+    #             data_type=Bar,
+    #             metadata={
+    #                 "BarType": bar_type,
+    #                 "FromDateTime": None,
+    #                 "ToDateTime": None,
+    #                 "Limit": 100,
+    #             },
+    #             callback=handler.store_2,
+    #             request_id=self.uuid_factory.generate(),
+    #             request_timestamp=self.clock.utc_now(),
+    #         )
+    #
+    #         # Act
+    #         self.data_engine.send(request)
+    #
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         self.assertEqual(2, self.data_engine.response_count)
+    #         self.assertEqual(1, handler.count)
+    #         self.assertEqual(100, len(handler.get_store()[0][1]))
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #         await self.data_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())

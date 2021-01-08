@@ -70,7 +70,8 @@ def _build_extensions() -> List[Extension]:
             define_macros=define_macros,
         )
         for pyx in itertools.chain(
-            Path("examples").rglob("*.pyx"), Path("nautilus_trader").rglob("*.pyx"),
+            Path("examples").rglob("*.pyx"),
+            Path("nautilus_trader").rglob("*.pyx"),
         )
     ]
 

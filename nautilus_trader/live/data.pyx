@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -58,7 +58,7 @@ cdef class LiveDataEngine(DataEngine):
             The clock for the component.
         logger : Logger
             The logger for the component.
-        config : dict, option
+        config : dict[str, object], optional
             The configuration options.
 
         """
@@ -85,9 +85,9 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._loop
 
-    cpdef object get_run_queues_task(self):
+    cpdef object get_run_queue_task(self):
         """
-        Return the internal run queues task for the engine.
+        Return the internal run queue task for the engine.
 
         Returns
         -------
@@ -252,6 +252,7 @@ cdef class LiveDataClient(DataClient):
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveDataClient` class.
@@ -266,6 +267,8 @@ cdef class LiveDataClient(DataClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
+        config : dict[str, object], optional
+            The configuration options.
 
         """
         super().__init__(
@@ -273,6 +276,7 @@ cdef class LiveDataClient(DataClient):
             engine,
             clock,
             logger,
+            config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -287,6 +287,23 @@ cdef class TradingStrategy(Component):
         """
         # Should override in subclass
         warnings.warn("on_dispose was called when not overridden")
+
+    cpdef void on_instrument(self, Instrument instrument) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
 
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
@@ -669,7 +686,7 @@ cdef class TradingStrategy(Component):
             venue=symbol.venue,
             data_type=Instrument,
             metadata={SYMBOL: symbol},
-            handler=self.handle_data,
+            handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
@@ -773,7 +790,7 @@ cdef class TradingStrategy(Component):
             venue=symbol.venue,
             data_type=Instrument,
             metadata={SYMBOL: symbol},
-            handler=self.handle_data,
+            handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
@@ -878,7 +895,7 @@ cdef class TradingStrategy(Component):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -925,7 +942,7 @@ cdef class TradingStrategy(Component):
         symbol : Symbol
             The tick symbol for the request.
         from_datetime : datetime, optional
-            The specified from datetime for the data
+            The specified from datetime for the data.
         to_datetime : datetime, optional
             The specified to datetime for the data. If None then will default
             to the current datetime.
@@ -1288,6 +1305,31 @@ cdef class TradingStrategy(Component):
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 
+    cpdef void handle_instrument(self, Instrument instrument) except *:
+        """
+        Handle the given instrument.
+
+        Calls `on_instrument` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The received instrument.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_instrument(instrument)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise ex
+
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
         Handle the given tick.
@@ -1536,6 +1578,9 @@ cdef class TradingStrategy(Component):
         System method (not intended to be called by user code).
 
         """
+        self.handle_event_c(event)
+
+    cdef void handle_event_c(self, Event event) except *:
         Condition.not_none(event, "event")
 
         if isinstance(event, (OrderRejected, OrderCancelReject)):

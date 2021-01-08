@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -104,6 +104,10 @@ class TestStubs:
         return BarSpecification(1, BarAggregation.SECOND, PriceType.MID)
 
     @staticmethod
+    def bar_spec_100tick_last() -> BarSpecification:
+        return BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+
+    @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
         return BarType(TestStubs.symbol_audusd_fxcm(), TestStubs.bar_spec_1min_bid())
 
@@ -134,6 +138,10 @@ class TestStubs:
     @staticmethod
     def bartype_btcusdt_binance_1min_bid() -> BarType:
         return BarType(TestStubs.symbol_btcusdt_binance(), TestStubs.bar_spec_1min_bid())
+
+    @staticmethod
+    def bartype_btcusdt_binance_100tick_last() -> BarType:
+        return BarType(TestStubs.symbol_btcusdt_binance(), TestStubs.bar_spec_100tick_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:

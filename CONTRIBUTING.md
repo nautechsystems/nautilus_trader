@@ -31,6 +31,9 @@ To contribute, the following steps should be followed;
 - [Codacy](https://www.codacy.com/) will perform an automated code review. Please
   fix any issues which cause a failed check, and add the commit to your PR.
 
+- You'll also be required to sign a standard Contributor License Agreement (CLA), which is
+  administered automatically through CLAassisant.
+
 - We will endeavour to review your code expeditiously, there may be some
   feedback on needed changes before merging.
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -36,14 +36,14 @@ cdef class BinanceInstrumentProvider:
     Provides a means of loading Binance `Instrument` objects.
     """
 
-    def __init__(self, client: ccxt.Exchange=None, bint load_all=False):
+    def __init__(self, client not None: ccxt.binance, bint load_all=False):
         """
         Initialize a new instance of the `BinanceInstrumentProvider` class.
 
         Parameters
         ----------
-        client : ccxt.Exchange, optional
-            The client for the provider. If None then one will be created.
+        client : ccxt.Exchange
+            The client for the provider.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
@@ -53,10 +53,7 @@ cdef class BinanceInstrumentProvider:
             If client.name != 'Binance'.
 
         """
-        if client is None:
-            client = ccxt.binance()
-        else:
-            Condition.true(client.name == "Binance", "client.name == `Binance`")
+        Condition.true(client.name == "Binance", "client.name == `Binance`")
 
         self.venue = Venue("BINANCE")
         self.count = 0
@@ -66,12 +63,45 @@ cdef class BinanceInstrumentProvider:
         if load_all:
             self.load_all()
 
+    async def load_all_async(self):
+        """
+        Load all instruments for the venue asynchronously.
+        """
+        await self._client.load_markets(reload=True)
+        self._load_instruments()
+
     cpdef void load_all(self) except *:
         """
-        Pre-load all instruments.
+        Load all instruments for the venue.
         """
-        self._client.load_markets()
+        self._client.load_markets(reload=True)
+        self._load_instruments()
 
+    cpdef dict get_all(self):
+        """
+        Return all loaded instruments.
+
+        If no instruments loaded, will return an empty dict.
+
+        Returns
+        -------
+        dict[Symbol, Instrument]
+
+        """
+        return self._instruments.copy()
+
+    cpdef Instrument get(self, Symbol symbol):
+        """
+        Return the instrument for the given symbol (if found).
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        return self._instruments.get(symbol)
+
+    cdef void _load_instruments(self) except *:
         if self._client.markets is None:
             return  # No markets
 
@@ -86,30 +116,6 @@ cdef class BinanceInstrumentProvider:
             self._instruments[symbol] = instrument
 
         self.count = len(self._instruments)
-
-    cpdef dict get_all(self):
-        """
-        Get all loaded instruments.
-
-        If no instruments loaded will return the empty dict.
-
-        Returns
-        -------
-        dict[Symbol, Instrument]
-
-        """
-        return self._instruments.copy()
-
-    cpdef Instrument get(self, Symbol symbol):
-        """
-        Get the instrument for the given symbol (if found).
-
-        Returns
-        -------
-        Instrument or None
-
-        """
-        return self._instruments.get(symbol)
 
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values):
         # Precisions

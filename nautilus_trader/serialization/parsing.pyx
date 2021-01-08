@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -32,9 +32,6 @@ cdef class ObjectParser:
     @staticmethod
     cdef datetime string_to_datetime(str time_string):
         Condition.valid_string(time_string, "time_string")
-
-        # noinspection long
-        # noinspection PyUnresolvedReferences
         return None if time_string == NONE else from_posix_ms(long(time_string))
 
     @staticmethod

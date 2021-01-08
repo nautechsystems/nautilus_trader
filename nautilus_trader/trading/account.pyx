@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -152,6 +152,9 @@ cdef class Account:
         System method (not intended to be called by user code).
 
         """
+        self.apply_c(event)
+
+    cdef void apply_c(self, AccountState event) except*:
         Condition.not_none(event, "event")
         Condition.equal(self.id, event.account_id, "id", "event.account_id")
 

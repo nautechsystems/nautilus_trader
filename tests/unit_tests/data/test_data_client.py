@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -178,7 +178,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_instrument_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_instrument(AUDUSD_SIM)
+        self.client._handle_instrument_py(AUDUSD_SIM)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
@@ -195,7 +195,7 @@ class DataClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_quote_tick(tick)
+        self.client._handle_quote_tick_py(tick)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
@@ -212,7 +212,7 @@ class DataClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_trade_tick(tick)
+        self.client._handle_trade_tick_py(tick)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
@@ -231,7 +231,7 @@ class DataClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_bar(bar_type, bar)
+        self.client._handle_bar_py(bar_type, bar)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
@@ -239,7 +239,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_instruments_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_instruments([], self.uuid_factory.generate())
+        self.client._handle_instruments_py([], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -247,7 +247,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_quote_ticks(AUDUSD_SIM.symbol, [], self.uuid_factory.generate())
+        self.client._handle_quote_ticks_py(AUDUSD_SIM.symbol, [], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -255,7 +255,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_trade_ticks(AUDUSD_SIM.symbol, [], self.uuid_factory.generate())
+        self.client._handle_trade_ticks_py(AUDUSD_SIM.symbol, [], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -263,7 +263,7 @@ class DataClientTests(unittest.TestCase):
     def test_handle_bars_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_bars(
+        self.client._handle_bars_py(
             TestStubs.bartype_gbpusd_1sec_mid(),
             [],
             None,

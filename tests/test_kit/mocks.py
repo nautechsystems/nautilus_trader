@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -23,7 +23,6 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import Symbol
@@ -112,12 +111,21 @@ class MockStrategy(TradingStrategy):
         self.register_indicator_for_bars(self.bar_type, self.ema1)
         self.register_indicator_for_bars(self.bar_type, self.ema2)
 
+    def on_instrument(self, instrument):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(instrument)
+
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(tick)
+
+    def on_trade_tick(self, tick):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(tick)
 
     def on_bar(self, bar_type, bar):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store((bar_type, Bar))
+        self.object_storer.store((bar_type, bar))
 
         if bar_type != self.bar_type:
             return
@@ -141,9 +149,9 @@ class MockStrategy(TradingStrategy):
             self.submit_order(sell_order)
             self.position_id = sell_order.cl_ord_id
 
-    def on_instrument(self, instrument):
+    def on_data(self, data):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self.object_storer.store(instrument)
+        self.object_storer.store(data)
 
     def on_event(self, event):
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -210,6 +218,9 @@ class KaboomStrategy(TradingStrategy):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self):
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_instrument(self, instrument):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_quote_tick(self, tick):

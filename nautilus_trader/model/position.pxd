@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -100,6 +100,7 @@ cdef class Position:
     cdef inline PositionSide side_from_order_side_c(OrderSide side) except *
 
     cpdef void apply(self, OrderFilled event) except *
+    cdef void apply_c(self, OrderFilled event) except *
 
     cpdef Money notional_value(self, Price last)
     cpdef Money calculate_pnl(self, avg_open, avg_close, quantity)

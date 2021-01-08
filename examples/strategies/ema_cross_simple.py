@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -21,6 +21,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
@@ -85,15 +86,17 @@ class EMACross(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         # self.subscribe_quote_ticks(self.symbol)  # For debugging
+        # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
-    def on_trade_tick(self, tick: TradeTick):
+    def on_instrument(self, instrument: Instrument):
         """
-        Actions to be performed when the strategy is running and receives a trade tick.
+        Actions to be performed when the strategy is running and receives an
+        instrument.
 
         Parameters
         ----------
-        tick : TradeTick
-            The tick received.
+        instrument : Instrument
+            The instrument received.
 
         """
         pass
@@ -106,6 +109,19 @@ class EMACross(TradingStrategy):
         ----------
         tick : QuoteTick
             The quote tick received.
+
+        """
+        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        pass
+
+    def on_trade_tick(self, tick: TradeTick):
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
+            The tick received.
 
         """
         # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
@@ -202,6 +218,10 @@ class EMACross(TradingStrategy):
         self.cancel_all_orders(self.symbol)
         self.flatten_all_positions(self.symbol)
 
+        # Unsubscribe from data
+        self.unsubscribe_bars(self.bar_type)
+        # self.unsubscribe_trade_ticks(self.symbol)
+
     def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
@@ -246,4 +266,4 @@ class EMACross(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_bars(self.bar_type)
+        pass

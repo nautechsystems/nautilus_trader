@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -216,7 +216,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         cdef bytes event
         cdef Account account = Account(self._event_serializer.deserialize(events[0]))
         for event in events[1:]:
-            account.apply(self._event_serializer.deserialize(event))
+            account.apply_c(self._event_serializer.deserialize(event))
 
         return account
 
@@ -287,7 +287,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
 
         cdef bytes event_bytes
         for event_bytes in events:
-            position.apply(self._event_serializer.deserialize(event_bytes))
+            position.apply_c(self._event_serializer.deserialize(event_bytes))
 
         return position
 

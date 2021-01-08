@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -94,7 +94,7 @@ cdef class DataEngine(Component):
             The clock for the component.
         logger : Logger
             The logger for the component.
-        config : dict, option
+        config : dict[str, object], optional
             The configuration options.
 
         """
@@ -203,6 +203,22 @@ cdef class DataEngine(Component):
                 return False
         return True
 
+    cpdef bint check_disconnected(self) except *:
+        """
+        Check all clients are disconnected.
+
+        Returns
+        -------
+        bool
+            True if all data clients disconnected, else False.
+
+        """
+        cdef DataClient client
+        for client in self._clients.values():
+            if client.is_connected():
+                return False
+        return True
+
 # --REGISTRATION -----------------------------------------------------------------------------------
 
     cpdef void register_client(self, DataClient client) except *:
@@ -282,6 +298,10 @@ cdef class DataEngine(Component):
         for client in self._clients.values():
             client.disconnect()
 
+        for aggregator in self._bar_aggregators.values():
+            if isinstance(aggregator, TimeBarAggregator):
+                aggregator.stop()
+
         self._on_stop()
 
     cpdef void _reset(self) except *:
@@ -306,6 +326,8 @@ cdef class DataEngine(Component):
         cdef DataClient client
         for client in self._clients.values():
             client.dispose()
+
+        self._clock.cancel_timers()
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -633,7 +655,7 @@ cdef class DataEngine(Component):
                 request.metadata.get(SYMBOL),
                 request.metadata.get(FROM_DATETIME),
                 request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT),
+                request.metadata.get(LIMIT, 0),
                 request.id,
             )
         elif request.data_type == TradeTick:
@@ -641,16 +663,15 @@ cdef class DataEngine(Component):
                 request.metadata.get(SYMBOL),
                 request.metadata.get(FROM_DATETIME),
                 request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT),
+                request.metadata.get(LIMIT, 0),
                 request.id,
             )
         elif request.data_type == Bar:
-            # TODO: Handle cases other than time bars direct from exchange/broker
             client.request_bars(
                 request.metadata.get(BAR_TYPE),
                 request.metadata.get(FROM_DATETIME),
                 request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT),
+                request.metadata.get(LIMIT, 0),
                 request.id,
             )
         else:
@@ -782,7 +803,7 @@ cdef class DataEngine(Component):
             # Update partial time bar
             aggregator = self._bar_aggregators.get(bar_type)
             if aggregator:
-                self._log.critical(f"Applying partial bar {partial} for {bar_type}.")
+                self._log.debug(f"Applying partial bar {partial} for {bar_type}.")
                 aggregator.set_partial(partial)
             else:
                 self._log.error("No aggregator for partial bar update.")
@@ -809,27 +830,7 @@ cdef class DataEngine(Component):
                 logger=self._log.get_logger(),
             )
 
-            # Update aggregator with latest data
-            bulk_updater = BulkTimeBarUpdater(aggregator)
-            data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
-
-            # noinspection bulk_updater.receive
-            # noinspection PyUnresolvedReferences
-            request = DataRequest(
-                venue=bar_type.symbol.venue,
-                data_type=data_type,
-                metadata={
-                    SYMBOL: bar_type.symbol,
-                    FROM_DATETIME: aggregator.get_start_time(),
-                    TO_DATETIME: None,
-                    LIMIT: 999999,  # TODO: Temporary value
-                },
-                callback=bulk_updater.receive,
-                request_id=self._uuid_factory.generate(),
-                request_timestamp=self._clock.utc_now(),
-            )
-            # Send request directly to handler as we're already inside engine
-            self._handle_request(request)
+            self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 bar_type=bar_type,
@@ -863,8 +864,46 @@ cdef class DataEngine(Component):
         else:
             self._handle_subscribe_quote_ticks(client, bar_type.symbol, aggregator.handle_quote_tick)
 
+    cdef inline void _hydrate_aggregator(
+        self,
+        DataClient client,
+        TimeBarAggregator aggregator,
+        BarType bar_type,
+    ) except *:
+        data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
+
+        if data_type == TradeTick and "request_trade_ticks" in client.unavailable_methods():
+            return
+        elif data_type == QuoteTick and "request_quote_ticks" in client.unavailable_methods():
+            return
+
+        # Update aggregator with latest data
+        bulk_updater = BulkTimeBarUpdater(aggregator)
+
+        # noinspection bulk_updater.receive
+        # noinspection PyUnresolvedReferences
+        request = DataRequest(
+            venue=bar_type.symbol.venue,
+            data_type=data_type,
+            metadata={
+                SYMBOL: bar_type.symbol,
+                FROM_DATETIME: aggregator.get_start_time(),
+                TO_DATETIME: None,
+            },
+            callback=bulk_updater.receive,
+            request_id=self._uuid_factory.generate(),
+            request_timestamp=self._clock.utc_now(),
+        )
+
+        # Send request directly to handler as we're already inside engine
+        self._handle_request(request)
+
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *:
-        cdef aggregator = self._bar_aggregators[bar_type]
+        cdef aggregator = self._bar_aggregators.get(bar_type)
+        if aggregator is None:
+            self._log.warning(f"No bar aggregator to stop for {bar_type}")
+            return
+
         if isinstance(aggregator, TimeBarAggregator):
             aggregator.stop()
 
@@ -876,6 +915,35 @@ cdef class DataEngine(Component):
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
+
+    cdef inline void _bulk_build_tick_bars(
+        self,
+        BarType bar_type,
+        datetime from_datetime,
+        datetime to_datetime,
+        int limit,
+        callback: callable,
+    ) except *:
+        # Bulk build tick bars
+        cdef int ticks_to_order = bar_type.spec.step * limit
+
+        cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
+            bar_type,
+            self._log.get_logger(),
+            callback,
+        )
+
+        # noinspection bar_builder.receive
+        # noinspection PyUnresolvedReferences
+        self._handle_request_quote_ticks(
+            bar_type.symbol,
+            from_datetime,
+            to_datetime,
+            ticks_to_order,
+            bar_builder.receive,
+        )
+
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *:
         if symbol not in self._instrument_handlers:
@@ -991,30 +1059,3 @@ cdef class DataEngine(Component):
         if not self._bar_handlers[bar_type]:
             del self._bar_handlers[bar_type]
             self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
-
-    cdef inline void _bulk_build_tick_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
-    ) except *:
-        # Bulk build tick bars
-        cdef int ticks_to_order = bar_type.spec.step * limit
-
-        cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
-            bar_type,
-            self._log.get_logger(),
-            callback,
-        )
-
-        # noinspection bar_builder.receive
-        # noinspection PyUnresolvedReferences
-        self._handle_request_quote_ticks(
-            bar_type.symbol,
-            from_datetime,
-            to_datetime,
-            ticks_to_order,
-            bar_builder.receive,
-        )

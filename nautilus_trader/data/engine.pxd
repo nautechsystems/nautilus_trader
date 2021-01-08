@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -22,6 +22,7 @@ from nautilus_trader.common.messages cimport Subscribe
 from nautilus_trader.common.messages cimport Unsubscribe
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
@@ -60,6 +61,7 @@ cdef class DataEngine(Component):
     """The total count of responses received by the engine.\n\n:returns: `int`"""
 
     cpdef bint check_initialized(self) except *
+    cpdef bint check_disconnected(self) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -116,15 +118,8 @@ cdef class DataEngine(Component):
 
     cpdef void _internal_update_instruments(self, list instruments) except *
     cdef inline void _start_bar_aggregator(self, DataClient client, BarType bar_type) except *
+    cdef inline void _hydrate_aggregator(self, DataClient client, TimeBarAggregator aggregator, BarType bar_type) except *
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *
-    cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *
-    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_bar_handler(self, BarType bar_type, handler: callable) except *
     cdef inline void _bulk_build_tick_bars(
         self,
         BarType bar_type,
@@ -133,3 +128,14 @@ cdef class DataEngine(Component):
         int limit,
         callback: callable,
     ) except *
+
+# -- HANDLERS --------------------------------------------------------------------------------------
+
+    cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *
+    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_bar_handler(self, BarType bar_type, handler: callable) except *

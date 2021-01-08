@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -71,9 +71,22 @@ config = {
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
-strategy = EMACross(
+
+# BarSpecification option examples:
+tick_bars = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+
+strategy1 = EMACross(
+    symbol=Symbol("BTC/USDT", Venue("BINANCE")),
+    bar_spec=time_bars,
+    fast_ema=10,
+    slow_ema=20,
+    trade_size=Decimal("0.001"),
+)
+
+strategy2 = EMACross(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+    bar_spec=time_bars,
     fast_ema=10,
     slow_ema=20,
     trade_size=Decimal("0.1"),
@@ -81,15 +94,14 @@ strategy = EMACross(
 
 # Instantiate the node passing a list of strategies and configuration
 node = TradingNode(
-    strategies=[strategy],
+    strategies=[strategy1, strategy2],
     config=config,
 )
 
 
-# Stop the node with a SIGINT or CTRL+C
-def main():
-    node.start()
-
-
+# Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
-    main()
+    try:
+        node.start()
+    finally:
+        node.dispose()

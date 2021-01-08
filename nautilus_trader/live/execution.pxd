@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -20,12 +20,12 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
     cdef object _queue
-    cdef object _run_queues_task
+    cdef object _run_queue_task
 
     cdef readonly bint is_running
 
     cpdef object get_event_loop(self)
-    cpdef object get_run_queues_task(self)
+    cpdef object get_run_queue_task(self)
     cpdef int qsize(self) except *
 
 

@@ -1,5 +1,5 @@
 # -------------------------------------------------------------------------------------------------
-#  Copyright (C) 2015-2020 Nautech Systems Pty Ltd. All rights reserved.
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 #
 #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
@@ -17,7 +17,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import oandapyV20
-import oandapyV20.endpoints.accounts as accounts_endpoint
+from oandapyV20.endpoints.accounts import AccountInstruments
 
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -47,7 +47,9 @@ cdef class OandaInstrumentProvider:
         Parameters
         ----------
         client : oandapyV20.API
-            The client for the provider.
+            The Oanda client.
+        account_id : str
+            The Oanda account identifier.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 
@@ -63,9 +65,9 @@ cdef class OandaInstrumentProvider:
 
     cpdef void load_all(self) except *:
         """
-        Pre-load all instruments.
+        Load all instruments for the venue.
         """
-        req = accounts_endpoint.AccountInstruments(accountID=self._account_id)
+        req = AccountInstruments(accountID=self._account_id)
         res = self._client.request(req)
 
         cdef list instruments = res.get("instruments", {})
@@ -79,9 +81,9 @@ cdef class OandaInstrumentProvider:
 
     cpdef dict get_all(self):
         """
-        Get all loaded instruments.
+        Return all loaded instruments.
 
-        If no instruments loaded will return the empty dict.
+        If no instruments loaded, will return an empty dict.
 
         Returns
         -------
@@ -92,7 +94,7 @@ cdef class OandaInstrumentProvider:
 
     cpdef Instrument get(self, Symbol symbol):
         """
-        Get the instrument for the given symbol (if found).
+        Return the instrument for the given symbol (if found).
 
         Returns
         -------
@@ -106,7 +108,7 @@ cdef class OandaInstrumentProvider:
         cdef str oanda_type = values["type"]
         cdef list symbol_pieces = values["name"].split('_', maxsplit=1)
 
-        cdef Symbol symbol = Symbol(oanda_name.replace('_', '/'), self.venue)
+        cdef Symbol symbol = Symbol(oanda_name.replace('_', '/', 1), self.venue)
         cdef Currency base_currency = None
         cdef Currency quote_currency = Currency(symbol_pieces[1], 2, CurrencyType.FIAT)
 
@@ -142,7 +144,7 @@ cdef class OandaInstrumentProvider:
             size_precision=size_precision,
             tick_size=tick_size,
             multiplier=Decimal(1),
-            leverage=Decimal(1),  # TODO: Refactor this out of instrument
+            leverage=Decimal(1),
             lot_size=Quantity(1),
             max_quantity=Quantity(values["maximumOrderUnits"]),
             min_quantity=Quantity(values["minimumTradeSize"]),
