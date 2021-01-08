@@ -23,6 +23,7 @@ from typing import Dict, List
 import msgpack
 import redis
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
 from nautilus_trader.adapters.ccxt.client import CCXTDataClientFactory
 from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
@@ -74,10 +75,20 @@ class TradingNode:
         config : dict[str, object]
             The configuration for the trading node.
 
-        """
-        if strategies is None:
-            strategies = []
+        Raises
+        ------
+        ValueError
+            If strategies is None or empty.
+        ValueError
+            If config is None or empty.
 
+        """
+        PyCondition.not_none(strategies, "strategies")
+        PyCondition.not_none(config, "config")
+        PyCondition.not_empty(strategies, "strategies")
+        PyCondition.not_empty(config, "config")
+
+        # Extract configs
         config_trader = config.get("trader", {})
         config_log = config.get("logging", {})
         config_exec_db = config.get("exec_database", {})

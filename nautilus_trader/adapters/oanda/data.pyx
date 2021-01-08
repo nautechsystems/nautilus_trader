@@ -92,7 +92,6 @@ cdef class OandaDataClient(LiveDataClient):
             }
         )
 
-        self._is_connected = False
         self._client = client
         self._account_id = account_id
         self._instrument_provider = OandaInstrumentProvider(
@@ -100,12 +99,16 @@ cdef class OandaDataClient(LiveDataClient):
             account_id=self._account_id,
             load_all=False,
         )
+        self._is_connected = False
 
         # Subscriptions
         self._subscribed_instruments = set()
         self._subscribed_quote_ticks = {}  # type: dict[Symbol, (threading.Event, asyncio.Future)]
 
+        # Scheduled tasks
         self._update_instruments_handle: asyncio.Handle = None
+
+        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -151,9 +154,6 @@ cdef class OandaDataClient(LiveDataClient):
         Connect the client.
         """
         self._log.info("Connecting...")
-
-        for symbol in self._subscribed_quote_ticks.copy():
-            self.subscribe_quote_ticks(symbol)
 
         # Schedule subscribed instruments update
         self._update_instruments_handle: asyncio.Handle = self._loop.call_later(

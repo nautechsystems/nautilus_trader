@@ -241,12 +241,7 @@ class FeedHandler:
         for feed in feeds:
             self.add_feed(feed(channels=[L2_BOOK], pairs=pairs, callbacks={L2_BOOK: cb}), timeout=timeout)
 
-    def run_feed(self, loop, feed, timeout=120):
-        for conn, sub, handler in feed.connect():
-            loop.create_task(self._connect(conn, sub, handler))
-            self.timeout[conn.uuid] = timeout
-
-    def run(self, loop, start_loop: bool = True, install_signal_handlers: bool = True):
+    def run(self, start_loop: bool = True, install_signal_handlers: bool = True):
         """
         start_loop: bool, default True
             if false, will not start the event loop. Also, will not
@@ -262,38 +257,42 @@ class FeedHandler:
             # LOG.error('No feeds specified')
             raise ValueError("No feeds specified")
 
-        try:
-            if start_loop:
-                try:
-                    import uvloop
-                    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-                except ImportError:
-                    pass
+        if start_loop:
+            try:
+                import uvloop
+                asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+            except ImportError:
+                pass
 
-            loop = asyncio.get_event_loop()
-            # Good to enable when debugging
-            # loop.set_debug(True)
+        loop = asyncio.get_event_loop()
+        # Good to enable when debugging
+        # loop.set_debug(True)
 
-            if install_signal_handlers:
-                setup_signal_handlers(loop)
+        if install_signal_handlers:
+            setup_signal_handlers(loop)
 
-            for feed, timeout in self.feeds:
-                for conn, sub, handler in feed.connect():
-                    loop.create_task(self._connect(conn, sub, handler))
-                    self.timeout[conn.uuid] = timeout
+        for feed, timeout in self.feeds:
+            for conn, sub, handler in feed.connect():
+                loop.create_task(self._connect(conn, sub, handler))
+                self.timeout[conn.uuid] = timeout
 
-            if start_loop:
+        if start_loop:
+            try:
                 loop.run_forever()
+            except SystemExit:
+                pass
+                # LOG.info("System Exit received - shutting down")
+            except Exception:
+                pass
+                # LOG.error("Unhandled exception", exc_info=True)
+            finally:
+                self.stop(loop=loop)
 
-        except SystemExit:
-            pass
-            # LOG.info("System Exit received - shutting down")
-        except Exception:
-            pass
-            # LOG.error("Unhandled exception", exc_info=True)
-        finally:
-            for feed, _ in self.feeds:
-                loop.run_until_complete(feed.stop())
+    def stop(self, loop=None):
+        if not loop:
+            loop = asyncio.get_event_loop()
+        for feed, _ in self.feeds:
+            loop.run_until_complete(feed.stop())
 
     async def _watch(self, connection):
         if self.timeout[connection.uuid] == -1:

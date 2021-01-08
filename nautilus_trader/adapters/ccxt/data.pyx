@@ -92,12 +92,12 @@ cdef class CCXTDataClient(LiveDataClient):
             }
         )
 
-        self._is_connected = False
         self._client = client
         self._instrument_provider = CCXTInstrumentProvider(
             client=client,
             load_all=False,
         )
+        self._is_connected = False
 
         # Subscriptions
         self._subscribed_instruments = set()   # type: set[Symbol]
@@ -105,19 +105,13 @@ cdef class CCXTDataClient(LiveDataClient):
         self._subscribed_trade_ticks = {}      # type: dict[Symbol, asyncio.Task]
         self._subscribed_bars = {}             # type: dict[BarType, asyncio.Task]
 
-        # Schedule subscribed instruments update
-        delay = _SECONDS_IN_HOUR
-        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
+        # Scheduled tasks
+        self._update_instruments_task = None
 
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
-
-    async def _run_after_delay(self, double delay, coro):
-        await asyncio.sleep(delay)
-        return await coro
 
     @property
     def subscribed_instruments(self):
@@ -185,6 +179,11 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
+        # Schedule subscribed instruments update
+        delay = _SECONDS_IN_HOUR
+        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
+        self._update_instruments_task = self._loop.create_task(update)
+
         self._is_connected = True
 
         self._log.info("Connected.")
@@ -203,13 +202,18 @@ cdef class CCXTDataClient(LiveDataClient):
             self._update_instruments_task.cancel()
 
         # Cancel residual tasks
+        stop_tasks = []
         for task in self._subscribed_trade_ticks.values():
             if not task.cancelled():
                 self._log.debug(f"Cancelling {task}...")
                 task.cancel()
+                stop_tasks.append(task)
+
+        if stop_tasks:
+            await asyncio.gather(*stop_tasks)
 
         # Ensure ccxt streams closed
-        self._log.info("Closing exchange...")
+        self._log.info("Closing web sockets...")
         await self._client.close()
 
         self._is_connected = False
@@ -601,6 +605,10 @@ cdef class CCXTDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
+    async def _run_after_delay(self, double delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
+
     async def _watch_quotes(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
@@ -611,8 +619,11 @@ cdef class CCXTDataClient(LiveDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
-        cdef list best_bid
-        cdef list best_ask
+        cdef bint generate_tick = False
+        cdef list last_best_bid = None
+        cdef list last_best_ask = None
+        cdef list best_bid = None
+        cdef list best_ask = None
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
@@ -625,10 +636,25 @@ cdef class CCXTDataClient(LiveDataClient):
 
                 best_bid = order_book["bids"][0]
                 best_ask = order_book["asks"][0]
+
+                generate_tick = False
+                # Cache last quotes if changed
+                if last_best_bid is None or best_bid != last_best_bid:
+                    last_best_bid = best_bid
+                    generate_tick = True
+                if last_best_ask is None or best_ask != last_best_ask:
+                    last_best_ask = best_ask
+                    generate_tick = True
+
+                # Only generate quote tick on change to best bid or ask
+                if not generate_tick:
+                    continue
+
                 timestamp = order_book["timestamp"]
                 if timestamp is None:  # Compiled to fast C check
                     # First quote timestamp often None
                     timestamp = self._client.milliseconds()
+
                 self._on_quote_tick(
                     symbol,
                     best_bid[0],
@@ -786,7 +812,6 @@ cdef class CCXTDataClient(LiveDataClient):
                 elif this_timestamp != last_timestamp:
                     last_timestamp = this_timestamp
 
-                    # Create new bar
                     self._on_bar(
                         bar_type,
                         bar[1],

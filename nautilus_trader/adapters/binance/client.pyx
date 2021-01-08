@@ -15,7 +15,7 @@
 
 import os
 
-import ccxt
+import ccxt.async_support as ccxt
 
 from nautilus_trader.adapters.binance.data cimport BinanceDataClient
 from nautilus_trader.adapters.binance.feedhandler import FeedHandler
@@ -63,7 +63,7 @@ cdef class BinanceDataClientFactory:
             "enableRateLimit": True,  # Hard coded for now
         })
 
-        client_feed = FeedHandler()
+        client_feed = FeedHandler  # Pass in class
 
         return BinanceDataClient(
             client_rest=client_rest,
