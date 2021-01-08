@@ -57,21 +57,24 @@ cdef class CCXTInstrumentProvider:
             self.load_all()
 
     async def load_all_async(self):
+        """
+        Load all instruments for the venue asynchronously.
+        """
         await self._client.load_markets(reload=True)
         self._load_instruments()
 
     cpdef void load_all(self) except *:
         """
-        Pre-load all instruments.
+        Load all instruments for the venue.
         """
         self._client.load_markets(reload=True)
         self._load_instruments()
 
     cpdef dict get_all(self):
         """
-        Get all loaded instruments.
+        Return all loaded instruments.
 
-        If no instruments loaded will return the empty dict.
+        If no instruments loaded, will return an empty dict.
 
         Returns
         -------
@@ -82,7 +85,7 @@ cdef class CCXTInstrumentProvider:
 
     cpdef Instrument get(self, Symbol symbol):
         """
-        Get the instrument for the given symbol (if found).
+        Return the instrument for the given symbol (if found).
 
         Returns
         -------
