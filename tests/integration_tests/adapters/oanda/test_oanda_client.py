@@ -53,11 +53,13 @@ class OandaDataClientFactoryTests(unittest.TestCase):
         )
 
     def test_create(self):
+        # Arrange
         config = {
             "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
         }
 
+        # Act
         client = OandaDataClientFactory.create(
             config=config,
             data_engine=self.data_engine,
@@ -65,4 +67,5 @@ class OandaDataClientFactoryTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        # Assert
         self.assertEqual(OandaDataClient, type(client))

@@ -37,6 +37,23 @@ def request_instruments():
         json.dump(res, json_file)
 
 
+def request_order_book():
+    client = ccxt.binance({
+        "apiKey": "",
+        "secret": "",
+        "timeout": 10000,         # Hard coded for now
+        "enableRateLimit": True,  # Hard coded for now
+    })
+
+    client.load_markets()
+
+    order_book = client.fetch_order_book(
+        "ETH/USDT",
+    )
+    with open('res_order_book.json', 'w') as json_file:
+        json.dump(order_book, json_file)
+
+
 def request_bars():
     client = ccxt.binance({
         "apiKey": "",
