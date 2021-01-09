@@ -4,10 +4,10 @@ Oanda Integration
 .. automodule:: nautilus_trader.adapters.oanda
 
 
-Client
-------
+Factory
+-------
 
-.. automodule:: nautilus_trader.adapters.oanda.client
+.. automodule:: nautilus_trader.adapters.oanda.factory
    :show-inheritance:
    :inherited-members:
    :members:
