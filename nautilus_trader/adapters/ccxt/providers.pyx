@@ -95,9 +95,6 @@ cdef class CCXTInstrumentProvider:
         return self._instruments.get(symbol)
 
     cdef void _load_instruments(self) except *:
-        if self._client.markets is None:
-            return  # No markets
-
         cdef str k
         cdef dict v
         cdef Symbol symbol

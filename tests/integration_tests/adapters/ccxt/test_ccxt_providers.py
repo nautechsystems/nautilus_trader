@@ -137,6 +137,26 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         self.assertEqual(dict, type(instruments))
         self.assertEqual(Symbol, type(next(iter(instruments))))
 
+    def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
+        # Arrange
+        mock_client = MagicMock()
+        mock_client.name = "Binance"
+
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        mock_client.markets = instruments
+
+        provider = CCXTInstrumentProvider(client=mock_client, load_all=True)
+
+        # Act
+        instruments = provider.get_all()
+
+        # Assert
+        self.assertTrue(len(instruments) > 0)
+        self.assertEqual(dict, type(instruments))
+        self.assertEqual(Symbol, type(next(iter(instruments))))
+
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
         mock_client = MagicMock()

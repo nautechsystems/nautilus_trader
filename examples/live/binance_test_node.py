@@ -52,19 +52,15 @@ config = {
         "save_state": True,  # Strategy state is saved to the database on shutdown
     },
 
-    "data_clients": {
+    "adapters": {
         "binance": {
+            "data_client": True,                 # If a data client should be created
+            "exec_client": True,                 # If a exec client should be created
+            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable name
             "api_key": "BINANCE_API_KEY",        # value is the environment variable name
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
         },
     },
-
-    "exec_clients": {
-        "binance": {
-            "api_key": "BINANCE_API_KEY",        # value is the environment variable name
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
-        },
-    }
 }
 
 
