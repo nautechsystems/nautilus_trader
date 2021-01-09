@@ -242,3 +242,92 @@ class BarDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(500, len(bars))
+
+
+class TardisQuoteDataWranglerTests(unittest.TestCase):
+    def setUp(self):
+        # Fixture Setup
+        self.clock = TestClock()
+
+    def test_tick_data(self):
+        # Arrange
+        # Act
+        ticks = TestDataProvider.tardis_quotes()
+
+        # Assert
+        self.assertEqual(2069000, len(ticks))
+
+    def test_pre_process_with_tick_data(self):
+        # Arrange
+        tick_data = TestDataProvider.tardis_quotes()
+        self.tick_builder = QuoteTickDataWrangler(
+            instrument=TestInstrumentProvider.btcusdt_binance(),
+            data_quotes=tick_data,
+            data_bars_bid=None,
+            data_bars_ask=None,
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.processed_data
+
+        # Assert
+        self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
+        self.assertEqual(2069000, len(ticks))
+        self.assertEqual(Timestamp('2020-02-22 00:00:03.522418+0000', tz='UTC'), ticks.iloc[1].name)
+        self.assertEqual('0.670000', ticks.bid_size[0])
+        self.assertEqual('0.840000', ticks.ask_size[0])
+        self.assertEqual('9681.92', ticks.bid[0])
+        self.assertEqual('9682.00', ticks.ask[0])
+        self.assertEqual(sorted(ticks.columns), sorted(['symbol', 'ask_size', 'ask', 'bid_size', 'bid']))
+
+
+class TardisTradeDataWranglerTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.clock = TestClock()
+
+    def test_tick_data(self):
+        # Arrange
+        # Act
+        ticks = TestDataProvider.tardis_trades()
+
+        # Assert
+        self.assertEqual(137988, len(ticks))
+
+    def test_process(self):
+        # Arrange
+        tick_data = TestDataProvider.tardis_trades()
+        self.tick_builder = TradeTickDataWrangler(
+            instrument=TestInstrumentProvider.btcusdt_binance(),
+            data=tick_data,
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.processed_data
+
+        # Assert
+        self.assertEqual(137988, len(ticks))
+        self.assertEqual(Timestamp('2020-02-22 00:00:02.418379+0000', tz='UTC'), ticks.iloc[0].name)
+
+    def test_build_ticks(self):
+        # Arrange
+        tick_data = TestDataProvider.tardis_trades()
+        self.tick_builder = TradeTickDataWrangler(
+            instrument=TestInstrumentProvider.btcusdt_binance(),
+            data=tick_data,
+        )
+
+        # Act
+        self.tick_builder.pre_process(0)
+        ticks = self.tick_builder.build_ticks()
+
+        # Assert
+        self.assertEqual(137988, len(ticks))
+        self.assertEqual(Price("9682.00"), ticks[0].price)
+        self.assertEqual(Quantity("0.132000"), ticks[0].size)
+        self.assertEqual(OrderSide.BUY, ticks[0].side)
+        self.assertEqual(TradeMatchId("42377944"), ticks[0].match_id)
+        self.assertEqual(Timestamp('2020-02-22 00:00:02.418379+0000', tz='UTC'), ticks[0].timestamp)
