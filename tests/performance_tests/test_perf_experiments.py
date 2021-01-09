@@ -15,7 +15,6 @@
 
 import unittest
 
-from nautilus_trader.common.messages import Connect
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageType
 from nautilus_trader.core.uuid import uuid4
@@ -28,9 +27,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
 MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
-
-MESSAGE1 = Connect(Venue("BINANCE"), uuid4(), UNIX_EPOCH)
-MESSAGE2 = Connect(Venue("BINANCE"), uuid4(), UNIX_EPOCH)
 
 
 class Experiments:
@@ -60,14 +56,6 @@ class Experiments:
         x = 0 == MESSAGE.type
         return x
 
-    @staticmethod
-    def message_equality():
-        return MESSAGE == MESSAGE2
-
-    @staticmethod
-    def identifier_equality():
-        return MESSAGE == MESSAGE2
-
 
 class ExperimentsPerformanceTests(unittest.TestCase):
 
@@ -95,13 +83,3 @@ class ExperimentsPerformanceTests(unittest.TestCase):
     def test_is_message_type():
         PerformanceHarness.profile_function(Experiments.is_message_type, 3, 1000000)
         # ~88ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
-
-    @staticmethod
-    def test_message_equality():
-        PerformanceHarness.profile_function(Experiments.message_equality, 3, 1000000)
-        # ~88ms (53677μs) minimum of 3 runs @ 100,000 iterations each run.
-
-    @staticmethod
-    def test_identifier_equality():
-        PerformanceHarness.profile_function(Experiments.identifier_equality, 3, 1000000)
-        # ~86ms (86857μs) minimum of 3 runs @ 1,000,000 iterations each run.

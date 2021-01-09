@@ -19,14 +19,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.commands cimport VenueCommand
 
 
-cdef class Connect(VenueCommand):
-    pass
-
-
-cdef class Disconnect(VenueCommand):
-    pass
-
-
 cdef class Subscribe(VenueCommand):
     cdef readonly type data_type
     """The subscription data type.\n\n:returns: `type`"""

@@ -33,8 +33,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.messages cimport Connect
-from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.messages cimport Subscribe
@@ -432,11 +430,7 @@ cdef class DataEngine(Component):
                             f"(no client registered for {command.venue}) {command}.")
             return  # No client to handle command
 
-        if isinstance(command, Connect):
-            client.connect()
-        elif isinstance(command, Disconnect):
-            client.disconnect()
-        elif isinstance(command, Subscribe):
+        if isinstance(command, Subscribe):
             self._handle_subscribe(client, command)
         elif isinstance(command, Unsubscribe):
             self._handle_unsubscribe(client, command)

@@ -21,3 +21,5 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
     cdef bint _is_connected
+
+    cdef object _watch_account_task
