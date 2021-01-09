@@ -14,34 +14,25 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import sys
 
-from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
+import ccxt.async_support as ccxt
+
+from nautilus_trader.adapters.binance.data cimport BinanceDataClient
+from nautilus_trader.adapters.binance.feedhandler import FeedHandler
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data cimport LiveDataEngine
 
-try:
-    import ccxtpro
-except ImportError:
-    if "pytest" in sys.modules:
-        # Currently under test so continue
-        import ccxt as ccxtpro
-    else:
-        raise RuntimeError("ccxtpro is not installed, "
-                           "installation instructions can be found at https://ccxt.pro")
 
-
-cdef class CCXTDataClientFactory:
+cdef class BinanceDataClientFactory:
     """
-    Provides data clients for the unified CCXT Pro API.
+    Provides data clients for the Binance exchange.
     """
 
     @staticmethod
     def create(
-        str exchange_name not None,
         dict config not None,
-        LiveDataEngine data_engine not None,
+        LiveDataEngine engine not None,
         LiveClock clock not None,
         LiveLogger logger not None,
     ):
@@ -50,11 +41,9 @@ cdef class CCXTDataClientFactory:
 
         Parameters
         ----------
-        exchange_name : str
-            The name of the exchange
         config : dict
             The configuration dictionary.
-        data_engine : LiveDataEngine
+        engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
             The clock for the client.
@@ -63,21 +52,23 @@ cdef class CCXTDataClientFactory:
 
         Returns
         -------
-        CCXTDataClient
+        BinanceDataClient
 
         """
         # Create client
-        client: ccxtpro.Exchange = getattr(ccxtpro, exchange_name.lower())({
+        client_rest: ccxt.Exchange = ccxt.binance({
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
-            "asyncio_loop": data_engine.get_event_loop(),
         })
 
-        return CCXTDataClient(
-            client=client,
-            engine=data_engine,
+        client_feed = FeedHandler  # Pass in class
+
+        return BinanceDataClient(
+            client_rest=client_rest,
+            client_feed=client_feed,
+            engine=engine,
             clock=clock,
             logger=logger,
         )

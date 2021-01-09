@@ -16,8 +16,8 @@
 import asyncio
 import unittest
 
-from nautilus_trader.adapters.ccxt.client import CCXTDataClientFactory
-from nautilus_trader.adapters.ccxt.data import CCXTDataClient
+from nautilus_trader.adapters.oanda.data import OandaDataClient
+from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -26,7 +26,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 
 
-class CCXTDataClientFactoryTests(unittest.TestCase):
+class OandaDataClientFactoryTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -53,17 +53,19 @@ class CCXTDataClientFactoryTests(unittest.TestCase):
         )
 
     def test_create(self):
+        # Arrange
         config = {
-            "api_key": "BITMEX_API_KEY",        # value is the environment variable name
-            "api_secret": "BITMEX_API_SECRET",  # value is the environment variable name
+            "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+            "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
         }
 
-        client = CCXTDataClientFactory.create(
-            exchange_name="bitmex",
+        # Act
+        client = OandaDataClientFactory.create(
             config=config,
             data_engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.assertEqual(CCXTDataClient, type(client))
+        # Assert
+        self.assertEqual(OandaDataClient, type(client))

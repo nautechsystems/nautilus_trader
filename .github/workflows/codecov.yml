@@ -12,7 +12,7 @@ jobs:
       matrix:
         # We only actually run on a single OS/Python pair, but use the matrix
         # form so that our Action calls can mirror the main test flow.
-        python-version: [ 3.8 ]
+        python-version: [ 3.9 ]
     runs-on: ubuntu-latest
 
     steps:
@@ -51,9 +51,6 @@ jobs:
           redis-server --daemonize yes
           nox -s coverage --reuse-existing-virtualenvs
           redis-cli shutdown
-        env:
-          POETRY_HTTP_BASIC_CCXTPRO_USERNAME: ${{secrets.POETRY_HTTP_BASIC_CCXTPRO_USERNAME}}
-          POETRY_HTTP_BASIC_CCXTPRO_PASSWORD: ${{secrets.POETRY_HTTP_BASIC_CCXTPRO_PASSWORD}}
 
       # Upload to codecov
       - uses: codecov/codecov-action@v1

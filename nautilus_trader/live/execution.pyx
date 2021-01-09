@@ -194,6 +194,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         LiveExecutionEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveExecutionClient` class.
@@ -210,6 +211,8 @@ cdef class LiveExecutionClient(ExecutionClient):
             The clock for the client.
         logger : Logger
             The logger for the client.
+        config : dict[str, object], optional
+            The configuration options.
 
         """
         super().__init__(
@@ -218,6 +221,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             engine,
             clock,
             logger,
+            config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
