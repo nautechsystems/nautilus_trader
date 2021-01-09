@@ -49,7 +49,7 @@ cdef int _SECONDS_IN_HOUR = 60 * 60
 
 cdef class CCXTDataClient(LiveDataClient):
     """
-    Provides a data client for the `Binance` exchange.
+    Provides a data client for the unified CCXT Pro API.
     """
 
     def __init__(

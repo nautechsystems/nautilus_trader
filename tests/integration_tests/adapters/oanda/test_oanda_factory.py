@@ -16,8 +16,8 @@
 import asyncio
 import unittest
 
-from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
 from nautilus_trader.adapters.oanda.data import OandaDataClient
+from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory

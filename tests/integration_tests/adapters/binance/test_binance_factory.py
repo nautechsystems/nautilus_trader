@@ -16,8 +16,8 @@
 import asyncio
 import unittest
 
-from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
 from nautilus_trader.adapters.binance.data import BinanceDataClient
+from nautilus_trader.adapters.binance.factory import BinanceDataClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -62,7 +62,7 @@ class BinanceDataClientFactoryTests(unittest.TestCase):
         # Act
         client = BinanceDataClientFactory.create(
             config=config,
-            data_engine=self.data_engine,
+            engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
         )

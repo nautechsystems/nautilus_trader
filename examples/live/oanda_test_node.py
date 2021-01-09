@@ -52,19 +52,15 @@ config = {
         "save_state": True,  # Strategy state is saved to the database on shutdown
     },
 
-    "data_clients": {
+    "adapters": {
         "oanda": {
-            "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
+            "data_client": True,               # If a data client should be created
+            "exec_client": True,               # If a exec client should be created
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+            "api_key": "OANDA_API_TOKEN",      # value is the environment variable name
+            "api_secret": "OANDA_ACCOUNT_ID",  # value is the environment variable name
         },
     },
-
-    "exec_clients": {
-        "oanda": {
-            "api_token": "OANDA_API_TOKEN",    # value is the environment variable name
-            "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
-        },
-    }
 }
 
 

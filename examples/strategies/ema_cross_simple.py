@@ -220,6 +220,7 @@ class EMACross(TradingStrategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
+        # self.unsubscribe_quote_ticks(self.symbol)
         # self.unsubscribe_trade_ticks(self.symbol)
 
     def on_reset(self):
