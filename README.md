@@ -8,6 +8,7 @@
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
 [![Documentation Status](https://readthedocs.org/projects/nautilus-trader/badge/?version=latest)](https://nautilus-trader.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
+![lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
