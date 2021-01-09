@@ -32,12 +32,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     """
 
     def __init__(
-            self,
-            client not None,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
+        self,
+        client not None,
+        AccountId account_id not None,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
     ):
         """
         Initialize a new instance of the `CCXTExecutionClient` class.
@@ -73,6 +73,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
         self._is_connected = False
+
+        self._watch_account_task = None
 
     cpdef bint is_connected(self) except *:
         """

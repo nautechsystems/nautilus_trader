@@ -14,14 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import time
 import unittest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.messages import Connect
+from nautilus_trader.common.messages import Subscribe
 from nautilus_trader.common.messages import DataRequest
 from nautilus_trader.common.messages import DataResponse
 from nautilus_trader.common.uuid import UUIDFactory
@@ -99,14 +98,17 @@ class LiveDataEngineTests(unittest.TestCase):
             # Arrange
             self.data_engine.start()
 
-            connect = Connect(
+            subscribe = Subscribe(
                 venue=BINANCE,
+                data_type=QuoteTick,
+                metadata={},
+                handler=[].append,
                 command_id=self.uuid_factory.generate(),
                 command_timestamp=self.clock.utc_now(),
             )
 
             # Act
-            self.data_engine.execute(connect)
+            self.data_engine.execute(subscribe)
             await asyncio.sleep(0.1)
 
             # Assert

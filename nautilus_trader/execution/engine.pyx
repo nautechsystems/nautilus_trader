@@ -37,8 +37,6 @@ from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
-from nautilus_trader.common.messages cimport Connect
-from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.execution.cache cimport ExecutionCache
@@ -359,11 +357,7 @@ cdef class ExecutionEngine(Component):
                             f"(no client registered for {command.venue}), {command}.")
             return  # No client to handle command
 
-        if isinstance(command, Connect):
-            client.connect()
-        elif isinstance(command, Disconnect):
-            client.disconnect()
-        elif isinstance(command, SubmitOrder):
+        if isinstance(command, SubmitOrder):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
