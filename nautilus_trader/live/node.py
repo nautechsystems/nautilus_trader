@@ -24,9 +24,9 @@ import msgpack
 import redis
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.adapters.binance.client import BinanceDataClientFactory
-from nautilus_trader.adapters.ccxt.client import CCXTDataClientFactory
-from nautilus_trader.adapters.oanda.client import OandaDataClientFactory
+from nautilus_trader.adapters.binance.factory import BinanceDataClientFactory
+from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
+from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -93,8 +93,7 @@ class TradingNode:
         config_log = config.get("logging", {})
         config_exec_db = config.get("exec_database", {})
         config_strategy = config.get("strategy", {})
-        config_data_clients = config.get("data_clients", {})
-        config_exec_clients = config.get("exec_clients", {})
+        config_adapters = config.get("adapters", {})
 
         self._clock = LiveClock()
         self._uuid_factory = UUIDFactory()
@@ -127,6 +126,8 @@ class TradingNode:
         self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=logger)
         self._log_header()
         self._log.info("Building...")
+
+        self._setup_loop()  # Requires the logger to be initialized
 
         self.portfolio = Portfolio(
             clock=self._clock,
@@ -169,8 +170,7 @@ class TradingNode:
         )
 
         self._exec_engine.load_cache()
-        self._setup_data_clients(config_data_clients, logger)
-        self._setup_exec_clients(config_exec_clients, logger)
+        self._setup_adapters(config_adapters, logger)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -188,7 +188,6 @@ class TradingNode:
         if self._load_strategy_state:
             self.trader.load()
 
-        self._setup_loop()
         self._log.info("state=INITIALIZED.")
 
     def get_event_loop(self):
@@ -301,59 +300,6 @@ class TradingNode:
             self._log.info(f"uvloop {uvloop_version}")
         self._log.info("=================================================================")
 
-    def _setup_data_clients(self, config, logger):
-        # Setup each data client
-        for name, config in config.items():
-            if name.startswith("ccxt-"):
-                try:
-                    import ccxtpro  # TODO: Find a better way of doing this
-                except ImportError:
-                    raise ImportError("ccxtpro is not installed, "
-                                      "installation instructions can be found at https://ccxt.pro")
-                client_cls = getattr(ccxtpro, name.partition('-')[2].lower())
-                data_client = CCXTDataClientFactory.create(
-                    client_cls=client_cls,
-                    config=config,
-                    data_engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-            elif name == "binance":
-                data_client = BinanceDataClientFactory.create(
-                    config=config,
-                    data_engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-            elif name == "oanda":
-                data_client = OandaDataClientFactory.create(
-                    config=config,
-                    data_engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-            else:
-                self._log.error(f"No DataClient available for `{name}`.")
-                continue
-
-            # Register client with engine
-            self._data_engine.register_client(data_client)
-
-    def _setup_exec_clients(self, config, logger):
-        try:
-            # Setup each data
-            for name, config in config.items():
-                if name.startswith("ccxt-"):
-                    pass
-                elif name == "binance":
-                    pass
-                elif name == "oanda":
-                    pass
-                else:
-                    self._log.error(f"No ExecutionClient available for `{name}`.")
-        except RuntimeError as ex:
-            self._log.exception(ex)
-
     def _setup_loop(self):
         if self._loop.is_closed():
             self._log.error("Cannot setup signal handling (event loop was closed).")
@@ -371,6 +317,51 @@ class TradingNode:
 
         self._log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
+
+    def _setup_adapters(self, config, logger):
+        # Setup each data client
+        for name, config in config.items():
+            if name.startswith("ccxt-"):
+                try:
+                    import ccxtpro  # TODO: Find a better way of doing this
+                except ImportError:
+                    raise ImportError("ccxtpro is not installed, "
+                                      "installation instructions can be found at https://ccxt.pro")
+
+                client_cls = getattr(ccxtpro, name.partition('-')[2].lower())
+                data_client, exec_client = CCXTClientsFactory.create(
+                    client_cls=client_cls,
+                    config=config,
+                    data_engine=self._data_engine,
+                    exec_engine=self._exec_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
+            elif name == "binance":
+                data_client = BinanceDataClientFactory.create(
+                    config=config,
+                    engine=self._data_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
+                exec_client = None  # TODO: Implement
+            elif name == "oanda":
+                data_client = OandaDataClientFactory.create(
+                    config=config,
+                    data_engine=self._data_engine,
+                    clock=self._clock,
+                    logger=logger,
+                )
+                exec_client = None  # TODO: Implement
+            else:
+                self._log.error(f"No adapter available for `{name}`.")
+                continue
+
+            if data_client is not None:
+                self._data_engine.register_client(data_client)
+
+            if exec_client is not None:
+                self._exec_engine.register_client(exec_client)
 
     async def _run(self):
         try:
