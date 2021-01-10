@@ -54,8 +54,8 @@ config = {
 
     "adapters": {
         "ccxt-bitmex": {
-            "data_client": True,                 # If a data client should be created
-            "exec_client": True,                 # If a exec client should be created
+            "data_client": True,                # If a data client should be created
+            "exec_client": True,                # If a exec client should be created
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BITMEX_API_KEY",        # value is the environment variable key
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
@@ -64,19 +64,20 @@ config = {
 }
 
 
-# Instantiate your strategies to pass into the trading node. You could add
-# custom options into the configuration file or even use another configuration
-# file.
-
-# BarSpecification options;
+# BarSpecification options
+# ------------------------
 # price types include BID, ASK, MID, LAST
-# Current aggregations TICK, MINUTE, HOUR, DAY, VOLUME, VALUE
-# These can be combined in any way for example
+# Current aggregations TICK, SECOND, MINUTE, HOUR, DAY, VOLUME, VALUE
+# These can be combined in any way, for example;
 tick_bars = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
 time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 volu_bars = BarSpecification(100, BarAggregation.VOLUME, PriceType.MID)
 valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 
+
+# Instantiate your strategies to pass into the trading node. You could add
+# custom options into the configuration file or even use another configuration
+# file.
 strategy1 = EMACross(
     symbol=Symbol("BTC/USDT", Venue("BINANCE")),
     bar_spec=tick_bars,
