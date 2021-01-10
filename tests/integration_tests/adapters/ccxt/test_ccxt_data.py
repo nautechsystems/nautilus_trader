@@ -273,7 +273,7 @@ class CCXTDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
             self.data_engine.start()  # Also starts client
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+            await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
 
@@ -375,11 +375,11 @@ class CCXTDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
             self.data_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+            await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             # Act
             self.client.request_instrument(BTCUSDT, uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
@@ -395,11 +395,11 @@ class CCXTDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
             self.data_engine.start()  # Also starts client
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+            await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
