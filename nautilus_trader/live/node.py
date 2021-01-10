@@ -18,6 +18,7 @@ import concurrent.futures
 from datetime import timedelta
 import signal
 import time
+import warnings
 from typing import Dict, List
 
 import msgpack
@@ -52,6 +53,7 @@ try:
     uvloop_version = uvloop.__version__
 except ImportError:
     uvloop_version = None
+    warnings.warn("uvloop is not available.")
 
 
 class TradingNode:
