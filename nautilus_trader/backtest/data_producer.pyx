@@ -21,27 +21,60 @@ import gc
 
 import numpy as np
 import pandas as pd
+from cpython.datetime cimport
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
+datetime
+from cpython.datetime cimport
 
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport format_bytes
-from nautilus_trader.core.functions cimport get_size_of
-from nautilus_trader.core.functions cimport slice_dataframe
-from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
-from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
+timedelta
+from nautilus_trader.common.clock cimport
 
+Clock
+from nautilus_trader.common.logging cimport
+
+Logger
+from nautilus_trader.core.correctness cimport
+
+Condition
+from nautilus_trader.core.functions cimport
+
+format_bytes
+from nautilus_trader.core.functions cimport
+
+get_size_of
+from nautilus_trader.core.functions cimport
+
+slice_dataframe
+from nautilus_trader.data.engine cimport
+
+DataEngine
+from nautilus_trader.data.wrangling cimport
+
+QuoteTickDataWrangler
+from nautilus_trader.data.wrangling cimport
+
+TradeTickDataWrangler
+from nautilus_trader.model.c_enums.bar_aggregation cimport
+
+BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport
+
+BarAggregationParser
+from nautilus_trader.model.c_enums.order_side cimport
+
+OrderSideParser
+from nautilus_trader.model.identifiers cimport
+
+TradeMatchId
+from nautilus_trader.model.objects cimport
+
+Price
+from nautilus_trader.model.objects cimport
+
+Quantity
+from nautilus_trader.model.tick cimport
+
+QuoteTick
 
 cdef class BacktestDataProducer:
     """
@@ -167,12 +200,12 @@ cdef class BacktestDataProducer:
             if self.min_timestamp is None:
                 self.min_timestamp = self._trade_tick_data.index.min()
             else:
-                self.min_timestamp = max(self._quote_tick_data.index, self._trade_tick_data.index)
+                self.min_timestamp = min(self._quote_tick_data.index.min(), self._trade_tick_data.index.min())
 
             if self.max_timestamp is None:
                 self.max_timestamp = self._trade_tick_data.index.max()
             else:
-                self.max_timestamp = min(self._quote_tick_data.index, self._trade_tick_data.index)
+                self.max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         # Initialize backing fields
         self._quote_symbols = None
