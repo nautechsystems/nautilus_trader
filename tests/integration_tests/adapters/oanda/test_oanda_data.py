@@ -232,11 +232,11 @@ class OandaDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
             self.data_engine.start()  # Also starts client
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Act
             self.client.request_instrument(AUDUSD, uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
@@ -252,11 +252,11 @@ class OandaDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
             self.data_engine.start()  # Also starts client
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
