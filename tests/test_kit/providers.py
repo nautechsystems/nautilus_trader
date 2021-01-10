@@ -19,6 +19,8 @@ from pandas import DataFrame
 
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
+from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
+from nautilus_trader.backtest.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_type import AssetType
@@ -66,6 +68,14 @@ class TestDataProvider:
     @staticmethod
     def usdjpy_1min_ask() -> DataFrame:
         return CSVBarDataLoader.load(PACKAGE_ROOT + "/data/fxcm-usdjpy-m1-ask-2013.csv")
+
+    @staticmethod
+    def tardis_trades() -> DataFrame:
+        return TardisTradeDataLoader.load(PACKAGE_ROOT + "/data/tardis_trades.csv")
+
+    @staticmethod
+    def tardis_quotes() -> DataFrame:
+        return TardisQuoteDataLoader.load(PACKAGE_ROOT + "/data/tardis_quotes.csv")
 
 
 class TestInstrumentProvider:
