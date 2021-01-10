@@ -37,6 +37,7 @@ cdef class OandaDataClient(LiveDataClient):
     cdef OandaInstrumentProvider _instrument_provider
     cdef object _update_instruments_handle
 
+    cpdef void _load_instruments(self) except *
     cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *
     cpdef void _request_instruments(self, UUID correlation_id) except *
     cpdef void _subscribed_instruments_update(self) except *

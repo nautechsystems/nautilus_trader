@@ -101,6 +101,20 @@ class CCXTExecutionClientTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.client)
 
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        with open(TEST_PATH + "res_currencies.json") as response:
+            currencies = json.load(response)
+
+        with open(TEST_PATH + "res_balances.json") as response:
+            balances = json.load(response)
+
+        self.mock_ccxt.markets = instruments
+        self.mock_ccxt.fetch_currencies = currencies
+        self.mock_ccxt.fetch_balance = balances
+        self.mock_ccxt.watch_balance = balances
+
     def tearDown(self):
         self.loop.stop()
         self.loop.close()
@@ -108,16 +122,9 @@ class CCXTExecutionClientTests(unittest.TestCase):
     def test_connect(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.exec_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
-
             # Act
-            self.client.connect()
+            self.exec_engine.start()  # Also connects clients
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Assert
             self.assertTrue(self.client.is_connected())
@@ -131,13 +138,8 @@ class CCXTExecutionClientTests(unittest.TestCase):
     def test_disconnect(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
             self.exec_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.disconnect()
@@ -155,13 +157,8 @@ class CCXTExecutionClientTests(unittest.TestCase):
     def test_reset_when_not_connected_successfully_resets(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
             self.exec_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             self.exec_engine.stop()
             await asyncio.sleep(0.3)  # Allow engine message queue to stop
@@ -177,13 +174,8 @@ class CCXTExecutionClientTests(unittest.TestCase):
     def test_reset_when_connected_does_not_reset(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
             self.exec_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.reset()
@@ -200,13 +192,8 @@ class CCXTExecutionClientTests(unittest.TestCase):
     def test_dispose_when_not_connected_does_not_dispose(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
             self.exec_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.dispose()

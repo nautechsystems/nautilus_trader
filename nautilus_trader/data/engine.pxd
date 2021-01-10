@@ -80,8 +80,6 @@ cdef class DataEngine(Component):
     cpdef void process(self, data) except *
     cpdef void send(self, DataRequest request) except *
     cpdef void receive(self, DataResponse response) except *
-    cpdef void update_instruments(self, Venue venue) except *
-    cpdef void update_instruments_all(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

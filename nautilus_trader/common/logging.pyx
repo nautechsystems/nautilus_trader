@@ -459,15 +459,15 @@ cdef class LoggerAdapter:
         Condition.not_none(ex, "ex")
 
         cdef str ex_string = f"{type(ex).__name__}({ex})\n"
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        stack_trace = traceback.format_exception(exc_type, exc_value, exc_traceback)
+        ex_type, ex_value, ex_traceback = sys.exc_info()
+        stack_trace = traceback.format_exception(ex_type, ex_value, ex_traceback)
 
         cdef str stack_trace_lines = ""
         cdef str line
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
-        self.error(f"{ex_string}{ stack_trace_lines}")
+        self.error(f"{ex_string} {stack_trace_lines}")
 
     cdef inline void _send_to_logger(self, LogLevel level, str message) except *:
         if not self.bypassed:
