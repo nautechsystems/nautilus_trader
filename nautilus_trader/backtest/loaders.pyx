@@ -19,10 +19,6 @@ from nautilus_trader.core.correctness cimport Condition
 from cpython.datetime cimport datetime
 
 
-cdef datetime _ts_parser(str time_in_secs):
-    return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
-
-
 cdef class CSVTickDataLoader:
     """
     Provides a means of loading tick data pandas DataFrames from CSV files.
@@ -81,6 +77,10 @@ cdef class CSVBarDataLoader:
         )
 
 
+cdef datetime _ts_parser(str time_in_secs):
+    return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
+
+
 cdef class TardisTradeDataLoader:
     """
     Provides a means of loading trade data pandas DataFrames from Tardis CSV files.
@@ -107,6 +107,7 @@ cdef class TardisTradeDataLoader:
         df.rename(columns={'id': 'trade_id', 'amount': 'quantity'}, inplace=True)
         df['side'] = df.side.str.upper()
         df = df[['symbol', 'trade_id', 'price', 'quantity', 'side']]
+
         return df
 
 
@@ -131,8 +132,10 @@ cdef class TardisQuoteDataLoader:
 
         """
         Condition.not_none(file_path, "file_path")
+
         df = pd.read_csv(file_path, index_col='local_timestamp', date_parser=_ts_parser, parse_dates=True)
         df.rename(columns={'ask_amount': 'ask_size', 'ask_price': 'ask', 'bid_price': 'bid', 'bid_amount': 'bid_size'},
                  inplace=True)
         df = df[['symbol','ask_size','ask','bid_size','bid']]
+
         return df
