@@ -37,6 +37,21 @@ def request_instruments():
         json.dump(res, json_file)
 
 
+def request_currencies():
+    client = ccxt.binance({
+        "apiKey": "",
+        "secret": "",
+        "timeout": 10000,         # Hard coded for now
+        "enableRateLimit": True,  # Hard coded for now
+    })
+
+    client.load_markets()
+    currencies = client.currencies
+
+    with open('res_currencies.json', 'w') as json_file:
+        json.dump(currencies, json_file)
+
+
 def request_order_book():
     client = ccxt.binance({
         "apiKey": "",
@@ -92,5 +107,6 @@ def request_trades():
 
 
 if __name__ == "__main__":
+    request_currencies()
     # Enter function to run
     pass

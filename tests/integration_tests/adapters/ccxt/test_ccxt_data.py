@@ -105,6 +105,20 @@ class CCXTDataClientTests(unittest.TestCase):
 
         self.data_engine.register_client(self.client)
 
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        with open(TEST_PATH + "res_order_book.json") as response:
+            order_book = json.load(response)
+
+        with open(TEST_PATH + "res_trades.json") as response:
+            trades = json.load(response)
+
+        self.mock_ccxt.markets = instruments
+        self.mock_ccxt.watch_order_book = order_book
+        self.mock_ccxt.watch_trades = trades
+        self.mock_ccxt.fetch_trades = trades
+
     def tearDown(self):
         self.loop.stop()
         self.loop.close()
@@ -112,16 +126,9 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_connect(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
-
             # Act
-            self.client.connect()
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Assert
             self.assertTrue(self.client.is_connected())
@@ -135,13 +142,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_disconnect(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.disconnect()
@@ -159,13 +161,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_reset_when_not_connected_successfully_resets(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             self.data_engine.stop()
             await asyncio.sleep(0.3)  # Allow engine message queue to stop
@@ -181,13 +178,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_reset_when_connected_does_not_reset(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.reset()
@@ -204,13 +196,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_dispose_when_not_connected_does_not_dispose(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.dispose()
@@ -227,13 +214,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_subscribe_instrument(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.subscribe_instrument(BTCUSDT)
@@ -250,17 +232,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_subscribe_quote_ticks(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            with open(TEST_PATH + "res_order_book.json") as response:
-                order_book = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.mock_ccxt.watch_order_book = order_book
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.subscribe_quote_ticks(ETHUSDT)
@@ -279,17 +252,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_subscribe_trade_ticks(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            with open(TEST_PATH + "res_trades.json") as response:
-                trades = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.mock_ccxt.watch_trades = trades
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.subscribe_trade_ticks(ETHUSDT)
@@ -308,13 +272,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_subscribe_bars(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
 
@@ -333,13 +292,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_unsubscribe_instrument(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             self.client.subscribe_instrument(BTCUSDT)
 
@@ -358,17 +312,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_unsubscribe_quote_ticks(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            with open(TEST_PATH + "res_order_book.json") as response:
-                order_book = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.mock_ccxt.watch_order_book = order_book
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             self.client.subscribe_quote_ticks(ETHUSDT)
             await asyncio.sleep(0.3)
@@ -388,17 +333,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_unsubscribe_trade_ticks(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            with open(TEST_PATH + "res_trades.json") as response:
-                trades = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.mock_ccxt.watch_trades = trades
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             self.client.subscribe_trade_ticks(ETHUSDT)
 
@@ -417,17 +353,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_unsubscribe_bars(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            with open(TEST_PATH + "res_order_book.json") as response:
-                order_book = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.mock_ccxt.watch_order_book = order_book
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
             self.client.subscribe_bars(bar_type)
@@ -447,10 +374,6 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_request_instrument(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
             self.data_engine.start()
             await asyncio.sleep(0.5)  # Allow engine message queue to start
 
@@ -460,7 +383,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
@@ -471,11 +394,7 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_request_instruments(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.data_engine.start()
+            self.data_engine.start()  # Also starts client
             await asyncio.sleep(0.5)  # Allow engine message queue to start
 
             # Act
@@ -484,7 +403,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
@@ -495,12 +414,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_request_quote_ticks(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Act
             self.client.request_quote_ticks(BTCUSDT, None, None, 0, uuid4())
@@ -517,17 +432,8 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_request_trade_ticks(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            with open(TEST_PATH + "res_trades.json") as response:
-                trades = json.load(response)
-
-            self.mock_ccxt.markets = instruments
-            self.mock_ccxt.fetch_trades = trades
-
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             handler = ObjectStorer()
 
@@ -551,7 +457,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(1)
 
             # Assert
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
 
             # Tear Down
@@ -563,17 +469,13 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_request_bars(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
             with open(TEST_PATH + "res_bars.json") as response:
                 bars = json.load(response)
 
-            self.mock_ccxt.markets = instruments
             self.mock_ccxt.fetch_ohlcv = bars
 
-            self.data_engine.start()
-            await asyncio.sleep(0.1)  # Allow engine message queue to start
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             handler = ObjectStorer()
 
@@ -600,7 +502,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
             self.assertEqual(100, len(handler.get_store()[0][1]))
 

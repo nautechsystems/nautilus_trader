@@ -53,47 +53,40 @@ config = {
     },
 
     "adapters": {
-        "oanda": {
-            "data_client": True,               # If a data client should be created
-            "exec_client": True,               # If a exec client should be created
-            "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "OANDA_API_TOKEN",      # value is the environment variable key
-            "api_secret": "OANDA_ACCOUNT_ID",  # value is the environment variable key
+        "ccxt-binance": {
+            "data_client": True,                 # If a data client should be created
+            "exec_client": True,                 # If a exec client should be created
+            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
+            "api_key": "BINANCE_API_KEY",        # value is the environment variable key
+            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
         },
     },
 }
 
-
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
-strategy1 = EMACross(
-    symbol=Symbol("AUD/USD", Venue("OANDA")),
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-    fast_ema=10,
-    slow_ema=20,
-    trade_size=Decimal(10000),
-)
 
-strategy2 = EMACross(
-    symbol=Symbol("EUR/USD", Venue("OANDA")),
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-    fast_ema=10,
-    slow_ema=20,
-    trade_size=Decimal(10000),
-)
+# BarSpecification options;
+# price types include BID, ASK, MID, LAST
+# Current aggregations TICK, MINUTE, HOUR, DAY, VOLUME, VALUE
+# These can be combined in any way for example
+tick_bars = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+volu_bars = BarSpecification(100, BarAggregation.VOLUME, PriceType.MID)
+valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 
-strategy3 = EMACross(
-    symbol=Symbol("GBP/USD", Venue("OANDA")),
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+strategy = EMACross(
+    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
+    bar_spec=time_bars,
     fast_ema=10,
     slow_ema=20,
-    trade_size=Decimal(10000),
+    trade_size=Decimal("0.02"),
 )
 
 # Instantiate the node passing a list of strategies and configuration
 node = TradingNode(
-    strategies=[strategy1, strategy2, strategy3],
+    strategies=[strategy],
     config=config,
 )
 

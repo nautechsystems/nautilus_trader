@@ -33,8 +33,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.messages cimport Connect
-from nautilus_trader.common.messages cimport Disconnect
 from nautilus_trader.common.messages cimport DataRequest
 from nautilus_trader.common.messages cimport DataResponse
 from nautilus_trader.common.messages cimport Subscribe
@@ -194,7 +192,7 @@ cdef class DataEngine(Component):
         Returns
         -------
         bool
-            True if all data clients initialized, else False.
+            True if all clients initialized, else False.
 
         """
         cdef DataClient client
@@ -210,7 +208,7 @@ cdef class DataEngine(Component):
         Returns
         -------
         bool
-            True if all data clients disconnected, else False.
+            True if all clients disconnected, else False.
 
         """
         cdef DataClient client
@@ -290,7 +288,6 @@ cdef class DataEngine(Component):
         for client in self._clients.values():
             client.connect()
 
-        self.update_instruments_all()
         self._on_start()
 
     cpdef void _stop(self) except *:
@@ -387,39 +384,6 @@ cdef class DataEngine(Component):
 
         self._handle_response(response)
 
-    cpdef void update_instruments(self, Venue venue) except *:
-        """
-        Update all instruments for the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the update.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.is_in(venue, self._clients, "venue", "self._clients")
-
-        cdef DataRequest request = DataRequest(
-            venue=venue,
-            data_type=Instrument,
-            metadata={},
-            callback=self._internal_update_instruments,
-            request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
-        )
-
-        # Send to external API entry as this method could be called at any time
-        self.send(request)
-
-    cpdef void update_instruments_all(self) except *:
-        """
-        Update all instruments for every venue.
-        """
-        cdef Venue venue
-        for venue in self.registered_venues:
-            self.update_instruments(venue)
-
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _execute_command(self, VenueCommand command) except *:
@@ -432,11 +396,7 @@ cdef class DataEngine(Component):
                             f"(no client registered for {command.venue}) {command}.")
             return  # No client to handle command
 
-        if isinstance(command, Connect):
-            client.connect()
-        elif isinstance(command, Disconnect):
-            client.disconnect()
-        elif isinstance(command, Subscribe):
+        if isinstance(command, Subscribe):
             self._handle_subscribe(client, command)
         elif isinstance(command, Unsubscribe):
             self._handle_unsubscribe(client, command)

@@ -151,8 +151,9 @@ cdef class CCXTInstrumentProvider:
         if min_price is not None:
             min_price = Price(min_price, precision=price_precision)
 
-        if values.get("type") is not None:
-            asset_type = AssetTypeParser.from_str(values["type"].upper())
+        asset_type_str = values.get("type")
+        if asset_type_str is not None:
+            asset_type = AssetTypeParser.from_str(asset_type_str.upper())
         else:
             asset_type = AssetType.UNDEFINED
 

@@ -96,18 +96,30 @@ class OandaDataClientTests(unittest.TestCase):
 
         self.data_engine.register_client(self.client)
 
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        self.mock_oanda.request.return_value = instruments
+
     def tearDown(self):
         self.executor.shutdown(wait=True)
         self.loop.stop()
         self.loop.close()
 
     def test_connect(self):
-        # Arrange
-        # Act
-        self.client.connect()
+        async def run_test():
+            # Arrange
+            # Act
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.3)
 
-        # Assert
-        self.assertTrue(self.client.is_connected())
+            # Assert
+            self.assertTrue(self.client.is_connected())
+
+            # Tear Down
+            self.data_engine.stop()
+
+        self.loop.run_until_complete(run_test())
 
     def test_disconnect(self):
         # Arrange
@@ -219,20 +231,16 @@ class OandaDataClientTests(unittest.TestCase):
     def test_request_instrument(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_oanda.request.return_value = instruments
-            self.data_engine.start()
-            await asyncio.sleep(0.3)
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.5)
 
             # Act
             self.client.request_instrument(AUDUSD, uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
@@ -243,20 +251,16 @@ class OandaDataClientTests(unittest.TestCase):
     def test_request_instruments(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
-
-            self.mock_oanda.request.return_value = instruments
-            self.data_engine.start()
-            await asyncio.sleep(0.3)
+            self.data_engine.start()  # Also starts client
+            await asyncio.sleep(0.5)
 
             # Act
             self.client.request_instruments(uuid4())
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
@@ -305,7 +309,7 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
             # Final bar incomplete so becomes partial
             self.assertEqual(99, len(handler.get_store()[0][1]))

@@ -469,7 +469,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
@@ -493,7 +493,7 @@ class BinanceDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
 
             # Tear Down
             self.data_engine.stop()
@@ -560,7 +560,7 @@ class BinanceDataClientTests(unittest.TestCase):
             await asyncio.sleep(1)
 
             # Assert
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
 
             # Tear Down
@@ -609,7 +609,7 @@ class BinanceDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertEqual(2, self.data_engine.response_count)
+            self.assertEqual(1, self.data_engine.response_count)
             self.assertEqual(1, handler.count)
             self.assertEqual(100, len(handler.get_store()[0][1]))
 

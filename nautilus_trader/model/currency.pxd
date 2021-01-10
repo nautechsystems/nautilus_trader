@@ -59,3 +59,6 @@ cdef class Currency:
 
     @staticmethod
     cdef Currency from_str_c(str code)
+
+    @staticmethod
+    cdef bint is_fiat_c(str code)
