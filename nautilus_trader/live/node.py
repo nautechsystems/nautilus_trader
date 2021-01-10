@@ -443,8 +443,8 @@ class TradingNode:
                 break
             if not self._data_engine.check_disconnected():
                 continue
-            # if not self._exec_engine.check_disconnected():  # TODO: Implement
-            #     continue
+            if not self._exec_engine.check_disconnected():
+                continue
             break
 
         self._log.info("state=STOPPED.")

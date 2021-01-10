@@ -57,6 +57,7 @@ cdef class ExecutionEngine(Component):
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
     cpdef bint check_initialized(self) except *
+    cpdef bint check_disconnected(self) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 

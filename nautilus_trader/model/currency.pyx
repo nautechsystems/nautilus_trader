@@ -81,6 +81,28 @@ cdef dict _CURRENCY_TABLE = {
     "ZAR": ZAR,
 }
 
+cdef set _FIAT_CURRENCIES = {
+    "AUD",
+    "CAD",
+    "CHF",
+    "CNY",
+    "CNH",
+    "CZK",
+    "EUR",
+    "GBP",
+    "HKD",
+    "JPY",
+    "MXN",
+    "NOK",
+    "NZD",
+    "RUB",
+    "SEK",
+    "TRY",
+    "SGD",
+    "USD",
+    "ZAR",
+}
+
 
 cdef class Currency:
     """
@@ -162,3 +184,25 @@ cdef class Currency:
 
         """
         return _CURRENCY_TABLE.get(code)
+
+    @staticmethod
+    cdef bint is_fiat_c(str code):
+        return code in _FIAT_CURRENCIES
+
+    @staticmethod
+    def is_fiat(str code):
+        """
+        Return a value indicating whether a currency with the given code is Fiat.
+
+        Parameters
+        ----------
+        code : str
+            The code of the currency.
+
+        Returns
+        -------
+        bool
+            True if Fiat, else False.
+
+        """
+        return code in _FIAT_CURRENCIES

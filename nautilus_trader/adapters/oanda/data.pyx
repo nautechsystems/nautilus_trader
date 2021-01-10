@@ -155,7 +155,12 @@ cdef class OandaDataClient(LiveDataClient):
         """
         self._log.info("Connecting...")
 
+        self._loop.run_in_executor(None, self._connect)
+
+    def _connect(self):
         # Schedule subscribed instruments update
+        self._load_instruments()
+
         self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
             delay=_SECONDS_IN_HOUR,  # Every hour
             callback=self._subscribed_instruments_update,
@@ -478,8 +483,12 @@ cdef class OandaDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+    cpdef void _load_instruments(self) except *:
         self._instrument_provider.load_all()
+        self._log.info(f"Updated {self._instrument_provider.count} instruments.")
+
+    cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
+        self._load_instruments()
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is not None:
             self._loop.call_soon_threadsafe(self._handle_instruments_py, [instrument], correlation_id)
@@ -487,12 +496,9 @@ cdef class OandaDataClient(LiveDataClient):
             self._log.error(f"Could not find instrument {symbol.code}.")
 
     cpdef void _request_instruments(self, UUID correlation_id) except *:
-        self._instrument_provider.load_all()
+        self._load_instruments()
         cdef list instruments = list(self._instrument_provider.get_all().values())
         self._loop.call_soon_threadsafe(self._handle_instruments_py, instruments, correlation_id)
-
-        self._log.info(f"Updated {len(instruments)} instruments.")
-        self.initialized = True
 
     cpdef void _subscribed_instruments_update(self) except *:
         self._loop.run_in_executor(None, self._subscribed_instruments_load_and_send)

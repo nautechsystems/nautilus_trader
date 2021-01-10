@@ -18,10 +18,8 @@ import unittest
 from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.messages import Connect
 from nautilus_trader.common.messages import DataRequest
 from nautilus_trader.common.messages import DataResponse
-from nautilus_trader.common.messages import Disconnect
 from nautilus_trader.common.messages import Subscribe
 from nautilus_trader.common.messages import Unsubscribe
 from nautilus_trader.common.uuid import UUIDFactory
@@ -225,34 +223,6 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.command_count)
 
-    def test_execute_connect_when_no_data_client_registered_does_nothing(self):
-        # Arrange
-        connect = Connect(
-            venue=Venue("RANDOM"),
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
-        )
-
-        # Act
-        self.data_engine.execute(connect)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.command_count)
-
-    def test_execute_disconnect_when_no_data_clients_registered_does_nothing(self):
-        # Arrange
-        disconnect = Disconnect(
-            venue=Venue("RANDOM"),
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
-        )
-
-        # Act
-        self.data_engine.execute(disconnect)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.command_count)
-
     def test_send_request_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         handler = []
@@ -347,12 +317,11 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
-        handler = []
         subscribe = Subscribe(
             venue=BINANCE,
             data_type=str,  # str data type is invalid
             metadata={},  # Invalid anyway
-            handler=handler.append,
+            handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
@@ -368,12 +337,11 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
 
-        handler = []
         subscribe = Subscribe(
             venue=BINANCE,
             data_type=QuoteTick,
             metadata={"Symbol": ETHUSDT_BINANCE.symbol},
-            handler=handler.append,
+            handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
@@ -444,61 +412,6 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
 
-    def test_update_instruments_sends_request_to_self(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-
-        # Act
-        self.data_engine.update_instruments(BINANCE)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.request_count)
-        self.assertEqual(0, self.data_engine.data_count)
-
-    def test_update_instruments_all_sends_request_to_self(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-        self.data_engine.register_client(self.bitmex_client)
-
-        # Act
-        self.data_engine.update_instruments_all()
-
-        # Assert
-        self.assertEqual(2, self.data_engine.request_count)
-        self.assertEqual(0, self.data_engine.data_count)
-
-    def test_execute_connect_given_specified_venue_with_data_client(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-
-        connect = Connect(
-            venue=BINANCE,
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
-        )
-
-        # Act
-        self.data_engine.execute(connect)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.command_count)
-
-    def test_disconnect_given_specified_venue_with_data_client(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-
-        connect = Disconnect(
-            venue=BINANCE,
-            command_id=self.uuid_factory.generate(),
-            command_timestamp=self.clock.utc_now(),
-        )
-
-        # Act
-        self.data_engine.execute(connect)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.command_count)
-
     def test_process_unrecognized_data_type_logs_and_does_nothing(self):
         # Arrange
         # Act
@@ -522,12 +435,11 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.register_client(self.binance_client)
         self.binance_client.connect()
 
-        handler = []
         subscribe = Subscribe(
             venue=BINANCE,
             data_type=Instrument,
             metadata={"Symbol": ETHUSDT_BINANCE.symbol},
-            handler=handler.append,
+            handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )
