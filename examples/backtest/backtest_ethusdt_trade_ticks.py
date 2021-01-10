@@ -20,7 +20,7 @@ import ccxt
 import pandas as pd
 
 from examples.strategies.ema_cross_simple import EMACross
-from nautilus_trader.adapters.binance.providers import BinanceInstrumentProvider
+from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     # Requires an internet connection for the instrument loader
     # Alternatively use the TestInstrumentProvider in the test kit
     print("Loading instruments...")
-    instruments = BinanceInstrumentProvider(client=ccxt.binance(), load_all=True)
+    instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
     BINANCE = Venue("BINANCE")
     ETHUSDT_BINANCE = instruments.get(Symbol("ETH/USDT", BINANCE))
