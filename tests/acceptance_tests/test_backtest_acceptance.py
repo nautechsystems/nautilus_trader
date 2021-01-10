@@ -17,6 +17,7 @@ from decimal import Decimal
 import os
 import sys
 import unittest
+from decimal import Decimal
 
 import pandas as pd
 import pytest
