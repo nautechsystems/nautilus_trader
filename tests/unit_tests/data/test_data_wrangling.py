@@ -30,7 +30,6 @@ from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-
 AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
 
 
@@ -255,7 +254,7 @@ class TardisQuoteDataWranglerTests(unittest.TestCase):
         ticks = TestDataProvider.tardis_quotes()
 
         # Assert
-        self.assertEqual(2069000, len(ticks))
+        self.assertEqual(9999, len(ticks))
 
     def test_pre_process_with_tick_data(self):
         # Arrange
@@ -273,7 +272,7 @@ class TardisQuoteDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
-        self.assertEqual(2069000, len(ticks))
+        self.assertEqual(9999, len(ticks))
         self.assertEqual(Timestamp('2020-02-22 00:00:03.522418+0000', tz='UTC'), ticks.iloc[1].name)
         self.assertEqual('0.670000', ticks.bid_size[0])
         self.assertEqual('0.840000', ticks.ask_size[0])
@@ -294,7 +293,7 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
         ticks = TestDataProvider.tardis_trades()
 
         # Assert
-        self.assertEqual(137988, len(ticks))
+        self.assertEqual(9999, len(ticks))
 
     def test_process(self):
         # Arrange
@@ -309,7 +308,7 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
         ticks = self.tick_builder.processed_data
 
         # Assert
-        self.assertEqual(137988, len(ticks))
+        self.assertEqual(9999, len(ticks))
         self.assertEqual(Timestamp('2020-02-22 00:00:02.418379+0000', tz='UTC'), ticks.iloc[0].name)
 
     def test_build_ticks(self):
@@ -325,7 +324,7 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
         ticks = self.tick_builder.build_ticks()
 
         # Assert
-        self.assertEqual(137988, len(ticks))
+        self.assertEqual(9999, len(ticks))
         self.assertEqual(Price("9682.00"), ticks[0].price)
         self.assertEqual(Quantity("0.132000"), ticks[0].size)
         self.assertEqual(OrderSide.BUY, ticks[0].side)
