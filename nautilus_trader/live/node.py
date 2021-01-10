@@ -24,7 +24,6 @@ import msgpack
 import redis
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.adapters.binance.factory import BinanceDataClientFactory
 from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -337,14 +336,6 @@ class TradingNode:
                     clock=self._clock,
                     logger=logger,
                 )
-            elif name == "binance":
-                data_client = BinanceDataClientFactory.create(
-                    config=config,
-                    engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-                exec_client = None  # TODO: Implement
             elif name == "oanda":
                 data_client = OandaDataClientFactory.create(
                     config=config,
@@ -370,8 +361,7 @@ class TradingNode:
             self._data_engine.start()
             self._exec_engine.start()
 
-            # Wait for engines to initialize (will hang if never initialized)
-            await self._loop.run_in_executor(None, self._wait_for_engines)
+            await self._await_engines_initialized()
 
             self.trader.start()
 
@@ -388,7 +378,7 @@ class TradingNode:
         except asyncio.CancelledError as ex:
             self._log.error(str(ex))
 
-    def _wait_for_engines(self):
+    async def _await_engines_initialized(self):
         self._log.info("Waiting for engines to initialize...")
 
         # The engines require that all of their clients are initialized.
@@ -398,7 +388,7 @@ class TradingNode:
         # accounts are updated and the current order and position status is
         # confirmed. Thus any delay here will be due to blocking network IO.
         while True:
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
             if not self._data_engine.check_initialized():
                 continue
             if not self._exec_engine.check_initialized():
@@ -423,8 +413,7 @@ class TradingNode:
         self._data_engine.stop()
         self._exec_engine.stop()
 
-        await self._data_engine.get_run_queue_task()
-        await self._exec_engine.get_run_queue_task()
+        await self._await_engines_disconnected()
 
         # Clean up remaining timers
         timer_names = self._clock.timer_names()
@@ -433,11 +422,15 @@ class TradingNode:
         for name in timer_names:
             self._log.info(f"Cancelled Timer(name={name}).")
 
+        self._log.info("state=STOPPED.")
+        self._is_running = False
+
+    async def _await_engines_disconnected(self):
         # Wait for engines to disconnect (will hang if never disconnected)
         self._log.info("Waiting for engines to disconnect...")
         timeout = self._clock.utc_now() + timedelta(seconds=5)
         while True:
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
             if self._clock.utc_now() >= timeout:
                 self._log.warning("Timed out (5s) waiting for engines to disconnect.")
                 break
@@ -447,8 +440,7 @@ class TradingNode:
                 continue
             break
 
-        self._log.info("state=STOPPED.")
-        self._is_running = False
+        return True  # Engines initialized
 
     def _cancel_all_tasks(self):
         to_cancel = asyncio.tasks.all_tasks(self._loop)
