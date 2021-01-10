@@ -17,39 +17,19 @@
 This module provides a data producer for backtesting.
 """
 
-from cpython.datetime cimport
+from cpython.datetime cimport datetime
 
-datetime
-from nautilus_trader.common.clock cimport
+from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 
-Clock
-from nautilus_trader.common.logging cimport
-
-Logger
-from nautilus_trader.core.correctness cimport
-
-Condition
-from nautilus_trader.core.uuid cimport
-
-UUID
-from nautilus_trader.data.client cimport
-
-DataClient
-from nautilus_trader.data.engine cimport
-
-DataEngine
-from nautilus_trader.model.bar cimport
-
-BarType
-from nautilus_trader.model.identifiers cimport
-
-Symbol
-from nautilus_trader.model.identifiers cimport
-
-Venue
-from nautilus_trader.model.instrument cimport
-
-Instrument
 
 cdef class BacktestDataClient(DataClient):
     """
@@ -65,7 +45,7 @@ cdef class BacktestDataClient(DataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `BacktestDataClient` class.
+        Initialize a new instance of the `BacktestDataProducer` class.
 
         instruments : list[Instrument]
             The instruments for the data client.
