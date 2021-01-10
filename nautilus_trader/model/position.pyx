@@ -264,7 +264,7 @@ cdef class Position:
     @property
     def is_short(self):
         """
-        If the position side is short.
+        If the position side is `SHORT`.
 
         Returns
         -------
