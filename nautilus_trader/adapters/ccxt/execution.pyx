@@ -262,7 +262,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             # Temporary workaround for testing
             response = self._client.fetch_balance
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.error(f"{type(ex).__name__}: {ex} in _update_balances")
             return
 
         self._on_account_state(response)
@@ -286,10 +286,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     break
         except asyncio.CancelledError as ex:
             self._log.debug(f"Task cancelled `_watch_balances` for {self.account_id}.")
-        except ccxt.NetworkError as ex:
-            self._log.debug(f"Network connection closed `_watch_balances` for {self.account_id}.")
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.error(f"{type(ex).__name__}: {ex} in _watch_balances")
         finally:
             # Finally close stream
             await self._client.close()
