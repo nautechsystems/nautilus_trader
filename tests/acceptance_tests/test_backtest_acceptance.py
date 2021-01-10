@@ -13,12 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import os
 import unittest
+from decimal import Decimal
 
 import pandas as pd
-
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -34,6 +33,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
+
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -301,3 +301,50 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.assertEqual(279, strategy.fast_ema.count)
         self.assertEqual(69806, self.engine.iteration)
         self.assertEqual(Money("998873.43110000", USDT), self.engine.portfolio.account(self.venue).balance())
+
+
+
+class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.venue = Venue("BINANCE")
+        self.instrument = TestInstrumentProvider.btcusdt_binance()
+        data = BacktestDataContainer()
+        data.add_instrument(self.instrument)
+        data.add_trade_ticks(self.instrument.symbol, TestDataProvider.tardis_trades())
+        data.add_quote_ticks(self.instrument.symbol, TestDataProvider.tardis_quotes())
+
+        self.engine = BacktestEngine(
+            data=data,
+            strategies=[TradingStrategy('000')],
+            bypass_logging=True,
+        )
+
+        self.engine.add_exchange(
+            venue=self.venue,
+            oms_type=OMSType.NETTING,
+            generate_position_ids=False,
+            starting_balances=[Money(1_000_000, USDT)],
+        )
+
+    def tearDown(self):
+        self.engine.dispose()
+
+    def test_run_ema_cross_with_tick_bar_spec(self):
+        # Arrange
+        strategy = EMACross(
+            symbol=self.instrument.symbol,
+            bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+            trade_size=Decimal(100),
+            fast_ema=10,
+            slow_ema=20,
+        )
+
+        # Act
+        self.engine.run(strategies=[strategy])
+
+        # Assert
+        self.assertEqual(39, strategy.fast_ema.count)
+        self.assertEqual(19998, self.engine.iteration)
+        self.assertEqual(Money('995991.41500000', USDT), self.engine.portfolio.account(self.venue).balance())
