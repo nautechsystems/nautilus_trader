@@ -184,7 +184,16 @@ cdef class CCXTDataClient(LiveDataClient):
         update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
+        self._loop.create_task(self._connect())
+
+    async def _connect(self):
+        await self._load_instruments()
+
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_instrument(instrument)
+
         self._is_connected = True
+        self.initialized = True
 
         self._log.info("Connected.")
 
@@ -197,17 +206,21 @@ cdef class CCXTDataClient(LiveDataClient):
     async def _disconnect(self):
         self._log.info("Disconnecting...")
 
+        stop_tasks = []
+
         # Cancel update instruments
         if self._update_instruments_task:
             self._update_instruments_task.cancel()
+            # TODO: This task is not finishing
+            # stop_tasks.append(self._update_instruments_task)
 
         # Cancel residual tasks
-        stop_tasks = []
         for task in self._subscribed_trade_ticks.values():
             if not task.cancelled():
                 self._log.debug(f"Cancelling {task}...")
                 task.cancel()
-                stop_tasks.append(task)
+                # TODO: CCXT Pro issues for exchange.close()
+                # stop_tasks.append(task)
 
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
@@ -242,11 +255,6 @@ cdef class CCXTDataClient(LiveDataClient):
         assert len(self._subscribed_quote_ticks) == 0
         assert len(self._subscribed_trade_ticks) == 0
         assert len(self._subscribed_bars) == 0
-
-        # Schedule subscribed instruments update
-        delay = _SECONDS_IN_HOUR
-        update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
-        self._update_instruments_task = self._loop.create_task(update)
 
         self._log.info("Reset.")
 
@@ -605,10 +613,6 @@ cdef class CCXTDataClient(LiveDataClient):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    async def _run_after_delay(self, double delay, coro):
-        await asyncio.sleep(delay)
-        return await coro
-
     async def _watch_quotes(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
@@ -857,8 +861,16 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._handle_bar(bar_type, bar)
 
-    async def _request_instrument(self, Symbol symbol, UUID correlation_id):
+    async def _run_after_delay(self, double delay, coro):
+        await asyncio.sleep(delay)
+        return await coro
+
+    async def _load_instruments(self):
         await self._instrument_provider.load_all_async()
+        self._log.info(f"Updated {self._instrument_provider.count} instruments.")
+
+    async def _request_instrument(self, Symbol symbol, UUID correlation_id):
+        await self._load_instruments()
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is not None:
             self._handle_instruments([instrument], correlation_id)
@@ -866,12 +878,9 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.error(f"Could not find instrument {symbol.code}.")
 
     async def _request_instruments(self, correlation_id):
-        await self._instrument_provider.load_all_async()
+        await self._load_instruments()
         cdef list instruments = list(self._instrument_provider.get_all().values())
         self._handle_instruments(instruments, correlation_id)
-
-        self._log.info(f"Updated {len(instruments)} instruments.")
-        self.initialized = True
 
     async def _subscribed_instruments_update(self, delay):
         await self._instrument_provider.load_all_async()

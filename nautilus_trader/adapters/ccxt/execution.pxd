@@ -22,4 +22,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef CCXTInstrumentProvider _instrument_provider
     cdef bint _is_connected
 
-    cdef object _watch_account_task
+    cdef dict _currencies
+    cdef object _update_instruments_task
+    cdef object _watch_balances_task
+
+    cdef inline void _on_account_state(self, dict response) except *

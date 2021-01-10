@@ -181,7 +181,14 @@ cdef class BinanceDataClient(LiveDataClient):
         update = self._run_after_delay(delay, self._subscribed_instruments_update(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
+        self._loop.create_task(self._connect())
+
+    async def _connect(self):
+        await self._instrument_provider.load_all_async()
+        self._log.info(f"Updated {self._instrument_provider.count} instruments.")
+
         self._is_connected = True
+
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:

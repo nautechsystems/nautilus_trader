@@ -74,7 +74,7 @@ cdef class ExecutionClient:
 
         self.venue = venue
         self.account_id = account_id
-        self.initialized = True
+        self.initialized = False
 
         self._log.info(f"Initialized.")
 

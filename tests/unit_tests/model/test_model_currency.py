@@ -83,3 +83,15 @@ class CurrencyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(expected, result)
+
+    @parameterized.expand([
+        ["AUD", True],
+        ["ZZZ", False],
+    ])
+    def test_is_fiat(self, string, expected):
+        # Arrange
+        # Act
+        result = Currency.is_fiat(string)
+
+        # Assert
+        self.assertEqual(expected, result)

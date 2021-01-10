@@ -118,7 +118,7 @@ cdef class SubmitOrder(VenueCommand):
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.order.cl_ord_id.value}, "
                 f"position_id={position_id_str}, "
-                f"strategy_id={self.strategy_id.value}")
+                f"strategy_id={self.strategy_id.value})")
 
 
 cdef class SubmitBracketOrder(VenueCommand):
