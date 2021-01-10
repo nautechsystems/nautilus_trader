@@ -24,7 +24,6 @@ import msgpack
 import redis
 
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.adapters.binance.factory import BinanceDataClientFactory
 from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -337,14 +336,6 @@ class TradingNode:
                     clock=self._clock,
                     logger=logger,
                 )
-            elif name == "binance":
-                data_client = BinanceDataClientFactory.create(
-                    config=config,
-                    engine=self._data_engine,
-                    clock=self._clock,
-                    logger=logger,
-                )
-                exec_client = None  # TODO: Implement
             elif name == "oanda":
                 data_client = OandaDataClientFactory.create(
                     config=config,
