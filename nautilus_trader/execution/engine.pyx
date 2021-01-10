@@ -153,12 +153,28 @@ cdef class ExecutionEngine(Component):
         Returns
         -------
         bool
-            True if all execution clients initialized, else False.
+            True if all clients initialized, else False.
 
         """
         cdef ExecutionClient client
         for client in self._clients.values():
             if not client.initialized:
+                return False
+        return True
+
+    cpdef bint check_disconnected(self) except *:
+        """
+        Check all clients are disconnected.
+
+        Returns
+        -------
+        bool
+            True if all clients disconnected, else False.
+
+        """
+        cdef ExecutionClient client
+        for client in self._clients.values():
+            if client.is_connected():
                 return False
         return True
 
@@ -470,6 +486,7 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.cache.account(event.account_id)
+        self._log.info(f"{RECV}{EVT} {event}.")
         if account is None:
             # Generate account
             account = Account(event)

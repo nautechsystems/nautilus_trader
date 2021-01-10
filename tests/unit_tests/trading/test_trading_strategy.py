@@ -1528,7 +1528,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.request_quote_ticks(AUDUSD_SIM.symbol)
 
         # Assert
-        self.assertEqual(2, self.data_engine.request_count)
+        self.assertEqual(1, self.data_engine.request_count)
 
     def test_request_trade_ticks_sends_request_to_data_engine(self):
         # Arrange
@@ -1547,7 +1547,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.request_trade_ticks(AUDUSD_SIM.symbol)
 
         # Assert
-        self.assertEqual(2, self.data_engine.request_count)
+        self.assertEqual(1, self.data_engine.request_count)
 
     def test_request_bars_sends_request_to_data_engine(self):
         # Arrange
@@ -1566,7 +1566,7 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.request_bars(bar_type)
 
         # Assert
-        self.assertEqual(2, self.data_engine.request_count)
+        self.assertEqual(1, self.data_engine.request_count)
 
     @parameterized.expand([
         [UNIX_EPOCH, UNIX_EPOCH],

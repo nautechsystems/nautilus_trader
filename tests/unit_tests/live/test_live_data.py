@@ -20,9 +20,9 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.messages import Subscribe
 from nautilus_trader.common.messages import DataRequest
 from nautilus_trader.common.messages import DataResponse
+from nautilus_trader.common.messages import Subscribe
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data import LiveDataClient
 from nautilus_trader.live.data import LiveDataEngine

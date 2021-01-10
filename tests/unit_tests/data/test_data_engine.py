@@ -412,29 +412,6 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
 
-    def test_update_instruments_sends_request_to_self(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-
-        # Act
-        self.data_engine.update_instruments(BINANCE)
-
-        # Assert
-        self.assertEqual(1, self.data_engine.request_count)
-        self.assertEqual(0, self.data_engine.data_count)
-
-    def test_update_instruments_all_sends_request_to_self(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-        self.data_engine.register_client(self.bitmex_client)
-
-        # Act
-        self.data_engine.update_instruments_all()
-
-        # Assert
-        self.assertEqual(2, self.data_engine.request_count)
-        self.assertEqual(0, self.data_engine.data_count)
-
     def test_process_unrecognized_data_type_logs_and_does_nothing(self):
         # Arrange
         # Act
