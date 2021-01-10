@@ -109,7 +109,6 @@ Index
     :caption: Adapter Reference
     :hidden:
 
-    adapter_reference/binance
     adapter_reference/ccxtpro
     adapter_reference/oanda
     adapter_reference/tda
