@@ -513,7 +513,10 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(" SYSTEM SPECIFICATION")
     logger.info("=================================================================")
     logger.info(f"CPU architecture: {platform.processor()}")
-    cpu_freq_str = "" if psutil.cpu_freq() is None else f"@ {int(psutil.cpu_freq()[2])} MHz"
+    try:
+        cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
+    except NotImplementedError:
+        cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
