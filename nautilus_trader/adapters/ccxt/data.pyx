@@ -225,8 +225,8 @@ cdef class CCXTDataClient(LiveDataClient):
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
 
-        # Ensure ccxt streams closed
-        self._log.info("Closing web sockets...")
+        # Ensure ccxt closed
+        self._log.info("Closing WebSockets...")
         await self._client.close()
 
         self._is_connected = False
@@ -675,10 +675,7 @@ cdef class CCXTDataClient(LiveDataClient):
         except asyncio.CancelledError as ex:
             self._log.debug(f"Cancelled `_watch_ticker` for {symbol.code}.")
         except Exception as ex:
-            self._log.exception(ex)
-        finally:
-            # Finally close stream
-            await self._client.close()
+            self._log.error(f"{type(ex).__name__}: {ex} in _watch_quotes")
 
     cdef inline void _on_quote_tick(
         self,
@@ -741,10 +738,7 @@ cdef class CCXTDataClient(LiveDataClient):
         except asyncio.CancelledError as ex:
             self._log.debug(f"Cancelled `_watch_trades` for {symbol.code}.")
         except Exception as ex:
-            self._log.exception(ex)
-        finally:
-            # Finally close stream
-            await self._client.close()
+            self._log.error(f"{type(ex).__name__}: {ex} in _watch_trades")
 
     cdef inline void _on_trade_tick(
         self,
@@ -833,10 +827,7 @@ cdef class CCXTDataClient(LiveDataClient):
         except asyncio.CancelledError as ex:
             self._log.debug(f"Cancelled `_watch_ohlcv` for {symbol.code}.")
         except Exception as ex:
-            self._log.exception(ex)
-        finally:
-            # Finally close stream
-            await self._client.close()
+            self._log.error(f"{type(ex).__name__}: {ex} in _watch_ohlcv")
 
     cdef inline void _on_bar(
         self,
@@ -929,7 +920,7 @@ cdef class CCXTDataClient(LiveDataClient):
             # Temporary work around for testing
             trades = self._client.fetch_trades
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.error(f"{type(ex).__name__}: {ex} in _request_trade_ticks")
             return
 
         if not trades:
@@ -1009,7 +1000,7 @@ cdef class CCXTDataClient(LiveDataClient):
             # Temporary work around for testing
             data = self._client.fetch_ohlcv
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.error(f"{type(ex).__name__}: {ex} in _request_time_bars")
             return
 
         if not data:

@@ -125,6 +125,15 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:
+        """
+        Submit the order contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to execute.
+
+        """
         if not self._is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
@@ -132,27 +141,63 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange.handle_submit_order(command)
 
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
+        """
+        Submit the bracket order contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitBracketOrder
+            The command to execute.
+
+        """
         if not self._is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
         self._exchange.handle_submit_bracket_order(command)
 
-    cpdef void cancel_order(self, CancelOrder command) except *:
-        if not self._is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot send command (not connected), {command}.")
-            return
-
-        self._exchange.handle_cancel_order(command)
-
     cpdef void modify_order(self, ModifyOrder command) except *:
+        """
+        Modify the order with parameters contained in the command.
+
+        Parameters
+        ----------
+        command : ModifyOrder
+            The command to execute.
+
+        """
         if not self._is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
         self._exchange.handle_modify_order(command)
 
+    cpdef void cancel_order(self, CancelOrder command) except *:
+        """
+        Cancel the order with the `ClientOrderId` contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelOrder
+            The command to execute.
+
+        """
+        if not self._is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot send command (not connected), {command}.")
+            return
+
+        self._exchange.handle_cancel_order(command)
+
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void handle_event(self, Event event) except *:
+        """
+        Handle the given event by sending it to the `ExecutionEngine`.
+
+        Parameters
+        ----------
+        event : Event
+            The event to handle.
+
+        """
         self._handle_event(event)

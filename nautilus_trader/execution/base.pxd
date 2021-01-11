@@ -15,6 +15,7 @@
 
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -45,6 +46,7 @@ cdef class ExecutionCacheFacade:
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId cl_ord_id)
+    cpdef OrderId order_id(self, ClientOrderId cl_ord_id)
     cpdef list orders(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list orders_completed(self, Symbol symbol=*, StrategyId strategy_id=*)

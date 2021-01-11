@@ -14,22 +14,53 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-
+from cpython.datetime cimport datetime
 import ccxt
+import json
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
+from nautilus_trader.common.logging cimport CMD
+from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport SENT
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-# from nautilus_trader.model.commands cimport CancelOrder
-# from nautilus_trader.model.commands cimport ModifyOrder
-# from nautilus_trader.model.commands cimport SubmitBracketOrder
-# from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.live.execution cimport LiveExecutionClient
 from nautilus_trader.live.execution cimport LiveExecutionEngine
 
@@ -83,12 +114,21 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
         self._is_connected = False
-
         self._currencies = {}  # type: dict[str, Currency]
 
         # Scheduled tasks
         self._update_instruments_task = None
+
+        # Streaming tasks
         self._watch_balances_task = None
+        self._watch_orders_task = None
+        # self._watch_create_order_task = None
+        # self._watch_cancel_order_task = None
+        # self._watch_my_trades_task = None
+
+        self._processing_orders = {}  # type: dict[OrderId, Order]
+
+        self._counter = 0  # TODO!
 
     cpdef bint is_connected(self) except *:
         """
@@ -120,12 +160,18 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._update_instruments_task = self._loop.create_task(update)
 
         self._loop.create_task(self._connect())
-        self._watch_balances_task = self._loop.create_task(self._watch_balances())
 
     async def _connect(self):
         await self._load_instruments()
         await self._load_currencies()
         await self._update_balances()
+
+        # Start streams
+        self._watch_balances_task = self._loop.create_task(self._watch_balances())
+        self._watch_orders_task = self._loop.create_task(self._watch_orders())
+        # self._watch_create_order_task = self._loop.create_task(self._watch_create_order())
+        # self._watch_cancel_order_task = self._loop.create_task(self._watch_cancel_order())
+        # self._watch_my_trades_task = self._loop.create_task(self._watch_my_trades())
 
         self._is_connected = True
         self.initialized = True
@@ -148,16 +194,34 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             # TODO: This task is not finishing
             # stop_tasks.append(self._update_instruments_task)
 
+        # Cancel streaming tasks
         if self._watch_balances_task:
             self._watch_balances_task.cancel()
             # TODO: CCXT Pro issues for exchange.close()
             # stop_tasks.append(self._watch_balances_task)
+        if self._watch_orders_task:
+            self._watch_orders_task.cancel()
+            # TODO: CCXT Pro issues for exchange.close()
+            # stop_tasks.append(self._watch_orders_task)
+        if self._watch_create_order_task:
+            self._watch_create_order_task.cancel()
+            # TODO: CCXT Pro issues for exchange.close()
+            # stop_tasks.append(self._watch_create_order_task)
+        if self._watch_cancel_order_task:
+            self._watch_cancel_order_task.cancel()
+            # TODO: CCXT Pro issues for exchange.close()
+            # stop_tasks.append(self._watch_cancel_order_task)
+        if self._watch_my_trades_task:
+            self._watch_my_trades_task.cancel()
+            # TODO: CCXT Pro issues for exchange.close()
+            # stop_tasks.append(self._watch_my_trades_task)
 
+        # Wait for all tasks to complete
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
 
-        # Ensure ccxt streams closed
-        self._log.info("Closing web sockets...")
+        # Ensure ccxt closed
+        self._log.info("Closing WebSockets...")
         await self._client.close()
 
         self._is_connected = False
@@ -180,6 +244,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
 
+        self._processing_orders = {}  # type: dict[OrderId, Order]
+
         self._log.info("Reset.")
 
     cpdef void dispose(self) except *:
@@ -198,21 +264,143 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    # cpdef void submit_order(self, SubmitOrder command) except *:
-    #     """Abstract method (implement in subclass)."""
-    #     # TODO: Implement
-    #
-    # cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
-    #     """Abstract method (implement in subclass)."""
-    #     # TODO: Implement
-    #
-    # cpdef void modify_order(self, ModifyOrder command) except *:
-    #     """Abstract method (implement in subclass)."""
-    #     # TODO: Implement
-    #
-    # cpdef void cancel_order(self, CancelOrder command) except *:
-    #     """Abstract method (implement in subclass)."""
-    #     # TODO: Implement
+    cpdef void submit_order(self, SubmitOrder command) except *:
+        """
+        Submit the order contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._loop.create_task(self._submit_order(command.order))
+
+    async def _submit_order(self, Order order):
+        # TODO: Check order type and deny if not of supported type
+        cdef str order_type = OrderTypeParser.to_str(order.type)
+        cdef str order_side = OrderSideParser.to_str(order.side)
+
+        self._log.info(f"Sending {order}...")
+
+        cdef datetime submitted_time = self._clock.utc_now()
+
+        # Submit order and await response
+        cdef dict response
+        try:
+            response = await self._client.create_order(
+                order.symbol.code,
+                order_type,
+                order_side,
+                str(order.quantity),
+            )
+        except Exception as ex:
+            self._generate_order_submitted(order.cl_ord_id, submitted_time)
+            self._generate_order_rejected(order, str(ex))
+            return
+
+        self._generate_order_submitted(order.cl_ord_id, submitted_time)
+        self._generate_order_accepted(
+            order,
+            OrderId(response["id"]),
+            from_posix_ms(response["timestamp"]),
+        )
+
+        # TODO!
+        # with open('res_create_limit_order.json', 'w') as json_file:
+        #     json.dump(response, json_file)
+
+    cdef inline void _generate_order_submitted(
+        self,
+        ClientOrderId cl_ord_id,
+        datetime submitted_time,
+    ) except *:
+        # Generate event
+        cdef OrderSubmitted submitted = OrderSubmitted(
+            self.account_id,
+            cl_ord_id,
+            self._clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
+        )
+        self._handle_event(submitted)
+
+    cdef inline void _generate_order_rejected(self, Order order, str reason) except *:
+        # Generate event
+        cdef OrderRejected rejected = OrderRejected(
+            self.account_id,
+            order.cl_ord_id,
+            self._clock.utc_now(),
+            reason,
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
+        )
+        self._handle_event(rejected)
+
+    cdef inline void _generate_order_accepted(
+        self,
+        Order order,
+        OrderId order_id,
+        datetime accepted_time,
+    ) except *:
+        self._processing_orders[order_id] = order
+
+        # Generate event
+        cdef OrderAccepted accepted = OrderAccepted(
+            self.account_id,
+            order.cl_ord_id,
+            order_id,
+            self._clock.utc_now(),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
+        )
+        self._handle_event(accepted)
+
+    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
+        """
+        Submit the bracket order contained in the given command for execution.
+
+        Parameters
+        ----------
+        command : SubmitBracketOrder
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._log.error("Cannot submit bracket orders in this version.")
+
+    cpdef void modify_order(self, ModifyOrder command) except *:
+        """
+        Modify the order with parameters contained in the command.
+
+        Parameters
+        ----------
+        command : ModifyOrder
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._log.error("Cannot modify orders in this version.")
+
+    cpdef void cancel_order(self, CancelOrder command) except *:
+        """
+        Cancel the order with the `ClientOrderId` contained in the given command.
+
+        Parameters
+        ----------
+        command : CancelOrder
+            The command to execute.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._client.cancel_order(command.cl_ord_id.value)
+
+        self._log.debug(f"{CMD}{SENT} {command}.")
 
     async def _run_after_delay(self, double delay, coro):
         await asyncio.sleep(delay)
@@ -230,6 +418,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._update_instruments_task = self._loop.create_task(update)
 
     async def _load_currencies(self):
+        cdef dict response
         try:
             response = await self._client.fetch_currencies()
         except TypeError:
@@ -242,7 +431,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef str code
         cdef dict values
         for code, values in response.items():
-            currency_type = CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
+            currency_type = self._parse_currency_type(code)
             currency = Currency(
                 code=code,
                 precision=values["precision"],
@@ -253,22 +442,32 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.info(f"Updated {len(self._currencies)} currencies.")
 
+    cdef inline CurrencyType _parse_currency_type(self, str code):
+        return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
+
     async def _update_balances(self):
         if not self._client.has["fetchBalance"]:
             self._log.error("`fetch_balance` not available.")
+            return
+
         try:
             response = await self._client.fetch_balance({'type': 'spot'})
         except TypeError:
             # Temporary workaround for testing
             response = self._client.fetch_balance
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.error(f"{type(ex).__name__}: {ex} in _update_balances")
             return
 
         self._on_account_state(response)
 
     async def _watch_balances(self):
+        if not self._client.has["watchBalance"]:
+            self._log.error("`watch_balance` not available.")
+            return
+
         cdef dict params = {'type': 'spot'}  # TODO: Hard coded for now
+        cdef dict response
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
@@ -285,14 +484,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 if exiting:
                     break
         except asyncio.CancelledError as ex:
-            self._log.debug(f"Task cancelled `_watch_balances` for {self.account_id}.")
-        except ccxt.NetworkError as ex:
-            self._log.debug(f"Network connection closed `_watch_balances` for {self.account_id}.")
+            self._log.debug(f"Cancelled `_watch_balances` for {self.account_id}.")
         except Exception as ex:
-            self._log.exception(ex)
-        finally:
-            # Finally close stream
-            await self._client.close()
+            self._log.error(f"{type(ex).__name__}: {ex} in _watch_balances")
 
     cdef inline void _on_account_state(self, dict response) except *:
         cdef list balances = []
@@ -309,7 +503,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 continue
             currency = self._currencies.get(code)
             if currency is None:
-                self._log.error(f"Cannot update total balance for {code} (no currency loaded).")
+                self._log.error(f"Cannot update total balance for {code} "
+                                f"(no currency loaded).")
             balances.append(Money(amount, currency))
 
         # Update free balances
@@ -318,7 +513,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 continue
             currency = self._currencies.get(code)
             if currency is None:
-                self._log.error(f"Cannot update total balance for {code} (no currency loaded).")
+                self._log.error(f"Cannot update total balance for {code} "
+                                f"(no currency loaded).")
             balances_free.append(Money(amount, currency))
 
         # Update locked balances
@@ -327,7 +523,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 continue
             currency = self._currencies.get(code)
             if currency is None:
-                self._log.error(f"Cannot update total balance for {code} (no currency loaded).")
+                self._log.error(f"Cannot update total balance for {code} "
+                                f"(no currency loaded).")
             balances_locked.append(Money(amount, currency))
 
         # Generate event
@@ -342,3 +539,177 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         self._handle_event(event)
+
+    async def _watch_orders(self):
+        if not self._client.has["watchOrders"]:
+            self._log.error("`watch_orders` not available.")
+            return
+
+        # TODO: Type response is <class 'ccxtpro.base.cache.ArrayCacheBySymbolById'>
+        cdef dict entry
+        cdef bint exiting = False  # Flag to stop loop
+        try:
+            while True:
+                try:
+                    response = await self._client.watch_orders()
+                except TypeError:
+                    # Temporary workaround for testing
+                    response = self._client.watch_orders
+                    exiting = True
+
+                for entry in response:
+                    if entry["status"] == "closed":
+                        self._generate_order_filled(entry)
+
+                if exiting:
+                    break
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled `_watch_orders`.")
+        except Exception as ex:
+            self._log.exception(ex)
+            #self._log.error(f"{type(ex).__name__}: {ex} in _watch_orders")
+
+    cdef inline void _generate_order_filled(self, dict response) except *:
+        # Parse exchange order identifier
+        cdef OrderId order_id = OrderId(response["id"])
+
+        cdef Instrument instrument = self._instrument_provider.get_c(response["symbol"])
+        if instrument is None:
+            self._log.error(f"Cannot fill order with id {order_id}, "
+                            f"instrument for {response['symbol']} not found.")
+            return  # Cannot fill order
+
+        # Remove order from processing orders
+        cdef Order order = self._processing_orders.pop(order_id, None)
+        if order is None:
+            self._log.error(f"Cannot fill order with id {order_id}, "
+                            f"not found in `_processing orders`.")
+            return  # Cannot fill order
+
+        # Determine commission
+        cdef Money commission = None
+        cdef Currency currency = None
+        cdef dict fees = response.get("fee")
+        if fees is None:
+            commission = Money(0, instrument.quote_currency)
+        else:
+            # TODO: Reimplement commissions as list of Money
+            currency = self._currencies.get(fees["currency"])
+            if currency is None:
+                self._log.error(f"Cannot determine commission for {order_id}, "
+                                f"currency for {fees['currency']} not found.")
+                commission = Money(0, instrument.quote_currency)
+            else:
+                commission = Money(fees["cost"], currency)
+
+        # Determine position identifier
+        cdef PositionId position_id = self._engine.cache.position_id(order.cl_ord_id)
+        if position_id is None:
+            position_id = PositionId.null_c()
+
+        # Generate event
+        cdef OrderFilled filled = OrderFilled(
+            self.account_id,
+            order.cl_ord_id,
+            order_id,
+            ExecutionId("1"),  # TODO: Implement
+            position_id,
+            order.strategy_id,
+            order.symbol,
+            order.side,
+            Quantity(response["amount"], instrument.size_precision),     # Filled
+            Quantity(response["filled"], instrument.size_precision),     # Cumulative
+            Quantity(response["remaining"], instrument.size_precision),  # Remaining
+            Price(response["average"], instrument.price_precision),
+            instrument.quote_currency,
+            instrument.is_inverse,
+            commission,
+            LiquiditySide.TAKER if order.type != OrderType.LIMIT else LiquiditySide.MAKER,  # TODO: Implement
+            from_posix_ms(response["timestamp"]),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
+        )
+
+        print(filled)  # TODO: Send to execution engine
+        #self._handle_event(filled)
+
+    # async def _watch_create_order(self):
+    #     if not self._client.has["watchCreateOrder"]:
+    #         self._log.error("`watch_create_order` not available.")
+    #         return
+    #
+    #     cdef dict response
+    #     cdef bint exiting = False  # Flag to stop loop
+    #     try:
+    #         while True:
+    #             try:
+    #                 response = await self._client.watch_create_order()
+    #             except TypeError:
+    #                 # Temporary workaround for testing
+    #                 response = self._client.watch_create_order
+    #                 exiting = True
+    #
+    #             # TODO!
+    #             with open('res_watch_create_order.json', 'w') as json_file:
+    #                 json.dump(response, json_file)
+    #
+    #             if exiting:
+    #                 break
+    #     except asyncio.CancelledError as ex:
+    #         self._log.debug(f"Cancelled `_watch_create_order`.")
+    #     except Exception as ex:
+    #         self._log.error(f"{type(ex).__name__}: {ex} in _watch_create_order")
+    #
+    # async def _watch_cancel_order(self):
+    #     if not self._client.has["watchCancelOrder"]:
+    #         self._log.error("`watch_cancel_order` not available.")
+    #         return
+    #
+    #     cdef dict response
+    #     cdef bint exiting = False  # Flag to stop loop
+    #     try:
+    #         while True:
+    #             try:
+    #                 response = await self._client.watch_cancel_order()
+    #             except TypeError:
+    #                 # Temporary workaround for testing
+    #                 response = self._client.watch_cancel_order
+    #                 exiting = True
+    #
+    #             # TODO!
+    #             with open('res_watch_cancel_order.json', 'w') as json_file:
+    #                 json.dump(response, json_file)
+    #
+    #             if exiting:
+    #                 break
+    #     except asyncio.CancelledError as ex:
+    #         self._log.debug(f"Cancelled `_watch_create_order`.")
+    #     except Exception as ex:
+    #         self._log.error(f"{type(ex).__name__}: {ex} in _watch_create_order")
+    #
+    # async def _watch_my_trades(self):
+    #     if not self._client.has["watchMyTrades"]:
+    #         self._log.error("`watch_my_trades` not available.")
+    #         return
+    #
+    #     cdef dict response
+    #     cdef bint exiting = False  # Flag to stop loop
+    #     try:
+    #         while True:
+    #             try:
+    #                 response = await self._client.watch_my_trades()
+    #             except TypeError:
+    #                 # Temporary workaround for testing
+    #                 response = self._client.watch_my_trades
+    #                 exiting = True
+    #
+    #             # TODO!
+    #             with open('res_watch_my_trades.json', 'w') as json_file:
+    #                 json.dump(response, json_file)
+    #
+    #             if exiting:
+    #                 break
+    #     except asyncio.CancelledError as ex:
+    #         self._log.debug(f"Cancelled `_watch_my_trades`.")
+    #     except Exception as ex:
+    #         self._log.error(f"{type(ex).__name__}: {ex} in _watch_my_trades")

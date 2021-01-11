@@ -56,7 +56,7 @@ cdef class OandaInstrumentProvider:
         """
         self.venue = Venue("OANDA")
         self.count = 0
-        self._instruments = {}  # type: dict[Symbol: Instrument]
+        self._instruments = {}  # type: dict[Symbol, Instrument]
         self._client = client
         self._account_id = account_id
 

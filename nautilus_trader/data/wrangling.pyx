@@ -305,7 +305,6 @@ cdef class TradeTickDataWrangler:
         processed_trades["symbol"] = symbol_indexer
         self.processed_data = processed_trades
 
-
     def _create_side_if_not_exist(self):
         if 'side' in self._data_trades.columns:
             return self._data_trades["side"]
