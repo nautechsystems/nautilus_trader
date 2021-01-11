@@ -24,26 +24,6 @@ from libc.math cimport sqrt
 from nautilus_trader.core.correctness cimport Condition
 
 
-cpdef inline bint is_ge_python_version(int major, int minor):
-    """
-    Return a value indicating whether the running Python version is greater than
-    or equal to the given arguments.
-
-    Parameters
-    ----------
-    major : int
-        The major Python version.
-    minor : int
-        The minor Python version.
-
-    Returns
-    -------
-    True if greater than or equal, else False.
-
-    """
-    return sys.version_info.major > major or (sys.version_info.major == major and sys.version_info.minor >= minor)
-
-
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef inline double fast_mean(list values) except *:

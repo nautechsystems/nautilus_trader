@@ -24,18 +24,10 @@ from nautilus_trader.core.functions import fast_mean_iterated
 from nautilus_trader.core.functions import fast_std
 from nautilus_trader.core.functions import fast_std_with_mean
 from nautilus_trader.core.functions import format_bytes
-from nautilus_trader.core.functions import is_ge_python_version
 from nautilus_trader.core.functions import pad_string
 
 
 class TestFunctionsTests(unittest.TestCase):
-
-    def test_is_python_version(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertTrue(is_ge_python_version(major=3, minor=6))
-        self.assertFalse(is_ge_python_version(major=4, minor=0))
 
     def test_fast_mean_with_empty_list_returns_zero(self):
         # Arrange
