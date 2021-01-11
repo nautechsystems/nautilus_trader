@@ -48,6 +48,7 @@ pytz = "^2020.5"
 redis = "3.5.3"
 scipy = "^1.6.0"
 uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
+pyarrow = "^2.0.0"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
@@ -63,6 +64,7 @@ pytest-cov = "^2.10.1"
 pytest-xdist = { version = "^2.1.0", extras = ["psutil"] }
 sphinx = { version = "^3.2.1", optional = true }
 sphinx-rtd-theme = { version = "^0.5.0", optional = true }
+pynvim = "^0.4.2"
 
 [tool.poetry.extras]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]

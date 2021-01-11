@@ -141,3 +141,56 @@ cdef class TardisQuoteDataLoader:
         df = df[['symbol', 'ask_size', 'ask', 'bid_size', 'bid']]
 
         return df
+
+cdef class ParquetTickDataLoader:
+    """
+    Provides a means of loading tick data pandas DataFrames from Parquet files.
+    """
+
+    @staticmethod
+    def load(str file_path) -> pd.DataFrame:
+        """
+        Return the tick pandas.DataFrame loaded from the given parquet file.
+
+        Parameters
+        ----------
+        file_path : str
+            The absolute path to the Parquet file.
+
+        Returns
+        -------
+        pd.DataFrame
+
+        """
+        Condition.not_none(file_path, "file_path")
+
+        df = pd.read_parquet(file_path)
+        df.set_index('timestamp', inplace=True)
+        return df
+
+
+cdef class ParquetBarDataLoader:
+    """
+    Provides a means of loading bar data pandas DataFrames from parquet files.
+    """
+
+    @staticmethod
+    def load(str file_path) -> pd.DataFrame:
+        """
+        Return the bar pandas.DataFrame loaded from the given parquet file.
+
+        Parameters
+        ----------
+        file_path : str
+            The absolute path to the parquet file.
+
+        Returns
+        -------
+        pd.DataFrame
+
+        """
+        Condition.not_none(file_path, "file_path")
+
+        df = pd.read_parquet(file_path)
+        df.set_index('timestamp', inplace=True)
+        return df

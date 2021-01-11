@@ -28,3 +28,11 @@ cdef class TardisTradeDataLoader:
 
 cdef class TardisQuoteDataLoader:
     pass
+
+
+cdef class ParquetTickDataLoader:
+    pass
+
+
+cdef class ParquetBarDataLoader:
+    pass
