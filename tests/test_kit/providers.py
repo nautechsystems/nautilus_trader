@@ -19,9 +19,9 @@ from pandas import DataFrame
 
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
+from nautilus_trader.backtest.loaders import ParquetTickDataLoader
 from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
-from nautilus_trader.backtest.loaders import ParquetTickDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_type import AssetType

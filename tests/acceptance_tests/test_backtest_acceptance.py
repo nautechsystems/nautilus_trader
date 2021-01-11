@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-import unittest
 from decimal import Decimal
+import os
+import sys
+import unittest
 
 import pandas as pd
+import pytest
+
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
@@ -33,7 +36,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
-
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -303,7 +305,6 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.assertEqual(Money("998873.43110000", USDT), self.engine.portfolio.account(self.venue).balance())
 
 
-
 class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
 
     def setUp(self):
@@ -331,6 +332,8 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def tearDown(self):
         self.engine.dispose()
 
+    # TODO: Remove this once pyarrow publishes wheels for Python 3.9
+    @pytest.mark.skipif(sys.version_info >= (3, 9), reason="requires python < 3.9")
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
         strategy = EMACross(

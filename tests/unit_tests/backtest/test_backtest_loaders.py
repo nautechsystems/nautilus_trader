@@ -14,14 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+import sys
 import unittest
+
+import pytest
 
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 class BacktestLoadersTests(unittest.TestCase):
@@ -52,6 +55,11 @@ class BacktestLoadersTests(unittest.TestCase):
         self.assertEqual(Decimal("0.001"), instrument.tick_size)
         self.assertEqual(Currency(code='JPY', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)
 
+
+class ParquetTickDataLoadersTests(unittest.TestCase):
+
+    # TODO: Remove this once pyarrow publishes wheels for Python 3.9
+    @pytest.mark.skipif(sys.version_info >= (3, 9), reason="requires python < 3.9")
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act
@@ -65,6 +73,8 @@ class BacktestLoadersTests(unittest.TestCase):
         self.assertIn('buyer_maker', trade_ticks.columns)
         self.assertEqual(trade_ticks.iloc[0]['trade_id'], 553287559)
 
+    # TODO: Remove this once pyarrow publishes wheels for Python 3.9
+    @pytest.mark.skipif(sys.version_info >= (3, 9), reason="requires python < 3.9")
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act
