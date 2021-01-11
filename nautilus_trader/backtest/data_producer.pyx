@@ -16,7 +16,6 @@
 """
 This module provides a data producer for backtesting.
 """
-
 import gc
 
 import numpy as np
