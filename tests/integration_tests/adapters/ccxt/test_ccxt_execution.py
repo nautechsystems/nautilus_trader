@@ -206,3 +206,22 @@ class CCXTExecutionClientTests(unittest.TestCase):
             await self.exec_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
+
+    def test_submit_order(self):
+        async def run_test():
+            # Arrange
+            stub_response = ""
+            self.exec_engine.start()
+            await asyncio.sleep(0.3)  # Allow engine message queue to start
+
+            # Act
+            self.client.dispose()
+
+            # Assert
+            self.assertTrue(self.client.is_connected())
+
+            # Tear Down
+            self.exec_engine.stop()
+            await self.exec_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())
