@@ -48,6 +48,7 @@ pytz = "^2020.5"
 redis = "3.5.3"
 scipy = "^1.6.0"
 uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
+pyarrow = "^2.0.0"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
