@@ -190,12 +190,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
 
-            for cl_ord_id in position.order_ids_c():
+            for cl_ord_id in position.cl_ord_ids_c():
                 index_position_orders.add(cl_ord_id)
 
             # 3- Build _index_symbol_positions -> {Symbol, {PositionId}}
             if position.symbol not in self._index_symbol_positions:
-                self._index_symbol_positions[position_id] = set()
+                self._index_symbol_positions[position.symbol] = set()
             self._index_symbol_positions[position.symbol].add(position_id)
 
             # 4- Build _index_strategy_positions -> {StrategyId, {PositionId}}
@@ -683,6 +683,17 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(venue, "venue")
 
         return self._index_venue_account.get(venue)
+
+    cpdef list accounts(self):
+        """
+        Return all accounts in the cache.
+
+        Returns
+        -------
+        list[Account]
+
+        """
+        return list(self._cached_accounts.values())
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 

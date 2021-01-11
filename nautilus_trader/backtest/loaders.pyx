@@ -134,8 +134,10 @@ cdef class TardisQuoteDataLoader:
         Condition.not_none(file_path, "file_path")
 
         df = pd.read_csv(file_path, index_col='local_timestamp', date_parser=_ts_parser, parse_dates=True)
-        df.rename(columns={'ask_amount': 'ask_size', 'ask_price': 'ask', 'bid_price': 'bid', 'bid_amount': 'bid_size'},
-                 inplace=True)
-        df = df[['symbol','ask_size','ask','bid_size','bid']]
+        df.rename(
+            columns={'ask_amount': 'ask_size', 'ask_price': 'ask', 'bid_price': 'bid', 'bid_amount': 'bid_size'},
+            inplace=True,
+        )
+        df = df[['symbol', 'ask_size', 'ask', 'bid_size', 'bid']]
 
         return df

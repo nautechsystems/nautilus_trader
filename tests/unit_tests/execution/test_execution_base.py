@@ -44,6 +44,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
     def test_account_id_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.account_id, SIM)
 
+    def test_accounts_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.accounts)
+
     def test_order_ids_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.order_ids)
 

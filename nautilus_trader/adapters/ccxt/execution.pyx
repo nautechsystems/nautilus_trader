@@ -15,6 +15,7 @@
 
 import asyncio
 from cpython.datetime cimport datetime
+
 import ccxt
 import json
 
@@ -124,11 +125,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_orders_task = None
         # self._watch_create_order_task = None
         # self._watch_cancel_order_task = None
-        # self._watch_my_trades_task = None
+        self._watch_my_trades_task = None
 
         self._processing_orders = {}  # type: dict[OrderId, Order]
 
-        self._counter = 0  # TODO!
+        self._counter = 0  # TODO: Development only
 
     cpdef bint is_connected(self) except *:
         """
@@ -309,8 +310,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         # TODO!
-        # with open('res_create_limit_order.json', 'w') as json_file:
-        #     json.dump(response, json_file)
+        with open('res_create_limit_order.json', 'w') as json_file:
+            json.dump(response, json_file)
 
     cdef inline void _generate_order_submitted(
         self,
@@ -546,8 +547,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return
 
         # TODO: Type response is <class 'ccxtpro.base.cache.ArrayCacheBySymbolById'>
-        cdef dict entry
         cdef bint exiting = False  # Flag to stop loop
+        cdef dict order_event
         try:
             while True:
                 try:
@@ -557,17 +558,18 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     response = self._client.watch_orders
                     exiting = True
 
-                for entry in response:
-                    if entry["status"] == "closed":
-                        self._generate_order_filled(entry)
+                order_event = response[0]
+
+                if order_event["status"] == "closed":
+                    self._generate_order_filled(order_event)
 
                 if exiting:
                     break
         except asyncio.CancelledError as ex:
             self._log.debug(f"Cancelled `_watch_orders`.")
         except Exception as ex:
-            self._log.exception(ex)
-            #self._log.error(f"{type(ex).__name__}: {ex} in _watch_orders")
+            self._log.exception(ex)  # TODO: During development
+            # self._log.error(f"{type(ex).__name__}: {ex} in _watch_orders")
 
     cdef inline void _generate_order_filled(self, dict response) except *:
         # Parse exchange order identifier
@@ -583,7 +585,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Order order = self._processing_orders.pop(order_id, None)
         if order is None:
             self._log.error(f"Cannot fill order with id {order_id}, "
-                            f"not found in `_processing orders`.")
+                            f"not found in the _processing_orders dict.")
             return  # Cannot fill order
 
         # Determine commission
@@ -593,7 +595,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if fees is None:
             commission = Money(0, instrument.quote_currency)
         else:
-            # TODO: Reimplement commissions as list of Money
             currency = self._currencies.get(fees["currency"])
             if currency is None:
                 self._log.error(f"Cannot determine commission for {order_id}, "
@@ -630,8 +631,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._clock.utc_now(),
         )
 
-        print(filled)  # TODO: Send to execution engine
-        #self._handle_event(filled)
+        self._handle_event(filled)
 
     # async def _watch_create_order(self):
     #     if not self._client.has["watchCreateOrder"]:
@@ -687,29 +687,30 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     #     except Exception as ex:
     #         self._log.error(f"{type(ex).__name__}: {ex} in _watch_create_order")
     #
-    # async def _watch_my_trades(self):
-    #     if not self._client.has["watchMyTrades"]:
-    #         self._log.error("`watch_my_trades` not available.")
-    #         return
-    #
-    #     cdef dict response
-    #     cdef bint exiting = False  # Flag to stop loop
-    #     try:
-    #         while True:
-    #             try:
-    #                 response = await self._client.watch_my_trades()
-    #             except TypeError:
-    #                 # Temporary workaround for testing
-    #                 response = self._client.watch_my_trades
-    #                 exiting = True
-    #
-    #             # TODO!
-    #             with open('res_watch_my_trades.json', 'w') as json_file:
-    #                 json.dump(response, json_file)
-    #
-    #             if exiting:
-    #                 break
-    #     except asyncio.CancelledError as ex:
-    #         self._log.debug(f"Cancelled `_watch_my_trades`.")
-    #     except Exception as ex:
-    #         self._log.error(f"{type(ex).__name__}: {ex} in _watch_my_trades")
+
+    async def _watch_my_trades(self):
+        if not self._client.has["watchMyTrades"]:
+            self._log.error("`watch_my_trades` not available.")
+            return
+
+        cdef dict response
+        cdef bint exiting = False  # Flag to stop loop
+        try:
+            while True:
+                try:
+                    response = await self._client.watch_my_trades()
+                except TypeError:
+                    # Temporary workaround for testing
+                    response = self._client.watch_my_trades
+                    exiting = True
+
+                # TODO!
+                # with open('res_watch_my_trades.json', 'w') as json_file:
+                #     json.dump(response, json_file)
+
+                if exiting:
+                    break
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled `_watch_my_trades`.")
+        except Exception as ex:
+            self._log.error(f"{type(ex).__name__}: {ex} in _watch_my_trades")

@@ -32,6 +32,7 @@ cdef class ExecutionCacheFacade:
     cpdef Account account(self, AccountId account_id)
     cpdef Account account_for_venue(self, Venue venue)
     cpdef AccountId account_id(self, Venue venue)
+    cpdef list accounts(self)
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 

@@ -41,6 +41,10 @@ cdef class ExecutionCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef list accounts(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set order_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
