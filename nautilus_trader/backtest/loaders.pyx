@@ -194,4 +194,3 @@ cdef class ParquetBarDataLoader:
         df = pd.read_parquet(file_path)
         df.set_index('timestamp', inplace=True)
         return df
-

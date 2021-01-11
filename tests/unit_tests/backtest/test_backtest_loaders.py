@@ -51,12 +51,12 @@ class BacktestLoadersTests(unittest.TestCase):
         self.assertEqual(3, instrument.price_precision)
         self.assertEqual(Decimal("0.001"), instrument.tick_size)
         self.assertEqual(Currency(code='JPY', precision=2, currency_type=CurrencyType.FIAT), instrument.quote_currency)
-    
+
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act
         trade_ticks = TestDataProvider.parquet_btcusdt_trades()
-        
+
         # Assert
         self.assertEqual(len(trade_ticks), 2001)
         self.assertIn('trade_id', trade_ticks.columns)
