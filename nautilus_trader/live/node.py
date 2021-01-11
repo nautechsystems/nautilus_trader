@@ -17,6 +17,7 @@ import asyncio
 import concurrent.futures
 from datetime import timedelta
 import signal
+import sys
 import time
 import warnings
 from typing import Dict, List
@@ -29,12 +30,12 @@ from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.functions import is_ge_python_version
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data import LiveDataEngine
 from nautilus_trader.live.execution import LiveExecutionEngine
@@ -191,6 +192,19 @@ class TradingNode:
 
         self._log.info("state=INITIALIZED.")
 
+    @property
+    def is_running(self) -> bool:
+        """
+        If the trading node is running.
+
+        Returns
+        -------
+        bool
+            True if running, else False.
+
+        """
+        return self._is_running
+
     def get_event_loop(self) -> asyncio.AbstractEventLoop:
         """
         Return the event loop of the trading node.
@@ -257,7 +271,7 @@ class TradingNode:
             self._exec_engine.dispose()
 
             self._log.info("Shutting down executor...")
-            if is_ge_python_version(major=3, minor=9):
+            if sys.version_info >= (3, 9):
                 # cancel_futures added in Python 3.9
                 self._executor.shutdown(wait=True, cancel_futures=True)
             else:
@@ -357,6 +371,7 @@ class TradingNode:
     async def _run(self) -> None:
         try:
             self._log.info("state=STARTING...")
+            self._is_running = True
 
             self._data_engine.start()
             self._exec_engine.start()
@@ -372,8 +387,6 @@ class TradingNode:
                 self._log.info("state=RUNNING.")
             else:
                 self._log.warning("Event loop is not running.")
-
-            self._is_running = True
 
             # Continue to run while engines are running...
             await self._data_engine.get_run_queue_task()
@@ -409,7 +422,8 @@ class TradingNode:
         self._is_stopping = True
         self._log.info("state=STOPPING...")
 
-        self.trader.stop()
+        if self.trader.state == ComponentState.RUNNING:
+            self.trader.stop()
 
         self._log.info("Awaiting residual state...")
         await asyncio.sleep(self._check_residuals_delay)
@@ -418,8 +432,10 @@ class TradingNode:
         if self._save_strategy_state:
             self.trader.save()
 
-        self._data_engine.stop()
-        self._exec_engine.stop()
+        if self._data_engine.state == ComponentState.RUNNING:
+            self._data_engine.stop()
+        if self._exec_engine.state == ComponentState.RUNNING:
+            self._exec_engine.stop()
 
         await self._await_engines_disconnected()
 

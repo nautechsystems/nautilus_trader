@@ -98,4 +98,6 @@ if __name__ == "__main__":
     try:
         node.start()
     finally:
+        if node.is_running:
+            node.stop()
         node.dispose()
