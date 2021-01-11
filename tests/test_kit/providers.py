@@ -21,6 +21,7 @@ from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
+from nautilus_trader.backtest.loaders import ParquetTickDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.c_enums.asset_class import AssetClass
 from nautilus_trader.model.c_enums.asset_type import AssetType
@@ -76,6 +77,14 @@ class TestDataProvider:
     @staticmethod
     def tardis_quotes() -> DataFrame:
         return TardisQuoteDataLoader.load(PACKAGE_ROOT + "/data/tardis_quotes.csv")
+
+    @staticmethod
+    def parquet_btcusdt_trades() -> DataFrame:
+        return ParquetTickDataLoader.load(PACKAGE_ROOT + "/data/binance-btcusdt-trades.parquet")
+
+    @staticmethod
+    def parquet_btcusdt_quotes() -> DataFrame:
+        return ParquetTickDataLoader.load(PACKAGE_ROOT + "/data/binance-btcusdt-quotes.parquet")
 
 
 class TestInstrumentProvider:
