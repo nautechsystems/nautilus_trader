@@ -225,8 +225,8 @@ cdef class CCXTDataClient(LiveDataClient):
         if stop_tasks:
             await asyncio.gather(*stop_tasks)
 
-        # Ensure ccxt streams closed
-        self._log.info("Closing web sockets...")
+        # Ensure ccxt closed
+        self._log.info("Closing WebSockets...")
         await self._client.close()
 
         self._is_connected = False
@@ -676,9 +676,6 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.debug(f"Cancelled `_watch_ticker` for {symbol.code}.")
         except Exception as ex:
             self._log.error(f"{type(ex).__name__}: {ex} in _watch_quotes")
-        finally:
-            # Finally close stream
-            await self._client.close()
 
     cdef inline void _on_quote_tick(
         self,
@@ -742,9 +739,6 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.debug(f"Cancelled `_watch_trades` for {symbol.code}.")
         except Exception as ex:
             self._log.error(f"{type(ex).__name__}: {ex} in _watch_trades")
-        finally:
-            # Finally close stream
-            await self._client.close()
 
     cdef inline void _on_trade_tick(
         self,
@@ -834,9 +828,6 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.debug(f"Cancelled `_watch_ohlcv` for {symbol.code}.")
         except Exception as ex:
             self._log.error(f"{type(ex).__name__}: {ex} in _watch_ohlcv")
-        finally:
-            # Finally close stream
-            await self._client.close()
 
     cdef inline void _on_bar(
         self,
