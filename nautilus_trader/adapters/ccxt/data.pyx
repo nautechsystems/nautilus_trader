@@ -226,7 +226,7 @@ cdef class CCXTDataClient(LiveDataClient):
             await asyncio.gather(*stop_tasks)
 
         # Ensure ccxt closed
-        self._log.info("Closing WebSockets...")
+        self._log.info("Closing WebSocket(s)...")
         await self._client.close()
 
         self._is_connected = False

@@ -8,7 +8,7 @@ production-grade algorithmic trading platform, providing quantitative traders wi
 the ability to backtest portfolios of automated trading strategies on historical
 data with an event-driven engine, and also deploy those same strategies live.
 
-The platform aims to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
+The platform aims to be universal, with any REST, FIX, or WebSocket API able to be integrated via modular adapters.
 Thus the platform can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
