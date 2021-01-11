@@ -28,7 +28,7 @@ _NautilusTrader_ is an open-source, high-performance, production-grade algorithm
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
 
-The platform aims to be universal, with any REST/FIX/WebSockets API able to be integrated via modular adapters.
+The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular adapters.
 Thus the platform can handle high-frequency trading operations for any asset classes including FX, Equities,
 Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
@@ -54,7 +54,7 @@ The documentation for the latest version of the package is available at _readthe
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
-- **Flexible:** Any FIX, REST or WebSockets API can be integrated into the platform.
+- **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
