@@ -167,12 +167,12 @@ cdef class BacktestDataProducer:
             if self.min_timestamp is None:
                 self.min_timestamp = self._trade_tick_data.index.min()
             else:
-                self.min_timestamp = max(self._quote_tick_data.index, self._trade_tick_data.index)
+                self.min_timestamp = min(self._quote_tick_data.index.min(), self._trade_tick_data.index.min())
 
             if self.max_timestamp is None:
                 self.max_timestamp = self._trade_tick_data.index.max()
             else:
-                self.max_timestamp = min(self._quote_tick_data.index, self._trade_tick_data.index)
+                self.max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         # Initialize backing fields
         self._quote_symbols = None
