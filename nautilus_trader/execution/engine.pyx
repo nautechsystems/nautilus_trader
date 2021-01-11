@@ -306,7 +306,10 @@ cdef class ExecutionEngine(Component):
         self.cache.build_index()
         self._set_position_symbol_counts()
 
-        # Update portfolio - methods require sets
+        # Update portfolio
+        for account in self.cache.accounts():
+            self.portfolio.register_account(account)
+
         self.portfolio.initialize_orders(set(self.cache.orders_working()))
         self.portfolio.initialize_positions(set(self.cache.positions_open()))
 
@@ -591,7 +594,7 @@ cdef class ExecutionEngine(Component):
             OrderFilled fill,
             StrategyId strategy_id,
     ) except *:
-        if position_id.is_null():  # No position yet
+        if position_id is None:  # No position yet
             # Generate identifier and assign
             fill.position_id = self._pos_id_generator.generate(fill.symbol)
 

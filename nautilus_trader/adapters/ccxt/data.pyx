@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
