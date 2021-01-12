@@ -424,10 +424,9 @@ class TradingNode:
 
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
-
-        self._log.info("Awaiting residual state...")
-        await asyncio.sleep(self._check_residuals_delay)
-        self.trader.check_residuals()
+            self._log.info("Awaiting residual state...")
+            await asyncio.sleep(self._check_residuals_delay)
+            self.trader.check_residuals()
 
         if self._save_strategy_state:
             self.trader.save()
