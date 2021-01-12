@@ -235,8 +235,8 @@ cdef class BacktestEngine:
                 instruments=instruments,
                 venue=venue,
                 engine=self._data_engine,
-                clock=self._clock,
-                logger=self._logger,
+                clock=self._test_clock,
+                logger=self._test_logger,
             )
 
             self._data_engine.register_client(data_client)
