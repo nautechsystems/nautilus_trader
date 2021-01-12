@@ -175,6 +175,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef AccountId account_id = account.id
         self._accounts[account_id.issuer_as_venue()] = account
         account.register_portfolio(self)
+        self._log.debug(f"Registered account {account_id}.")
 
     cpdef void initialize_orders(self, set orders) except *:
         """

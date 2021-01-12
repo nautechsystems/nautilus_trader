@@ -300,11 +300,16 @@ cdef class TradeTickDataWrangler:
         processed_trades = pd.DataFrame(index=self._data_trades.index)
         processed_trades["price"] = self._data_trades["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
         processed_trades["quantity"] = self._data_trades["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
-        processed_trades["side"] = self._data_trades["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
+        processed_trades["side"] = self._create_side_if_not_exist()
         processed_trades["match_id"] = self._data_trades["trade_id"].apply(str)
         processed_trades["symbol"] = symbol_indexer
-
         self.processed_data = processed_trades
+
+    def _create_side_if_not_exist(self):
+        if 'side' in self._data_trades.columns:
+            return self._data_trades["side"]
+        else:
+            return self._data_trades["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
 
     cpdef list build_ticks(self):
         """

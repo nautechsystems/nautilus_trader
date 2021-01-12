@@ -14,15 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Union
 
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order import LimitOrder
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -32,12 +36,10 @@ from nautilus_trader.trading.strategy import TradingStrategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class EMACross(TradingStrategy):
+class VolatilityMarketMaker(TradingStrategy):
     """
-    A simple moving average cross example strategy.
-
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
+    A very dumb market maker which brackets the current market based on
+    volatility measured by an ATR indicator.
     """
 
     def __init__(
@@ -45,11 +47,10 @@ class EMACross(TradingStrategy):
         symbol: Symbol,
         bar_spec: BarSpecification,
         trade_size: Decimal,
-        fast_ema: int=10,
-        slow_ema: int=20,
+        atr_multiple: float=2.0,
     ):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the `VolatilityMarketMaker` class.
 
         Parameters
         ----------
@@ -59,10 +60,8 @@ class EMACross(TradingStrategy):
             The bar specification for the strategy.
         trade_size : Decimal
             The position size per trade.
-        fast_ema : int
-            The fast EMA period.
-        slow_ema : int
-            The slow EMA period.
+        atr_multiple : int
+            The ATR multiple for bracketing limit orders.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are
@@ -73,23 +72,31 @@ class EMACross(TradingStrategy):
         self.symbol = symbol
         self.bar_type = BarType(symbol, bar_spec)
         self.trade_size = trade_size
+        self.atr_multiple = atr_multiple
+        self.instrument = None       # Request on start instead
+        self.price_precision = None  # Initialized on start
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(fast_ema)
-        self.slow_ema = ExponentialMovingAverage(slow_ema)
+        self.atr = AverageTrueRange(atr_multiple)
+
+        # Users order management variables
+        self.buy_order: Union[LimitOrder, None] = None
+        self.sell_order: Union[LimitOrder, None] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
+        self.instrument = self.data.instrument(self.symbol)
+        self.price_precision = self.instrument.price_precision
+
         # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+        self.register_indicator_for_bars(self.bar_type, self.atr)
 
         # Get historical data
         self.request_bars(self.bar_type)
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_quote_ticks(self.symbol)  # For debugging
+        self.subscribe_quote_ticks(self.symbol)
         # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
@@ -151,45 +158,94 @@ class EMACross(TradingStrategy):
                           f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
-        # BUY LOGIC
-        if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
-                self.buy()
-            elif self.portfolio.is_net_short(self.symbol):
-                self.flatten_all_positions(self.symbol)
-                self.buy()
+        last: QuoteTick = self.data.quote_tick(self.symbol)
+        if last is None:
+            self.log.error("Last quotes not found.")
+            return
 
-        # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
-                self.sell()
-            elif self.portfolio.is_net_long(self.symbol):
+        # Maintain buy orders
+        if self.buy_order is None or self.buy_order.is_completed:
+            self.create_buy_order(last)
+        else:
+            if self.portfolio.net_position(self.symbol) < self.trade_size * 5:
                 self.flatten_all_positions(self.symbol)
-                self.sell()
+                self.create_buy_order(last)
+            else:
+                self.work_buy_order(last)
 
-    def buy(self):
+        # Maintain sell orders
+        if self.sell_order is None or self.sell_order.is_completed:
+            self.create_sell_order(last)
+        else:
+            if self.portfolio.net_position(self.symbol) > self.trade_size * 5:
+                self.flatten_all_positions(self.symbol)
+                self.create_sell_order(last)
+            else:
+                self.work_sell_order(last)
+
+    def create_buy_order(self, last: QuoteTick):
         """
-        Users simple buy method (example).
+        A market makers simple buy limit method (example).
         """
-        order = self.order_factory.market(
+        order: LimitOrder = self.order_factory.limit(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
+            price=Price(last.bid - self.atr.value, self.price_precision),
+            time_in_force=TimeInForce.GTC,
+            post_only=True,
+            hidden=False,
         )
 
+        self.buy_order = order
         self.submit_order(order)
 
-    def sell(self):
+    def create_sell_order(self, last: QuoteTick):
         """
-        Users simple sell method (example).
+        A market makers simple sell limit method (example).
         """
-        order = self.order_factory.market(
+        order: LimitOrder = self.order_factory.limit(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
+            price=Price(last.ask + self.atr.value, self.price_precision),
+            time_in_force=TimeInForce.GTC,
+            post_only=True,
+            hidden=False,
         )
 
+        self.sell_order = order
         self.submit_order(order)
+
+    def work_buy_order(self, last: QuoteTick):
+        """
+        A market makers simple modification method (example).
+        """
+        order: LimitOrder = self.buy_order
+
+        if order is None:
+            # Example of user adding a log message
+            self.log.warning("Cannot work buy order (buy order is None).")
+            return
+
+        new_price = Price(last.bid - self.atr.value, self.price_precision)
+        if new_price != order.price:
+            self.modify_order(order, new_price=new_price)
+
+    def work_sell_order(self, last: QuoteTick):
+        """
+        A market makers simple modification method (example).
+        """
+        order: LimitOrder = self.sell_order
+
+        if order is None:
+            # Example of user adding a log message
+            self.log.warning("Cannot work sell order (sell order is None).")
+            return
+
+        new_price = Price(last.ask + self.atr.value, self.price_precision)
+        if new_price != order.price:
+            self.modify_order(order, new_price=new_price)
 
     def on_data(self, data):
         """
@@ -224,7 +280,7 @@ class EMACross(TradingStrategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_quote_ticks(self.symbol)
+        self.unsubscribe_quote_ticks(self.symbol)
         # self.unsubscribe_trade_ticks(self.symbol)
 
     def on_reset(self):

@@ -288,9 +288,9 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM, PositionId.null()))
 
-        expected_id = PositionId("O-19700101-000000-000-001-1")  # Stubbed from order id
+        expected_id = PositionId("P-000-AUD/USD.SIM-1")  # Generated inside engine
 
         # Assert
         self.assertTrue(self.cache.position_exists(expected_id))

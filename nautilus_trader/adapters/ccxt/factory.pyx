@@ -81,6 +81,14 @@ cdef class CCXTClientsFactory:
             "enableRateLimit": True,                   # Hard coded for now
             "nonce": lambda: int(time.time() * 1000),  # Millisecond nonce
             "asyncio_loop": data_engine.get_event_loop(),
+
+            # Set cache limits
+            "options": {
+                "balancesLimit": 1,
+                "tradesLimit": 1,
+                "OHLCVLimit": 1,
+                "ordersLimit": 1,
+            },
         })
 
         if config.get("data_client", True):

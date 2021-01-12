@@ -20,3 +20,19 @@ cdef class CSVTickDataLoader:
 
 cdef class CSVBarDataLoader:
     pass
+
+
+cdef class TardisTradeDataLoader:
+    pass
+
+
+cdef class TardisQuoteDataLoader:
+    pass
+
+
+cdef class ParquetTickDataLoader:
+    pass
+
+
+cdef class ParquetBarDataLoader:
+    pass

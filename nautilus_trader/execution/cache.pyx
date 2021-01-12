@@ -24,6 +24,7 @@ from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -176,6 +177,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
+        cdef ClientOrderId cl_ord_id
         cdef PositionId position_id
         cdef Position position
         for position_id, position in self._cached_positions.items():
@@ -188,12 +190,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
 
-            for cl_ord_id in position.order_ids:
+            for cl_ord_id in position.cl_ord_ids_c():
                 index_position_orders.add(cl_ord_id)
 
             # 3- Build _index_symbol_positions -> {Symbol, {PositionId}}
             if position.symbol not in self._index_symbol_positions:
-                self._index_symbol_positions[position_id] = set()
+                self._index_symbol_positions[position.symbol] = set()
             self._index_symbol_positions[position.symbol].add(position_id)
 
             # 4- Build _index_strategy_positions -> {StrategyId, {PositionId}}
@@ -682,6 +684,17 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return self._index_venue_account.get(venue)
 
+    cpdef list accounts(self):
+        """
+        Return all accounts in the cache.
+
+        Returns
+        -------
+        list[Account]
+
+        """
+        return list(self._cached_accounts.values())
+
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cdef inline set _build_ord_query_filter_set(self, Symbol symbol, StrategyId strategy_id):
@@ -867,7 +880,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef Order order(self, ClientOrderId cl_ord_id):
         """
-        Return the order matching the given identifier (if found).
+        Return the order matching the given client order identifier (if found).
 
         Returns
         -------
@@ -877,6 +890,23 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
         return self._cached_orders.get(cl_ord_id)
+
+    cpdef OrderId order_id(self, ClientOrderId cl_ord_id):
+        """
+        Return the order identifier matching the given client order identifier
+        (if found).
+
+        Returns
+        -------
+        OrderId or None
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        cdef Order order = self._cached_orders.get(cl_ord_id)
+        if order is None:
+            return None
+        return order.id
 
     cpdef list orders(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
