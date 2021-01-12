@@ -56,9 +56,8 @@ config = {
         "oanda": {
             "data_client": True,               # If a data client should be created
             "exec_client": True,               # If a exec client should be created
+            "api_token": "OANDA_API_TOKEN",      # value is the environment variable key
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "OANDA_API_TOKEN",      # value is the environment variable key
-            "api_secret": "OANDA_ACCOUNT_ID",  # value is the environment variable key
         },
     },
 }
@@ -103,4 +102,6 @@ if __name__ == "__main__":
     try:
         node.start()
     finally:
+        if node.is_running:
+            node.stop()
         node.dispose()

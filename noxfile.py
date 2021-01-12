@@ -19,7 +19,7 @@ def tests(session: Session) -> None:
 
 @nox.session
 def tests_with_integration(session: Session) -> None:
-    """Run the test suite."""
+    """Run the test suite including integration tests."""
     _setup_poetry(session)
     _run_pytest(
         session, "--ignore=tests/performance_tests/",
@@ -53,7 +53,7 @@ def performance_tests(session: Session) -> None:
 
 @nox.session
 def coverage(session: Session) -> None:
-    """Annotate with coverage."""
+    """Run with test coverage."""
     _setup_poetry(session, env={"PROFILING_MODE": "true"})
     _run_coverage(session)
 
@@ -68,7 +68,7 @@ def coverage_and_annotation(session: Session) -> None:
 
 @nox.session
 def build_docs(session: Session) -> None:
-    """Run the performance test suite."""
+    """Build documentation."""
     _setup_poetry(session, "-E", "docs")
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 

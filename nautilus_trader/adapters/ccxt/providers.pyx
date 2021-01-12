@@ -50,7 +50,8 @@ cdef class CCXTInstrumentProvider:
         """
         self.venue = Venue(client.name.upper())
         self.count = 0
-        self._instruments = {}  # type: dict[Symbol: Instrument]
+        self._instruments = {}       # type: dict[Symbol, Instrument]
+        self._instruments_fast = {}  # type: dict[str, Instrument]
         self._client = client
 
         if load_all:
@@ -94,6 +95,10 @@ cdef class CCXTInstrumentProvider:
         """
         return self._instruments.get(symbol)
 
+    cdef Instrument get_c(self, str symbol_code):
+        # Provides fast C level access assuming the venue is correct
+        return self._instruments_fast.get(symbol_code)
+
     cdef void _load_instruments(self) except *:
         cdef str k
         cdef dict v
@@ -104,6 +109,7 @@ cdef class CCXTInstrumentProvider:
             instrument = self._parse_instrument(symbol, v)
 
             self._instruments[symbol] = instrument
+            self._instruments_fast[symbol.code] = instrument
 
         self.count = len(self._instruments)
 

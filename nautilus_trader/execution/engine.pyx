@@ -306,7 +306,10 @@ cdef class ExecutionEngine(Component):
         self.cache.build_index()
         self._set_position_symbol_counts()
 
-        # Update portfolio - methods require sets
+        # Update portfolio
+        for account in self.cache.accounts():
+            self.portfolio.register_account(account)
+
         self.portfolio.initialize_orders(set(self.cache.orders_working()))
         self.portfolio.initialize_positions(set(self.cache.positions_open()))
 
@@ -403,21 +406,48 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Validate command
         if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, f"cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "parent cl_ord_id already exists")
+            self._invalidate_order(
+                command.bracket_order.entry,
+                f"cl_ord_id already exists",
+            )
+            self._invalidate_order(
+                command.bracket_order.stop_loss,
+                "parent cl_ord_id already exists",
+            )
             if command.bracket_order.take_profit is not None:
-                self._invalidate_order(command.bracket_order.take_profit, "parent cl_ord_id already exists")
+                self._invalidate_order(
+                    command.bracket_order.take_profit,
+                    "parent cl_ord_id already exists",
+                )
             return  # Invalid command
         if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "cl_ord_id already exists")
+            self._invalidate_order(
+                command.bracket_order.entry,
+                "OCO cl_ord_id already exists",
+            )
+            self._invalidate_order(
+                command.bracket_order.stop_loss,
+                "cl_ord_id already exists",
+            )
             if command.bracket_order.take_profit is not None:
-                self._invalidate_order(command.bracket_order.take_profit, "OCO cl_ord_id already exists")
+                self._invalidate_order(
+                    command.bracket_order.take_profit,
+                    "OCO cl_ord_id already exists",
+                )
             return  # Invalid command
         if command.bracket_order.take_profit is not None and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
-            self._invalidate_order(command.bracket_order.entry, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.stop_loss, "OCO cl_ord_id already exists")
-            self._invalidate_order(command.bracket_order.take_profit, "cl_ord_id already exists")
+            self._invalidate_order(
+                command.bracket_order.entry,
+                "OCO cl_ord_id already exists",
+            )
+            self._invalidate_order(
+                command.bracket_order.stop_loss,
+                "OCO cl_ord_id already exists",
+            )
+            self._invalidate_order(
+                command.bracket_order.take_profit,
+                "cl_ord_id already exists",
+            )
             return  # Invalid command
 
         # Cache all orders
@@ -564,7 +594,7 @@ cdef class ExecutionEngine(Component):
             OrderFilled fill,
             StrategyId strategy_id,
     ) except *:
-        if position_id.is_null():  # No position yet
+        if position_id is None:  # No position yet
             # Generate identifier and assign
             fill.position_id = self._pos_id_generator.generate(fill.symbol)
 

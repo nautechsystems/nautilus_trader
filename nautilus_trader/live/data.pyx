@@ -127,11 +127,16 @@ cdef class LiveDataEngine(DataEngine):
         command : VenueCommand
             The command to execute.
 
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
         """
         Condition.not_none(command, "command")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, command)
+        self._message_queue.put_nowait(command)
 
     cpdef void process(self, data) except *:
         """
@@ -142,11 +147,16 @@ cdef class LiveDataEngine(DataEngine):
         data : object
             The data to process.
 
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
         """
         Condition.not_none(data, "data")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
+        self._data_queue.put_nowait(data)
 
     cpdef void send(self, DataRequest request) except *:
         """

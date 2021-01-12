@@ -20,6 +20,7 @@ from nautilus_trader.model.instrument cimport Instrument
 
 cdef class CCXTInstrumentProvider:
     cdef dict _instruments
+    cdef dict _instruments_fast
     cdef object _client
 
     cdef readonly Venue venue
@@ -30,6 +31,7 @@ cdef class CCXTInstrumentProvider:
     cpdef void load_all(self) except *
     cpdef dict get_all(self)
     cpdef Instrument get(self, Symbol symbol)
+    cdef Instrument get_c(self, str symbol_code)
 
     cdef void _load_instruments(self) except *
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values)

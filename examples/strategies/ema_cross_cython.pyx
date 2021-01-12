@@ -29,9 +29,15 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
+
+# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
+# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
 # Notes for strategies written in Cython
 # --------------------------------------
-# except * in void methods allow C and Python exceptions to bubble up (otherwise they are ignored)
+# The `except *` statement in void method signatures is to allow C and Python
+# raised exceptions to bubble up (otherwise they are ignored)
+
 
 cdef class EMACross(TradingStrategy):
     """

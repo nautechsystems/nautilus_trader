@@ -121,11 +121,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         command : VenueCommand
             The command to execute.
 
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
         """
         Condition.not_none(command, "command")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, command)
+        self._queue.put_nowait(command)
 
     cpdef void process(self, Event event) except *:
         """
@@ -136,11 +141,16 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         event : Event
             The event to process.
 
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
         """
         Condition.not_none(event, "event")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
+        self._queue.put_nowait(event)
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
