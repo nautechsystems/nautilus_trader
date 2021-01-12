@@ -56,8 +56,9 @@ config = {
         "oanda": {
             "data_client": True,               # If a data client should be created
             "exec_client": True,               # If a exec client should be created
-            "api_token": "OANDA_API_TOKEN",      # value is the environment variable key
+            "api_token": "OANDA_API_TOKEN",    # value is the environment variable key
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
+            "sandbox_mode": False,             # If clients use the testnet
         },
     },
 }
@@ -90,11 +91,14 @@ strategy3 = EMACross(
     trade_size=Decimal(10000),
 )
 
+strategies = [
+    strategy1,
+    strategy2,
+    strategy3,
+]
+
 # Instantiate the node passing a list of strategies and configuration
-node = TradingNode(
-    strategies=[strategy1, strategy2, strategy3],
-    config=config,
-)
+node = TradingNode(strategies=strategies, config=config)
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C

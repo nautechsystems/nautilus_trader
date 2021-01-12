@@ -107,6 +107,5 @@ def request_trades():
 
 
 if __name__ == "__main__":
-    request_currencies()
     # Enter function to run
     pass

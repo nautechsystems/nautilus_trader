@@ -50,9 +50,11 @@ cdef class CCXTInstrumentProvider:
         """
         self.venue = Venue(client.name.upper())
         self.count = 0
-        self._instruments = {}       # type: dict[Symbol, Instrument]
-        self._instruments_fast = {}  # type: dict[str, Instrument]
+
         self._client = client
+
+        self._currencies = {}   # type: dict[str, Currency]
+        self._instruments = {}  # type: dict[str, Instrument]
 
         if load_all:
             self.load_all()
@@ -62,6 +64,7 @@ cdef class CCXTInstrumentProvider:
         Load all instruments for the venue asynchronously.
         """
         await self._client.load_markets(reload=True)
+        self._load_currencies()
         self._load_instruments()
 
     cpdef void load_all(self) except *:
@@ -69,6 +72,7 @@ cdef class CCXTInstrumentProvider:
         Load all instruments for the venue.
         """
         self._client.load_markets(reload=True)
+        self._load_currencies()
         self._load_instruments()
 
     cpdef dict get_all(self):
@@ -93,11 +97,27 @@ cdef class CCXTInstrumentProvider:
         Instrument or None
 
         """
-        return self._instruments.get(symbol)
+        return self._instruments.get(symbol.code)
+
+    cpdef Currency currency(self, str code):
+        """
+        Return the currency with the given code (if found).
+
+        Parameters
+        ----------
+        code : str
+            The currency code.
+
+        Returns
+        -------
+        Currency or None
+
+        """
+        return self._currencies.get(code)
 
     cdef Instrument get_c(self, str symbol_code):
         # Provides fast C level access assuming the venue is correct
-        return self._instruments_fast.get(symbol_code)
+        return self._instruments.get(symbol_code)
 
     cdef void _load_instruments(self) except *:
         cdef str k
@@ -108,27 +128,71 @@ cdef class CCXTInstrumentProvider:
             symbol = Symbol(k, self.venue)
             instrument = self._parse_instrument(symbol, v)
 
-            self._instruments[symbol] = instrument
-            self._instruments_fast[symbol.code] = instrument
+            self._instruments[symbol.code] = instrument
 
         self.count = len(self._instruments)
 
+    cdef void _load_currencies(self) except *:
+        cdef int precision_mode = self._client.precisionMode
+
+        cdef str code
+        cdef dict values
+        for code, values in self._client.currencies.items():
+            currency_type = self._parse_currency_type(code)
+            currency = Currency(
+                code=code,
+                precision=self._get_precision(values["precision"], precision_mode),
+                currency_type=currency_type,
+            )
+
+            self._currencies[code] = currency
+
+    cdef inline int _tick_size_to_precision(self, double tick_size) except *:
+        return len(str(tick_size).partition('.')[2].rstrip('0'))
+
+    cdef inline int _get_precision(self, double value, int mode) except *:
+        if mode == 2:  # DECIMAL_PLACE
+            return int(value)
+        elif mode == 4:  # TICK_SIZE
+            return self._tick_size_to_precision(value)
+
+    cdef inline CurrencyType _parse_currency_type(self, str code):
+        return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
+
     cdef Instrument _parse_instrument(self, Symbol symbol, dict values):
         # Precisions
-        base_precision = values["precision"].get("base", 8)
-        quote_precision = values["precision"].get("quote", 8)
-        price_precision = values["precision"].get("price")
-        size_precision = values["precision"].get("amount", 8)
+        cdef dict precisions = values["precision"]
+        if self._client.precisionMode == 2:  # DECIMAL_PLACES
+            price_precision = precisions.get("price")
+            size_precision = precisions.get("amount", 8)
+            tick_size = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
+        elif self._client.precisionMode == 4:  # TICK_SIZE
+            tick_size = Decimal(precisions.get("price"))
+            price_precision = self._tick_size_to_precision(tick_size)
+            size_precision = precisions.get("amount")
+            if size_precision is None:
+                size_precision = 0
+            size_precision = self._tick_size_to_precision(size_precision)
+        else:
+            raise RuntimeError(f"The {self._client.name} exchange is using "
+                               f"SIGNIFICANT_DIGITS precision which is not "
+                               f"currently supported in this version.")
 
-        base_currency = Currency.from_str_c(values["base"])
-        if base_currency is None:
-            base_currency = Currency(values["base"], base_precision, CurrencyType.CRYPTO)
+        asset_type_str = values.get("type")
+        if asset_type_str is not None:
+            asset_type = AssetTypeParser.from_str(asset_type_str.upper())
+        else:
+            asset_type = AssetType.UNDEFINED
+
+        base_currency = values.get("base")
+        if base_currency is not None:
+            base_currency = Currency.from_str_c(values["base"])
+            if base_currency is None:
+                base_currency = self._currencies[values["base"]]
 
         quote_currency = Currency.from_str_c(values["quote"])
         if quote_currency is None:
-            quote_currency = Currency(values["quote"], quote_precision, CurrencyType.CRYPTO)
-
-        tick_size = Decimal(f"{values['limits']['amount']['min']:{price_precision}f}")
+            quote_currency = self._currencies[values["quote"]]
 
         max_quantity = values["limits"].get("amount").get("max")
         if max_quantity is not None:
@@ -137,6 +201,11 @@ cdef class CCXTInstrumentProvider:
         min_quantity = values["limits"].get("amount").get("min")
         if min_quantity is not None:
             min_quantity = Quantity(min_quantity, precision=size_precision)
+
+        lot_size = values["info"].get("lotSize")
+        if lot_size is not None:
+            lot_size = Quantity(lot_size)
+        elif min_quantity is not None:
             lot_size = Quantity(min_quantity, precision=size_precision)
         else:
             lot_size = Quantity(1)
@@ -157,14 +226,17 @@ cdef class CCXTInstrumentProvider:
         if min_price is not None:
             min_price = Price(min_price, precision=price_precision)
 
-        asset_type_str = values.get("type")
-        if asset_type_str is not None:
-            asset_type = AssetTypeParser.from_str(asset_type_str.upper())
+        maker_fee = values.get("maker")
+        if maker_fee is None:
+            maker_fee = Decimal()
         else:
-            asset_type = AssetType.UNDEFINED
+            maker_fee = Decimal(maker_fee)
 
-        maker_fee = Decimal(values["maker"])
-        taker_fee = Decimal(values["taker"])
+        taker_fee = values.get("taker")
+        if taker_fee is None:
+            taker_fee = Decimal()
+        else:
+            taker_fee = Decimal(taker_fee)
 
         return Instrument(
             symbol=symbol,

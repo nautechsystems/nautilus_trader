@@ -16,7 +16,7 @@
 
 from decimal import Decimal
 
-from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
@@ -53,13 +53,13 @@ config = {
     },
 
     "adapters": {
-        "ccxt-bitmex": {
-            "data_client": True,                # If a data client should be created
-            "exec_client": True,                # If a exec client should be created
-            "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "BITMEX_API_KEY",        # value is the environment variable key
-            "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,              # If clients use the testnet
+        "ccxt-binance": {
+            "data_client": True,                 # If a data client should be created
+            "exec_client": True,                 # If a exec client should be created
+            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
+            "api_key": "BINANCE_API_KEY",        # value is the environment variable key
+            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
+            "sandbox_mode": False,               # If clients use the testnet
         },
     },
 }
@@ -79,12 +79,11 @@ valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
-strategy = EMACross(
-    symbol=Symbol("BTC/USD", Venue("BITMEX")),
+strategy = VolatilityMarketMaker(
+    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
     bar_spec=time_bars,
-    fast_ema=10,
-    slow_ema=20,
-    trade_size=Decimal("100"),
+    trade_size=Decimal("0.02"),
+    atr_multiple=2.0,
 )
 
 # Instantiate the node passing a list of strategies and configuration

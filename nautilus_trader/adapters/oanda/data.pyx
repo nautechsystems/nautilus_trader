@@ -167,6 +167,8 @@ cdef class OandaDataClient(LiveDataClient):
         )
 
         self._is_connected = True
+        self.initialized = True
+
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
