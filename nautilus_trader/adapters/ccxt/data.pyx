@@ -186,7 +186,11 @@ cdef class CCXTDataClient(LiveDataClient):
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        await self._load_instruments()
+        try:
+            await self._load_instruments()
+        except Exception as ex:
+            self._log.error(f"{type(ex).__name__}: {ex} in _connect")
+            return
 
         for instrument in self._instrument_provider.get_all().values():
             self._handle_instrument(instrument)
