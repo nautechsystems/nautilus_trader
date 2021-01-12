@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.live.execution cimport LiveExecutionClient
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -27,7 +26,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
     cdef bint _is_connected
-    cdef dict _currencies
 
     cdef object _update_instruments_task
 
@@ -57,5 +55,4 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     ) except *
 
     cdef inline void _generate_order_filled(self, dict response) except *
-    cdef inline CurrencyType _parse_currency_type(self, str code)
     cdef inline void _on_account_state(self, dict response) except *

@@ -115,7 +115,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
         self._is_connected = False
-        self._currencies = {}  # type: dict[str, Currency]
 
         # Scheduled tasks
         self._update_instruments_task = None
@@ -164,7 +163,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     async def _connect(self):
         await self._load_instruments()
-        await self._load_currencies()
         await self._update_balances()
 
         # Start streams
@@ -418,34 +416,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         update = self._run_after_delay(delay, self._instruments_update(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
-    async def _load_currencies(self):
-        cdef dict response
-        try:
-            response = await self._client.fetch_currencies()
-        except TypeError:
-            # Temporary workaround for testing
-            response = self._client.fetch_currencies
-        except Exception as ex:
-            self._log.exception(ex)
-            return
-
-        cdef str code
-        cdef dict values
-        for code, values in response.items():
-            currency_type = self._parse_currency_type(code)
-            currency = Currency(
-                code=code,
-                precision=values["precision"],
-                currency_type=currency_type,
-            )
-
-            self._currencies[code] = currency
-
-        self._log.info(f"Updated {len(self._currencies)} currencies.")
-
-    cdef inline CurrencyType _parse_currency_type(self, str code):
-        return CurrencyType.FIAT if Currency.is_fiat_c(code) else CurrencyType.CRYPTO
-
     async def _update_balances(self):
         if not self._client.has["fetchBalance"]:
             self._log.error("`fetch_balance` not available.")
@@ -479,6 +449,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     response = self._client.watch_balance
                     exiting = True
 
+                if response is None:
+                    self._log.critical("Why None?")  # TODO!
                 if response:
                     self._on_account_state(response)
 
@@ -502,7 +474,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for code, amount in response["total"].items():
             if amount == 0:
                 continue
-            currency = self._currencies.get(code)
+            currency = self._instrument_provider.currency(code)
             if currency is None:
                 self._log.error(f"Cannot update total balance for {code} "
                                 f"(no currency loaded).")
@@ -512,7 +484,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for code, amount in response["free"].items():
             if amount == 0:
                 continue
-            currency = self._currencies.get(code)
+            currency = self._instrument_provider.currency(code)
             if currency is None:
                 self._log.error(f"Cannot update total balance for {code} "
                                 f"(no currency loaded).")
@@ -522,7 +494,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for code, amount in response["used"].items():
             if amount == 0:
                 continue
-            currency = self._currencies.get(code)
+            currency = self._instrument_provider.currency(code)
             if currency is None:
                 self._log.error(f"Cannot update total balance for {code} "
                                 f"(no currency loaded).")
@@ -546,7 +518,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.error("`watch_orders` not available.")
             return
 
-        # TODO: Type response is <class 'ccxtpro.base.cache.ArrayCacheBySymbolById'>
         cdef bint exiting = False  # Flag to stop loop
         cdef dict order_event
         try:
@@ -595,7 +566,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if fees is None:
             commission = Money(0, instrument.quote_currency)
         else:
-            currency = self._currencies.get(fees["currency"])
+            currency = self._instrument_provider.currency(fees["currency"])
             if currency is None:
                 self._log.error(f"Cannot determine commission for {order_id}, "
                                 f"currency for {fees['currency']} not found.")

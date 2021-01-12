@@ -707,7 +707,6 @@ cdef class CCXTDataClient(LiveDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
-        cdef trades  # TODO: Type ArrayCache
         cdef dict trade
         cdef bint exiting = False  # Flag to stop loop
         try:
@@ -719,18 +718,18 @@ cdef class CCXTDataClient(LiveDataClient):
                     trades = self._client.watch_trades
                     exiting = True
 
-                for trade in trades:
-                    self._on_trade_tick(
-                        symbol,
-                        trade["price"],
-                        trade["amount"],
-                        trade["side"],
-                        trade["takerOrMaker"],
-                        trade["id"],
-                        trade["timestamp"],
-                        price_precision,
-                        size_precision,
-                    )
+                trade = trades[0]  # Last trade only
+                self._on_trade_tick(
+                    symbol,
+                    trade["price"],
+                    trade["amount"],
+                    trade["side"],
+                    trade["takerOrMaker"],
+                    trade["id"],
+                    trade["timestamp"],
+                    price_precision,
+                    size_precision,
+                )
 
                 if exiting:
                     break
