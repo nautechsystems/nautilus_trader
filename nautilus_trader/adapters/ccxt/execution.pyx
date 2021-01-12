@@ -162,8 +162,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        await self._load_instruments()
-        await self._update_balances()
+        try:
+            await self._load_instruments()
+            await self._update_balances()
+        except Exception as ex:
+            self._log.error(f"{type(ex).__name__}: {ex} in _connect")
+            return
 
         # Start streams
         self._watch_balances_task = self._loop.create_task(self._watch_balances())

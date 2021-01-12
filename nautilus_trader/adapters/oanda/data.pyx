@@ -486,7 +486,12 @@ cdef class OandaDataClient(LiveDataClient):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef void _load_instruments(self) except *:
-        self._instrument_provider.load_all()
+        try:
+            self._instrument_provider.load_all()
+        except Exception as ex:
+            self._log.error(f"{type(ex).__name__}: {ex} in _load_instruments")
+            return
+
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
     cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
@@ -664,7 +669,7 @@ cdef class OandaDataClient(LiveDataClient):
         except asyncio.CancelledError:
             pass  # Expected cancellation
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(ex)  # TODO: Development
 
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
         return QuoteTick(
