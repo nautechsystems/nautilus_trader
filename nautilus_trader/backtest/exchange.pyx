@@ -397,15 +397,18 @@ cdef class SimulatedExchange:
         Condition.not_none(command, "command")
 
         if command.cl_ord_id not in self._working_orders:
-            self._cancel_reject_order(command.cl_ord_id, "modify order", "order not found")
-            return  # Rejected the modify order command
+            self._cancel_reject_order(
+                command.cl_ord_id,
+                "modify order",
+                "order not found")
+            return  # Rejected the modify order request
 
         cdef PassiveOrder order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
 
         if command.quantity == 0:
             self._cancel_reject_order(
-                order,
+                order.cl_ord_id,
                 "modify order",
                 f"modified quantity {command.quantity} invalid")
             return  # Cannot modify order
@@ -417,34 +420,43 @@ cdef class SimulatedExchange:
         if order.side == OrderSide.BUY:
             if order.type == OrderType.STOP_MARKET:
                 if order.price < market_ask:
-                    self._reject_order(order, f"BUY STOP order price of {order.price} is too "
-                                              f"far from the market, ask={market_ask}")
-                    return  # Invalid price
+                    self._cancel_reject_order(
+                        order.cl_ord_id,
+                        "modify order",
+                        f"BUY STOP order price of {order.price} is too "
+                        f"far from the market, ask={market_ask}")
+                    return  # Rejected the modify order request
             elif order.type == OrderType.LIMIT:
                 if order.price >= market_ask:
                     if order.is_post_only:
-                        self._reject_order(order, f"BUY LIMIT order price of {order.price} is too "
-                                                  f"far from the market, ask={market_ask}")
-                        return  # Invalid price
+                        self._cancel_reject_order(
+                            order.cl_ord_id,
+                            "modify order",
+                            f"BUY LIMIT order price of {order.price} is too "
+                            f"far from the market, ask={market_ask}")
+                        return  # Rejected the modify order request
                     else:
-                        self._accept_order(order)
                         self._fill_order(order, market_ask, LiquiditySide.TAKER)
                     return  # Filled
         elif order.side == OrderSide.SELL:
             if order.type == OrderType.STOP_MARKET:
                 if order.price > market_bid:
-
-                    self._reject_order(order, f"SELL STOP order price of {order.price} is too "
-                                              f"far from the market, bid={market_bid}")
-                    return  # Invalid price
+                    self._cancel_reject_order(
+                        order.cl_ord_id,
+                        "modify order",
+                        f"SELL STOP order price of {order.price} is too "
+                        f"far from the market, bid={market_bid}")
+                    return  # Rejected the modify order request
             elif order.type == OrderType.LIMIT:
                 if order.price <= market_bid:
                     if order.is_post_only:
-                        self._reject_order(order, f"SELL LIMIT order price of {order.price} is too "
-                                                  f"far from the market, bid={market_bid}")
-                        return  # Invalid price
+                        self._cancel_reject_order(
+                            order.cl_ord_id,
+                            "modify order",
+                            f"SELL LIMIT order price of {order.price} is too "
+                            f"far from the market, bid={market_bid}")
+                        return  # Rejected the modify order request
                     else:
-                        self._accept_order(order)
                         self._fill_order(order, market_bid, LiquiditySide.TAKER)
                         return  # Filled
 
