@@ -58,7 +58,6 @@ config = {
             "exec_client": True,               # If a exec client should be created
             "api_token": "OANDA_API_TOKEN",    # value is the environment variable key
             "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable key
-            "sandbox_mode": False,             # If clients use the testnet
         },
     },
 }
