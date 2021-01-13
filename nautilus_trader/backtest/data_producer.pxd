@@ -65,6 +65,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef readonly datetime max_timestamp
     cdef readonly bint has_tick_data
 
+    cpdef LoggerAdapter get_logger(self)
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *
     cpdef void clear(self) except *
@@ -77,17 +78,14 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
 
 cdef class CachedProducer(DataProducerFacade):
-    cdef BacktestDataProducer producer
     cdef BacktestDataProducer _producer
+    cdef LoggerAdapter _log
     cdef list _tick_cache
     cdef list _ts_cache
     cdef int _tick_index
     cdef int _tick_index_last
     cdef int _init_start_tick_index
     cdef int _init_stop_tick_index
-    cdef str cache_directory
-    cdef str cache_tick_filename
-    cdef str cache_ts_filename
 
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
@@ -97,5 +95,4 @@ cdef class CachedProducer(DataProducerFacade):
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *
     cpdef Tick next_tick(self)
-    cdef void _clear_data(self) except *
     cdef void _create_tick_cache(self) except *
