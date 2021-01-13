@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
+from nautilus_trader.backtest.data_producer cimport CachedProducer
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -78,6 +79,7 @@ cdef class BacktestEngine:
         bint log_thread=False,
         bint log_to_file=False,
         str log_file_path not None="backtests/",
+        bint use_tick_cache=False,
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -114,6 +116,8 @@ cdef class BacktestEngine:
             If log messages should log to a file.
         log_file_path : str, optional
             The name of the log file (cannot be None if log_to_file is True).
+        use_tick_cache : bool, optional
+            If use cache for DataProducer (increase perfomance with repeated backtests with same data)
 
         Raises
         ------
@@ -223,6 +227,9 @@ cdef class BacktestEngine:
             clock=self._test_clock,
             logger=self._test_logger,
         )
+
+        if use_tick_cache:
+            self._data_producer = CachedProducer(self._data_producer)
 
         # Create data client per venue
         for venue in data.venues:
@@ -444,7 +451,7 @@ cdef class BacktestEngine:
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-        bint print_log_store=True
+        bint print_log_store=True,
     ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.

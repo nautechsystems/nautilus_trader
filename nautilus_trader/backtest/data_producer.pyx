@@ -21,62 +21,48 @@ import gc
 
 import numpy as np
 import pandas as pd
-from cpython.datetime cimport
+from bisect import bisect_left
 
-datetime
-from cpython.datetime cimport
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
-timedelta
-from nautilus_trader.common.clock cimport
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.functions cimport format_bytes
+from nautilus_trader.core.functions cimport get_size_of
+from nautilus_trader.core.functions cimport slice_dataframe
+from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
+from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.identifiers cimport TradeMatchId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick cimport QuoteTick
 
-Clock
-from nautilus_trader.common.logging cimport
 
-Logger
-from nautilus_trader.core.correctness cimport
+cdef class DataProducerFacade:
+    """
+        Provides a read-only facade for a `DataProducerFacade`.
+        """
 
-Condition
-from nautilus_trader.core.functions cimport
+    cpdef void setup(self, datetime start, datetime stop) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
-format_bytes
-from nautilus_trader.core.functions cimport
+    cpdef void reset(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
-get_size_of
-from nautilus_trader.core.functions cimport
+    cpdef Tick next_tick(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
-slice_dataframe
-from nautilus_trader.data.engine cimport
 
-DataEngine
-from nautilus_trader.data.wrangling cimport
-
-QuoteTickDataWrangler
-from nautilus_trader.data.wrangling cimport
-
-TradeTickDataWrangler
-from nautilus_trader.model.c_enums.bar_aggregation cimport
-
-BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport
-
-BarAggregationParser
-from nautilus_trader.model.c_enums.order_side cimport
-
-OrderSideParser
-from nautilus_trader.model.identifiers cimport
-
-TradeMatchId
-from nautilus_trader.model.objects cimport
-
-Price
-from nautilus_trader.model.objects cimport
-
-Quantity
-from nautilus_trader.model.tick cimport
-
-QuoteTick
-
-cdef class BacktestDataProducer:
+cdef class BacktestDataProducer(DataProducerFacade):
     """
     Provides an implementation of `DataClient` which produces data for backtesting.
     """
@@ -317,7 +303,7 @@ cdef class BacktestDataProducer:
 
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
-    cdef Tick next_tick(self):
+    cpdef Tick next_tick(self):
         cdef Tick next_tick
         # Quote ticks only
         if self._next_trade_tick is None:
@@ -407,3 +393,97 @@ cdef class BacktestDataProducer:
         self.has_tick_data = False
 
         self._log.info("Reset.")
+
+    cpdef void clear(self) except *:
+
+        self.reset()
+        self._trade_tick_data = pd.DataFrame()
+        self._quote_tick_data = pd.DataFrame()
+
+        gc.collect()  # Garbage collection to remove redundant processing artifacts
+        self._log.info("Clear.")
+
+
+cdef class CachedProducer(DataProducerFacade):
+
+    def  __init__(
+            self,
+            BacktestDataProducer producer = None
+    ):
+        """
+        Cached wrap for `BacktestDataProducer` class.
+
+        producer : BacktestDataProducer
+            BacktestDataProducer class.
+
+        """
+        self._producer = producer
+        self.execution_resolutions = self._producer.execution_resolutions
+        self.min_timestamp = self._producer.min_timestamp
+        self.max_timestamp = self._producer.max_timestamp
+        self.has_tick_data = False
+
+        self._tick_cache = []
+        self._ts_cache = []
+        self._create_tick_cache()
+
+    cdef void _create_tick_cache(self) except *:
+        cdef Tick tick
+        timing_start_total = datetime.utcnow()
+
+        self._producer.setup(self.min_timestamp, self.max_timestamp)
+        while self._producer.has_tick_data:
+            tick = self._producer.next_tick()
+            self._tick_cache.append(tick)
+            self._ts_cache.append(tick.timestamp.timestamp())
+
+        processing_time = round((datetime.utcnow() - timing_start_total).total_seconds(), 2)
+        self._producer._log.info(f"Pre-caching {len(self._tick_cache):,} "
+                       f"total tick rows in {processing_time}s.")
+        self._clear_data()
+
+    cpdef void setup(self, datetime start, datetime stop) except *:
+        """
+                Setup tick data for a backtest run.
+
+                Parameters
+                ----------
+                start : datetime
+                    The start datetime (UTC) for the run.
+                stop : datetime
+                    The stop datetime (UTC) for the run.
+
+                """
+        Condition.not_none(start, "start")
+        Condition.not_none(stop, "stop")
+
+        # Set indexing
+        self._tick_index = bisect_left(self._ts_cache, start.timestamp())
+        self._tick_index_last = bisect_left(self._ts_cache, stop.timestamp())
+        self._init_start_tick_index = self._tick_index
+        self._init_stop_tick_index = self._tick_index_last
+        self.has_tick_data = True
+
+    cpdef Tick next_tick(self):
+        cdef Tick tick
+        if self._tick_index <= self._tick_index_last:
+            tick = self._tick_cache[self._tick_index]
+            self._tick_index += 1
+
+        if self._tick_index > self._tick_index_last:
+            self.has_tick_data = False
+        return tick
+
+    cpdef void reset(self) except *:
+        self._tick_index = self._init_start_tick_index
+        self._tick_index_last = self._init_stop_tick_index
+        self.has_tick_data = True
+
+    cdef void _clear_data(self) except *:
+        """
+        Clear the data producer keep only pre-processed data.
+
+        """
+        self._producer.clear()
+
+        gc.collect()  # Garbage collection to remove redundant processing artifacts
