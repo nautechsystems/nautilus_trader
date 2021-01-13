@@ -319,7 +319,58 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
+    cpdef void reset(self) except *:
+        """
+        Reset the data producer.
+
+        All stateful fields are reset to their initial value.
+        """
+        self._log.info(f"Resetting...")
+
+        self._quote_symbols = None
+        self._quote_bids = None
+        self._quote_asks = None
+        self._quote_bid_sizes = None
+        self._quote_ask_sizes = None
+        self._quote_timestamps = None
+        self._quote_index = 0
+        self._quote_index_last = len(self._quote_tick_data) - 1
+
+        self._trade_symbols = None
+        self._trade_prices = None
+        self._trade_sizes = None
+        self._trade_match_ids = None
+        self._trade_sides = None
+        self._trade_timestamps = None
+        self._trade_index = 0
+        self._trade_index_last = len(self._quote_tick_data) - 1
+
+        self.has_tick_data = False
+
+        self._log.info("Reset.")
+
+    cpdef void clear(self) except *:
+        """
+        Clears the original data from the producer.
+
+        """
+        self._trade_tick_data = pd.DataFrame()
+        self._quote_tick_data = pd.DataFrame()
+        gc.collect()  # Removes redundant processing artifacts
+
+        self._log.info("Cleared.")
+
     cpdef Tick next_tick(self):
+        """
+        Return the next tick in the stream (if one exists).
+
+        Checking `has_tick_data` is `True` will ensure there is a next tick.
+
+        Returns
+        -------
+        Tick or None
+
+        """
         cdef Tick next_tick
         # Quote ticks only
         if self._next_trade_tick is None:
@@ -380,44 +431,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
             if self._next_quote_tick is None:
                 self.has_tick_data = False
 
-    cpdef void reset(self) except *:
-        """
-        Reset the data producer.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.info(f"Resetting...")
-
-        self._quote_symbols = None
-        self._quote_bids = None
-        self._quote_asks = None
-        self._quote_bid_sizes = None
-        self._quote_ask_sizes = None
-        self._quote_timestamps = None
-        self._quote_index = 0
-        self._quote_index_last = len(self._quote_tick_data) - 1
-
-        self._trade_symbols = None
-        self._trade_prices = None
-        self._trade_sizes = None
-        self._trade_match_ids = None
-        self._trade_sides = None
-        self._trade_timestamps = None
-        self._trade_index = 0
-        self._trade_index_last = len(self._quote_tick_data) - 1
-
-        self.has_tick_data = False
-
-        self._log.info("Reset.")
-
-    cpdef void clear(self) except *:
-        self.reset()
-        self._trade_tick_data = pd.DataFrame()
-        self._quote_tick_data = pd.DataFrame()
-
-        gc.collect()  # Garbage collection to remove redundant processing artifacts
-        self._log.info("Clear.")
-
 
 cdef class CachedProducer(DataProducerFacade):
     """
@@ -426,7 +439,7 @@ cdef class CachedProducer(DataProducerFacade):
 
     def __init__(self, BacktestDataProducer producer):
         """
-        Initialize a new instance of the `DataProducerFacade` class.
+        Initialize a new instance of the `CachedProducer` class.
 
         Parameters
         ----------
@@ -474,7 +487,27 @@ cdef class CachedProducer(DataProducerFacade):
         self._init_stop_tick_index = self._tick_index_last
         self.has_tick_data = True
 
+    cpdef void reset(self) except *:
+        """
+        Reset the producer which sets the internal indexes to their initial
+
+        All stateful fields are reset to their initial value.
+        """
+        self._tick_index = self._init_start_tick_index
+        self._tick_index_last = self._init_stop_tick_index
+        self.has_tick_data = True
+
     cpdef Tick next_tick(self):
+        """
+        Return the next tick in the stream (if one exists).
+
+        Checking `has_tick_data` is `True` will ensure there is a next tick.
+
+        Returns
+        -------
+        Tick or None
+
+        """
         cdef Tick tick
         if self._tick_index <= self._tick_index_last:
             tick = self._tick_cache[self._tick_index]
@@ -485,11 +518,6 @@ cdef class CachedProducer(DataProducerFacade):
             self.has_tick_data = False
 
         return tick
-
-    cpdef void reset(self) except *:
-        self._tick_index = self._init_start_tick_index
-        self._tick_index_last = self._init_stop_tick_index
-        self.has_tick_data = True
 
     cdef void _create_tick_cache(self) except *:
         self._log.info(f"Pre-caching ticks...")
