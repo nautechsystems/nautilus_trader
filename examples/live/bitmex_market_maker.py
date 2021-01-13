@@ -53,36 +53,25 @@ config = {
     },
 
     "adapters": {
-        "ccxt-binance": {
-            "data_client": True,                 # If a data client should be created
-            "exec_client": True,                 # If a exec client should be created
-            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "BINANCE_API_KEY",        # value is the environment variable key
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,               # If clients use the testnet
+        "ccxt-bitmex": {
+            "data_client": True,                # If a data client should be created
+            "exec_client": True,                # If a exec client should be created
+            "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
+            "api_key": "BITMEX_API_KEY",        # value is the environment variable key
+            "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
+            "sandbox_mode": False,              # If clients use the testnet
         },
     },
 }
-
-
-# BarSpecification options
-# ------------------------
-# price types include BID, ASK, MID, LAST
-# Current aggregations TICK, SECOND, MINUTE, HOUR, DAY, VOLUME, VALUE
-# These can be combined in any way, for example;
-tick_bars = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-volu_bars = BarSpecification(100, BarAggregation.VOLUME, PriceType.MID)
-valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 
 
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
 strategy = VolatilityMarketMaker(
-    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=time_bars,
-    trade_size=Decimal("0.02"),
+    symbol=Symbol("BTC/USD", Venue("BITMEX")),
+    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+    trade_size=Decimal("100"),
     atr_multiple=6.0,
 )
 

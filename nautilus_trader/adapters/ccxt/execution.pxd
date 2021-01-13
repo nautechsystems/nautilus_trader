@@ -33,6 +33,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _watch_cancel_order_task
     cdef object _watch_my_trades_task
 
+    cdef dict _submitted_orders
+
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *

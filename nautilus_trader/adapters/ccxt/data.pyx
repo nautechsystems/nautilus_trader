@@ -624,7 +624,7 @@ cdef class CCXTDataClient(LiveDataClient):
         try:
             while True:
                 try:
-                    order_book = await self._client.watch_order_book(symbol.code, limit=5)
+                    order_book = await self._client.watch_order_book(symbol.code)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_quotes.__name__)
                     continue

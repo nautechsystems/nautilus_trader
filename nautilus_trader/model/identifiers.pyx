@@ -499,13 +499,7 @@ cdef class BracketOrderId(Identifier):
         value : str
             The value of the order_id (should be unique).
 
-        Raises
-        ------
-        ValueError
-            If value is not a valid string or does not start with 'BO-'.
-
         """
-        Condition.true(value.startswith("BO-"), f"value must begin with \'BO-\', was {value}.")
         super().__init__(value)
 
 
@@ -525,13 +519,7 @@ cdef class ClientOrderId(Identifier):
         value : str
             The client order identifier value.
 
-        Raises
-        ------
-        ValueError
-            If value is not a valid string, or does not start with 'O-'.
-
         """
-        Condition.true(value.startswith("O-"), f"value must begin with \'O-\', was {value}.")
         super().__init__(value)
 
 
@@ -550,11 +538,6 @@ cdef class ClientOrderLinkId(Identifier):
         ----------
         value : str
             The client order link identifier value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string, or does not start with 'O-'.
 
         """
         super().__init__(value)

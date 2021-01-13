@@ -116,6 +116,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_orders_task = None
         self._watch_my_trades_task = None
 
+        self._submitted_orders = {}  # type: dict[str, Order]  # ClientOrderId: Order
+
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -215,6 +217,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             client=self._client,
             load_all=False,
         )
+
+        self._submitted_orders = {}
 
         self._log.info("Reset.")
 
@@ -387,12 +391,20 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     continue  # TODO: Temporary workaround for testing
 
                 event = response[0]
-                status = event["status"]
 
-                if status == "open":
-                    self._generate_order_working(event)
-                elif status == "closed":
+                # self._log.critical(str(event))  # TODO!
+
+                # Check for submitted order
+                submitted_order = self._submitted_orders.pop(event["clientOrderId"], None)
+                if submitted_order is not None:
+                    self._generate_order_accepted(submitted_order, event)
+
+                # Determine event
+                status = event["status"]
+                if event["filled"] > 0:
                     self._generate_order_filled(event)
+                elif status == "open":
+                    self._generate_order_working(event)
                 elif status == "canceled":
                     self._generate_order_cancelled(event)
                 else:
@@ -443,19 +455,30 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info(f"Submitting {order}...")
         self._generate_order_submitted(order.cl_ord_id, self._clock.utc_now())
 
-        cdef str order_type = OrderTypeParser.to_str(order.type)
-        cdef str order_side = OrderSideParser.to_str(order.side)
+        # Add ClientOrderId to submitted orders
+        self._submitted_orders[order.cl_ord_id.value] = order
+
+        cdef str order_type = OrderTypeParser.to_str(order.type).lower()
+        cdef str order_side = OrderSideParser.to_str(order.side).lower()
         cdef str order_qty = str(order.quantity)
 
         cdef dict params = {
-            "newClientOrderId": order.cl_ord_id.value,
             "recvWindow": 10000  # TODO: Server time sync issue?
         }
 
-        cdef dict response
+        # Add ClientOrderId to request
+        if self.venue.value == "BINANCE":
+            params["newClientOrderId"] = order.cl_ord_id.value
+        elif self.venue.value == "BITMEX":
+            params["clOrdId"] = order.cl_ord_id.value
+        else:
+            self._log.error("Cannot submit order, ClientOrderId handling only "
+                            "setup for Binance and BitMEX in this version.")
+            return  # Cannot submit order
+
         try:
             if order.type == OrderType.MARKET:
-                response = await self._client.create_order(
+                await self._client.create_order(
                     order.symbol.code,
                     order_type,
                     order_side,
@@ -463,7 +486,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     params=params,
                 )
             elif order.type == OrderType.LIMIT:
-                response = await self._client.create_order(
+                await self._client.create_order(
                     order.symbol.code,
                     order_type,
                     order_side,
@@ -481,8 +504,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._generate_order_rejected(order, str(ex))
             return
 
-        self._generate_order_accepted(order, response)
-
     async def _cancel_order(self, ClientOrderId cl_ord_id):
         cdef Order order = self._engine.cache.order(cl_ord_id)
         if order is None:
@@ -493,14 +514,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot cancel order, order is not working.")
             return  # Cannot cancel
 
-        cdef dict
         try:
-            response = await self._client.cancel_order(order.id, order.symbol.code)
+            await self._client.cancel_order(order.id.value, order.symbol.code)
         except CCXTError as ex:
             self._log_ccxt_error(ex, self._cancel_order.__name__)
             return
-
-        self._generate_order_cancelled(response)
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
@@ -704,22 +722,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._handle_event(working)
 
     cdef inline void _generate_order_cancelled(self, dict event) except *:
-        cdef str order_id_str = event["id"]
-        cdef str cl_ord_id_str = event["clientOrderId"]
-
-        # Fetch order from cache
-        cdef Order order = self._engine.cache.order(ClientOrderId(cl_ord_id_str))
-        if order is None:
-            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id_str}, "
-                            f"order_id {order_id_str} not found in cache.")
-            return  # Cannot fill order
-
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             self.account_id,
-            order.cl_ord_id,
-            order.id,
-            self._clock.utc_now(),
+            ClientOrderId(event["clientOrderId"]),
+            OrderId(event["id"]),
+            from_posix_ms(event["timestamp"]),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
