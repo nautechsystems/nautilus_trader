@@ -39,6 +39,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     cdef int _counter
 
+    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
     cdef inline void _generate_order_submitted(
         self,
         ClientOrderId cl_ord_id,
@@ -46,7 +47,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     ) except *
 
     cdef inline void _generate_order_rejected(self, Order order, str reason) except *
-
     cdef inline void _generate_order_accepted(
         self,
         Order order,
