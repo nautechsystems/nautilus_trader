@@ -21,6 +21,7 @@ import gc
 
 import numpy as np
 import pandas as pd
+import time
 from bisect import bisect_left
 
 from cpython.datetime cimport datetime
@@ -46,8 +47,8 @@ from nautilus_trader.model.tick cimport QuoteTick
 
 cdef class DataProducerFacade:
     """
-        Provides a read-only facade for a `DataProducerFacade`.
-        """
+    Provides a read-only facade for data producers.
+    """
 
     cpdef void setup(self, datetime start, datetime stop) except *:
         """Abstract method (implement in subclass)."""
@@ -64,7 +65,7 @@ cdef class DataProducerFacade:
 
 cdef class BacktestDataProducer(DataProducerFacade):
     """
-    Provides an implementation of `DataClient` which produces data for backtesting.
+    Provides a basic data producer for backtesting.
     """
 
     def __init__(
@@ -77,6 +78,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         Initialize a new instance of the `BacktestDataProducer` class.
 
+        Parameters
+        ----------
         data : BacktestDataContainer
             The data for the producer.
         engine : DataEngine
@@ -222,6 +225,17 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
+    cpdef LoggerAdapter get_logger(self):
+        """
+        Return the logger for the component.
+
+        Returns
+        -------
+        LoggerAdapter
+
+        """
+        return self._log
+
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
         Setup tick data for a backtest run.
@@ -240,6 +254,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
         # Prepare instruments
         for instrument in self._data.instruments.values():
             self._data_engine.process(instrument)
+
+        self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
         cdef long total_size = 0
@@ -395,7 +411,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self._log.info("Reset.")
 
     cpdef void clear(self) except *:
-
         self.reset()
         self._trade_tick_data = pd.DataFrame()
         self._quote_tick_data = pd.DataFrame()
@@ -405,57 +420,52 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
 
 cdef class CachedProducer(DataProducerFacade):
+    """
+    Cached wrap for the `BacktestDataProducer` class.
+    """
 
-    def  __init__(
-            self,
-            BacktestDataProducer producer = None
-    ):
+    def __init__(self, BacktestDataProducer producer):
         """
-        Cached wrap for `BacktestDataProducer` class.
+        Initialize a new instance of the `DataProducerFacade` class.
 
+        Parameters
+        ----------
         producer : BacktestDataProducer
-            BacktestDataProducer class.
+            The data producer to cache.
 
         """
         self._producer = producer
+        self._log = producer.get_logger()
+        self._tick_cache = []
+        self._ts_cache = []
+        self._tick_index = 0
+        self._tick_index_last = 0
+        self._init_start_tick_index = 0
+        self._init_stop_tick_index = 0
+
         self.execution_resolutions = self._producer.execution_resolutions
         self.min_timestamp = self._producer.min_timestamp
         self.max_timestamp = self._producer.max_timestamp
         self.has_tick_data = False
 
-        self._tick_cache = []
-        self._ts_cache = []
         self._create_tick_cache()
-
-    cdef void _create_tick_cache(self) except *:
-        cdef Tick tick
-        timing_start_total = datetime.utcnow()
-
-        self._producer.setup(self.min_timestamp, self.max_timestamp)
-        while self._producer.has_tick_data:
-            tick = self._producer.next_tick()
-            self._tick_cache.append(tick)
-            self._ts_cache.append(tick.timestamp.timestamp())
-
-        processing_time = round((datetime.utcnow() - timing_start_total).total_seconds(), 2)
-        self._producer._log.info(f"Pre-caching {len(self._tick_cache):,} "
-                       f"total tick rows in {processing_time}s.")
-        self._clear_data()
 
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
-                Setup tick data for a backtest run.
+        Setup tick data for a backtest run.
 
-                Parameters
-                ----------
-                start : datetime
-                    The start datetime (UTC) for the run.
-                stop : datetime
-                    The stop datetime (UTC) for the run.
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) for the run.
+        stop : datetime
+            The stop datetime (UTC) for the run.
 
-                """
+        """
         Condition.not_none(start, "start")
         Condition.not_none(stop, "stop")
+
+        self._producer.setup(start, stop)
 
         # Set indexing
         self._tick_index = bisect_left(self._ts_cache, start.timestamp())
@@ -470,8 +480,10 @@ cdef class CachedProducer(DataProducerFacade):
             tick = self._tick_cache[self._tick_index]
             self._tick_index += 1
 
+        # Check if last tick
         if self._tick_index > self._tick_index_last:
             self.has_tick_data = False
+
         return tick
 
     cpdef void reset(self) except *:
@@ -479,11 +491,21 @@ cdef class CachedProducer(DataProducerFacade):
         self._tick_index_last = self._init_stop_tick_index
         self.has_tick_data = True
 
-    cdef void _clear_data(self) except *:
-        """
-        Clear the data producer keep only pre-processed data.
+    cdef void _create_tick_cache(self) except *:
+        self._log.info(f"Pre-caching ticks...")
+        self._producer.setup(self.min_timestamp, self.max_timestamp)
 
-        """
+        timing_start_total = time.time()
+
+        cdef Tick tick
+        while self._producer.has_tick_data:
+            tick = self._producer.next_tick()
+            self._tick_cache.append(tick)
+            self._ts_cache.append(tick.timestamp.timestamp())
+
+        processing_time = round((time.time() - timing_start_total), 2)
+        self._log.info(f"Pre-cached {len(self._tick_cache):,} "
+                       f"total tick rows in {processing_time}s.")
+
         self._producer.clear()
-
-        gc.collect()  # Garbage collection to remove redundant processing artifacts
+        gc.collect()  # Removes redundant processing artifacts

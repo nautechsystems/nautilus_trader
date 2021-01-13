@@ -69,6 +69,7 @@ cdef class BacktestEngine:
         list strategies=None,
         int tick_capacity=1000,
         int bar_capacity=1000,
+        bint use_tick_cache=False,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
         bint bypass_logging=False,
@@ -79,7 +80,6 @@ cdef class BacktestEngine:
         bint log_thread=False,
         bint log_to_file=False,
         str log_file_path not None="backtests/",
-        bint use_tick_cache=False,
     ):
         """
         Initialize a new instance of the `BacktestEngine` class.
@@ -96,6 +96,8 @@ cdef class BacktestEngine:
             The length for the data engines internal ticks deque (> 0).
         bar_capacity : int, optional
             The length for the data engines internal bars deque (> 0).
+        use_tick_cache : bool, optional
+            If use cache for DataProducer (increased performance with repeated backtests on same data).
         exec_db_type : str, optional
             The type for the execution cache (can be the default 'in-memory' or redis).
         exec_db_flush : bool, optional
@@ -116,8 +118,6 @@ cdef class BacktestEngine:
             If log messages should log to a file.
         log_file_path : str, optional
             The name of the log file (cannot be None if log_to_file is True).
-        use_tick_cache : bool, optional
-            If use cache for DataProducer (increase perfomance with repeated backtests with same data)
 
         Raises
         ------
@@ -128,7 +128,7 @@ cdef class BacktestEngine:
         TypeError
             If strategies contains a type other than TradingStrategy.
         ValueError
-            If log_to_file is True and log_file_path is None
+            If log_to_file is True and log_file_path is None.
 
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
@@ -596,7 +596,7 @@ cdef class BacktestEngine:
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                balances = [{', '.join([b.to_str() for b in exchange.starting_balances])}]
+                balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
     cdef void _backtest_footer(

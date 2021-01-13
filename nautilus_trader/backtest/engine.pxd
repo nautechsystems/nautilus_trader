@@ -29,7 +29,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
 from nautilus_trader.backtest.data_producer cimport DataProducerFacade
-DataProducerFacade
 
 
 cdef class BacktestEngine:
