@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import os
 import sys
 import unittest
-from decimal import Decimal
 
 import pandas as pd
 import pytest
@@ -57,6 +57,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             data=data,
             strategies=[TradingStrategy('000')],
             bypass_logging=True,
+            use_tick_cache=True,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -160,6 +161,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
             data=data,
             strategies=[TradingStrategy('000')],
             bypass_logging=True,
+            use_tick_cache=True,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -208,6 +210,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
             data=data,
             strategies=[TradingStrategy('000')],
             bypass_logging=True,
+            use_tick_cache=True,
         )
 
         interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
@@ -274,6 +277,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
             data=data,
             strategies=[TradingStrategy('000')],
             bypass_logging=True,
+            use_tick_cache=True,
         )
 
         self.engine.add_exchange(
@@ -320,6 +324,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
             data=data,
             strategies=[TradingStrategy('000')],
             bypass_logging=True,
+            use_tick_cache=True,
         )
 
         self.engine.add_exchange(
