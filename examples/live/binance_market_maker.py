@@ -35,7 +35,7 @@ config = {
 
     "logging": {
         "log_level_console": "INF",
-        "log_level_file": "DGB",
+        "log_level_file": "DBG",
         "log_level_store": "WRN",
         "log_to_file": False,
         "log_file_path": "logs/",
@@ -83,7 +83,7 @@ strategy = VolatilityMarketMaker(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
     bar_spec=time_bars,
     trade_size=Decimal("0.02"),
-    atr_multiple=2.0,
+    atr_multiple=3.0,
 )
 
 # Instantiate the node passing a list of strategies and configuration

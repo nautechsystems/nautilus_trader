@@ -114,7 +114,7 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertTrue(self.client.is_connected())
+            self.assertTrue(self.client.is_connected)
 
             # Tear Down
             self.data_engine.stop()
@@ -129,7 +129,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.disconnect()
 
         # Assert
-        self.assertFalse(self.client.is_connected())
+        self.assertFalse(self.client.is_connected)
 
     def test_reset(self):
         # Arrange
@@ -137,7 +137,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.reset()
 
         # Assert
-        self.assertFalse(self.client.is_connected())
+        self.assertFalse(self.client.is_connected)
 
     def test_dispose(self):
         # Arrange
@@ -145,7 +145,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.dispose()
 
         # Assert
-        self.assertFalse(self.client.is_connected())
+        self.assertFalse(self.client.is_connected)
 
     def test_subscribe_instrument(self):
         # Arrange

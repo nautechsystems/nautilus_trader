@@ -998,7 +998,7 @@ cdef class SimulatedExchange:
             return
 
         # Generate event
-        cdef OrderRejected event = OrderRejected(
+        cdef OrderRejected rejected = OrderRejected(
             self.exec_client.account_id,
             order.cl_ord_id,
             self._clock.utc_now(),
@@ -1007,7 +1007,7 @@ cdef class SimulatedExchange:
             self._clock.utc_now(),
         )
 
-        self.exec_client.handle_event(event)
+        self.exec_client.handle_event(rejected)
 
     cdef inline void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *:
         # order is the OCO order to cancel
@@ -1017,7 +1017,7 @@ cdef class SimulatedExchange:
             return
 
         # Generate event
-        cdef OrderCancelled event = OrderCancelled(
+        cdef OrderCancelled cancelled = OrderCancelled(
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
@@ -1027,7 +1027,7 @@ cdef class SimulatedExchange:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} OCO order from {oco_order_id}.")
-        self.exec_client.handle_event(event)
+        self.exec_client.handle_event(cancelled)
 
     cdef inline void _cancel_order(self, PassiveOrder order) except *:
         if order.is_completed_c():
@@ -1035,7 +1035,7 @@ cdef class SimulatedExchange:
             return
 
         # Generate event
-        cdef OrderCancelled event = OrderCancelled(
+        cdef OrderCancelled cancelled = OrderCancelled(
             self.exec_client.account_id,
             order.cl_ord_id,
             order.id,
@@ -1045,4 +1045,4 @@ cdef class SimulatedExchange:
         )
 
         self._log.debug(f"Cancelling {order.cl_ord_id} as linked position closed.")
-        self.exec_client.handle_event(event)
+        self.exec_client.handle_event(cancelled)

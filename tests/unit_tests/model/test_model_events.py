@@ -72,9 +72,9 @@ class EventTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(f"AccountState(account_id=SIM-000, "
-                         f"balances=[1,525,000.00 USD], id={uuid})", str(event))
+                         f"free=[1,525,000.00 USD], locked=[0.00 USD], id={uuid})", str(event))
         self.assertEqual(f"AccountState(account_id=SIM-000, "
-                         f"balances=[1,525,000.00 USD], id={uuid})", repr(event))
+                         f"free=[1,525,000.00 USD], locked=[0.00 USD], id={uuid})", repr(event))
 
     def test_order_initialized(self):
         # Arrange

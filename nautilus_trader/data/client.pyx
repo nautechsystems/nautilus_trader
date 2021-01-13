@@ -80,7 +80,7 @@ cdef class DataClient:
         self._config = config
 
         self.venue = venue
-        self.initialized = False
+        self.is_connected = False
 
         self._log.info("Initialized.")
 
@@ -98,10 +98,6 @@ cdef class DataClient:
 
         """
         return self._config.get("unavailable_methods", []).copy()
-
-    cpdef bint is_connected(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void connect(self) except *:
         """Abstract method (implement in subclass)."""

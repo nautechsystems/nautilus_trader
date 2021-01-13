@@ -99,9 +99,6 @@ class ExecutionClientTests(unittest.TestCase):
     def test_dispose_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.client.dispose)
 
-    def test_is_connected_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.is_connected)
-
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
             AUDUSD_SIM.symbol,

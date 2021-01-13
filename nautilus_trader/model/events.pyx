@@ -86,7 +86,8 @@ cdef class AccountState(Event):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balances=[{', '.join([b.to_str() for b in self.balances])}], "
+                f"free=[{', '.join([b.to_str() for b in self.balances_free])}], "
+                f"locked=[{', '.join([b.to_str() for b in self.balances_locked])}], "
                 f"id={self.id})")
 
 

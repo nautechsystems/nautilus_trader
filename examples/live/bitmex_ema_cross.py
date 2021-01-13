@@ -35,7 +35,7 @@ config = {
 
     "logging": {
         "log_level_console": "INF",
-        "log_level_file": "DGB",
+        "log_level_file": "DBG",
         "log_level_store": "WRN",
         "log_to_file": False,
         "log_file_path": "logs/",

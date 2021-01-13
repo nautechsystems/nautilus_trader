@@ -25,7 +25,6 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class CCXTDataClient(LiveDataClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
-    cdef bint _is_connected
 
     cdef set _subscribed_instruments
     cdef dict _subscribed_quote_ticks

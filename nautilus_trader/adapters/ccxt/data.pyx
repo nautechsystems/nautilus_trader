@@ -98,7 +98,8 @@ cdef class CCXTDataClient(LiveDataClient):
             client=client,
             load_all=False,
         )
-        self._is_connected = False
+
+        self.is_connected = False
 
         # Subscriptions
         self._subscribed_instruments = set()   # type: set[Symbol]
@@ -108,8 +109,6 @@ cdef class CCXTDataClient(LiveDataClient):
 
         # Scheduled tasks
         self._update_instruments_task = None
-
-        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -162,18 +161,6 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         return sorted(list(self._subscribed_bars.keys()))
 
-    cpdef bint is_connected(self) except *:
-        """
-        Return a value indicating whether the client is connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
-
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -197,9 +184,7 @@ cdef class CCXTDataClient(LiveDataClient):
         for instrument in self._instrument_provider.get_all().values():
             self._handle_instrument(instrument)
 
-        self._is_connected = True
-        self.initialized = True
-
+        self.is_connected = True
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
@@ -234,15 +219,14 @@ cdef class CCXTDataClient(LiveDataClient):
         self._log.info("Closing WebSocket(s)...")
         await self._client.close()
 
-        self._is_connected = False
-
+        self.is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
         """
         Reset the client.
         """
-        if self._is_connected:
+        if self.is_connected:
             self._log.error("Cannot reset a connected data client.")
             return
 
@@ -267,7 +251,7 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Dispose the client.
         """
-        if self._is_connected:
+        if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return
 
@@ -802,8 +786,6 @@ cdef class CCXTDataClient(LiveDataClient):
 
         cdef long last_timestamp = 0
         cdef long this_timestamp = 0
-        cdef bars  # TODO: Type ArrayCache
-        cdef bar   # TODO: Type ArrayCache
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:

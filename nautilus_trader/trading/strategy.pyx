@@ -1107,10 +1107,10 @@ cdef class TradingStrategy(Component):
         self._exec_engine.execute(command)
 
     cpdef void modify_order(
-            self,
-            PassiveOrder order,
-            Quantity new_quantity=None,
-            Price new_price=None,
+        self,
+        PassiveOrder order,
+        Quantity new_quantity=None,
+        Price new_price=None,
     ) except *:
         """
         Modify the given order with the given quantity and/or price.
@@ -1118,6 +1118,11 @@ cdef class TradingStrategy(Component):
         A `ModifyOrder` command is created and then sent to the
         `ExecutionEngine`. Either one or both values must differ from the
         original order for the command to be valid.
+
+        Will use an Order Cancel/Replace Request (a.k.a Order Modification)
+        for FIX protocols, otherwise if order modification is not available with
+        the API, then will cancel - then replace with a new order using the
+        original `ClientOrderId`.
 
         Parameters
         ----------
@@ -1127,6 +1132,10 @@ cdef class TradingStrategy(Component):
             The new quantity for the given order.
         new_price : Price, optional
             The new price for the given order.
+
+        Notes
+        -----
+        https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
 
         """
         Condition.not_none(order, "order")
