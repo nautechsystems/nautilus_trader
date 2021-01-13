@@ -15,7 +15,6 @@
 
 from nautilus_trader.core.correctness cimport Condition
 
-
 # C Standard Library
 cdef extern from "stdlib.h":
     double drand48()  # Returns a double in range [0,1)
@@ -60,7 +59,7 @@ cdef class FillModel:
         Condition.in_range(prob_fill_at_limit, 0.0, 1.0, "prob_fill_at_limit")
         Condition.in_range(prob_fill_at_stop, 0.0, 1.0, "prob_fill_at_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
-        if random_seed:
+        if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
             srand48(random_seed)
 
