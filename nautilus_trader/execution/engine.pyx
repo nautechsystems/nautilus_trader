@@ -536,8 +536,8 @@ cdef class ExecutionEngine(Component):
 
         cdef Order order = self.cache.order(event.cl_ord_id)
         if order is None:
-            self._log.warning(f"Cannot apply event to any order "
-                              f"({repr(event.cl_ord_id)} not found in cache), {event}.")
+            self._log.warning(f"Cannot apply event to any order, "
+                              f"{repr(event.cl_ord_id)} not found in cache, {event}.")
             return  # Cannot process event further
 
         try:
