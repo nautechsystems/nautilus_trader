@@ -393,12 +393,12 @@ cdef class ExecutionEngine(Component):
             self._invalidate_order(command.order, f"cl_ord_id already exists")
             return  # Invalid command
 
+        # Cache order
+        self.cache.add_order(command.order, command.position_id)
+
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(command.order, f"position_id does not exist")
             return  # Invalid command
-
-        # Cache order
-        self.cache.add_order(command.order, command.position_id)
 
         # Submit order
         client.submit_order(command)
