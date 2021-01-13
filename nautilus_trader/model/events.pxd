@@ -50,13 +50,15 @@ cdef class AccountState(Event):
 cdef class OrderEvent(Event):
     cdef readonly ClientOrderId cl_ord_id
     """The client order identifier associated with the event.\n\n:returns: `ClientOrderId`"""
+    cdef readonly OrderId order_id
+    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
 
 
 cdef class OrderInitialized(OrderEvent):
-    cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
@@ -98,8 +100,6 @@ cdef class OrderRejected(OrderEvent):
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly datetime accepted_time
     """The order accepted time.\n\n:returns: `datetime`"""
 
@@ -107,8 +107,6 @@ cdef class OrderAccepted(OrderEvent):
 cdef class OrderWorking(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
@@ -141,8 +139,6 @@ cdef class OrderCancelReject(OrderEvent):
 cdef class OrderCancelled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly datetime cancelled_time
     """The order cancelled time.\n\n:returns: `datetime`"""
 
@@ -150,8 +146,6 @@ cdef class OrderCancelled(OrderEvent):
 cdef class OrderModified(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly Quantity quantity
     """The orders current quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
@@ -163,8 +157,6 @@ cdef class OrderModified(OrderEvent):
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly datetime expired_time
     """The order expired time.\n\n:returns: `datetime`"""
 
@@ -172,8 +164,6 @@ cdef class OrderExpired(OrderEvent):
 cdef class OrderFilled(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the event.\n\n:returns: `OrderId`"""
     cdef readonly ExecutionId execution_id
     """The execution identifier associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id

@@ -114,7 +114,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Decimal("1.00001"), position.avg_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.cl_ord_id], position.cl_ord_ids)
-        self.assertEqual([OrderId('1')], position.order_ids)
+        self.assertEqual([OrderId.null()], position.order_ids)
         self.assertEqual([ExecutionId("E-19700101-000000-000-001-1")], position.execution_ids)
         self.assertEqual(ExecutionId("E-19700101-000000-000-001-1"), position.last_execution_id)
         self.assertEqual(PositionId("P-123456"), position.id)

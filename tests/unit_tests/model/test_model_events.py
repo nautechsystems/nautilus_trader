@@ -165,13 +165,16 @@ class EventTests(unittest.TestCase):
         self.assertEqual(f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"reason='INSUFFICIENT_MARGIN', id={uuid})", repr(event))  # noqa
 
-    def test_order_accepted(self):
+    def test_order_accepted(self, order_id=None):
+        if order_id is None:
+            order_id = OrderId("123456")
+
         # Arrange
         uuid = uuid4()
         event = OrderAccepted(
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
-            order_id=OrderId("123456"),
+            order_id=order_id,
             accepted_time=UNIX_EPOCH,
             event_id=uuid,
             event_timestamp=UNIX_EPOCH,
@@ -216,6 +219,7 @@ class EventTests(unittest.TestCase):
         event = OrderCancelReject(
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
+            order_id=OrderId("123456"),
             rejected_time=UNIX_EPOCH,
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
