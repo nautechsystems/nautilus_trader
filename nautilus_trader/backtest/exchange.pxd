@@ -118,7 +118,7 @@ cdef class SimulatedExchange:
     cdef inline void _submit_order(self, Order order) except *
     cdef inline void _accept_order(self, Order order) except *
     cdef inline void _reject_order(self, Order order, str reason) except *
-    cdef inline void _cancel_reject_order(self, ClientOrderId order_id, str response, str reason) except *
+    cdef inline void _cancel_reject_order(self, ClientOrderId cl_ord_id, str response, str reason) except *
     cdef inline void _expire_order(self, PassiveOrder order) except *
     cdef inline void _process_order(self, Order order) except *
     cdef inline void _process_market_order(self, MarketOrder order, Price market_bid, Price market_ask) except *
@@ -134,8 +134,7 @@ cdef class SimulatedExchange:
     cdef inline bint _is_marginal_limit_fill(self, Price order_price, Price market) except *
     cdef inline bint _is_marginal_stop_fill(self, Price order_price, Price market) except *
     cdef inline void _fill_order(self, Order order, Price fill_price, LiquiditySide liquidity_side) except *
-    cdef inline void _clean_up_child_orders(self, ClientOrderId order_id) except *
-    cdef inline void _check_oco_order(self, ClientOrderId order_id) except *
-    cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *
-    cdef inline void _cancel_oco_order(self, PassiveOrder order, ClientOrderId oco_order_id) except *
-    cdef inline void _cancel_order(self, PassiveOrder order) except *
+    cdef inline void _clean_up_child_orders(self, ClientOrderId cl_ord_id) except *
+    cdef inline void _check_oco_order(self, ClientOrderId cl_ord_id) except *
+    cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
+    cdef inline void _cancel_oco_order(self, PassiveOrder order) except *

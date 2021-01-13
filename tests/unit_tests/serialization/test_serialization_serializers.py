@@ -565,6 +565,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         event = OrderCancelReject(
             self.account_id,
             ClientOrderId("O-123456"),
+            OrderId("1"),
             UNIX_EPOCH,
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",

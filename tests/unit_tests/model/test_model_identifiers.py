@@ -23,6 +23,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import Exchange
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import Issuer
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -225,10 +226,10 @@ class IdentifierTests(unittest.TestCase):
         strategy_id2 = StrategyId("SCALPER", "01")
 
         # Assert
-        self.assertEqual("S-NULL", strategy_id1.value)
+        self.assertEqual("NULL-NULL", strategy_id1.value)
         self.assertEqual(strategy_id1, strategy_id1)
         self.assertNotEqual(strategy_id1, strategy_id2)
-        self.assertEqual("S", strategy_id1.name)
+        self.assertEqual("NULL", strategy_id1.name)
         self.assertEqual(strategy_id2, StrategyId.from_str('SCALPER-01'))
 
     def test_account_identifier(self):
@@ -250,4 +251,12 @@ class IdentifierTests(unittest.TestCase):
         position_id0 = PositionId.null()
 
         # Assert
-        self.assertEqual("P-NULL", position_id0.value)
+        self.assertEqual("NULL", position_id0.value)
+
+    def test_order_identifier(self):
+        # Arrange
+        # Act
+        order_id = OrderId.null()
+
+        # Assert
+        self.assertEqual("NULL", order_id.value)

@@ -179,13 +179,9 @@ class ReportProviderTests(unittest.TestCase):
             Price("0.80000"),
         )
 
-        submitted2 = TestStubs.event_order_submitted(order2)
-        accepted2 = TestStubs.event_order_accepted(order2)
-        working2 = TestStubs.event_order_working(order2)
-
-        order2.apply(submitted2)
-        order2.apply(accepted2)
-        order2.apply(working2)
+        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestStubs.event_order_accepted(order2))
+        order2.apply(TestStubs.event_order_working(order2))
 
         filled = TestStubs.event_order_filled(
             order1,

@@ -498,6 +498,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[WORKING_TIME] = ObjectParser.datetime_to_str(event.working_time)
         elif isinstance(event, OrderCancelReject):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
+            package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIME] = ObjectParser.datetime_to_str(event.rejected_time)
             package[RESPONSE_TO] = event.response_to
@@ -665,6 +666,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
             return OrderCancelReject(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 ObjectParser.string_to_datetime(unpacked[REJECTED_TIME]),
                 unpacked[RESPONSE_TO],
                 unpacked[REASON],
