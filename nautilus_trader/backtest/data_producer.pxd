@@ -24,7 +24,13 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class BacktestDataProducer:
+cdef class DataProducerFacade:
+    cpdef void setup(self, datetime start, datetime stop) except *
+    cpdef void reset(self) except *
+    cpdef Tick next_tick(self)
+
+
+cdef class BacktestDataProducer(DataProducerFacade):
     cdef Clock _clock
     cdef LoggerAdapter _log
     cdef DataEngine _data_engine
@@ -61,9 +67,35 @@ cdef class BacktestDataProducer:
 
     cpdef void setup(self, datetime start, datetime stop) except *
     cpdef void reset(self) except *
-    cdef Tick next_tick(self)
+    cpdef void clear(self) except *
+    cpdef Tick next_tick(self)
 
     cdef inline QuoteTick _generate_quote_tick(self, int index)
     cdef inline TradeTick _generate_trade_tick(self, int index)
     cdef inline void _iterate_quote_ticks(self) except *
     cdef inline void _iterate_trade_ticks(self) except *
+
+
+cdef class CachedProducer(DataProducerFacade):
+    cdef BacktestDataProducer producer
+    cdef BacktestDataProducer _producer
+    cdef list _tick_cache
+    cdef list _ts_cache
+    cdef int _tick_index
+    cdef int _tick_index_last
+    cdef int _init_start_tick_index
+    cdef int _init_stop_tick_index
+    cdef str cache_directory
+    cdef str cache_tick_filename
+    cdef str cache_ts_filename
+
+    cdef readonly list execution_resolutions
+    cdef readonly datetime min_timestamp
+    cdef readonly datetime max_timestamp
+    cdef readonly bint has_tick_data
+
+    cpdef void setup(self, datetime start, datetime stop) except *
+    cpdef void reset(self) except *
+    cpdef Tick next_tick(self)
+    cdef void _clear_data(self) except *
+    cdef void _create_tick_cache(self) except *
