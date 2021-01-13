@@ -17,6 +17,7 @@ import asyncio
 from cpython.datetime cimport datetime
 
 import ccxt
+from ccxt.base.errors import BaseError as CCXTError
 import json
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
@@ -165,8 +166,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             await self._load_instruments()
             await self._update_balances()
-        except Exception as ex:
-            self._log.error(f"{type(ex).__name__}: {ex} in _connect")
+        except CCXTError as ex:
+            self._log_ccxt_error(ex, self._connect.__name__)
             return
 
         # Start streams
@@ -174,7 +175,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_orders_task = self._loop.create_task(self._watch_orders())
         # self._watch_create_order_task = self._loop.create_task(self._watch_create_order())
         # self._watch_cancel_order_task = self._loop.create_task(self._watch_cancel_order())
-        # self._watch_my_trades_task = self._loop.create_task(self._watch_my_trades())
+        self._watch_my_trades_task = self._loop.create_task(self._watch_my_trades())
 
         self._is_connected = True
         self.initialized = True
@@ -299,7 +300,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 order_side,
                 str(order.quantity),
             )
-        except Exception as ex:
+        except CCXTError as ex:
             self._generate_order_submitted(order.cl_ord_id, submitted_time)
             self._generate_order_rejected(order, str(ex))
             return
@@ -405,6 +406,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.debug(f"{CMD}{SENT} {command}.")
 
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
+        self._log.error(f"{type(ex).__name__}: {ex} in {method_name}")
+
     async def _run_after_delay(self, double delay, coro):
         await asyncio.sleep(delay)
         return await coro
@@ -430,8 +436,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         except TypeError:
             # Temporary workaround for testing
             response = self._client.fetch_balance
-        except Exception as ex:
-            self._log.error(f"{type(ex).__name__}: {ex} in _update_balances")
+        except CCXTError as ex:
+            self._log_ccxt_error(ex, self._update_balances.__name__)
             return
 
         self._on_account_state(response)
@@ -448,6 +454,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             while True:
                 try:
                     response = await self._client.watch_balance(params)
+                except CCXTError as ex:
+                    self._log_ccxt_error(ex, self._watch_balances.__name__)
+                    continue
                 except TypeError:
                     # Temporary workaround for testing
                     response = self._client.watch_balance
@@ -528,6 +537,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             while True:
                 try:
                     response = await self._client.watch_orders()
+                except CCXTError as ex:
+                    self._log_ccxt_error(ex, self._watch_orders.__name__)
+                    continue
                 except TypeError:
                     # Temporary workaround for testing
                     response = self._client.watch_orders
@@ -674,6 +686,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             while True:
                 try:
                     response = await self._client.watch_my_trades()
+                except CCXTError as ex:
+                    self._log_ccxt_error(ex, self._watch_my_trades.__name__)
+                    continue
                 except TypeError:
                     # Temporary workaround for testing
                     response = self._client.watch_my_trades
