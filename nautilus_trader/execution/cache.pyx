@@ -67,6 +67,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         # Cached indexes
         self._index_venue_account = {}        # type: dict[Venue, AccountId]
+        self._index_order_ids = {}            # type: dict[OrderId, ClientOrderId]
         self._index_order_position = {}       # type: dict[ClientOrderId, PositionId]
         self._index_order_strategy = {}       # type: dict[ClientOrderId, StrategyId]
         self._index_position_strategy = {}    # type: dict[PositionId, StrategyId]
@@ -145,35 +146,39 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef ClientOrderId cl_ord_id
         cdef Order order
         for cl_ord_id, order in self._cached_orders.items():
-            # 1- Build _index_order_position -> {ClientOrderId, PositionId}
+            # 1: Build _index_order_ids -> {OrderId, ClientOrderId}
+            if order.id.not_null():
+                self._index_order_ids[order.id] = order.cl_ord_id
+
+            # 2: Build _index_order_position -> {ClientOrderId, PositionId}
             if order.position_id is not None:
                 self._index_order_position[cl_ord_id] = order.position_id
 
-            # 2- Build _index_order_strategy -> {ClientOrderId, StrategyId}
+            # 3: Build _index_order_strategy -> {ClientOrderId, StrategyId}
             if order.strategy_id.not_null():
                 self._index_order_strategy[cl_ord_id] = order.strategy_id
 
-            # 3- Build _index_symbol_orders -> {Symbol, {ClientOrderId}}
+            # 4: Build _index_symbol_orders -> {Symbol, {ClientOrderId}}
             if order.symbol not in self._index_symbol_orders:
                 self._index_symbol_orders[order.symbol] = set()
             self._index_symbol_orders[order.symbol].add(cl_ord_id)
 
-            # 4- Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
+            # 5: Build _index_strategy_orders -> {StrategyId, {ClientOrderId}}
             if order.strategy_id not in self._index_strategy_orders:
                 self._index_strategy_orders[order.strategy_id] = set()
             self._index_strategy_orders[order.strategy_id].add(cl_ord_id)
 
-            # 5- Build _index_orders -> {ClientOrderId}
+            # 6: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(cl_ord_id)
 
-            # 6- Build _index_orders_working -> {ClientOrderId}
+            # 7: Build _index_orders_working -> {ClientOrderId}
             if order.is_working_c():
                 self._index_orders_working.add(cl_ord_id)
-            # 7- Build _index_orders_completed -> {ClientOrderId}
+            # 8: Build _index_orders_completed -> {ClientOrderId}
             elif order.is_completed_c():
                 self._index_orders_completed.add(cl_ord_id)
 
-            # 8- Build _index_strategies -> {StrategyId}
+            # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
@@ -181,11 +186,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef PositionId position_id
         cdef Position position
         for position_id, position in self._cached_positions.items():
-            # 1- Build _index_position_strategy -> {PositionId, StrategyId}
+            # 1: Build _index_position_strategy -> {PositionId, StrategyId}
             if position.strategy_id is not None:
                 self._index_position_strategy[position_id] = position.strategy_id
 
-            # 2- Build _index_position_orders -> {PositionId, {ClientOrderId}}
+            # 2: Build _index_position_orders -> {PositionId, {ClientOrderId}}
             if position_id not in self._index_position_orders:
                 self._index_position_orders[position_id] = set()
             index_position_orders = self._index_position_orders[position_id]
@@ -193,27 +198,27 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             for cl_ord_id in position.cl_ord_ids_c():
                 index_position_orders.add(cl_ord_id)
 
-            # 3- Build _index_symbol_positions -> {Symbol, {PositionId}}
+            # 3: Build _index_symbol_positions -> {Symbol, {PositionId}}
             if position.symbol not in self._index_symbol_positions:
                 self._index_symbol_positions[position.symbol] = set()
             self._index_symbol_positions[position.symbol].add(position_id)
 
-            # 4- Build _index_strategy_positions -> {StrategyId, {PositionId}}
+            # 4: Build _index_strategy_positions -> {StrategyId, {PositionId}}
             if position.strategy_id is not None and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
             self._index_strategy_positions[position.strategy_id].add(position.strategy_id)
 
-            # 5- Build _index_positions -> {PositionId}
+            # 5: Build _index_positions -> {PositionId}
             self._index_positions.add(position_id)
 
-            # 6- Build _index_positions_open -> {PositionId}
+            # 6: Build _index_positions_open -> {PositionId}
             if position.is_open_c():
                 self._index_positions_open.add(position_id)
-            # 6- Build _index_positions_closed -> {PositionId}
+            # 7: Build _index_positions_closed -> {PositionId}
             elif position.is_closed_c():
                 self._index_positions_closed.add(position_id)
 
-            # 7- Build _index_strategies -> {StrategyId}
+            # 8; Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
@@ -606,7 +611,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cdef void _clear_indexes(self) except *:
         self._log.debug(f"Clearing indexes...")
+
         self._index_venue_account.clear()
+        self._index_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
         self._index_position_strategy.clear()
@@ -622,6 +629,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_positions_open.clear()
         self._index_positions_closed.clear()
         self._index_strategies.clear()
+
         self._log.debug(f"Indexes cleared.")
 
 # -- ACCOUNT QUERIES -------------------------------------------------------------------------------
@@ -890,6 +898,20 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Condition.not_none(cl_ord_id, "cl_ord_id")
 
         return self._cached_orders.get(cl_ord_id)
+
+    cpdef ClientOrderId cl_ord_id(self, OrderId order_id):
+        """
+        Return the client order identifier matching the given order identifier
+        (if found).
+
+        Returns
+        -------
+        ClientOrderId or None
+
+        """
+        Condition.not_none(order_id, "order_id")
+
+        return self._index_order_ids.get(order_id)
 
     cpdef OrderId order_id(self, ClientOrderId cl_ord_id):
         """

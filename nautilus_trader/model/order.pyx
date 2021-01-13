@@ -144,7 +144,7 @@ cdef class Order:
         return hash(self.cl_ord_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f"id={self.id.value}, " if self.id.value != "NULL" else ""
+        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"

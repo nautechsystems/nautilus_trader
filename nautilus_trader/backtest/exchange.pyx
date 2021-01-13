@@ -145,11 +145,16 @@ cdef class SimulatedExchange:
             self.modules.append(module)
             self._log.info(f"Loaded {module}.")
 
+        # Symbol indexer for order_ids
+        self._symbol_indexer = {}  # type: dict[Symbol, int]
+
         # Load instruments
         self.instruments = {}
         for instrument in instruments:
             Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
             self.instruments[instrument.symbol] = instrument
+            index = len(self._symbol_indexer) + 1
+            self._symbol_indexer[instrument.symbol] = index
             self._log.info(f"Loaded instrument {instrument.symbol.value}.")
 
         self._slippages = self._get_tick_sizes()
@@ -540,17 +545,17 @@ cdef class SimulatedExchange:
         cdef int pos_count = self._symbol_pos_count.get(symbol, 0)
         pos_count += 1
         self._symbol_pos_count[symbol] = pos_count
-        return PositionId(f"{symbol.code}-{pos_count:5d}")
+        return PositionId(f"{self._symbol_indexer[symbol]}-{pos_count:03d}")
 
     cdef inline OrderId _generate_order_id(self, Symbol symbol):
         cdef int ord_count = self._symbol_ord_count.get(symbol, 0)
         ord_count += 1
         self._symbol_ord_count[symbol] = ord_count
-        return OrderId(f"{symbol.code}-{ord_count:5d}")
+        return OrderId(f"{self._symbol_indexer[symbol]}-{ord_count:03d}")
 
     cdef inline ExecutionId _generate_execution_id(self):
         self._executions_count += 1
-        return ExecutionId(f"E-{self._executions_count}")
+        return ExecutionId(f"{self._executions_count}")
 
     cdef inline AccountState _generate_account_event(self):
         cdef dict info

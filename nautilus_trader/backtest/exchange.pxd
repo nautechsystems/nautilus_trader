@@ -79,6 +79,7 @@ cdef class SimulatedExchange:
     cdef dict _child_orders
     cdef dict _oco_orders
     cdef dict _position_oco_orders
+    cdef dict _symbol_indexer
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
     cdef int _executions_count
