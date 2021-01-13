@@ -91,12 +91,6 @@ class DataClientTests(unittest.TestCase):
         # Assert
         self.assertRaises(NotImplementedError, self.client.dispose)
 
-    def test_is_connected_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertRaises(NotImplementedError, self.client.is_connected)
-
     def test_subscribe_instrument_when_not_implemented_raises_exception(self):
         # Arrange
         # Act

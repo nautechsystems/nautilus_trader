@@ -136,7 +136,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Assert
-            self.assertTrue(self.client.is_connected())
+            self.assertTrue(self.client.is_connected)
 
             # Tear down
             self.data_engine.stop()
@@ -155,7 +155,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertFalse(self.client.is_connected())
+            self.assertFalse(self.client.is_connected)
 
             # Tear down
             self.data_engine.stop()
@@ -176,7 +176,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.reset()
 
             # Assert
-            self.assertFalse(self.client.is_connected())
+            self.assertFalse(self.client.is_connected)
 
         self.loop.run_until_complete(run_test())
 
@@ -190,7 +190,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.reset()
 
             # Assert
-            self.assertTrue(self.client.is_connected())
+            self.assertTrue(self.client.is_connected)
 
             # Tear Down
             self.data_engine.stop()
@@ -208,7 +208,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.dispose()
 
             # Assert
-            self.assertTrue(self.client.is_connected())
+            self.assertTrue(self.client.is_connected)
 
             # Tear Down
             self.data_engine.stop()

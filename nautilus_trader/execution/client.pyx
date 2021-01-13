@@ -74,16 +74,15 @@ cdef class ExecutionClient:
 
         self.venue = venue
         self.account_id = account_id
-        self.initialized = False
+        self.is_connected = False
 
         self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.venue})"
 
-    cpdef bint is_connected(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+    cpdef void _set_connected(self, bint value=True) except *:  # TODO: Temp
+        self.is_connected = value
 
     cpdef void connect(self) except *:
         """Abstract method (implement in subclass)."""

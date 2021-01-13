@@ -146,25 +146,25 @@ cdef class ExecutionEngine(Component):
         """
         return sorted(list(self._strategies.keys()))
 
-    cpdef bint check_initialized(self) except *:
+    cpdef bint check_connected(self) except *:
         """
-        Check the engine is initialized.
+        Check all of the engines clients are connected.
 
         Returns
         -------
         bool
-            True if all clients initialized, else False.
+            True if all clients ready, else False.
 
         """
         cdef ExecutionClient client
         for client in self._clients.values():
-            if not client.initialized:
+            if not client.is_connected:
                 return False
         return True
 
     cpdef bint check_disconnected(self) except *:
         """
-        Check all clients are disconnected.
+        Check all of the engines clients are disconnected.
 
         Returns
         -------
@@ -174,7 +174,7 @@ cdef class ExecutionEngine(Component):
         """
         cdef ExecutionClient client
         for client in self._clients.values():
-            if client.is_connected():
+            if client.is_connected:
                 return False
         return True
 
@@ -516,7 +516,6 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.cache.account(event.account_id)
-        self._log.info(f"{RECV}{EVT} {event}.")
         if account is None:
             # Generate account
             account = Account(event)

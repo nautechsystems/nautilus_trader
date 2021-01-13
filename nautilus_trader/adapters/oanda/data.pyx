@@ -99,7 +99,8 @@ cdef class OandaDataClient(LiveDataClient):
             account_id=self._account_id,
             load_all=False,
         )
-        self._is_connected = False
+
+        self.is_connected = False
 
         # Subscriptions
         self._subscribed_instruments = set()
@@ -107,8 +108,6 @@ cdef class OandaDataClient(LiveDataClient):
 
         # Scheduled tasks
         self._update_instruments_handle: asyncio.Handle = None
-
-        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -137,18 +136,6 @@ cdef class OandaDataClient(LiveDataClient):
         """
         return sorted(list(self._subscribed_quote_ticks.keys()))
 
-    cpdef bint is_connected(self) except *:
-        """
-        Return a value indicating whether the client is connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
-
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -166,8 +153,7 @@ cdef class OandaDataClient(LiveDataClient):
             callback=self._subscribed_instruments_update,
         )
 
-        self._is_connected = True
-        self.initialized = True
+        self.is_connected = True
 
         self._log.info("Connected.")
 
@@ -184,7 +170,7 @@ cdef class OandaDataClient(LiveDataClient):
             self._update_instruments_handle.cancel()
             self._log.debug(f"{self._update_instruments_handle}")
 
-        self._is_connected = False
+        self.is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -205,9 +191,10 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Dispose the client.
         """
-        if self._is_connected:
+        if self.is_connected:
             self.disconnect()
 
+        # Nothing to dispose
         self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------

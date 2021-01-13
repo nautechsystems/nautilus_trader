@@ -63,7 +63,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.connect()
 
         # Assert
-        self.assertTrue(self.client.is_connected())
+        self.assertTrue(self.client.is_connected)
 
     def test_disconnect(self):
         # Arrange
@@ -73,7 +73,7 @@ class BacktestDataClientTests(unittest.TestCase):
         self.client.disconnect()
 
         # Assert
-        self.assertFalse(self.client.is_connected())
+        self.assertFalse(self.client.is_connected)
 
     def test_reset(self):
         # Arrange

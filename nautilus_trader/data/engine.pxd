@@ -60,7 +60,7 @@ cdef class DataEngine(Component):
     cdef readonly int response_count
     """The total count of responses received by the engine.\n\n:returns: `int`"""
 
-    cpdef bint check_initialized(self) except *
+    cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------

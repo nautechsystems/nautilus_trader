@@ -115,7 +115,7 @@ class BacktestExecClientTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertFalse(self.exec_client.is_connected())
+        self.assertFalse(self.exec_client.is_connected)
 
     def test_connect(self):
         # Arrange
@@ -123,7 +123,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.connect()
 
         # Assert
-        self.assertTrue(self.exec_client.is_connected())
+        self.assertTrue(self.exec_client.is_connected)
 
     def test_disconnect(self):
         # Arrange
@@ -133,7 +133,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.disconnect()
 
         # Assert
-        self.assertFalse(self.exec_client.is_connected())
+        self.assertFalse(self.exec_client.is_connected)
 
     def test_reset(self):
         # Arrange
@@ -141,7 +141,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.reset()
 
         # Assert
-        self.assertFalse(self.exec_client.is_connected())  # No exceptions raised
+        self.assertFalse(self.exec_client.is_connected)  # No exceptions raised
 
     def test_dispose(self):
         # Arrange
@@ -149,7 +149,7 @@ class BacktestExecClientTests(unittest.TestCase):
         self.exec_client.dispose()
 
         # Assert
-        self.assertFalse(self.exec_client.is_connected())  # No exceptions raised
+        self.assertFalse(self.exec_client.is_connected)  # No exceptions raised
 
     def test_submit_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
