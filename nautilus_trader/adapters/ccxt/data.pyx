@@ -899,10 +899,12 @@ cdef class CCXTDataClient(LiveDataClient):
 
         if limit == 0:
             limit = 1000
+        elif limit > 1000:
+            self._log.warning(f"Requested trades with limit of {limit} when limit=1000.")
 
-        if limit > 1000:
-            self._log.warning(f"Requested trades with limit of {limit} when Binance limit=1000.")
-            limit = 1000
+        # Account for partial bar
+        limit += 1
+        limit = min(limit, 1000)
 
         cdef list trades
         try:
@@ -975,13 +977,12 @@ cdef class CCXTDataClient(LiveDataClient):
 
         if limit == 0:
             limit = 1000
-        elif limit > 0:
-            # Account for partial bar
-            limit += 1
-
-        if limit > 1001:
+        elif limit > 1000:
             self._log.warning(f"Requested bars {bar_type} with limit of {limit} when Binance limit=1000.")
-            limit = 1000
+
+        # Account for partial bar
+        limit += 1
+        limit = min(limit, 1000)
 
         cdef list data
         try:
