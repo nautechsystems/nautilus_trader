@@ -475,7 +475,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     f"not supported by the exchange.")
                 return
         except CCXTError as ex:
-            self._generate_order_rejected(order, str(ex))
+            self._generate_order_rejected(order.cl_ord_id, str(ex))
             return
 
         cdef OrderId order_id = OrderId(response["id"])

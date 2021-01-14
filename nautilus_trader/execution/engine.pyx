@@ -270,6 +270,10 @@ cdef class ExecutionEngine(Component):
         for client in self._clients.values():
             client.connect()
 
+        # Initialize portfolio
+        self.portfolio.initialize_orders(set(self.cache.orders_working()))
+        self.portfolio.initialize_positions(set(self.cache.positions_open()))
+
         self._on_start()
 
     cpdef void _stop(self) except *:
@@ -309,9 +313,6 @@ cdef class ExecutionEngine(Component):
         # Update portfolio
         for account in self.cache.accounts():
             self.portfolio.register_account(account)
-
-        self.portfolio.initialize_orders(set(self.cache.orders_working()))
-        self.portfolio.initialize_positions(set(self.cache.positions_open()))
 
     cpdef void integrity_check(self) except *:
         """
