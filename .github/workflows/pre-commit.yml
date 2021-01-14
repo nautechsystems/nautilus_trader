@@ -3,9 +3,11 @@ name: pre-commit checks
 on:
   push:
     branches-ignore:
+      - "master"
       - "dependabot/**"
   pull_request:
     branches-ignore:
+      - "master"
       - "dependabot/**"
 
 jobs:
