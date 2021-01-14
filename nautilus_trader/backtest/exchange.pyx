@@ -32,7 +32,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
@@ -41,7 +41,7 @@ from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -402,15 +402,15 @@ cdef class SimulatedExchange:
         self.exec_client.handle_event(cancelled)
         self._check_oco_order(command.cl_ord_id)
 
-    cpdef void handle_modify_order(self, ModifyOrder command) except *:
+    cpdef void handle_amend_order(self, AmendOrder command) except *:
         Condition.not_none(command, "command")
 
         if command.cl_ord_id not in self._working_orders:
             self._cancel_reject_order(
                 command.cl_ord_id,
-                "modify order",
+                "amend order",
                 "order not found")
-            return  # Rejected the modify order request
+            return  # Rejected the amend order request
 
         cdef PassiveOrder order = self._working_orders[command.cl_ord_id]
         cdef Instrument instrument = self.instruments[order.symbol]
@@ -418,9 +418,9 @@ cdef class SimulatedExchange:
         if command.quantity == 0:
             self._cancel_reject_order(
                 order.cl_ord_id,
-                "modify order",
-                f"modified quantity {command.quantity} invalid")
-            return  # Cannot modify order
+                "amend order",
+                f"amended quantity {command.quantity} invalid")
+            return  # Cannot amend order
 
         cdef Price market_bid = self._market_bids.get(order.symbol)
         cdef Price market_ask = self._market_asks.get(order.symbol)
@@ -431,19 +431,19 @@ cdef class SimulatedExchange:
                 if order.price < market_ask:
                     self._cancel_reject_order(
                         order.cl_ord_id,
-                        "modify order",
+                        "amend order",
                         f"BUY STOP order price of {order.price} is too "
                         f"far from the market, ask={market_ask}")
-                    return  # Rejected the modify order request
+                    return  # Rejected the amend order request
             elif order.type == OrderType.LIMIT:
                 if order.price >= market_ask:
                     if order.is_post_only:
                         self._cancel_reject_order(
                             order.cl_ord_id,
-                            "modify order",
+                            "amend order",
                             f"BUY LIMIT order price of {order.price} is too "
                             f"far from the market, ask={market_ask}")
-                        return  # Rejected the modify order request
+                        return  # Rejected the amend order request
                     else:
                         self._fill_order(order, market_ask, LiquiditySide.TAKER)
                     return  # Filled
@@ -452,25 +452,25 @@ cdef class SimulatedExchange:
                 if order.price > market_bid:
                     self._cancel_reject_order(
                         order.cl_ord_id,
-                        "modify order",
+                        "amend order",
                         f"SELL STOP order price of {order.price} is too "
                         f"far from the market, bid={market_bid}")
-                    return  # Rejected the modify order request
+                    return  # Rejected the amend order request
             elif order.type == OrderType.LIMIT:
                 if order.price <= market_bid:
                     if order.is_post_only:
                         self._cancel_reject_order(
                             order.cl_ord_id,
-                            "modify order",
+                            "amend order",
                             f"SELL LIMIT order price of {order.price} is too "
                             f"far from the market, bid={market_bid}")
-                        return  # Rejected the modify order request
+                        return  # Rejected the amend order request
                     else:
                         self._fill_order(order, market_bid, LiquiditySide.TAKER)
                         return  # Filled
 
         # Generate event
-        cdef OrderModified modified = OrderModified(
+        cdef OrderAmended amended = OrderAmended(
             command.account_id,
             order.cl_ord_id,
             order.id,
@@ -481,7 +481,7 @@ cdef class SimulatedExchange:
             self._clock.utc_now(),
         )
 
-        self.exec_client.handle_event(modified)
+        self.exec_client.handle_event(amended)
 
 # --------------------------------------------------------------------------------------------------
 

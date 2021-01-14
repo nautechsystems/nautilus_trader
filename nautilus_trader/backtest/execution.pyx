@@ -20,7 +20,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId
@@ -142,13 +142,13 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._exchange.handle_submit_bracket_order(command)
 
-    cpdef void modify_order(self, ModifyOrder command) except *:
+    cpdef void amend_order(self, AmendOrder command) except *:
         """
-        Modify the order with parameters contained in the command.
+        Amend the order with parameters contained in the command.
 
         Parameters
         ----------
-        command : ModifyOrder
+        command : AmendOrder
             The command to execute.
 
         """
@@ -156,7 +156,7 @@ cdef class BacktestExecClient(ExecutionClient):
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
-        self._exchange.handle_modify_order(command)
+        self._exchange.handle_amend_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """

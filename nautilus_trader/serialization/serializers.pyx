@@ -32,7 +32,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
@@ -45,7 +45,7 @@ from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -313,7 +313,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[ENTRY] = self.order_serializer.serialize(command.bracket_order.entry)
             package[STOP_LOSS] = self.order_serializer.serialize(command.bracket_order.stop_loss)
             package[TAKE_PROFIT] = self.order_serializer.serialize(command.bracket_order.take_profit)
-        elif isinstance(command, ModifyOrder):
+        elif isinstance(command, AmendOrder):
             package[VENUE] = command.venue.value
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
@@ -382,8 +382,8 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 command_id,
                 command_timestamp,
             )
-        elif command_type == ModifyOrder.__name__:
-            return ModifyOrder(
+        elif command_type == AmendOrder.__name__:
+            return AmendOrder(
                 Venue(unpacked[VENUE]),
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
@@ -508,11 +508,11 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_ID] = event.order_id.value
             package[ACCOUNT_ID] = event.account_id.value
             package[CANCELLED_TIME] = ObjectParser.datetime_to_str(event.cancelled_time)
-        elif isinstance(event, OrderModified):
+        elif isinstance(event, OrderAmended):
             package[ACCOUNT_ID] = event.account_id.value
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
-            package[MODIFIED_TIME] = ObjectParser.datetime_to_str(event.modified_time)
+            package[AMENDED_TIME] = ObjectParser.datetime_to_str(event.amended_time)
             package[QUANTITY] = str(event.quantity)
             package[PRICE] = str(event.price)
         elif isinstance(event, OrderExpired):
@@ -529,10 +529,10 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[STRATEGY_ID] = event.strategy_id.value
             package[SYMBOL] = event.symbol.value
             package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
-            package[FILL_QUANTITY] = str(event.fill_qty)
+            package[FILL_QTY] = str(event.fill_qty)
             package[FILL_PRICE] = str(event.fill_price)
-            package[CUM_QUANTITY] = str(event.cum_qty)
-            package[LEAVES_QUANTITY] = str(event.leaves_qty)
+            package[CUM_QTY] = str(event.cum_qty)
+            package[LEAVES_QTY] = str(event.leaves_qty)
             package[CURRENCY] = event.currency.code
             package[IS_INVERSE] = event.is_inverse
             package[COMMISSION] = str(event.commission)
@@ -673,14 +673,14 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_id,
                 event_timestamp,
             )
-        elif event_type == OrderModified.__name__:
-            return OrderModified(
+        elif event_type == OrderAmended.__name__:
+            return OrderAmended(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 OrderId(unpacked[ORDER_ID]),
                 Quantity(unpacked[QUANTITY]),
                 Price(unpacked[PRICE]),
-                ObjectParser.string_to_datetime(unpacked[MODIFIED_TIME]),
+                ObjectParser.string_to_datetime(unpacked[AMENDED_TIME]),
                 event_id,
                 event_timestamp,
             )
@@ -704,9 +704,9 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                Quantity(unpacked[FILL_QUANTITY]),
-                Quantity(unpacked[CUM_QUANTITY]),
-                Quantity(unpacked[LEAVES_QUANTITY]),
+                Quantity(unpacked[FILL_QTY]),
+                Quantity(unpacked[CUM_QTY]),
+                Quantity(unpacked[LEAVES_QTY]),
                 Price(unpacked[FILL_PRICE]),
                 Currency.from_str_c(unpacked[CURRENCY]),
                 unpacked[IS_INVERSE],

@@ -31,7 +31,7 @@ from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -54,16 +54,16 @@ cdef class Order:
 
     cdef readonly ClientOrderId cl_ord_id
     """The orders client order identifier.\n\n:returns: `ClientOrderId`"""
-    cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly OrderId id
     """The order identifier (exchange/broker).\n\n:returns: `OrderId`"""
+    cdef readonly PositionId position_id
+    """The position identifier associated with the order.\n\n:returns: `PositionId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy identifier associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
     """The account identifier associated with the order.\n\n:returns: `AccountId`"""
     cdef readonly ExecutionId execution_id
     """The orders last execution identifier.\n\n:returns: `ExecutionId`"""
-    cdef readonly PositionId position_id
-    """The position identifier associated with the order.\n\n:returns: `PositionId`"""
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide side
@@ -116,7 +116,7 @@ cdef class Order:
     cdef void _working(self, OrderWorking event) except *
     cdef void _cancelled(self, OrderCancelled event) except *
     cdef void _expired(self, OrderExpired event) except *
-    cdef void _modified(self, OrderModified event) except *
+    cdef void _amended(self, OrderAmended event) except *
     cdef void _filled(self, OrderFilled event) except *
     cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity)
 

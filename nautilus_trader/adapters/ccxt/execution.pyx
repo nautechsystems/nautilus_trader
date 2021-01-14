@@ -29,7 +29,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
@@ -267,19 +267,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.error("Cannot submit bracket orders in this version.")
 
-    cpdef void modify_order(self, ModifyOrder command) except *:
+    cpdef void amend_order(self, AmendOrder command) except *:
         """
-        Modify the order with parameters contained in the command.
+        Amend the order with parameters contained in the command.
 
         Parameters
         ----------
-        command : ModifyOrder
+        command : AmendOrder
             The command to execute.
 
         """
         Condition.not_none(command, "command")
 
-        self._log.error("Cannot modify orders in this version.")
+        self._log.error("Cannot amend orders in this version.")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
@@ -487,7 +487,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._generate_order_rejected(order, str(ex))
             return
 
-        await asyncio.sleep(0.5)
         cdef OrderId order_id = OrderId(response["id"])
         self._generate_order_accepted(order.cl_ord_id, order_id, response)
 

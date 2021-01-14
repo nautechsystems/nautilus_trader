@@ -31,7 +31,7 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderModified
+from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
@@ -253,24 +253,24 @@ class EventTests(unittest.TestCase):
         self.assertEqual(f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, id={uuid})", repr(event))
 
-    def test_order_modified(self):
+    def test_order_amended(self):
         # Arrange
         uuid = uuid4()
-        event = OrderModified(
+        event = OrderAmended(
             account_id=AccountId("SIM", "000"),
             cl_ord_id=ClientOrderId("O-2020872378423"),
             order_id=OrderId("123456"),
             quantity=Quantity(500000),
             price=Price('1.95000'),
-            modified_time=UNIX_EPOCH,
+            amended_time=UNIX_EPOCH,
             event_id=uuid,
             event_timestamp=UNIX_EPOCH,
         )
 
         # Act
-        self.assertEqual(f"OrderModified(account_id=SIM-000, cl_order_id=O-2020872378423, "
+        self.assertEqual(f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
                          f"order_id=123456, qty=500,000, price=1.95000, id={uuid})", str(event))
-        self.assertEqual(f"OrderModified(account_id=SIM-000, cl_order_id=O-2020872378423, "
+        self.assertEqual(f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
                          f"order_id=123456, qty=500,000, price=1.95000, id={uuid})", repr(event))
 
     def test_order_expired(self):

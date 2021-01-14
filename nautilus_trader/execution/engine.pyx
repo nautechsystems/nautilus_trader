@@ -44,7 +44,7 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
@@ -380,8 +380,8 @@ cdef class ExecutionEngine(Component):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, ModifyOrder):
-            self._handle_modify_order(client, command)
+        elif isinstance(command, AmendOrder):
+            self._handle_amend_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -459,20 +459,20 @@ cdef class ExecutionEngine(Component):
         # Submit bracket order
         client.submit_bracket_order(command)
 
-    cdef inline void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
+    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot modify command  "
-                              f"({repr(command.cl_ord_id)} already completed).")
+            self._log.warning(f"Cannot amend order,  "
+                              f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
-        client.modify_order(command)
+        client.amend_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
         if self.cache.is_order_completed(command.cl_ord_id):
-            self._log.warning(f"Cannot cancel command "
-                              f"({repr(command.cl_ord_id)} already completed).")
+            self._log.warning(f"Cannot cancel order, "
+                              f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
         client.cancel_order(command)

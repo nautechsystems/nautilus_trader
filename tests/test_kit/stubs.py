@@ -257,13 +257,13 @@ class TestStubs:
 
     @staticmethod
     def event_order_filled(
-            order,
-            instrument,
-            position_id=None,
-            strategy_id=None,
-            fill_price=None,
-            fill_qty=None,
-            liquidity_side=LiquiditySide.TAKER,
+        order,
+        instrument,
+        position_id=None,
+        strategy_id=None,
+        fill_price=None,
+        fill_qty=None,
+        liquidity_side=LiquiditySide.TAKER,
     ) -> OrderFilled:
         if position_id is None:
             position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))

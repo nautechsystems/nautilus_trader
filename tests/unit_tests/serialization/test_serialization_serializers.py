@@ -20,7 +20,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import ModifyOrder
+from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
@@ -37,7 +37,7 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderModified
+from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
@@ -313,9 +313,9 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
         print(b64encode(serialized))
         print(command)
 
-    def test_serialize_and_deserialize_modify_order_commands(self):
+    def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
-        command = ModifyOrder(
+        command = AmendOrder(
             self.venue,
             self.trader_id,
             self.account_id,
@@ -582,7 +582,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_order_modified_events(self):
         # Arrange
-        event = OrderModified(
+        event = OrderAmended(
             self.account_id,
             ClientOrderId("O-123456"),
             OrderId("1"),

@@ -562,7 +562,7 @@ cdef class OrderWorking(OrderEvent):
 
 cdef class OrderCancelReject(OrderEvent):
     """
-    Represents an event where an order cancel or modify command has been
+    Represents an event where an order cancel or amend command has been
     rejected by the exchange/broker.
     """
 
@@ -682,9 +682,9 @@ cdef class OrderCancelled(OrderEvent):
                 f"id={self.id})")
 
 
-cdef class OrderModified(OrderEvent):
+cdef class OrderAmended(OrderEvent):
     """
-    Represents an event where an order has been modified with the
+    Represents an event where an order has been amended with the
     exchange/broker.
     """
 
@@ -695,12 +695,12 @@ cdef class OrderModified(OrderEvent):
         OrderId order_id not None,
         Quantity quantity not None,
         Price price not None,
-        datetime modified_time not None,
+        datetime amended_time not None,
         UUID event_id not None,
         datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the `OrderModified` class.
+        Initialize a new instance of the `OrderAmended` class.
 
         Parameters
         ----------
@@ -714,8 +714,8 @@ cdef class OrderModified(OrderEvent):
             The orders current quantity.
         price : Price
             The orders current price.
-        modified_time : datetime
-            The modified time.
+        amended_time : datetime
+            The amended time.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -732,7 +732,7 @@ cdef class OrderModified(OrderEvent):
         self.account_id = account_id
         self.quantity = quantity
         self.price = price
-        self.modified_time = modified_time
+        self.amended_time = amended_time
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
