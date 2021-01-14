@@ -535,5 +535,6 @@ cdef class CachedProducer(DataProducerFacade):
         self._log.info(f"Pre-cached {len(self._tick_cache):,} "
                        f"total tick rows in {processing_time}s.")
 
+        self._producer.reset()
         self._producer.clear()
         gc.collect()  # Removes redundant processing artifacts
