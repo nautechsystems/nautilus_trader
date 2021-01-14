@@ -342,6 +342,7 @@ class MsgPackCommandSerializerTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456"),
+            OrderId("001"),
             uuid4(),
             UNIX_EPOCH,
         )

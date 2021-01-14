@@ -41,6 +41,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
@@ -374,6 +375,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             trader_id=self.trader_id,
             account_id=self.account_id,
             cl_ord_id=ClientOrderId("O-123456"),
+            order_id=OrderId("001"),
             command_id=self.uuid_factory.generate(),
             command_timestamp=UNIX_EPOCH,
         )
