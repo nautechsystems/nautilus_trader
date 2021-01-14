@@ -52,7 +52,7 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
@@ -1106,16 +1106,16 @@ cdef class TradingStrategy(Component):
         self.log.info(f"{CMD}{SENT} {command}.")
         self._exec_engine.execute(command)
 
-    cpdef void modify_order(
+    cpdef void amend_order(
         self,
         PassiveOrder order,
-        Quantity new_quantity=None,
-        Price new_price=None,
+        Quantity quantity=None,
+        Price price=None,
     ) except *:
         """
-        Modify the given order with the given quantity and/or price.
+        Amend the given order with the given quantity and/or price.
 
-        A `ModifyOrder` command is created and then sent to the
+        An `AmendOrder` command is created and then sent to the
         `ExecutionEngine`. Either one or both values must differ from the
         original order for the command to be valid.
 
@@ -1127,11 +1127,11 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         order : PassiveOrder
-            The order to modify.
-        new_quantity : Quantity, optional
-            The new quantity for the given order.
-        new_price : Price, optional
-            The new price for the given order.
+            The order to amend.
+        quantity : Quantity, optional
+            The amended quantity for the given order.
+        price : Price, optional
+            The amended price for the given order.
 
         Notes
         -----
@@ -1142,30 +1142,32 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._exec_engine, "self._exec_engine")
 
-        cdef bint modifying = False  # Set validation flag (must become true)
-        cdef Quantity quantity = order.quantity
-        cdef Price price = order.price
+        cdef bint amending = False  # Set validation flag (must become true)
 
-        if new_quantity is not None and new_quantity != quantity:
-            modifying = True
-            quantity = new_quantity
+        if quantity is not None and quantity != order.quantity:
+            amending = True
+            quantity = quantity
+        else:
+            quantity = order.quantity
 
-        if new_price is not None and new_price != price:
-            modifying = True
-            price = new_price
+        if price is not None and price != order.price:
+            amending = True
+            price = price
+        else:
+            price = order.price
 
-        if not modifying:
+        if not amending:
             self.log.error(
-                "Cannot create command ModifyOrder "
-                "(both new_quantity and new_price were None)."
+                "Cannot create command AmendOrder "
+                "(both quantity and price were None)."
             )
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot modify order (no account assigned to order yet), {order}.")
+            self.log.error(f"Cannot amend order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
-        cdef ModifyOrder command = ModifyOrder(
+        cdef AmendOrder command = AmendOrder(
             order.symbol.venue,
             self.trader_id,
             order.account_id,
@@ -1200,11 +1202,16 @@ cdef class TradingStrategy(Component):
             self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
+        if order.id.is_null():
+            self.log.error(f"Cannot cancel order (no order_id assigned yet), {order}.")
+            return  # Cannot send command
+
         cdef CancelOrder command = CancelOrder(
             order.symbol.venue,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
+            order.id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )

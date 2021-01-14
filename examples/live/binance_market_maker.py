@@ -83,7 +83,7 @@ strategy = VolatilityMarketMaker(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
     bar_spec=time_bars,
     trade_size=Decimal("0.02"),
-    atr_multiple=6.0,
+    atr_multiple=3.0,
 )
 
 # Instantiate the node passing a list of strategies and configuration

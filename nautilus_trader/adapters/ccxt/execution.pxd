@@ -19,23 +19,19 @@ from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.execution cimport LiveExecutionClient
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.order cimport Order
 
 
 cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
 
-    cdef object _update_instruments_task
-
-    cdef object _watch_balances_task
-    cdef object _watch_orders_task
-    cdef object _watch_create_order_task
-    cdef object _watch_cancel_order_task
-    cdef object _watch_my_trades_task
-
     cdef dict _order_id_index
     cdef dict _event_buffer
+
+    cdef object _update_instruments_task
+    cdef object _watch_balances_task
+    cdef object _watch_orders_task
+    cdef object _watch_my_trades_task
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

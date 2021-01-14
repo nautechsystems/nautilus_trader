@@ -41,7 +41,7 @@ from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderModified
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderWorking
@@ -117,9 +117,9 @@ cdef class Order:
         )
 
         self.cl_ord_id = event.cl_ord_id
-        self.strategy_id = event.strategy_id
         self.id = OrderId.null_c()
         self.position_id = PositionId.null_c()
+        self.strategy_id = event.strategy_id
         self.account_id = None        # Can be None
         self.execution_id = None      # Can be None
         self.symbol = event.symbol
@@ -404,10 +404,10 @@ cdef class Order:
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
-        elif isinstance(event, OrderModified):
+        elif isinstance(event, OrderAmended):
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.WORKING)
-            self._modified(event)
+            self._amended(event)
         elif isinstance(event, OrderFilled):
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             leaves_qty: Decimal = self.quantity - self.filled_qty - event.fill_qty
@@ -442,7 +442,7 @@ cdef class Order:
     cdef void _expired(self, OrderExpired event) except *:
         pass  # Do nothing else
 
-    cdef void _modified(self, OrderModified event) except *:
+    cdef void _amended(self, OrderAmended event) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
@@ -562,7 +562,7 @@ cdef class PassiveOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
-    cdef void _modified(self, OrderModified event) except *:
+    cdef void _amended(self, OrderAmended event) except *:
         self.id = event.order_id
         self.quantity = event.quantity
         self.price = event.price
@@ -702,8 +702,8 @@ cdef class MarketOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}")
 
-    cdef void _modified(self, OrderModified event) except *:
-        raise NotImplemented("Cannot modify a market order")
+    cdef void _amended(self, OrderAmended event) except *:
+        raise NotImplemented("Cannot amend a market order")
 
     cdef void _filled(self, OrderFilled event) except *:
         self.id = event.order_id

@@ -29,7 +29,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
@@ -108,6 +108,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self.is_connected = False
 
+        self._order_id_index = {}    # type: dict[OrderId, ClientOrderId]
+        self._event_buffer = {}      # type: dict[OrderId, list]
+
         # Scheduled tasks
         self._update_instruments_task = None
 
@@ -115,9 +118,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_balances_task = None
         self._watch_orders_task = None
         self._watch_my_trades_task = None
-
-        self._order_id_index = {}    # type: dict[OrderId, ClientOrderId]  # key is OrderId
-        self._event_buffer = {}      # type: dict[OrderId, list]           # key is OrderId
 
     cpdef void connect(self) except *:
         """
@@ -133,7 +133,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         # Schedule instruments update
         delay = _SECONDS_IN_HOUR
-        update = self._run_after_delay(delay, self._instruments_update(delay))
+        update = self._run_after_delay(delay, self._update_instruments(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
         self._loop.create_task(self._connect())
@@ -179,14 +179,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._watch_orders_task.cancel()
             # TODO: CCXT Pro issues for exchange.close()
             # stop_tasks.append(self._watch_orders_task)
-        if self._watch_create_order_task:
-            self._watch_create_order_task.cancel()
-            # TODO: CCXT Pro issues for exchange.close()
-            # stop_tasks.append(self._watch_create_order_task)
-        if self._watch_cancel_order_task:
-            self._watch_cancel_order_task.cancel()
-            # TODO: CCXT Pro issues for exchange.close()
-            # stop_tasks.append(self._watch_cancel_order_task)
         if self._watch_my_trades_task:
             self._watch_my_trades_task.cancel()
             # TODO: CCXT Pro issues for exchange.close()
@@ -267,19 +259,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.error("Cannot submit bracket orders in this version.")
 
-    cpdef void modify_order(self, ModifyOrder command) except *:
+    cpdef void amend_order(self, AmendOrder command) except *:
         """
-        Modify the order with parameters contained in the command.
+        Amend the order with parameters contained in the command.
 
         Parameters
         ----------
-        command : ModifyOrder
+        command : AmendOrder
             The command to execute.
 
         """
         Condition.not_none(command, "command")
 
-        self._log.error("Cannot modify orders in this version.")
+        self._log.error("Cannot amend orders in this version.")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
@@ -310,11 +302,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         await self._instrument_provider.load_all_async()
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
-    async def _instruments_update(self, delay):
+    async def _update_instruments(self, delay):
         await self._load_instruments()
 
         # Reschedule instruments update
-        update = self._run_after_delay(delay, self._instruments_update(delay))
+        update = self._run_after_delay(delay, self._update_instruments(delay))
         self._update_instruments_task = self._loop.create_task(update)
 
     async def _update_balances(self):
@@ -397,7 +389,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 # CCXTCache is set to 1 so expecting one response at a time
                 event = response[0]
                 order_id = OrderId(event["id"])
-                #self._log.critical(str(event))  # TODO: Development
                 self._check_and_process_order_event(order_id, event)
 
                 if exiting:
@@ -487,7 +478,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._generate_order_rejected(order, str(ex))
             return
 
-        await asyncio.sleep(0.5)
         cdef OrderId order_id = OrderId(response["id"])
         self._generate_order_accepted(order.cl_ord_id, order_id, response)
 
@@ -595,10 +585,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         dict event,
     ) except *:
         # Determine event
-        status = event["status"]
         if event["filled"] > 0:
             self._generate_order_filled(cl_ord_id, order_id, event)
-        elif status == "open":
+            return
+
+        cdef str status = event["status"]
+        if status == "open":
             self._generate_order_working(cl_ord_id, order_id, event)
         elif status == "canceled":
             self._generate_order_cancelled(cl_ord_id, order_id, event)
@@ -745,9 +737,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot fill order
 
         if not isinstance(order, PassiveOrder):
-            self._log.error(f"Cannot generate OrderWorking for order_id {order_id}, "
-                            f"order was not of type PassiveOrder with a price.")
-            return  # Cannot generate event
+            return  # MARKET order
 
         # Generate event
         cdef OrderWorking working = OrderWorking(

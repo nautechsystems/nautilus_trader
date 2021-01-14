@@ -38,7 +38,7 @@ cdef str RESPONSE_TO
 cdef str REASON
 cdef str WORKING_TIME
 cdef str CANCELLED_TIME
-cdef str MODIFIED_TIME
+cdef str AMENDED_TIME
 cdef str EXPIRE_TIME
 cdef str EXPIRED_TIME
 cdef str EXECUTION_TIME
@@ -51,10 +51,10 @@ cdef str HIDDEN
 cdef str ENTRY
 cdef str STOP_LOSS
 cdef str TAKE_PROFIT
-cdef str FILL_QUANTITY
+cdef str FILL_QTY
 cdef str FILL_PRICE
-cdef str CUM_QUANTITY
-cdef str LEAVES_QUANTITY
+cdef str CUM_QTY
+cdef str LEAVES_QTY
 cdef str QUANTITY
 cdef str COMMISSION
 cdef str PRICE

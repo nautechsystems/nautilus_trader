@@ -27,8 +27,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.commands import AmendOrder
 from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import ModifyOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
@@ -41,6 +41,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
@@ -374,6 +375,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             trader_id=self.trader_id,
             account_id=self.account_id,
             cl_ord_id=ClientOrderId("O-123456"),
+            order_id=OrderId("001"),
             command_id=self.uuid_factory.generate(),
             command_timestamp=UNIX_EPOCH,
         )
@@ -386,7 +388,7 @@ class SimulatedExchangeTests(unittest.TestCase):
 
     def test_modify_stop_order_when_order_does_not_exist(self):
         # Arrange
-        command = ModifyOrder(
+        command = AmendOrder(
             venue=SIM,
             trader_id=self.trader_id,
             account_id=self.account_id,
@@ -398,7 +400,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         )
 
         # Act
-        self.exchange.handle_modify_order(command)
+        self.exchange.handle_amend_order(command)
 
         # Assert
         self.assertEqual(2, self.exec_engine.event_count)
@@ -420,7 +422,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Act
-        self.strategy.modify_order(order, order.quantity, Price("96.714"))
+        self.strategy.amend_order(order, order.quantity, Price("96.714"))
 
         # Assert
         self.assertEqual(1, len(self.exchange.get_working_orders()))
@@ -480,7 +482,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_bracket_order(bracket_order)
 
         # Act
-        self.strategy.modify_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100"))
+        self.strategy.amend_order(bracket_order.stop_loss, bracket_order.entry.quantity, Price("85.100"))
 
         # Assert
         self.assertEqual(Price("85.100"), bracket_order.stop_loss.price)

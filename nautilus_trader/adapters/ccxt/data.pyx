@@ -110,9 +110,6 @@ cdef class CCXTDataClient(LiveDataClient):
         # Scheduled tasks
         self._update_instruments_task = None
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}"
-
     @property
     def subscribed_instruments(self):
         """
