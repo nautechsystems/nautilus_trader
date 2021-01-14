@@ -86,7 +86,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         # Act
         self.engine.run(strategies=[strategy])
 
-        # Assert - Should return expected P&L
+        # Assert - Should return expected PnL
         self.assertEqual(2689, strategy.fast_ema.count)
         self.assertEqual(115043, self.engine.iteration)
         self.assertEqual(Money(997731.21, USD), self.engine.portfolio.account(self.venue).balance())

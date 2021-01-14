@@ -72,7 +72,7 @@ class InstrumentTests(unittest.TestCase):
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
-        margin = instrument.calculate_init_margin(
+        margin = instrument.calculate_initial_margin(
             Quantity(100000),
             Price("11493.60"),
         )
@@ -85,7 +85,7 @@ class InstrumentTests(unittest.TestCase):
         instrument = TestInstrumentProvider.xbtusd_bitmex(leverage=Decimal(100))
 
         # Act
-        margin = instrument.calculate_init_margin(
+        margin = instrument.calculate_initial_margin(
             Quantity(100000),
             Price("11493.60"),
         )

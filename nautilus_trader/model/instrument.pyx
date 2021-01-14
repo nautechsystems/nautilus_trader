@@ -288,7 +288,7 @@ cdef class Instrument:
         notional_value: Decimal = quantity * close_price * self.multiplier
         return Money(notional_value, self.settlement_currency)
 
-    cpdef Money calculate_init_margin(self, Quantity quantity, Price price):
+    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price):
         """
         Calculate the initial margin from the given parameters.
 
