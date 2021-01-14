@@ -99,7 +99,8 @@ cdef class OandaDataClient(LiveDataClient):
             account_id=self._account_id,
             load_all=False,
         )
-        self._is_connected = False
+
+        self.is_connected = False
 
         # Subscriptions
         self._subscribed_instruments = set()
@@ -107,8 +108,6 @@ cdef class OandaDataClient(LiveDataClient):
 
         # Scheduled tasks
         self._update_instruments_handle: asyncio.Handle = None
-
-        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}"
@@ -137,18 +136,6 @@ cdef class OandaDataClient(LiveDataClient):
         """
         return sorted(list(self._subscribed_quote_ticks.keys()))
 
-    cpdef bint is_connected(self) except *:
-        """
-        Return a value indicating whether the client is connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
-
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -166,7 +153,8 @@ cdef class OandaDataClient(LiveDataClient):
             callback=self._subscribed_instruments_update,
         )
 
-        self._is_connected = True
+        self.is_connected = True
+
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
@@ -182,7 +170,7 @@ cdef class OandaDataClient(LiveDataClient):
             self._update_instruments_handle.cancel()
             self._log.debug(f"{self._update_instruments_handle}")
 
-        self._is_connected = False
+        self.is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -203,9 +191,10 @@ cdef class OandaDataClient(LiveDataClient):
         """
         Dispose the client.
         """
-        if self._is_connected:
+        if self.is_connected:
             self.disconnect()
 
+        # Nothing to dispose
         self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
@@ -484,7 +473,12 @@ cdef class OandaDataClient(LiveDataClient):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef void _load_instruments(self) except *:
-        self._instrument_provider.load_all()
+        try:
+            self._instrument_provider.load_all()
+        except Exception as ex:
+            self._log.error(f"{type(ex).__name__}: {ex} in _load_instruments")
+            return
+
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
     cpdef void _request_instrument(self, Symbol symbol, UUID correlation_id) except *:
@@ -662,7 +656,7 @@ cdef class OandaDataClient(LiveDataClient):
         except asyncio.CancelledError:
             pass  # Expected cancellation
         except Exception as ex:
-            self._log.exception(ex)
+            self._log.exception(ex)  # TODO: Development
 
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
         return QuoteTick(

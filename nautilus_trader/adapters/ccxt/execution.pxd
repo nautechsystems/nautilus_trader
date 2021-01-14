@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
-from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.live.execution cimport LiveExecutionClient
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -26,8 +25,6 @@ from nautilus_trader.model.order cimport Order
 cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
-    cdef bint _is_connected
-    cdef dict _currencies
 
     cdef object _update_instruments_task
 
@@ -37,25 +34,22 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _watch_cancel_order_task
     cdef object _watch_my_trades_task
 
-    cdef dict _processing_orders
+    cdef dict _order_id_index
+    cdef dict _event_buffer
 
-    cdef int _counter
+# -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _generate_order_submitted(
-        self,
-        ClientOrderId cl_ord_id,
-        datetime submitted_time,
-    ) except *
+    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
 
-    cdef inline void _generate_order_rejected(self, Order order, str reason) except *
+# -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _generate_order_accepted(
-        self,
-        Order order,
-        OrderId order_id,
-        datetime accepted_time,
-    ) except *
-
-    cdef inline void _generate_order_filled(self, dict response) except *
-    cdef inline CurrencyType _parse_currency_type(self, str code)
-    cdef inline void _on_account_state(self, dict response) except *
+    cdef inline void _on_account_state(self, dict event) except *
+    cdef inline void _check_and_process_order_event(self, OrderId order_id, dict event) except *
+    cdef inline void _process_order_event(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_denied(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp) except *
+    cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_filled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_working(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *

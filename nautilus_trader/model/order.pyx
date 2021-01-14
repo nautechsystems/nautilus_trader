@@ -118,8 +118,8 @@ cdef class Order:
 
         self.cl_ord_id = event.cl_ord_id
         self.strategy_id = event.strategy_id
-        self.id = None                # Can be None (OrderId from broker/exchange)
-        self.position_id = None       # Can be None
+        self.id = OrderId.null_c()
+        self.position_id = PositionId.null_c()
         self.account_id = None        # Can be None
         self.execution_id = None      # Can be None
         self.symbol = event.symbol
@@ -144,7 +144,7 @@ cdef class Order:
         return hash(self.cl_ord_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f"id={self.id.value}, " if self.id else ""
+        cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"{id_string}"
@@ -372,7 +372,6 @@ cdef class Order:
 
     cdef void apply_c(self, OrderEvent event) except *:
         Condition.not_none(event, "event")
-        Condition.equal(self.cl_ord_id, event.cl_ord_id, "id", "event.order_id")
 
         # Update events
         self._events.append(event)
@@ -394,18 +393,23 @@ cdef class Order:
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderWorking):
+            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.WORKING)
             self._working(event)
         elif isinstance(event, OrderCancelled):
+            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
         elif isinstance(event, OrderExpired):
+            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
         elif isinstance(event, OrderModified):
+            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.WORKING)
             self._modified(event)
         elif isinstance(event, OrderFilled):
+            Condition.equal(self.id, event.order_id, "id", "event.order_id")
             leaves_qty: Decimal = self.quantity - self.filled_qty - event.fill_qty
             if leaves_qty > 0:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
@@ -430,7 +434,7 @@ cdef class Order:
         self.id = event.order_id
 
     cdef void _working(self, OrderWorking event) except *:
-        pass  # Do nothing else
+        self.id = event.order_id
 
     cdef void _cancelled(self, OrderCancelled event) except *:
         pass  # Do nothing else

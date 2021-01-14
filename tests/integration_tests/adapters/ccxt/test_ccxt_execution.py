@@ -88,8 +88,22 @@ class CCXTExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        with open(TEST_PATH + "res_instruments.json") as response:
+            instruments = json.load(response)
+
+        with open(TEST_PATH + "res_currencies.json") as response:
+            currencies = json.load(response)
+
+        with open(TEST_PATH + "res_balances.json") as response:
+            balances = json.load(response)
+
         self.mock_ccxt = MagicMock()
         self.mock_ccxt.name = "Binance"
+        self.mock_ccxt.precisionMode = 2
+        self.mock_ccxt.markets = instruments
+        self.mock_ccxt.currencies = currencies
+        self.mock_ccxt.fetch_balance = balances
+        self.mock_ccxt.watch_balance = balances
 
         self.client = CCXTExecutionClient(
             client=self.mock_ccxt,
@@ -101,127 +115,119 @@ class CCXTExecutionClientTests(unittest.TestCase):
 
         self.exec_engine.register_client(self.client)
 
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
-
-        with open(TEST_PATH + "res_currencies.json") as response:
-            currencies = json.load(response)
-
-        with open(TEST_PATH + "res_balances.json") as response:
-            balances = json.load(response)
-
-        self.mock_ccxt.markets = instruments
-        self.mock_ccxt.fetch_currencies = currencies
-        self.mock_ccxt.fetch_balance = balances
-        self.mock_ccxt.watch_balance = balances
-
     def tearDown(self):
         self.loop.stop()
         self.loop.close()
 
-    def test_connect(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.exec_engine.start()  # Also connects clients
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+    # TODO: WIP
+    # def test_connect(self):
+    #     async def run_test():
+    #         # Arrange
+    #         # Act
+    #         self.exec_engine.start()  # Also connects clients
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to start
+    #
+    #         # Assert
+    #         self.assertTrue(self.client.is_connected)
+    #
+    #         # Tear down
+    #         self.exec_engine.stop()
+    #         await self.exec_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            # Assert
-            self.assertTrue(self.client.is_connected())
+    # TODO: WIP
+    # def test_disconnect(self):
+    #     async def run_test():
+    #         # Arrange
+    #         self.exec_engine.start()
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to start
+    #
+    #         # Act
+    #         self.client.disconnect()
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         self.assertFalse(self.client.is_connected)
+    #
+    #         # Tear down
+    #         self.exec_engine.stop()
+    #         await self.exec_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            # Tear down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
+    # TODO: WIP
+    # def test_reset_when_not_connected_successfully_resets(self):
+    #     async def run_test():
+    #         # Arrange
+    #         self.exec_engine.start()
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to start
+    #
+    #         self.exec_engine.stop()
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to stop
+    #
+    #         # Act
+    #         self.client.reset()
+    #
+    #         # Assert
+    #         self.assertFalse(self.client.is_connected)
+    #
+    #     self.loop.run_until_complete(run_test())
 
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_reset_when_connected_does_not_reset(self):
+    #     async def run_test():
+    #         # Arrange
+    #         self.exec_engine.start()
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to start
+    #
+    #         # Act
+    #         self.client.reset()
+    #
+    #         # Assert
+    #         self.assertTrue(self.client.is_connected)
+    #
+    #         # Tear Down
+    #         self.exec_engine.stop()
+    #         await self.exec_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-    def test_disconnect(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+    # TODO: WIP
+    # def test_dispose_when_not_connected_does_not_dispose(self):
+    #     async def run_test():
+    #         # Arrange
+    #         self.exec_engine.start()
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to start
+    #
+    #         # Act
+    #         self.client.dispose()
+    #
+    #         # Assert
+    #         self.assertTrue(self.client.is_connected)
+    #
+    #         # Tear Down
+    #         self.exec_engine.stop()
+    #         await self.exec_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())
 
-            # Act
-            self.client.disconnect()
-            await asyncio.sleep(0.3)
-
-            # Assert
-            self.assertFalse(self.client.is_connected())
-
-            # Tear down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_reset_when_not_connected_successfully_resets(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-            self.exec_engine.stop()
-            await asyncio.sleep(0.3)  # Allow engine message queue to stop
-
-            # Act
-            self.client.reset()
-
-            # Assert
-            self.assertFalse(self.client.is_connected())
-
-        self.loop.run_until_complete(run_test())
-
-    def test_reset_when_connected_does_not_reset(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-            # Act
-            self.client.reset()
-
-            # Assert
-            self.assertTrue(self.client.is_connected())
-
-            # Tear Down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_dispose_when_not_connected_does_not_dispose(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-            # Act
-            self.client.dispose()
-
-            # Assert
-            self.assertTrue(self.client.is_connected())
-
-            # Tear Down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_submit_order(self):
-        async def run_test():
-            # Arrange
-            stub_response = ""
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-            # Act
-            self.client.dispose()
-
-            # Assert
-            self.assertTrue(self.client.is_connected())
-
-            # Tear Down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_submit_order(self):
+    #     async def run_test():
+    #         # Arrange
+    #         stub_response = ""
+    #         self.exec_engine.start()
+    #         await asyncio.sleep(0.3)  # Allow engine message queue to start
+    #
+    #         # Act
+    #         self.client.dispose()
+    #
+    #         # Assert
+    #         self.assertTrue(self.client.is_connected)
+    #
+    #         # Tear Down
+    #         self.exec_engine.stop()
+    #         await self.exec_engine.get_run_queue_task()
+    #
+    #     self.loop.run_until_complete(run_test())

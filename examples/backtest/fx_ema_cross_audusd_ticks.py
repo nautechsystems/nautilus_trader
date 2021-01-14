@@ -72,7 +72,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
+        use_tick_cache=True,    # Pre-cache ticks for increased performance on repeated runs
         # exec_db_type="redis",
+        # bypass_logging=True
     )
 
     # Optional plug in module to simulate rollover interest,
@@ -80,11 +82,12 @@ if __name__ == "__main__":
     interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT + "/data/", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-    # Add an exchange (now multiple exchanges possible)
+    # Add an exchange (multiple exchanges possible)
+    # Add starting balances for single-asset or multi-asset accounts
     engine.add_exchange(
         venue=SIM,
         oms_type=OMSType.HEDGING,
-        starting_balances=[Money(1_000_000, USD)],  # now single-asset or multi-asset accounts
+        starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )

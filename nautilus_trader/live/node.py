@@ -376,7 +376,7 @@ class TradingNode:
             self._data_engine.start()
             self._exec_engine.start()
 
-            result: bool = await self._await_engines_initialized()
+            result: bool = await self._await_engines_connected()
 
             if not result:
                 return
@@ -394,13 +394,12 @@ class TradingNode:
         except asyncio.CancelledError as ex:
             self._log.error(str(ex))
 
-    async def _await_engines_initialized(self) -> bool:
+    async def _await_engines_connected(self) -> bool:
         self._log.info("Waiting for engines to initialize...")
 
-        # The engines require that all of their clients are initialized.
-        # The data engine clients will be set as initialized when all
+        # The data engine clients will be set as connected when all
         # instruments are received and updated with the data engine.
-        # The execution engine clients will be set as initialized when all
+        # The execution engine clients will be set as connected when all
         # accounts are updated and the current order and position status is
         # confirmed. Thus any delay here will be due to blocking network IO.
         seconds = 10  # Hard coded for now
@@ -410,9 +409,9 @@ class TradingNode:
             if self._clock.utc_now() >= timeout:
                 self._log.error(f"Timed out ({seconds}s) waiting for engines to initialize.")
                 return False
-            if not self._data_engine.check_initialized():
+            if not self._data_engine.check_connected():
                 continue
-            if not self._exec_engine.check_initialized():
+            if not self._exec_engine.check_connected():
                 continue
             break
 
@@ -424,10 +423,9 @@ class TradingNode:
 
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
-
-        self._log.info("Awaiting residual state...")
-        await asyncio.sleep(self._check_residuals_delay)
-        self.trader.check_residuals()
+            self._log.info("Awaiting residual state...")
+            await asyncio.sleep(self._check_residuals_delay)
+            self.trader.check_residuals()
 
         if self._save_strategy_state:
             self.trader.save()

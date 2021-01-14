@@ -46,6 +46,7 @@ class BacktestEngineTests(unittest.TestCase):
         self.engine = BacktestEngine(
             data=data,
             strategies=[TradingStrategy("000")],
+            use_tick_cache=True,
         )
 
         self.engine.add_exchange(

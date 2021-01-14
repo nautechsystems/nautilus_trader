@@ -496,13 +496,10 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-
-        order.apply(submitted)
+        order.apply(TestStubs.event_order_submitted(order))
 
         # Act
-        order.apply(accepted)
+        order.apply(TestStubs.event_order_accepted(order))
 
         # Assert
         self.assertEqual(OrderState.ACCEPTED, order.state)
@@ -516,13 +513,10 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        rejected = TestStubs.event_order_rejected(order)
-
-        order.apply(submitted)
+        order.apply(TestStubs.event_order_submitted(order))
 
         # Act
-        order.apply(rejected)
+        order.apply(TestStubs.event_order_rejected(order))
 
         # Assert
         self.assertEqual(OrderState.REJECTED, order.state)
@@ -537,15 +531,11 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-        working = TestStubs.event_order_working(order)
-
-        order.apply(submitted)
-        order.apply(accepted)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
 
         # Act
-        order.apply(working)
+        order.apply(TestStubs.event_order_working(order))
 
         # Assert
         # print(order)
@@ -566,17 +556,12 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-        working = TestStubs.event_order_working(order)
-        expired = TestStubs.event_order_expired(order)
-
-        order.apply(submitted)
-        order.apply(accepted)
-        order.apply(working)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_working(order))
 
         # Act
-        order.apply(expired)
+        order.apply(TestStubs.event_order_expired(order))
 
         # Assert
         self.assertEqual(OrderState.EXPIRED, order.state)
@@ -590,15 +575,11 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-        cancelled = TestStubs.event_order_cancelled(order)
-
-        order.apply(submitted)
-        order.apply(accepted)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
 
         # Act
-        order.apply(cancelled)
+        order.apply(TestStubs.event_order_cancelled(order))
 
         # Assert
         self.assertEqual(OrderState.CANCELLED, order.state)
@@ -613,9 +594,9 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-        working = TestStubs.event_order_working(order)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_working(order))
 
         modified = OrderModified(
             self.account_id,
@@ -627,10 +608,6 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH,
         )
-
-        order.apply(submitted)
-        order.apply(accepted)
-        order.apply(working)
 
         # Act
         order.apply(modified)
@@ -652,8 +629,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
 
         filled = TestStubs.event_order_filled(
             order,
@@ -662,9 +639,6 @@ class OrderTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
         )
-
-        order.apply(submitted)
-        order.apply(accepted)
 
         # Act
         order.apply(filled)
@@ -685,8 +659,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
 
         fill1 = TestStubs.event_order_filled(
             order,
@@ -705,9 +679,6 @@ class OrderTests(unittest.TestCase):
             fill_price=Price("1.00002"),
             fill_qty=Quantity(40000),
         )
-
-        order.apply(submitted)
-        order.apply(accepted)
 
         # Act
         order.apply(fill1)
@@ -729,8 +700,8 @@ class OrderTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
 
         fill1 = TestStubs.event_order_filled(
             order,
@@ -759,9 +730,6 @@ class OrderTests(unittest.TestCase):
             fill_qty=Quantity(40000),
         )
 
-        order.apply(submitted)
-        order.apply(accepted)
-
         # Act
         order.apply(fill1)
         order.apply(fill2)
@@ -784,9 +752,9 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-        working = TestStubs.event_order_working(order)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_working(order))
 
         filled = OrderFilled(
             self.account_id,
@@ -810,10 +778,6 @@ class OrderTests(unittest.TestCase):
             UNIX_EPOCH,
         )
 
-        order.apply(submitted)
-        order.apply(accepted)
-        order.apply(working)
-
         # Act
         order.apply(filled)
 
@@ -835,9 +799,9 @@ class OrderTests(unittest.TestCase):
             Price("1.00000"),
         )
 
-        submitted = TestStubs.event_order_submitted(order)
-        accepted = TestStubs.event_order_accepted(order)
-        working = TestStubs.event_order_working(order)
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+        order.apply(TestStubs.event_order_working(order))
 
         partially = OrderFilled(
             self.account_id,
@@ -860,10 +824,6 @@ class OrderTests(unittest.TestCase):
             uuid4(),
             UNIX_EPOCH,
         )
-
-        order.apply(submitted)
-        order.apply(accepted)
-        order.apply(working)
 
         # Act
         order.apply(partially)

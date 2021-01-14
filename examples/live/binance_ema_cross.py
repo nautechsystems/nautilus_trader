@@ -35,7 +35,7 @@ config = {
 
     "logging": {
         "log_level_console": "INF",
-        "log_level_file": "DGB",
+        "log_level_file": "DBG",
         "log_level_store": "WRN",
         "log_to_file": False,
         "log_file_path": "logs/",
@@ -59,6 +59,7 @@ config = {
             "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BINANCE_API_KEY",        # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
+            "sandbox_mode": False,               # If clients use the testnet
         },
     },
 }
@@ -87,10 +88,7 @@ strategy = EMACross(
 )
 
 # Instantiate the node passing a list of strategies and configuration
-node = TradingNode(
-    strategies=[strategy],
-    config=config,
-)
+node = TradingNode(strategies=[strategy], config=config)
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C
@@ -98,6 +96,4 @@ if __name__ == "__main__":
     try:
         node.start()
     finally:
-        if node.is_running:
-            node.stop()
         node.dispose()

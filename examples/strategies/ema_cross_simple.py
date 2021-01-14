@@ -231,7 +231,9 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is reset.
         """
-        pass
+        # Reset indicators here
+        self.fast_ema.reset()
+        self.slow_ema.reset()
 
     def on_save(self) -> {}:
         """

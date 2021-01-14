@@ -278,9 +278,6 @@ class MockDataClient(DataClient):
 
         self.calls = []
 
-    def is_connected(self):
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     def connect(self):
@@ -400,26 +397,22 @@ class MockExecutionClient(ExecutionClient):
             logger,
         )
 
-        self._is_connected = False
         self.calls = []
         self.commands = []
 
     def connect(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self._is_connected = True
+        self._set_connected(True)
 
     def disconnect(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self._is_connected = False
+        self._set_connected(False)
 
     def dispose(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def reset(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def is_connected(self):
-        return self._is_connected
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

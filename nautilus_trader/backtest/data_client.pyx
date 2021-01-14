@@ -71,22 +71,9 @@ cdef class BacktestDataClient(DataClient):
             Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
             self._instruments[instrument.symbol] = instrument
 
-        self._is_connected = False
-        self.initialized = True
+        self.is_connected = False
 
 # -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef bint is_connected(self) except *:
-        """
-        Return a value indicating whether the client is connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
 
     cpdef void connect(self) except *:
         """
@@ -94,8 +81,7 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.debug(f"Connecting...")
 
-        self._is_connected = True
-
+        self.is_connected = True
         self._log.info(f"Connected.")
 
     cpdef void disconnect(self) except *:
@@ -104,8 +90,7 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.debug(f"Disconnecting...")
 
-        self._is_connected = False
-
+        self.is_connected = False
         self._log.info(f"Disconnected.")
 
     cpdef void reset(self) except *:
@@ -116,6 +101,7 @@ cdef class BacktestDataClient(DataClient):
         """
         self._log.debug(f"Resetting...")
 
+        # Nothing to reset
         self._log.info("Reset.")
 
     cpdef void dispose(self) except *:
@@ -142,7 +128,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot subscribe to instrument for {symbol} (not connected).")
             return
 
@@ -160,7 +146,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot subscribe to quote ticks for {symbol} (not connected).")
             return
 
@@ -178,7 +164,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot subscribe to trade ticks for {symbol} (not connected).")
             return
 
@@ -196,7 +182,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot subscribe to bars for {bar_type} (not connected).")
             return
 
@@ -215,7 +201,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot unsubscribe from instrument for {symbol} (not connected).")
             return
 
@@ -233,7 +219,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot unsubscribe from quote ticks for {symbol} (not connected).")
             return
 
@@ -251,7 +237,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot unsubscribe from trade ticks for {symbol} (not connected).")
             return
 
@@ -269,7 +255,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot unsubscribe from bars {bar_type} (not connected).")
             return
 
@@ -295,7 +281,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot request instrument for {symbol} (not connected).")
             return
 
@@ -350,7 +336,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot request quote ticks for {symbol} (not connected).")
             return
 
@@ -386,7 +372,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot request trade ticks for {symbol} (not connected).")
             return
 
@@ -422,7 +408,7 @@ cdef class BacktestDataClient(DataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot request bars for {bar_type} (not connected).")
             return
 

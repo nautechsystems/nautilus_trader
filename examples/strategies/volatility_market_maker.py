@@ -287,7 +287,8 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         Actions to be performed when the strategy is reset.
         """
-        pass
+        # Reset indicators here
+        self.atr.reset()
 
     def on_save(self) -> {}:
         """

@@ -287,6 +287,10 @@ class PortfolioTests(unittest.TestCase):
             Price("25000.00"),
         )
 
+        # Push state to WORKING
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1))
+
         filled1 = TestStubs.event_order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
@@ -294,6 +298,10 @@ class PortfolioTests(unittest.TestCase):
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("25000.00"),
         )
+
+        # Push state to WORKING
+        order2.apply(TestStubs.event_order_submitted(order2))
+        order2.apply(TestStubs.event_order_accepted(order2))
 
         filled2 = TestStubs.event_order_filled(
             order2,
@@ -303,14 +311,7 @@ class PortfolioTests(unittest.TestCase):
             fill_price=Price("25000.00"),
         )
 
-        # Push state to WORKING
-        order1.apply(TestStubs.event_order_submitted(order1))
-        order1.apply(TestStubs.event_order_accepted(order1))
         order1.apply(filled1)
-
-        # Push state to WORKING
-        order2.apply(TestStubs.event_order_submitted(order2))
-        order2.apply(TestStubs.event_order_accepted(order2))
         order2.apply(filled2)
 
         # Update the last quote
