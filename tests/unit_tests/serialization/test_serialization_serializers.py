@@ -19,8 +19,8 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.currencies import USD
@@ -30,6 +30,7 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderCancelReject
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderDenied
@@ -37,7 +38,6 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
@@ -581,7 +581,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
         # Assert
         self.assertEqual(deserialized, event)
 
-    def test_serialize_and_deserialize_order_modified_events(self):
+    def test_serialize_and_deserialize_order_amended_events(self):
         # Arrange
         event = OrderAmended(
             self.account_id,

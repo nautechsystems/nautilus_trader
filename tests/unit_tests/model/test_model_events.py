@@ -24,6 +24,7 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderCancelReject
 from nautilus_trader.model.events import OrderCancelled
 from nautilus_trader.model.events import OrderDenied
@@ -31,7 +32,6 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking

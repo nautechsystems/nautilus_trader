@@ -209,7 +209,7 @@ cdef class PositionOpened(PositionEvent):
     pass
 
 
-cdef class PositionModified(PositionEvent):
+cdef class PositionChanged(PositionEvent):
     pass
 
 

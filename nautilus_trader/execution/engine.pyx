@@ -56,7 +56,7 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -664,7 +664,7 @@ cdef class ExecutionEngine(Component):
         if position.is_closed_c():
             position_event = self._pos_closed_event(position, fill)
         else:
-            position_event = self._pos_modified_event(position, fill)
+            position_event = self._pos_changed_event(position, fill)
 
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
@@ -751,8 +751,8 @@ cdef class ExecutionEngine(Component):
             event.timestamp,
         )
 
-    cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled event):
-        return PositionModified(
+    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled event):
+        return PositionChanged(
             position,
             event,
             self._uuid_factory.generate(),

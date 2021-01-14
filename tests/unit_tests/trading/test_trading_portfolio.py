@@ -798,7 +798,7 @@ class PortfolioTests(unittest.TestCase):
         position.apply(order2_filled)
 
         # Act
-        self.portfolio.update_position(TestStubs.event_position_modified(position))
+        self.portfolio.update_position(TestStubs.event_position_changed(position))
 
         # Assert
         self.assertEqual({USD: Money("805.01", USD)}, self.portfolio.market_values(SIM))

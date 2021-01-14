@@ -29,7 +29,7 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -104,7 +104,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _update_position(self, OrderFilled event) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
-    cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
+    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
 

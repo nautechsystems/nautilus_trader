@@ -34,8 +34,8 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderWorking
+from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
-from nautilus_trader.model.events import PositionModified
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -355,8 +355,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_position_modified(position) -> PositionModified:
-        return PositionModified(
+    def event_position_changed(position) -> PositionChanged:
+        return PositionChanged(
             position,
             position.last_event,
             uuid4(),
