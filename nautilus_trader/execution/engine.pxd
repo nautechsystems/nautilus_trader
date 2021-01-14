@@ -18,7 +18,7 @@ from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport VenueCommand
@@ -29,7 +29,7 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -85,7 +85,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _execute_command(self, VenueCommand command) except *
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
-    cdef inline void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *
+    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef inline void _invalidate_order(self, Order order, str reason) except *
     cdef inline void _deny_order(self, Order order, str reason) except *
@@ -104,7 +104,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _update_position(self, OrderFilled event) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
-    cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled fill)
+    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
     cdef inline PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
 

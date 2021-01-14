@@ -28,11 +28,11 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import OrderAmended
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderModified
 from nautilus_trader.model.identifiers import BracketOrderId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -585,7 +585,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.CANCELLED, order.state)
         self.assertTrue(order.is_completed)
 
-    def test_apply_order_modified_event_to_stop_order(self):
+    def test_apply_order_amended_event_to_stop_order(self):
         # Arrange
         order = self.order_factory.stop_market(
             AUDUSD_SIM.symbol,
@@ -598,7 +598,7 @@ class OrderTests(unittest.TestCase):
         order.apply(TestStubs.event_order_accepted(order))
         order.apply(TestStubs.event_order_working(order))
 
-        modified = OrderModified(
+        amended = OrderAmended(
             self.account_id,
             order.cl_ord_id,
             OrderId("1"),
@@ -610,7 +610,7 @@ class OrderTests(unittest.TestCase):
         )
 
         # Act
-        order.apply(modified)
+        order.apply(amended)
 
         # Assert
         self.assertEqual(OrderState.WORKING, order.state)

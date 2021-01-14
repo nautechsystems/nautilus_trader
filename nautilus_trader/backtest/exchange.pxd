@@ -23,7 +23,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
@@ -96,7 +96,7 @@ cdef class SimulatedExchange:
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void handle_modify_order(self, ModifyOrder command) except *
+    cpdef void handle_amend_order(self, AmendOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
 # --------------------------------------------------------------------------------------------------

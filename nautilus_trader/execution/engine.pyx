@@ -44,7 +44,7 @@ from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
@@ -56,7 +56,7 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -380,8 +380,8 @@ cdef class ExecutionEngine(Component):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, ModifyOrder):
-            self._handle_modify_order(client, command)
+        elif isinstance(command, AmendOrder):
+            self._handle_amend_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -459,20 +459,20 @@ cdef class ExecutionEngine(Component):
         # Submit bracket order
         client.submit_bracket_order(command)
 
-    cdef inline void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
+    cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot modify command  "
-                              f"({repr(command.cl_ord_id)} already completed).")
+            self._log.warning(f"Cannot amend order,  "
+                              f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
-        client.modify_order(command)
+        client.amend_order(command)
 
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
         if self.cache.is_order_completed(command.cl_ord_id):
-            self._log.warning(f"Cannot cancel command "
-                              f"({repr(command.cl_ord_id)} already completed).")
+            self._log.warning(f"Cannot cancel order, "
+                              f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
         client.cancel_order(command)
@@ -664,7 +664,7 @@ cdef class ExecutionEngine(Component):
         if position.is_closed_c():
             position_event = self._pos_closed_event(position, fill)
         else:
-            position_event = self._pos_modified_event(position, fill)
+            position_event = self._pos_changed_event(position, fill)
 
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(position_event)
@@ -751,8 +751,8 @@ cdef class ExecutionEngine(Component):
             event.timestamp,
         )
 
-    cdef inline PositionModified _pos_modified_event(self, Position position, OrderFilled event):
-        return PositionModified(
+    cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled event):
+        return PositionChanged(
             position,
             event,
             self._uuid_factory.generate(),

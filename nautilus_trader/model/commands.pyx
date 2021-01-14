@@ -179,9 +179,9 @@ cdef class SubmitBracketOrder(VenueCommand):
                 f"id={self.bracket_order.id.value})")
 
 
-cdef class ModifyOrder(VenueCommand):
+cdef class AmendOrder(VenueCommand):
     """
-    Represents a command to modify an order with the given modified price.
+    Represents a command to amend an order.
     """
 
     def __init__(
@@ -196,7 +196,7 @@ cdef class ModifyOrder(VenueCommand):
         datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the `ModifyOrder` class.
+        Initialize a new instance of the `AmendOrder` class.
 
         Parameters
         ----------
@@ -209,9 +209,9 @@ cdef class ModifyOrder(VenueCommand):
         cl_ord_id : OrderId
             The client order identifier.
         quantity : Quantity
-            The quantity for the order (modifying optional).
+            The quantity for the order (amending optional).
         price : Price
-            The price for the order (modifying optional).
+            The price for the order (amending optional).
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -247,6 +247,7 @@ cdef class CancelOrder(VenueCommand):
         TraderId trader_id not None,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
         UUID command_id not None,
         datetime command_timestamp not None,
     ):
@@ -261,8 +262,10 @@ cdef class CancelOrder(VenueCommand):
             The trader identifier for the command.
         account_id : AccountId
             The account identifier for the command.
-        cl_ord_id : OrderId
-            The client order identifier.
+        cl_ord_id : ClientOrderId
+            The client order identifier to cancel.
+        order_id : OrderId
+            The order identifier to cancel.
         command_id : UUID
             The command identifier.
         command_timestamp : datetime
@@ -274,10 +277,12 @@ cdef class CancelOrder(VenueCommand):
         self.trader_id = trader_id
         self.account_id = account_id
         self.cl_ord_id = cl_ord_id
+        self.order_id = order_id
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self.venue.value}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.cl_ord_id.value})")
+                f"cl_ord_id={self.cl_ord_id.value},"
+                f"order_id={self.order_id.value})")

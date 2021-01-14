@@ -18,7 +18,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport ModifyOrder
+from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
@@ -50,7 +50,7 @@ cdef class ExecutionClient:
 
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void modify_order(self, ModifyOrder command) except *
+    cpdef void amend_order(self, AmendOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
