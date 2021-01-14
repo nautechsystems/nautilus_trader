@@ -214,6 +214,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
         self.assertIn(order, self.cache.orders())
         self.assertEqual(OrderId.null(), self.cache.order_id(order.cl_ord_id))
+        self.assertIsNone(self.cache.cl_ord_id(order.id))
 
     def test_load_order(self):
         # Arrange
