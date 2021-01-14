@@ -494,6 +494,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Condition.not_none(order, "order")
 
+        if order.id.not_null():
+            # Assumes order_id does not change
+            self._index_order_ids[order.id] = order.cl_ord_id
+
         if order.is_working_c():
             self._index_orders_working.add(order.cl_ord_id)
             self._index_orders_completed.discard(order.cl_ord_id)

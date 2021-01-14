@@ -534,11 +534,32 @@ cdef class ExecutionEngine(Component):
             self._handle_order_cancel_reject(event)
             return  # Event has been sent to strategy
 
+        # Fetch `Order` from cache
+        cdef ClientOrderId cl_ord_id = event.cl_ord_id
         cdef Order order = self.cache.order(event.cl_ord_id)
+        cdef str event_str
         if order is None:
-            self._log.warning(f"Cannot apply event to any order, "
-                              f"{repr(event.cl_ord_id)} not found in cache, {event}.")
-            return  # Cannot process event further
+            self._log.warning(f"{repr(event.cl_ord_id)} was not found in cache "
+                              f"for {repr(event.order_id)} to apply {event}.")
+
+            # Search cache for `ClientOrderId` matching the OrderId
+            cl_ord_id = self.cache.cl_ord_id(event.order_id)
+            if cl_ord_id is None:
+                self._log.error(f"Cannot apply {event} to any order, "
+                                f"no ClientOrderId found matching .")
+                return  # Cannot process event further
+
+            # Search cache for `Order` matching the found ClientOrderId`
+            order = self.cache.order(cl_ord_id)
+            if order is None:
+                self._log.error(f"Cannot apply event to any order, "
+                                f"order for {repr(cl_ord_id)} not found in cache.")
+                return  # Cannot process event further
+
+            # Set the correct `ClientOrderId` for the event
+            event.override_cl_ord_id(cl_ord_id)
+            self._log.warning(f"{repr(cl_ord_id)} was found in cache and "
+                              f"applying event to order with order_id {order.id}.")
 
         try:
             order.apply_c(event)
@@ -556,7 +577,7 @@ cdef class ExecutionEngine(Component):
             self._handle_order_fill(event)
             return  # Event has been sent to strategy
 
-        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(cl_ord_id))
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
@@ -588,10 +609,10 @@ cdef class ExecutionEngine(Component):
             self._fill_exchange_assigned_ids(position_id, fill, strategy_id)
 
     cdef inline void _fill_system_assigned_ids(
-            self,
-            PositionId position_id,
-            OrderFilled fill,
-            StrategyId strategy_id,
+        self,
+        PositionId position_id,
+        OrderFilled fill,
+        StrategyId strategy_id,
     ) except *:
         if position_id is None:  # No position yet
             # Generate identifier and assign
@@ -605,10 +626,10 @@ cdef class ExecutionEngine(Component):
             self._update_position(fill)
 
     cdef inline void _fill_exchange_assigned_ids(
-            self,
-            PositionId position_id,
-            OrderFilled fill,
-            StrategyId strategy_id,
+        self,
+        PositionId position_id,
+        OrderFilled fill,
+        StrategyId strategy_id,
     ) except *:
         fill.strategy_id = strategy_id
         if position_id is None:  # No position

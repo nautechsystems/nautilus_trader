@@ -18,6 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.execution cimport LiveExecutionClient
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.order cimport Order
 
 
@@ -33,7 +34,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _watch_cancel_order_task
     cdef object _watch_my_trades_task
 
-    cdef dict _submitted_orders
+    cdef dict _order_id_index
+    cdef dict _event_buffer
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -42,10 +44,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- EVENTS ----------------------------------------------------------------------------------------
 
     cdef inline void _on_account_state(self, dict event) except *
+    cdef inline void _check_and_process_order_event(self, OrderId order_id, dict event) except *
+    cdef inline void _process_order_event(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
     cdef inline void _generate_order_denied(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp) except *
-    cdef inline void _generate_order_rejected(self, Order order, str reason) except *
-    cdef inline void _generate_order_accepted(self, Order order, dict event) except *
-    cdef inline void _generate_order_filled(self, dict event) except *
-    cdef inline void _generate_order_working(self, dict event) except *
-    cdef inline void _generate_order_cancelled(self, dict event) except *
+    cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_filled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_working(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *

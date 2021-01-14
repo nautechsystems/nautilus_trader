@@ -116,7 +116,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_orders_task = None
         self._watch_my_trades_task = None
 
-        self._submitted_orders = {}  # type: dict[str, Order]  # ClientOrderId: Order
+        self._order_id_index = {}    # type: dict[OrderId, ClientOrderId]  # key is OrderId
+        self._event_buffer = {}      # type: dict[OrderId, list]           # key is OrderId
 
     cpdef void connect(self) except *:
         """
@@ -218,7 +219,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             load_all=False,
         )
 
-        self._submitted_orders = {}
+        self._order_id_index = {}
+        self._event_buffer = {}
 
         self._log.info("Reset.")
 
@@ -356,7 +358,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     exiting = True
 
                 if response is None:
-                    continue  # TODO: Temporary workaround for testing
+                    return  # TODO: Temporary workaround for testing
 
                 self._on_account_state(response)
 
@@ -374,10 +376,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef bint exiting = False  # Flag to stop loop
         cdef dict event
-        cdef str status
+        cdef ClientOrderId cl_ord_id
+        cdef OrderId order_id
         try:
             while True:
                 try:
+                    # ArrayCacheBySymbolById
                     response = await self._client.watch_orders()
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
@@ -388,28 +392,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     exiting = True
 
                 if response is None:
-                    continue  # TODO: Temporary workaround for testing
+                    return  # TODO: Temporary workaround for testing
 
+                # CCXTCache is set to 1 so expecting one response at a time
                 event = response[0]
-
-                # self._log.critical(str(event))  # TODO!
-
-                # Check for submitted order
-                submitted_order = self._submitted_orders.pop(event["clientOrderId"], None)
-                if submitted_order is not None:
-                    self._generate_order_accepted(submitted_order, event)
-
-                # Determine event
-                status = event["status"]
-                if event["filled"] > 0:
-                    self._generate_order_filled(event)
-                elif status == "open":
-                    self._generate_order_working(event)
-                elif status == "canceled":
-                    self._generate_order_cancelled(event)
-                else:
-                    # TODO: Development
-                    self._log.critical(str(event))
+                order_id = OrderId(event["id"])
+                #self._log.critical(str(event))  # TODO: Development
+                self._check_and_process_order_event(order_id, event)
 
                 if exiting:
                     break
@@ -437,7 +426,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     response = self._client.watch_my_trades
                     exiting = True
 
-                # TODO!
+                # TODO: Development
                 # self._log.critical("_watch_my_trades ran!")
                 # with open('res_watch_my_trades.json', 'w') as json_file:
                 #     json.dump(response, json_file)
@@ -455,9 +444,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info(f"Submitting {order}...")
         self._generate_order_submitted(order.cl_ord_id, self._clock.utc_now())
 
-        # Add ClientOrderId to submitted orders
-        self._submitted_orders[order.cl_ord_id.value] = order
-
         cdef str order_type = OrderTypeParser.to_str(order.type).lower()
         cdef str order_side = OrderSideParser.to_str(order.side).lower()
         cdef str order_qty = str(order.quantity)
@@ -466,19 +452,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             "recvWindow": 10000  # TODO: Server time sync issue?
         }
 
-        # Add ClientOrderId to request
+        # Add ClientOrderId to request if possible
         if self.venue.value == "BINANCE":
             params["newClientOrderId"] = order.cl_ord_id.value
         elif self.venue.value == "BITMEX":
             params["clOrdId"] = order.cl_ord_id.value
-        else:
-            self._log.error("Cannot submit order, ClientOrderId handling only "
-                            "setup for Binance and BitMEX in this version.")
-            return  # Cannot submit order
 
+        cdef dict response
         try:
             if order.type == OrderType.MARKET:
-                await self._client.create_order(
+                response = await self._client.create_order(
                     order.symbol.code,
                     order_type,
                     order_side,
@@ -486,7 +469,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     params=params,
                 )
             elif order.type == OrderType.LIMIT:
-                await self._client.create_order(
+                response = await self._client.create_order(
                     order.symbol.code,
                     order_type,
                     order_side,
@@ -503,6 +486,22 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         except CCXTError as ex:
             self._generate_order_rejected(order, str(ex))
             return
+
+        await asyncio.sleep(0.5)
+        cdef OrderId order_id = OrderId(response["id"])
+        self._generate_order_accepted(order.cl_ord_id, order_id, response)
+
+        # Index order_id
+        self._order_id_index[order_id] = order.cl_ord_id
+        cdef list events = self._event_buffer.pop(order_id, None)
+        cdef dict event
+        if events:
+            # Process buffered events which are any events received before the
+            # order_id was indexed. We must wait for the above response with the
+            # order_id to ensure order management will work for any exchange
+            # regardless of whether a ClientOrderId was able to be set for the order.
+            for event in events:
+                self._process_order_event(order.cl_ord_id, order_id, event)
 
     async def _cancel_order(self, ClientOrderId cl_ord_id):
         cdef Order order = self._engine.cache.order(cl_ord_id)
@@ -574,6 +573,39 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._handle_event(account_state)
 
+    cdef inline void _check_and_process_order_event(self, OrderId order_id, dict event) except *:
+        cdef ClientOrderId cl_ord_id = self._order_id_index.get(order_id)
+        cdef list events
+        if cl_ord_id is None:
+            events = self._event_buffer.get(order_id)
+            if events is None:
+                self._event_buffer[order_id] = [event]
+            else:
+                events.append(event)
+            # Order event received before OrderId was indexed
+            # and OrderAccepted event generated.
+            return
+
+        self._process_order_event(cl_ord_id, order_id, event)
+
+    cdef inline void _process_order_event(
+        self,
+        ClientOrderId cl_ord_id,
+        OrderId order_id,
+        dict event,
+    ) except *:
+        # Determine event
+        status = event["status"]
+        if event["filled"] > 0:
+            self._generate_order_filled(cl_ord_id, order_id, event)
+        elif status == "open":
+            self._generate_order_working(cl_ord_id, order_id, event)
+        elif status == "canceled":
+            self._generate_order_cancelled(cl_ord_id, order_id, event)
+        else:
+            # TODO: Development
+            self._log.critical(str(event))
+
     cdef inline void _generate_order_denied(
         self,
         ClientOrderId cl_ord_id,
@@ -588,7 +620,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
         self._handle_event(denied)
 
-    cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp) except *:
+    cdef inline void _generate_order_submitted(
+        self, ClientOrderId cl_ord_id,
+        datetime timestamp,
+    ) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             self.account_id,
@@ -599,11 +634,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
         self._handle_event(submitted)
 
-    cdef inline void _generate_order_rejected(self, Order order, str reason) except *:
+    cdef inline void _generate_order_rejected(
+        self,
+        ClientOrderId cl_ord_id,
+        str reason,
+    ) except *:
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             self.account_id,
-            order.cl_ord_id,
+            cl_ord_id,
             self._clock.utc_now(),
             reason,
             self._uuid_factory.generate(),
@@ -611,34 +650,40 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
         self._handle_event(rejected)
 
-    cdef inline void _generate_order_accepted(self, Order order, dict event) except *:
+    cdef inline void _generate_order_accepted(
+        self,
+        ClientOrderId cl_ord_id,
+        OrderId order_id,
+        dict event,
+    ) except *:
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             self.account_id,
-            order.cl_ord_id,
-            OrderId(event["id"]),
+            cl_ord_id,
+            order_id,
             from_posix_ms(event["timestamp"]),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
         self._handle_event(accepted)
 
-    cdef inline void _generate_order_filled(self, dict event) except *:
-        # Parse order identifiers
-        cdef str order_id_str = event["id"]
-        cdef str cl_ord_id_str = event["clientOrderId"]
-
+    cdef inline void _generate_order_filled(
+        self,
+        ClientOrderId cl_ord_id,
+        OrderId order_id,
+        dict event,
+    ) except *:
         cdef Instrument instrument = self._instrument_provider.get_c(event["symbol"])
         if instrument is None:
-            self._log.error(f"Cannot fill order with id {order_id_str}, "
+            self._log.error(f"Cannot fill order with id {order_id}, "
                             f"instrument for {event['symbol']} not found.")
             return  # Cannot fill order
 
         # Fetch order from cache
-        cdef Order order = self._engine.cache.order(ClientOrderId(cl_ord_id_str))
+        cdef Order order = self._engine.cache.order(cl_ord_id)
         if order is None:
-            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id_str}, "
-                            f"order_id {order_id_str} not found in cache.")
+            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id}, "
+                            f"order_id {order_id} not found in cache.")
             return  # Cannot fill order
 
         # Determine commission
@@ -650,7 +695,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         else:
             currency = self._instrument_provider.currency(fees["currency"])
             if currency is None:
-                self._log.error(f"Cannot determine commission for {order_id_str}, "
+                self._log.error(f"Cannot determine commission for {order_id}, "
                                 f"currency for {fees['currency']} not found.")
                 commission = Money(0, instrument.quote_currency)
             else:
@@ -665,7 +710,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef OrderFilled filled = OrderFilled(
             self.account_id,
             order.cl_ord_id,
-            OrderId(order_id_str),
+            order_id,
             ExecutionId("1"),  # TODO: Implement
             position_id,
             order.strategy_id,
@@ -686,19 +731,21 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._handle_event(filled)
 
-    cdef inline void _generate_order_working(self, dict event) except *:
-        cdef str order_id_str = event["id"]
-        cdef str cl_ord_id_str = event["clientOrderId"]
-
+    cdef inline void _generate_order_working(
+        self,
+        ClientOrderId cl_ord_id,
+        OrderId order_id,
+        dict event,
+    ) except *:
         # Fetch order from cache
-        cdef Order order = self._engine.cache.order(ClientOrderId(cl_ord_id_str))
+        cdef Order order = self._engine.cache.order(cl_ord_id)
         if order is None:
-            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id_str}, "
-                            f"order_id {order_id_str} not found in cache.")
+            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id}, "
+                            f"order_id {order_id} not found in cache.")
             return  # Cannot fill order
 
         if not isinstance(order, PassiveOrder):
-            self._log.error(f"Cannot generate OrderWorking for order_id {order_id_str}, "
+            self._log.error(f"Cannot generate OrderWorking for order_id {order_id}, "
                             f"order was not of type PassiveOrder with a price.")
             return  # Cannot generate event
 
@@ -706,7 +753,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef OrderWorking working = OrderWorking(
             self.account_id,
             order.cl_ord_id,
-            OrderId(order_id_str),
+            order_id,
             order.symbol,
             order.side,
             order.type,
@@ -721,12 +768,17 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._handle_event(working)
 
-    cdef inline void _generate_order_cancelled(self, dict event) except *:
+    cdef inline void _generate_order_cancelled(
+        self,
+        ClientOrderId cl_ord_id,
+        OrderId order_id,
+        dict event,
+    ) except *:
         # Generate event
         cdef OrderCancelled cancelled = OrderCancelled(
             self.account_id,
-            ClientOrderId(event["clientOrderId"]),
-            OrderId(event["id"]),
+            cl_ord_id,
+            order_id,
             from_posix_ms(event["timestamp"]),
             self._uuid_factory.generate(),
             self._clock.utc_now(),

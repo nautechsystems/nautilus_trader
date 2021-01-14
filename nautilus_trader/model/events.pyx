@@ -125,6 +125,10 @@ cdef class OrderEvent(Event):
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
 
+    cpdef void override_cl_ord_id(self, ClientOrderId cl_ord_id) except *:
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+        self.cl_ord_id = cl_ord_id
+
 
 cdef class OrderInitialized(OrderEvent):
     """

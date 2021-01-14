@@ -85,7 +85,7 @@ cdef class DataClient:
         self._log.info("Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.venue})"
+        return f"{type(self).__name__}-{self.venue}"
 
     cpdef list unavailable_methods(self):
         """

@@ -53,6 +53,8 @@ cdef class OrderEvent(Event):
     cdef readonly OrderId order_id
     """The order identifier associated with the event.\n\n:returns: `OrderId`"""
 
+    cpdef void override_cl_ord_id(self, ClientOrderId cl_ord_id) except *
+
 
 cdef class OrderInitialized(OrderEvent):
     cdef readonly Symbol symbol
