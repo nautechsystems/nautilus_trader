@@ -88,6 +88,7 @@ cdef class Order:
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 
     cdef OrderState state_c(self) except *
+    cdef OrderInitialized init_event_c(self)
     cdef OrderEvent last_event_c(self)
     cdef list events_c(self)
     cdef list execution_ids_c(self)

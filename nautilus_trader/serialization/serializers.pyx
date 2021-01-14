@@ -464,8 +464,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
             package[QUANTITY] = str(event.quantity)
             package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
-            if len(event.options) > 0:
-                package[OPTIONS] = MsgPackSerializer.serialize(event.options)
+
+            if event.order_type == OrderType.STOP_MARKET:
+                package[PRICE] = str(event.options[PRICE])
+                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)
+            elif event.order_type == OrderType.LIMIT:
+                package[PRICE] = str(event.options[PRICE])
+                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)
+                package[POST_ONLY] = event.options.get(POST_ONLY, True)
+                package[HIDDEN] = event.options.get(HIDDEN, False)
+
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ACCOUNT_ID] = event.account_id.value
@@ -575,6 +583,8 @@ cdef class MsgPackEventSerializer(EventSerializer):
         cdef UUID event_id = UUID.from_str_c(unpacked[ID])
         cdef datetime event_timestamp = ObjectParser.string_to_datetime(unpacked[TIMESTAMP])
 
+        cdef dict options          # typing for OrderInitialized
+        cdef OrderType order_type  # typing for OrderInitialized
         if event_type == AccountState.__name__:
             return AccountState(
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
@@ -586,18 +596,27 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 event_timestamp,
             )
         elif event_type == OrderInitialized.__name__:
-            options = unpacked.get(OPTIONS)
+            options = {}
+            order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
+            if order_type == OrderType.STOP_MARKET:
+                options[PRICE] = Price(unpacked[PRICE])
+                options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
+            elif order_type == OrderType.LIMIT:
+                options[PRICE] = Price(unpacked[PRICE])
+                options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
+                options[POST_ONLY] = unpacked[POST_ONLY]
+                options[HIDDEN] = unpacked[HIDDEN]
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
                 self.identifier_cache.get_symbol(unpacked[SYMBOL]),
                 OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
+                order_type,
                 Quantity(unpacked[QUANTITY]),
                 TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
                 event_id,
                 event_timestamp,
-                MsgPackSerializer.deserialize(options) if options else {},
+                options,
             )
         elif event_type == OrderSubmitted.__name__:
             return OrderSubmitted(
