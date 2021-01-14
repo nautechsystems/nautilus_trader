@@ -230,6 +230,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_sell)
         self.assertEqual(None, order.filled_timestamp)
         self.assertEqual(UNIX_EPOCH, order.last_event.timestamp)
+        self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_initialize_sell_market_order(self):
         # Arrange
@@ -251,6 +252,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_buy)
         self.assertTrue(order.is_sell)
         self.assertEqual(None, order.filled_timestamp)
+        self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_order_str_and_repr(self):
         # Arrange
@@ -280,6 +282,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed)
+        self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_initialize_limit_order_with_expire_time(self):
         # Arrange
@@ -301,6 +304,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(TimeInForce.GTD, order.time_in_force)
         self.assertEqual(UNIX_EPOCH, order.expire_time)
         self.assertFalse(order.is_completed)
+        self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_initialize_stop_order(self):
         # Arrange
@@ -317,6 +321,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.INITIALIZED, order.state)
         self.assertEqual(TimeInForce.DAY, order.time_in_force)
         self.assertFalse(order.is_completed)
+        self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_bracket_order_equality(self):
         # Arrange
