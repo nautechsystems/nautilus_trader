@@ -179,9 +179,9 @@ cdef class SubmitBracketOrder(VenueCommand):
                 f"id={self.bracket_order.id.value})")
 
 
-cdef class ModifyOrder(VenueCommand):
+cdef class AmendOrder(VenueCommand):
     """
-    Represents a command to modify an order with the given modified price.
+    Represents a command to amend an order.
     """
 
     def __init__(
@@ -196,7 +196,7 @@ cdef class ModifyOrder(VenueCommand):
         datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the `ModifyOrder` class.
+        Initialize a new instance of the `AmendOrder` class.
 
         Parameters
         ----------
@@ -209,9 +209,9 @@ cdef class ModifyOrder(VenueCommand):
         cl_ord_id : OrderId
             The client order identifier.
         quantity : Quantity
-            The quantity for the order (modifying optional).
+            The quantity for the order (amending optional).
         price : Price
-            The price for the order (modifying optional).
+            The price for the order (amending optional).
         command_id : UUID
             The command identifier.
         command_timestamp : datetime

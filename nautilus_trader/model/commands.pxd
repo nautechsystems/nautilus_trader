@@ -55,7 +55,7 @@ cdef class SubmitBracketOrder(VenueCommand):
     """The bracket order to submit.\n\n:returns: `BracketOrder`"""
 
 
-cdef class ModifyOrder(VenueCommand):
+cdef class AmendOrder(VenueCommand):
     cdef readonly TraderId trader_id
     """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id

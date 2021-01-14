@@ -230,7 +230,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         new_price = Price(last.bid - self.atr.value, self.price_precision)
         if new_price != order.price:
-            self.modify_order(order, new_price=new_price)
+            self.amend_order(order, price=new_price)
 
     def work_sell_order(self, last: QuoteTick):
         """
@@ -245,7 +245,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         new_price = Price(last.ask + self.atr.value, self.price_precision)
         if new_price != order.price:
-            self.modify_order(order, new_price=new_price)
+            self.amend_order(order, price=new_price)
 
     def on_data(self, data):
         """

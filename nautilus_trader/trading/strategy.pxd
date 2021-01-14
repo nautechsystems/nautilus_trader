@@ -147,7 +147,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void modify_order(self, PassiveOrder order, Quantity new_quantity=*, Price new_price=*) except *
+    cpdef void amend_order(self, PassiveOrder order, Quantity quantity=*, Price price=*) except *
     cpdef void cancel_order(self, Order order) except *
     cpdef void cancel_all_orders(self, Symbol symbol) except *
     cpdef void flatten_position(self, Position position) except *
