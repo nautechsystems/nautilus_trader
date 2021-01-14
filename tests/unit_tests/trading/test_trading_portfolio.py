@@ -74,7 +74,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.init_margins, SIM)
+        self.assertRaises(NotImplementedError, portfolio.initial_margins, SIM)
 
     def test_position_margin_raises_not_implemented_error(self):
         # Arrange
@@ -240,11 +240,11 @@ class PortfolioTests(unittest.TestCase):
         # Assert
         self.assertEqual({}, self.portfolio.unrealized_pnls(SIM))
 
-    def test_init_margins_when_no_account_returns_none(self):
+    def test_initial_margins_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.init_margins(SIM))
+        self.assertEqual(None, self.portfolio.initial_margins(SIM))
 
     def test_maint_margins_when_no_account_returns_none(self):
         # Arrange
@@ -329,7 +329,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.initialize_orders({order1, order2})
 
         # Assert
-        self.assertEqual({}, self.portfolio.init_margins(BINANCE))
+        self.assertEqual({}, self.portfolio.initial_margins(BINANCE))
 
     def test_update_positions(self):
         # Arrange

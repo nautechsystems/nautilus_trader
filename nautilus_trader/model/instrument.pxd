@@ -93,7 +93,7 @@ cdef class Instrument:
 
     cpdef Money market_value(self, Quantity quantity, close_price)
     cpdef Money notional_value(self, Quantity quantity, close_price)
-    cpdef Money calculate_init_margin(self, Quantity quantity, Price price)
+    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price)
     cpdef Money calculate_maint_margin(
         self,
         PositionSide side,

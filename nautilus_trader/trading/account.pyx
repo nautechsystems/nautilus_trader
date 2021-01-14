@@ -46,13 +46,16 @@ cdef class Account:
         else:
             self.default_currency = None
 
+        initial_margins = event.info.get("initial_margins", {})
+        maint_margins = event.info.get("maint_margins", {})
+
         self._events = [event]
         self._starting_balances = {b.currency: b for b in event.balances}
-        self._balances = {}                                        # type: dict[Currency, Money]
-        self._balances_free = {}                                   # type: dict[Currency, Money]
-        self._balances_locked = {}                                 # type: dict[Currency, Money]
-        self._init_margins = event.info.get("init_margins", {})    # type: dict[Currency, Money]
-        self._maint_margins = event.info.get("maint_margins", {})  # type: dict[Currency, Money]
+        self._balances = {}                      # type: dict[Currency, Money]
+        self._balances_free = {}                 # type: dict[Currency, Money]
+        self._balances_locked = {}               # type: dict[Currency, Money]
+        self._initial_margins = initial_margins  # type: dict[Currency, Money]
+        self._maint_margins = maint_margins      # type: dict[Currency, Money]
         self._portfolio = None  # Initialized when registered with portfolio
 
         self._update_balances(
@@ -165,7 +168,7 @@ cdef class Account:
             event.balances_locked,
         )
 
-    cpdef void update_init_margin(self, Money margin) except *:
+    cpdef void update_initial_margin(self, Money margin) except *:
         """
         Update the initial margin.
 
@@ -181,7 +184,7 @@ cdef class Account:
         """
         Condition.not_none(margin, "money")
 
-        self._init_margins[margin.currency] = margin
+        self._initial_margins[margin.currency] = margin
 
     cpdef void update_maint_margin(self, Money margin) except *:
         """
@@ -359,7 +362,7 @@ cdef class Account:
 
     cpdef Money unrealized_pnl(self, Currency currency=None):
         """
-        Return the current account unrealized P&L.
+        Return the current account unrealized PnL.
 
         For multi-asset accounts, specify the currency for the query.
 
@@ -399,7 +402,7 @@ cdef class Account:
 
     cpdef Money equity(self, Currency currency=None):
         """
-        Return the account equity.
+        Return the account equity (`balance + unrealized_pnl`).
 
         For multi-asset accounts, specify the currency for the query.
 
@@ -440,7 +443,7 @@ cdef class Account:
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
-    cpdef dict init_margins(self):
+    cpdef dict initial_margins(self):
         """
         Return the initial margins for the account.
 
@@ -449,7 +452,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._init_margins.copy()
+        return self._initial_margins.copy()
 
     cpdef dict maint_margins(self):
         """
@@ -462,7 +465,7 @@ cdef class Account:
         """
         return self._maint_margins.copy()
 
-    cpdef Money init_margin(self, Currency currency=None):
+    cpdef Money initial_margin(self, Currency currency=None):
         """
         Return the current initial margin.
 
@@ -493,7 +496,7 @@ cdef class Account:
             currency = self.default_currency
         Condition.not_none(currency, "currency")
 
-        return self._init_margins.get(currency)
+        return self._initial_margins.get(currency)
 
     cpdef Money maint_margin(self, Currency currency=None):
         """
@@ -528,9 +531,11 @@ cdef class Account:
 
         return self._maint_margins.get(currency)
 
-    cpdef Money free_margin(self, Currency currency=None):
+    cpdef Money margin_available(self, Currency currency=None):
         """
-        Return the current free margin.
+        Return the current margin available.
+
+        (`equity - initial_margin - maint_margin`).
 
         For multi-asset accounts, specify the currency for the query.
 
@@ -563,10 +568,10 @@ cdef class Account:
         if equity is None:
             return None
 
-        init_margin: Decimal = self._init_margins.get(currency, Decimal())
+        initial_margin: Decimal = self._initial_margins.get(currency, Decimal())
         maint_margin: Decimal = self._maint_margins.get(currency, Decimal())
 
-        return Money(equity - init_margin - maint_margin, currency)
+        return Money(equity - initial_margin - maint_margin, currency)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

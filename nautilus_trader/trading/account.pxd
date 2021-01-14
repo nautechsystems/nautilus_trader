@@ -26,7 +26,7 @@ cdef class Account:
     cdef dict _balances
     cdef dict _balances_free
     cdef dict _balances_locked
-    cdef dict _init_margins
+    cdef dict _initial_margins
     cdef dict _maint_margins
     cdef PortfolioFacade _portfolio
 
@@ -44,7 +44,7 @@ cdef class Account:
     cpdef void register_portfolio(self, PortfolioFacade portfolio)
     cpdef void apply(self, AccountState event) except *
     cdef void apply_c(self, AccountState event) except *
-    cpdef void update_init_margin(self, Money margin) except *
+    cpdef void update_initial_margin(self, Money margin) except *
     cpdef void update_maint_margin(self, Money margin) except *
 
 # -- QUERIES-CASH ----------------------------------------------------------------------------------
@@ -62,11 +62,11 @@ cdef class Account:
 
 # -- QUERIES-MARGIN --------------------------------------------------------------------------------
 
-    cpdef dict init_margins(self)
+    cpdef dict initial_margins(self)
     cpdef dict maint_margins(self)
-    cpdef Money init_margin(self, Currency currency=*)
+    cpdef Money initial_margin(self, Currency currency=*)
     cpdef Money maint_margin(self, Currency currency=*)
-    cpdef Money free_margin(self, Currency currency=*)
+    cpdef Money margin_available(self, Currency currency=*)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
