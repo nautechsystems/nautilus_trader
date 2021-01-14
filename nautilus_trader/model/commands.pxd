@@ -16,6 +16,7 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -75,3 +76,5 @@ cdef class CancelOrder(VenueCommand):
     """The account identifier associated with the command.\n\n:returns: `AccountId`"""
     cdef readonly ClientOrderId cl_ord_id
     """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly OrderId order_id
+    """The order identifier associated with the command.\n\n:returns: `OrderId`"""

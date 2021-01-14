@@ -217,6 +217,7 @@ class BacktestExecClientTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             order.cl_ord_id,
+            order.id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )

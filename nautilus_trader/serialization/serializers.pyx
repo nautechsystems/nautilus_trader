@@ -325,6 +325,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
             package[TRADER_ID] = command.trader_id.value
             package[ACCOUNT_ID] = command.account_id.value
             package[CLIENT_ORDER_ID] = command.cl_ord_id.value
+            package[ORDER_ID] = command.order_id.value
         else:
             raise RuntimeError("Cannot serialize command, unrecognized command")
 
@@ -399,6 +400,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
                 self.identifier_cache.get_trader_id(unpacked[TRADER_ID]),
                 self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
+                OrderId(unpacked[ORDER_ID]),
                 command_id,
                 command_timestamp,
             )

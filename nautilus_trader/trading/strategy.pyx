@@ -1202,11 +1202,16 @@ cdef class TradingStrategy(Component):
             self.log.error(f"Cannot cancel order (no account assigned to order yet), {order}.")
             return  # Cannot send command
 
+        if order.id.is_null():
+            self.log.error(f"Cannot cancel order (no order_id assigned yet), {order}.")
+            return  # Cannot send command
+
         cdef CancelOrder command = CancelOrder(
             order.symbol.venue,
             self.trader_id,
             order.account_id,
             order.cl_ord_id,
+            order.id,
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )

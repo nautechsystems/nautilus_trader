@@ -29,6 +29,7 @@ from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -172,6 +173,7 @@ class ExecutionClientTests(unittest.TestCase):
             self.trader_id,
             self.account_id,
             ClientOrderId("O-123456789"),
+            OrderId("001"),
             self.uuid_factory.generate(),
             self.clock.utc_now(),
         )
