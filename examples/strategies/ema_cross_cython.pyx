@@ -236,9 +236,10 @@ cdef class EMACross(TradingStrategy):
     cpdef void on_reset(self) except *:
         """
         Actions to be performed when the strategy is reset.
-
         """
-        pass
+        # Reset indicators here
+        self.fast_ema.reset()
+        self.slow_ema.reset()
 
     cpdef dict on_save(self):
         """

@@ -31,7 +31,6 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class OandaDataClient(LiveDataClient):
     cdef object _client
     cdef str _account_id
-    cdef bint _is_connected
     cdef set _subscribed_instruments
     cdef dict _subscribed_quote_ticks
     cdef OandaInstrumentProvider _instrument_provider

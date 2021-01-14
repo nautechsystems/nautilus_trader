@@ -16,6 +16,8 @@
 from nautilus_trader.core.correctness cimport Condition
 
 
+cdef str _NULL_ID = "NULL"
+
 cdef class Identifier:
     """
     The abstract base class for all identifiers.
@@ -300,8 +302,7 @@ cdef class TraderId(Identifier):
         return TraderId.from_str_c(value)
 
 
-cdef str _NULL_STRATEGY_ID_STR = "S-NULL"
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId.from_str_c(_NULL_STRATEGY_ID_STR)
+cdef StrategyId _NULL_STRATEGY_ID = StrategyId(_NULL_ID, _NULL_ID)
 
 cdef class StrategyId(Identifier):
     """
@@ -342,10 +343,10 @@ cdef class StrategyId(Identifier):
         return _NULL_STRATEGY_ID
 
     cdef inline bint is_null(self) except *:
-        return self.value == _NULL_STRATEGY_ID_STR
+        return self.value == _NULL_ID
 
     cdef inline bint not_null(self) except *:
-        return self.value != _NULL_STRATEGY_ID_STR
+        return self.value != _NULL_ID
 
     @staticmethod
     cdef StrategyId from_str_c(str value):
@@ -384,7 +385,7 @@ cdef class StrategyId(Identifier):
     @staticmethod
     def null():
         """
-        Returns a strategy identifier with an `S-NULL` value.
+        Returns a strategy identifier with an `NULL` value.
 
         Returns
         -------
@@ -499,13 +500,7 @@ cdef class BracketOrderId(Identifier):
         value : str
             The value of the order_id (should be unique).
 
-        Raises
-        ------
-        ValueError
-            If value is not a valid string or does not start with 'BO-'.
-
         """
-        Condition.true(value.startswith("BO-"), f"value must begin with \'BO-\', was {value}.")
         super().__init__(value)
 
 
@@ -525,13 +520,7 @@ cdef class ClientOrderId(Identifier):
         value : str
             The client order identifier value.
 
-        Raises
-        ------
-        ValueError
-            If value is not a valid string, or does not start with 'O-'.
-
         """
-        Condition.true(value.startswith("O-"), f"value must begin with \'O-\', was {value}.")
         super().__init__(value)
 
 
@@ -551,14 +540,11 @@ cdef class ClientOrderLinkId(Identifier):
         value : str
             The client order link identifier value.
 
-        Raises
-        ------
-        ValueError
-            If value is not a valid string, or does not start with 'O-'.
-
         """
         super().__init__(value)
 
+
+cdef OrderId _NULL_ORDER_ID = OrderId(_NULL_ID)
 
 cdef class OrderId(Identifier):
     """
@@ -579,12 +565,38 @@ cdef class OrderId(Identifier):
         ValueError
             If value is not a valid string.
 
+        References
+        ----------
+        Null Object Pattern
+        https://deviq.com/null-object-pattern/
+
         """
         super().__init__(value)
 
+    @staticmethod
+    cdef OrderId null_c():
+        return _NULL_ORDER_ID
 
-cdef str _NULL_POSITION_ID_STR = "P-NULL"
-cdef PositionId _NULL_POSITION_ID = PositionId(_NULL_POSITION_ID_STR)
+    cdef bint is_null(self) except *:
+        return self.value == _NULL_ID
+
+    cdef bint not_null(self) except *:
+        return self.value != _NULL_ID
+
+    @staticmethod
+    def null():
+        """
+        Returns an order identifier with an `NULL` value.
+
+        Returns
+        -------
+        OrderId
+
+        """
+        return _NULL_ORDER_ID
+
+
+cdef PositionId _NULL_POSITION_ID = PositionId(_NULL_ID)
 
 cdef class PositionId(Identifier):
     """
@@ -618,15 +630,15 @@ cdef class PositionId(Identifier):
         return _NULL_POSITION_ID
 
     cdef bint is_null(self) except *:
-        return self.value == _NULL_POSITION_ID_STR
+        return self.value == _NULL_ID
 
     cdef bint not_null(self) except *:
-        return self.value != _NULL_POSITION_ID_STR
+        return self.value != _NULL_ID
 
     @staticmethod
     def null():
         """
-        Returns a position identifier with a `P-NULL` value.
+        Returns a position identifier with a `NULL` value.
 
         Returns
         -------

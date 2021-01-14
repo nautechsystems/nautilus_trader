@@ -64,7 +64,9 @@ if __name__ == "__main__":
     engine = BacktestEngine(
         data=data,
         strategies=[strategy],  # List of 'any' number of strategies
+        use_tick_cache=True,    # Pre-cache ticks for increased performance on repeated runs
         # exec_db_type="redis",
+        # bypass_logging=True
     )
 
     # Create a fill model (optional)
@@ -75,12 +77,13 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
-    # Add an exchange (now multiple exchanges possible)
+    # Add an exchange (multiple exchanges possible)
+    # Add starting balances for single-asset or multi-asset accounts
     engine.add_exchange(
         venue=BINANCE,
         oms_type=OMSType.NETTING,
         generate_position_ids=False,
-        starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],  # now single-asset or multi-asset accounts
+        starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
         fill_model=fill_model,
     )
 

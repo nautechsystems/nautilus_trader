@@ -25,7 +25,6 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class CCXTDataClient(LiveDataClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
-    cdef bint _is_connected
 
     cdef set _subscribed_instruments
     cdef dict _subscribed_quote_ticks
@@ -34,6 +33,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
     cdef object _update_instruments_task
 
+    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
     cdef inline void _on_quote_tick(
         self,
         Symbol symbol,
@@ -45,7 +45,6 @@ cdef class CCXTDataClient(LiveDataClient):
         int price_precision,
         int size_precision,
     ) except *
-
     cdef inline void _on_trade_tick(
         self,
         Symbol symbol,
@@ -58,7 +57,6 @@ cdef class CCXTDataClient(LiveDataClient):
         int price_precision,
         int size_precision,
     ) except *
-
     cdef inline void _on_bar(
         self,
         BarType bar_type,
@@ -71,7 +69,6 @@ cdef class CCXTDataClient(LiveDataClient):
         int price_precision,
         int size_precision,
     ) except *
-
     cdef inline TradeTick _parse_trade_tick(
         self,
         Symbol symbol,
@@ -79,12 +76,10 @@ cdef class CCXTDataClient(LiveDataClient):
         int price_precision,
         int size_precision,
     )
-
     cdef inline Bar _parse_bar(
         self,
         list values,
         int price_precision,
         int size_precision,
     )
-
     cdef str _make_timeframe(self, BarSpecification bar_spec)

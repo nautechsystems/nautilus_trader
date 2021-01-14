@@ -65,20 +65,7 @@ cdef class BacktestExecClient(ExecutionClient):
         )
 
         self._exchange = exchange
-        self._is_connected = False
-        self.initialized = True
-
-    cpdef bint is_connected(self) except *:
-        """
-        Return a value indicating whether the client is connected.
-
-        Returns
-        -------
-        bool
-            True if connected, else False.
-
-        """
-        return self._is_connected
+        self.is_connected = False
 
     cpdef void connect(self) except *:
         """
@@ -86,8 +73,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.info("Connecting...")
 
-        self._is_connected = True
-
+        self.is_connected = True
         self._log.info("Connected.")
 
     cpdef void disconnect(self) except *:
@@ -96,8 +82,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.info("Disconnecting...")
 
-        self._is_connected = False
-
+        self.is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -108,8 +93,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         self._log.info(f"Resetting...")
 
-        # Nothing to do
-
+        # Nothing to reset
         self._log.info("Reset.")
 
     cpdef void dispose(self) except *:
@@ -119,6 +103,8 @@ cdef class BacktestExecClient(ExecutionClient):
         This method is idempotent and irreversible. No other methods should be
         called after disposal.
         """
+        self._log.info(f"Disposing.")
+
         # Nothing to dispose
         self._log.info(f"Disposed.")
 
@@ -134,7 +120,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
@@ -150,7 +136,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
@@ -166,7 +152,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 
@@ -182,7 +168,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self._is_connected:  # Simulate connection behaviour
+        if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot send command (not connected), {command}.")
             return
 

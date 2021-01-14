@@ -21,6 +21,8 @@ import gc
 
 import numpy as np
 import pandas as pd
+import time
+from bisect import bisect_left
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
@@ -43,9 +45,27 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
 
 
-cdef class BacktestDataProducer:
+cdef class DataProducerFacade:
     """
-    Provides an implementation of `DataClient` which produces data for backtesting.
+    Provides a read-only facade for data producers.
+    """
+
+    cpdef void setup(self, datetime start, datetime stop) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void reset(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef Tick next_tick(self):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class BacktestDataProducer(DataProducerFacade):
+    """
+    Provides a basic data producer for backtesting.
     """
 
     def __init__(
@@ -58,6 +78,8 @@ cdef class BacktestDataProducer:
         """
         Initialize a new instance of the `BacktestDataProducer` class.
 
+        Parameters
+        ----------
         data : BacktestDataContainer
             The data for the producer.
         engine : DataEngine
@@ -203,6 +225,17 @@ cdef class BacktestDataProducer:
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
+    cpdef LoggerAdapter get_logger(self):
+        """
+        Return the logger for the component.
+
+        Returns
+        -------
+        LoggerAdapter
+
+        """
+        return self._log
+
     cpdef void setup(self, datetime start, datetime stop) except *:
         """
         Setup tick data for a backtest run.
@@ -221,6 +254,8 @@ cdef class BacktestDataProducer:
         # Prepare instruments
         for instrument in self._data.instruments.values():
             self._data_engine.process(instrument)
+
+        self._log.info(f"Pre-processing data stream...")
 
         # Calculate data size
         cdef long total_size = 0
@@ -284,7 +319,58 @@ cdef class BacktestDataProducer:
 
         self._log.info(f"Data stream size: {format_bytes(total_size)}")
 
-    cdef Tick next_tick(self):
+    cpdef void reset(self) except *:
+        """
+        Reset the data producer.
+
+        All stateful fields are reset to their initial value.
+        """
+        self._log.info(f"Resetting...")
+
+        self._quote_symbols = None
+        self._quote_bids = None
+        self._quote_asks = None
+        self._quote_bid_sizes = None
+        self._quote_ask_sizes = None
+        self._quote_timestamps = None
+        self._quote_index = 0
+        self._quote_index_last = len(self._quote_tick_data) - 1
+
+        self._trade_symbols = None
+        self._trade_prices = None
+        self._trade_sizes = None
+        self._trade_match_ids = None
+        self._trade_sides = None
+        self._trade_timestamps = None
+        self._trade_index = 0
+        self._trade_index_last = len(self._quote_tick_data) - 1
+
+        self.has_tick_data = False
+
+        self._log.info("Reset.")
+
+    cpdef void clear(self) except *:
+        """
+        Clears the original data from the producer.
+
+        """
+        self._trade_tick_data = pd.DataFrame()
+        self._quote_tick_data = pd.DataFrame()
+        gc.collect()  # Removes redundant processing artifacts
+
+        self._log.info("Cleared.")
+
+    cpdef Tick next_tick(self):
+        """
+        Return the next tick in the stream (if one exists).
+
+        Checking `has_tick_data` is `True` will ensure there is a next tick.
+
+        Returns
+        -------
+        Tick or None
+
+        """
         cdef Tick next_tick
         # Quote ticks only
         if self._next_trade_tick is None:
@@ -345,32 +431,109 @@ cdef class BacktestDataProducer:
             if self._next_quote_tick is None:
                 self.has_tick_data = False
 
+
+cdef class CachedProducer(DataProducerFacade):
+    """
+    Cached wrap for the `BacktestDataProducer` class.
+    """
+
+    def __init__(self, BacktestDataProducer producer):
+        """
+        Initialize a new instance of the `CachedProducer` class.
+
+        Parameters
+        ----------
+        producer : BacktestDataProducer
+            The data producer to cache.
+
+        """
+        self._producer = producer
+        self._log = producer.get_logger()
+        self._tick_cache = []
+        self._ts_cache = []
+        self._tick_index = 0
+        self._tick_index_last = 0
+        self._init_start_tick_index = 0
+        self._init_stop_tick_index = 0
+
+        self.execution_resolutions = self._producer.execution_resolutions
+        self.min_timestamp = self._producer.min_timestamp
+        self.max_timestamp = self._producer.max_timestamp
+        self.has_tick_data = False
+
+        self._create_tick_cache()
+
+    cpdef void setup(self, datetime start, datetime stop) except *:
+        """
+        Setup tick data for a backtest run.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) for the run.
+        stop : datetime
+            The stop datetime (UTC) for the run.
+
+        """
+        Condition.not_none(start, "start")
+        Condition.not_none(stop, "stop")
+
+        self._producer.setup(start, stop)
+
+        # Set indexing
+        self._tick_index = bisect_left(self._ts_cache, start.timestamp())
+        self._tick_index_last = bisect_left(self._ts_cache, stop.timestamp())
+        self._init_start_tick_index = self._tick_index
+        self._init_stop_tick_index = self._tick_index_last
+        self.has_tick_data = True
+
     cpdef void reset(self) except *:
         """
-        Reset the data producer.
+        Reset the producer which sets the internal indexes to their initial
 
         All stateful fields are reset to their initial value.
         """
-        self._log.info(f"Resetting...")
+        self._tick_index = self._init_start_tick_index
+        self._tick_index_last = self._init_stop_tick_index
+        self.has_tick_data = True
 
-        self._quote_symbols = None
-        self._quote_bids = None
-        self._quote_asks = None
-        self._quote_bid_sizes = None
-        self._quote_ask_sizes = None
-        self._quote_timestamps = None
-        self._quote_index = 0
-        self._quote_index_last = len(self._quote_tick_data) - 1
+    cpdef Tick next_tick(self):
+        """
+        Return the next tick in the stream (if one exists).
 
-        self._trade_symbols = None
-        self._trade_prices = None
-        self._trade_sizes = None
-        self._trade_match_ids = None
-        self._trade_sides = None
-        self._trade_timestamps = None
-        self._trade_index = 0
-        self._trade_index_last = len(self._quote_tick_data) - 1
+        Checking `has_tick_data` is `True` will ensure there is a next tick.
 
-        self.has_tick_data = False
+        Returns
+        -------
+        Tick or None
 
-        self._log.info("Reset.")
+        """
+        cdef Tick tick
+        if self._tick_index <= self._tick_index_last:
+            tick = self._tick_cache[self._tick_index]
+            self._tick_index += 1
+
+        # Check if last tick
+        if self._tick_index > self._tick_index_last:
+            self.has_tick_data = False
+
+        return tick
+
+    cdef void _create_tick_cache(self) except *:
+        self._log.info(f"Pre-caching ticks...")
+        self._producer.setup(self.min_timestamp, self.max_timestamp)
+
+        timing_start_total = time.time()
+
+        cdef Tick tick
+        while self._producer.has_tick_data:
+            tick = self._producer.next_tick()
+            self._tick_cache.append(tick)
+            self._ts_cache.append(tick.timestamp.timestamp())
+
+        processing_time = round((time.time() - timing_start_total), 2)
+        self._log.info(f"Pre-cached {len(self._tick_cache):,} "
+                       f"total tick rows in {processing_time}s.")
+
+        self._producer.clear()
+        gc.collect()  # Removes redundant processing artifacts

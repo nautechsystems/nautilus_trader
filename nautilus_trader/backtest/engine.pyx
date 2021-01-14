@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
+from nautilus_trader.backtest.data_producer cimport CachedProducer
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -68,6 +69,7 @@ cdef class BacktestEngine:
         list strategies=None,
         int tick_capacity=1000,
         int bar_capacity=1000,
+        bint use_tick_cache=False,
         str exec_db_type not None="in-memory",
         bint exec_db_flush=True,
         bint bypass_logging=False,
@@ -94,6 +96,8 @@ cdef class BacktestEngine:
             The length for the data engines internal ticks deque (> 0).
         bar_capacity : int, optional
             The length for the data engines internal bars deque (> 0).
+        use_tick_cache : bool, optional
+            If use cache for DataProducer (increased performance with repeated backtests on same data).
         exec_db_type : str, optional
             The type for the execution cache (can be the default 'in-memory' or redis).
         exec_db_flush : bool, optional
@@ -124,7 +128,7 @@ cdef class BacktestEngine:
         TypeError
             If strategies contains a type other than TradingStrategy.
         ValueError
-            If log_to_file is True and log_file_path is None
+            If log_to_file is True and log_file_path is None.
 
         """
         Condition.positive_int(tick_capacity, "tick_capacity")
@@ -223,6 +227,9 @@ cdef class BacktestEngine:
             clock=self._test_clock,
             logger=self._test_logger,
         )
+
+        if use_tick_cache:
+            self._data_producer = CachedProducer(self._data_producer)
 
         # Create data client per venue
         for venue in data.venues:
@@ -444,7 +451,7 @@ cdef class BacktestEngine:
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-        bint print_log_store=True
+        bint print_log_store=True,
     ) except *:
         """
         Run a backtest from the start datetime to the stop datetime.
@@ -589,7 +596,7 @@ cdef class BacktestEngine:
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                balances = [{', '.join([b.to_str() for b in exchange.starting_balances])}]
+                balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
     cdef void _backtest_footer(

@@ -232,11 +232,13 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_accepted(order) -> OrderAccepted:
+    def event_order_accepted(order, order_id=None) -> OrderAccepted:
+        if order_id is None:
+            order_id = OrderId("1")
         return OrderAccepted(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId("1"),
+            order_id,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -281,7 +283,7 @@ class TestStubs:
         return OrderFilled(
             account_id=TestStubs.account_id(),
             cl_ord_id=order.cl_ord_id,
-            order_id=OrderId("1"),
+            order_id=order.id,
             execution_id=ExecutionId(order.cl_ord_id.value.replace("O", "E")),
             position_id=position_id,
             strategy_id=strategy_id,
@@ -308,7 +310,7 @@ class TestStubs:
         return OrderWorking(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId("1"),
+            order.id,
             order.symbol,
             order.side,
             order.type,
@@ -326,7 +328,7 @@ class TestStubs:
         return OrderCancelled(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId("1"),
+            order.id,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
@@ -337,7 +339,7 @@ class TestStubs:
         return OrderExpired(
             TestStubs.account_id(),
             order.cl_ord_id,
-            OrderId("1"),
+            order.id,
             UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,

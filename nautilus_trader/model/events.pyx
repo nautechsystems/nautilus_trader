@@ -86,7 +86,8 @@ cdef class AccountState(Event):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id.value}, "
-                f"balances=[{', '.join([b.to_str() for b in self.balances])}], "
+                f"free=[{', '.join([b.to_str() for b in self.balances_free])}], "
+                f"locked=[{', '.join([b.to_str() for b in self.balances_locked])}], "
                 f"id={self.id})")
 
 
@@ -100,6 +101,7 @@ cdef class OrderEvent(Event):
     def __init__(
         self,
         ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
         UUID event_id not None,
         datetime event_timestamp not None,
     ):
@@ -110,6 +112,8 @@ cdef class OrderEvent(Event):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
+        order_id : OrderId
+            The exchange/broker order identifier.
         event_id : UUID
             The event identifier.
         event_timestamp : datetime
@@ -118,6 +122,11 @@ cdef class OrderEvent(Event):
         """
         super().__init__(event_id, event_timestamp)
 
+        self.cl_ord_id = cl_ord_id
+        self.order_id = order_id
+
+    cpdef void override_cl_ord_id(self, ClientOrderId cl_ord_id) except *:
+        Condition.not_none(cl_ord_id, "cl_ord_id")
         self.cl_ord_id = cl_ord_id
 
 
@@ -180,6 +189,7 @@ cdef class OrderInitialized(OrderEvent):
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         super().__init__(
             cl_ord_id,
+            OrderId.null_c(),    # Pending submission
             event_id,
             event_timestamp,
         )
@@ -233,6 +243,7 @@ cdef class OrderInvalid(OrderEvent):
         Condition.valid_string(reason, "invalid_reason")
         super().__init__(
             cl_ord_id,
+            OrderId.null_c(),    # Never submitted
             event_id,
             event_timestamp,
         )
@@ -281,6 +292,7 @@ cdef class OrderDenied(OrderEvent):
         Condition.valid_string(reason, "denied_reason")
         super().__init__(
             cl_ord_id,
+            OrderId.null_c(),    # Never submitted
             event_id,
             event_timestamp,
         )
@@ -327,6 +339,7 @@ cdef class OrderSubmitted(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
+            OrderId.null_c(),  # Pending accepted
             event_id,
             event_timestamp,
         )
@@ -382,6 +395,7 @@ cdef class OrderRejected(OrderEvent):
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
             cl_ord_id,
+            OrderId.null_c(),  # Not assigned on rejection
             event_id,
             event_timestamp,
         )
@@ -433,12 +447,12 @@ cdef class OrderAccepted(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
 
         self.account_id = account_id
-        self.order_id = order_id
         self.accepted_time = accepted_time
 
     def __repr__(self) -> str:
@@ -519,12 +533,12 @@ cdef class OrderWorking(OrderEvent):
 
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
 
         self.account_id = account_id
-        self.order_id = order_id
         self.symbol = symbol
         self.order_side = order_side
         self.order_type = order_type
@@ -556,6 +570,7 @@ cdef class OrderCancelReject(OrderEvent):
         self,
         AccountId account_id not None,
         ClientOrderId cl_ord_id not None,
+        OrderId order_id not None,
         datetime rejected_time not None,
         str response_to not None,
         str reason not None,
@@ -571,6 +586,8 @@ cdef class OrderCancelReject(OrderEvent):
             The account identifier.
         cl_ord_id : ClientOrderId
             The client order identifier.
+        order_id : OrderId
+            The exchange/broker order identifier.
         rejected_time : datetime
             The order cancel reject time.
         response_to : str
@@ -594,6 +611,7 @@ cdef class OrderCancelReject(OrderEvent):
         Condition.valid_string(reason, "rejected_reason")
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
@@ -648,12 +666,12 @@ cdef class OrderCancelled(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
 
         self.account_id = account_id
-        self.order_id = order_id
         self.cancelled_time = cancelled_time
 
     def __repr__(self) -> str:
@@ -706,12 +724,12 @@ cdef class OrderModified(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
 
         self.account_id = account_id
-        self.order_id = order_id
         self.quantity = quantity
         self.price = price
         self.modified_time = modified_time
@@ -761,12 +779,12 @@ cdef class OrderExpired(OrderEvent):
         """
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
 
         self.account_id = account_id
-        self.order_id = order_id
         self.expired_time = expired_time
 
     def __repr__(self) -> str:
@@ -858,12 +876,12 @@ cdef class OrderFilled(OrderEvent):
         Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
         super().__init__(
             cl_ord_id,
+            order_id,
             event_id,
             event_timestamp,
         )
 
         self.account_id = account_id
-        self.order_id = order_id
         self.execution_id = execution_id
         self.position_id = position_id
         self.strategy_id = strategy_id

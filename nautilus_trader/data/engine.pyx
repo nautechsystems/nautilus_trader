@@ -185,25 +185,25 @@ cdef class DataEngine(Component):
         """
         return sorted(list(self._bar_handlers.keys()))
 
-    cpdef bint check_initialized(self) except *:
+    cpdef bint check_connected(self) except *:
         """
-        Check the engine is initialized.
+        Check all of the engines clients are connected.
 
         Returns
         -------
         bool
-            True if all clients initialized, else False.
+            True if all clients connected, else False.
 
         """
         cdef DataClient client
         for client in self._clients.values():
-            if not client.initialized:
+            if not client.is_connected:
                 return False
         return True
 
     cpdef bint check_disconnected(self) except *:
         """
-        Check all clients are disconnected.
+        Check all of the engines clients are disconnected.
 
         Returns
         -------
@@ -213,7 +213,7 @@ cdef class DataEngine(Component):
         """
         cdef DataClient client
         for client in self._clients.values():
-            if client.is_connected():
+            if client.is_connected:
                 return False
         return True
 

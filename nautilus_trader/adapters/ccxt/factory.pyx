@@ -91,6 +91,9 @@ cdef class CCXTClientsFactory:
             },
         })
 
+        if config.get("sandbox_mode", False):
+            client.set_sandbox_mode(True)
+
         if config.get("data_client", True):
             data_client = CCXTDataClient(
                 client=client,
@@ -99,7 +102,7 @@ cdef class CCXTClientsFactory:
                 logger=logger,
             )
         else:
-            # The data client was configured not to be created
+            # The data client was not enabled
             data_client = None
 
         if config.get("exec_client", True):
@@ -117,7 +120,7 @@ cdef class CCXTClientsFactory:
                 logger=logger,
             )
         else:
-            # The execution client was configured not to be created
+            # The execution client not enabled
             exec_client = None
 
         return data_client, exec_client

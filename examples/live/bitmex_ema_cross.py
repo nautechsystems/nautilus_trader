@@ -35,7 +35,7 @@ config = {
 
     "logging": {
         "log_level_console": "INF",
-        "log_level_file": "DGB",
+        "log_level_file": "DBG",
         "log_level_store": "WRN",
         "log_to_file": False,
         "log_file_path": "logs/",
@@ -59,6 +59,7 @@ config = {
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BITMEX_API_KEY",        # value is the environment variable key
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
+            "sandbox_mode": False,              # If clients use the testnet
         },
     },
 }
@@ -78,7 +79,7 @@ valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
-strategy1 = EMACross(
+strategy = EMACross(
     symbol=Symbol("BTC/USD", Venue("BITMEX")),
     bar_spec=time_bars,
     fast_ema=10,
@@ -87,10 +88,7 @@ strategy1 = EMACross(
 )
 
 # Instantiate the node passing a list of strategies and configuration
-node = TradingNode(
-    strategies=[strategy1],
-    config=config,
-)
+node = TradingNode(strategies=[strategy], config=config)
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C
@@ -98,6 +96,4 @@ if __name__ == "__main__":
     try:
         node.start()
     finally:
-        if node.is_running:
-            node.stop()
         node.dispose()

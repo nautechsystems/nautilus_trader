@@ -21,6 +21,7 @@ from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -212,7 +213,8 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id))
         self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
         self.assertIn(order, self.cache.orders())
-        self.assertIsNone(self.cache.order_id(order.cl_ord_id))
+        self.assertEqual(OrderId.null(), self.cache.order_id(order.cl_ord_id))
+        self.assertIsNone(self.cache.cl_ord_id(order.id))
 
     def test_load_order(self):
         # Arrange

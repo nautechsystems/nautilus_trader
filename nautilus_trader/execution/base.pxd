@@ -47,6 +47,7 @@ cdef class ExecutionCacheFacade:
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId cl_ord_id)
+    cpdef ClientOrderId cl_ord_id(self, OrderId order_id)
     cpdef OrderId order_id(self, ClientOrderId cl_ord_id)
     cpdef list orders(self, Symbol symbol=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Symbol symbol=*, StrategyId strategy_id=*)
