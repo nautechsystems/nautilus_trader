@@ -20,7 +20,7 @@ from nautilus_trader.data.base cimport DataCacheFacade
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -87,7 +87,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline object _net_position(self, Symbol symbol)
     cdef inline set _symbols_open_for_venue(self, Venue venue)
     cdef inline void _handle_position_opened(self, PositionOpened event) except *
-    cdef inline void _handle_position_modified(self, PositionModified event) except *
+    cdef inline void _handle_position_changed(self, PositionChanged event) except *
     cdef inline void _handle_position_closed(self, PositionClosed event) except *
     cdef inline void _update_net_position(self, Symbol symbol, set positions_open) except *
     cdef inline void _update_init_margin(self, Venue venue) except *

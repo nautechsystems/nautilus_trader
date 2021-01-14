@@ -996,9 +996,9 @@ cdef class PositionOpened(PositionEvent):
                 f"id={self.id})")
 
 
-cdef class PositionModified(PositionEvent):
+cdef class PositionChanged(PositionEvent):
     """
-    Represents an event where a position has been modified.
+    Represents an event where a position has changed.
     """
 
     def __init__(
@@ -1009,7 +1009,7 @@ cdef class PositionModified(PositionEvent):
         datetime event_timestamp not None,
     ):
         """
-        Initialize a new instance of the `PositionModified` class.
+        Initialize a new instance of the `PositionChanged` class.
 
         Parameters
         ----------

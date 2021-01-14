@@ -36,7 +36,7 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionModified
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -310,8 +310,8 @@ cdef class Portfolio(PortfolioFacade):
 
         if isinstance(event, PositionOpened):
             self._handle_position_opened(event)
-        elif isinstance(event, PositionModified):
-            self._handle_position_modified(event)
+        elif isinstance(event, PositionChanged):
+            self._handle_position_changed(event)
         elif isinstance(event, PositionClosed):
             self._handle_position_closed(event)
 
@@ -734,7 +734,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._update_net_position(event.position.symbol, positions_open)
 
-    cdef inline void _handle_position_modified(self, PositionModified event) except *:
+    cdef inline void _handle_position_changed(self, PositionChanged event) except *:
         cdef Venue venue = event.position.symbol.venue
         self._update_net_position(event.position.symbol, self._positions_open.get(venue, set()))
 

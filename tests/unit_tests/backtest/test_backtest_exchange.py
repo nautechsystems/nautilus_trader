@@ -27,8 +27,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD

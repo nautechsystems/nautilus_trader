@@ -389,7 +389,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 # CCXTCache is set to 1 so expecting one response at a time
                 event = response[0]
                 order_id = OrderId(event["id"])
-                #self._log.critical(str(event))  # TODO: Development
                 self._check_and_process_order_event(order_id, event)
 
                 if exiting:
@@ -738,9 +737,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot fill order
 
         if not isinstance(order, PassiveOrder):
-            self._log.error(f"Cannot generate OrderWorking for order_id {order_id}, "
-                            f"order was not of type PassiveOrder with a price.")
-            return  # Cannot generate event
+            return  # MARKET order
 
         # Generate event
         cdef OrderWorking working = OrderWorking(
