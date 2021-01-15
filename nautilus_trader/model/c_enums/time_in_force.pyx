@@ -24,7 +24,7 @@ cdef class TimeInForceParser:
         elif value == 3:
             return "IOC"
         elif value == 4:
-            return "FOC"
+            return "FOK"
         elif value == 5:
             return "GTD"
         else:
@@ -38,8 +38,8 @@ cdef class TimeInForceParser:
             return TimeInForce.GTC
         elif value == "IOC":
             return TimeInForce.IOC
-        elif value == "FOC":
-            return TimeInForce.FOC
+        elif value == "FOK":
+            return TimeInForce.FOK
         elif value == "GTD":
             return TimeInForce.GTD
         else:

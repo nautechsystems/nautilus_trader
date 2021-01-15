@@ -79,7 +79,6 @@ cdef class CCXTClientsFactory:
             "secret": os.getenv(config.get("api_secret", ""), ""),
             "timeout": 10000,                          # Hard coded for now
             "enableRateLimit": True,                   # Hard coded for now
-            "nonce": lambda: int(time.time() * 1000),  # Millisecond nonce
             "asyncio_loop": data_engine.get_event_loop(),
 
             # Set cache limits

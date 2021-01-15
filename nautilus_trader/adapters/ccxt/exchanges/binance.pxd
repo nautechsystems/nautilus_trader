@@ -13,20 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum TimeInForce:
-    UNDEFINED = 0,  # Invalid value
-    DAY = 1,
-    GTC = 2,
-    IOC = 3,
-    FOK = 4,
-    GTD = 5
+from nautilus_trader.model.order cimport Order
 
 
-cdef class TimeInForceParser:
+cdef class BinanceSubmitOrderBuilder:
 
     @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef TimeInForce from_str(str value)
+    cdef tuple build(Order order)

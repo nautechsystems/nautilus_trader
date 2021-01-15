@@ -81,9 +81,9 @@ class AccountTests(unittest.TestCase):
         self.assertEqual({USD: Money(0, USD)}, account.balances_locked())
         self.assertEqual(Money(0, USD), account.unrealized_pnl())
         self.assertEqual(Money(1_000_000, USD), account.equity())
-        self.assertEqual({}, account.init_margins())
+        self.assertEqual({}, account.initial_margins())
         self.assertEqual({}, account.maint_margins())
-        self.assertEqual(None, account.init_margin())
+        self.assertEqual(None, account.initial_margin())
         self.assertEqual(None, account.maint_margin())
 
     def test_instantiate_multi_asset_account(self):
@@ -124,10 +124,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money("0.00000000", ETH), account.unrealized_pnl(ETH))
         self.assertEqual(Money("10.00000000", BTC), account.equity(BTC))
         self.assertEqual(Money("20.00000000", ETH), account.equity(ETH))
-        self.assertEqual({}, account.init_margins())
+        self.assertEqual({}, account.initial_margins())
         self.assertEqual({}, account.maint_margins())
-        self.assertEqual(None, account.init_margin(BTC))
-        self.assertEqual(None, account.init_margin(ETH))
+        self.assertEqual(None, account.initial_margin(BTC))
+        self.assertEqual(None, account.initial_margin(ETH))
         self.assertEqual(None, account.maint_margin(BTC))
         self.assertEqual(None, account.maint_margin(ETH))
 
@@ -174,7 +174,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money("20.00000000", ETH), account.balance_free(ETH))
         self.assertEqual(Money("0.00000000", ETH), account.balance_locked(ETH))
 
-    def test_update_init_margin(self):
+    def test_update_initial_margin(self):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
@@ -196,11 +196,11 @@ class AccountTests(unittest.TestCase):
         margin = Money("0.00100000", BTC)
 
         # Act
-        account.update_init_margin(margin)
+        account.update_initial_margin(margin)
 
         # Assert
-        self.assertEqual(margin, account.init_margin(BTC))
-        self.assertEqual({BTC: margin}, account.init_margins())
+        self.assertEqual(margin, account.initial_margin(BTC))
+        self.assertEqual({BTC: margin}, account.initial_margins())
 
     def test_update_maint_margin(self):
         # Arrange

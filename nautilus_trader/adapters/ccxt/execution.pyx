@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+
 from cpython.datetime cimport datetime
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
+from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceSubmitOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexSubmitOrderBuilder
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -37,6 +40,7 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
@@ -111,6 +115,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._order_id_index = {}    # type: dict[OrderId, ClientOrderId]
         self._event_buffer = {}      # type: dict[OrderId, list]
 
+        self._account_last_free = {}
+        self._account_last_used = {}
+        self._account_last_total = {}
+
         # Scheduled tasks
         self._update_instruments_task = None
 
@@ -130,6 +138,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
+            return
 
         # Schedule instruments update
         delay = _SECONDS_IN_HOUR
@@ -213,6 +222,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._order_id_index = {}
         self._event_buffer = {}
+
+        self._account_last_free = {}
+        self._account_last_used = {}
+        self._account_last_total = {}
 
         self._log.info("Reset.")
 
@@ -432,50 +445,38 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
-        self._log.info(f"Submitting {order}...")
+        # Build arguments for request
+        cdef list args
+        cdef dict custom_params
+
+        if self.venue.value == "BINANCE":
+            args, custom_params = BinanceSubmitOrderBuilder.build(order)
+        elif self.venue.value == "BITMEX":
+            args, custom_params = BitmexSubmitOrderBuilder.build(order)
+        else:
+            # OTHER EXCHANGE - Basic unified API only
+            # ----------------------------------------------------------------------
+            args = [
+                order.symbol.code,
+                OrderTypeParser.to_str(order.type).lower(),
+                OrderSideParser.to_str(order.side).lower(),
+                str(order.quantity),
+            ]
+
+            if isinstance(order, PassiveOrder):
+                args.append(str(order.price))
+
+            custom_params = None
+
+        self._log.debug(f"Submitting {order}...")
         self._generate_order_submitted(order.cl_ord_id, self._clock.utc_now())
 
-        cdef str order_type = OrderTypeParser.to_str(order.type).lower()
-        cdef str order_side = OrderSideParser.to_str(order.side).lower()
-        cdef str order_qty = str(order.quantity)
-
-        cdef dict params = {
-            "recvWindow": 10000  # TODO: Server time sync issue?
-        }
-
-        # Add ClientOrderId to request if possible
-        if self.venue.value == "BINANCE":
-            params["newClientOrderId"] = order.cl_ord_id.value
-        elif self.venue.value == "BITMEX":
-            params["clOrdId"] = order.cl_ord_id.value
-
+        # Submit order and await response
         cdef dict response
         try:
-            if order.type == OrderType.MARKET:
-                response = await self._client.create_order(
-                    order.symbol.code,
-                    order_type,
-                    order_side,
-                    order_qty,
-                    params=params,
-                )
-            elif order.type == OrderType.LIMIT:
-                response = await self._client.create_order(
-                    order.symbol.code,
-                    order_type,
-                    order_side,
-                    order_qty,
-                    str(order.price),
-                    params=params,
-                )
-            else:
-                self._generate_order_denied(
-                    order.cl_ord_id,
-                    f"OrderType.{OrderTypeParser.to_str(order.type)} "
-                    f"not supported by the exchange.")
-                return
+            response = await self._client.create_order(*args, params=custom_params)
         except CCXTError as ex:
-            self._generate_order_rejected(order, str(ex))
+            self._generate_order_rejected(order.cl_ord_id, str(ex))
             return
 
         cdef OrderId order_id = OrderId(response["id"])
@@ -516,39 +517,48 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef list balances_free = []
         cdef list balances_locked = []
 
+        cdef dict event_free = event["free"]
+        cdef dict event_used = event["used"]
+        cdef dict event_total = event["total"]
+
+        if event_free == self._account_last_free \
+                and event_used == self._account_last_used \
+                and event_total == self._account_last_used:
+            return  # No updates
+
+        self._account_last_free = event_free
+        self._account_last_used = event_used
+        self._account_last_total = event_total
+
         cdef str code
-        cdef double amount
         cdef Currency currency
 
-        # Update total balances
-        for code, amount in event["total"].items():
-            if amount == 0:
-                continue
-            currency = self._instrument_provider.currency(code)
-            if currency is None:
-                self._log.error(f"Cannot update total balance for {code} "
-                                f"(no currency loaded).")
-            balances.append(Money(amount, currency))
-
         # Update free balances
-        for code, amount in event["free"].items():
-            if amount == 0:
-                continue
-            currency = self._instrument_provider.currency(code)
-            if currency is None:
-                self._log.error(f"Cannot update total balance for {code} "
-                                f"(no currency loaded).")
-            balances_free.append(Money(amount, currency))
+        for code, amount in event_free.items():
+            if amount:
+                currency = self._instrument_provider.currency(code)
+                if currency is None:
+                    self._log.error(f"Cannot update total balance for {code} "
+                                    f"(no currency loaded).")
+                balances_free.append(Money(amount, currency))
 
         # Update locked balances
-        for code, amount in event["used"].items():
-            if amount == 0:
-                continue
-            currency = self._instrument_provider.currency(code)
-            if currency is None:
-                self._log.error(f"Cannot update total balance for {code} "
-                                f"(no currency loaded).")
-            balances_locked.append(Money(amount, currency))
+        for code, amount in event_used.items():
+            if amount:
+                currency = self._instrument_provider.currency(code)
+                if currency is None:
+                    self._log.error(f"Cannot update total balance for {code} "
+                                    f"(no currency loaded).")
+                balances_locked.append(Money(amount, currency))
+
+        # Update total balances
+        for code, amount in event_total.items():
+            if amount:
+                currency = self._instrument_provider.currency(code)
+                if currency is None:
+                    self._log.error(f"Cannot update total balance for {code} "
+                                    f"(no currency loaded).")
+                balances.append(Money(amount, currency))
 
         # Generate event
         cdef AccountState account_state = AccountState(
@@ -556,7 +566,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             balances,
             balances_free,
             balances_locked,
-            {},
+            event["info"],
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
@@ -594,9 +604,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._generate_order_working(cl_ord_id, order_id, event)
         elif status == "canceled":
             self._generate_order_cancelled(cl_ord_id, order_id, event)
+        elif status == "expired":
+            self._generate_order_expired(cl_ord_id, order_id, event)
         else:
             # TODO: Development
-            self._log.critical(str(event))
+            self._log.critical("NEW EVENT! " + str(event))
 
     cdef inline void _generate_order_denied(
         self,
@@ -698,25 +710,33 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if position_id is None:
             position_id = PositionId.null_c()
 
+        # Determine quantities
+        cdef Quantity fill_qty = Quantity(event["filled"], instrument.size_precision)
+        cdef Quantity leaves_qty = Quantity(event["remaining"], instrument.size_precision)
+        cdef Quantity cum_qty = Quantity(order.quantity - leaves_qty)
+
+        # POSIX timestamp in milliseconds
+        cdef long timestamp = <long>event["timestamp"]
+
         # Generate event
         cdef OrderFilled filled = OrderFilled(
             self.account_id,
             order.cl_ord_id,
             order_id,
-            ExecutionId("1"),  # TODO: Implement
+            ExecutionId(str(timestamp)),
             position_id,
             order.strategy_id,
             order.symbol,
             order.side,
-            Quantity(event["amount"], instrument.size_precision),     # Filled
-            Quantity(event["filled"], instrument.size_precision),     # Cumulative
-            Quantity(event["remaining"], instrument.size_precision),  # Remaining
+            fill_qty,
+            cum_qty,
+            leaves_qty,
             Price(event["average"], instrument.price_precision),
             instrument.quote_currency,
             instrument.is_inverse,
             commission,
-            LiquiditySide.TAKER if order.type != OrderType.LIMIT else LiquiditySide.MAKER,  # TODO: Implement
-            from_posix_ms(event["timestamp"]),
+            LiquiditySide.TAKER if order.type != OrderType.LIMIT else LiquiditySide.MAKER,
+            from_posix_ms(timestamp),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
@@ -732,7 +752,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Fetch order from cache
         cdef Order order = self._engine.cache.order(cl_ord_id)
         if order is None:
-            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id}, "
+            self._log.error(f"Cannot work order for cl_ord_id {cl_ord_id}, "
                             f"order_id {order_id} not found in cache.")
             return  # Cannot fill order
 
@@ -749,9 +769,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order.type,
             order.quantity,
             order.price,
-            order.time_in_force,  # TODO: Implement
-            order.expire_time,    # TODO: Implement
-            self._clock.utc_now(),
+            order.time_in_force,
+            order.expire_time,
+            from_posix_ms(event["timestamp"]),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
@@ -775,3 +795,21 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         self._handle_event(cancelled)
+
+    cdef inline void _generate_order_expired(
+        self,
+        ClientOrderId cl_ord_id,
+        OrderId order_id,
+        dict event,
+    ) except *:
+        # Generate event
+        cdef OrderExpired expired = OrderExpired(
+            self.account_id,
+            cl_ord_id,
+            order_id,
+            from_posix_ms(event["timestamp"]),
+            self._uuid_factory.generate(),
+            self._clock.utc_now(),
+        )
+
+        self._handle_event(expired)

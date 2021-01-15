@@ -154,8 +154,11 @@ cdef class Order:
     cdef OrderState state_c(self) except *:
         return <OrderState>self._fsm.state
 
+    cdef OrderInitialized init_event_c(self):
+        return self._events[0]  # Guaranteed to have the initialized event
+
     cdef OrderEvent last_event_c(self):
-        return self._events[-1]
+        return self._events[-1]  # Guaranteed to have the initialized event
 
     cdef list events_c(self):
         return self._events.copy()
@@ -195,6 +198,18 @@ cdef class Order:
 
         """
         return self.state_c()
+
+    @property
+    def init_event(self):
+        """
+        The initialization event for the order.
+
+        Returns
+        -------
+        OrderInitialized
+
+        """
+        return self.init_event_c()
 
     @property
     def last_event(self):
@@ -286,7 +301,11 @@ cdef class Order:
     @property
     def is_completed(self):
         """
-        If the order is `completed`.
+        If the order is completed.
+
+        An order is considered completed when in the states;
+        `INVALID`, `DENIED`, `REJECTED`, `CANCELLED`, `EXPIRED` or `FILLED`.
+
 
         Returns
         -------
@@ -589,7 +608,7 @@ cdef class PassiveOrder(Order):
 cdef set _MARKET_ORDER_VALID_TIF = {
     TimeInForce.DAY,
     TimeInForce.IOC,
-    TimeInForce.FOC,
+    TimeInForce.FOK,
 }
 
 

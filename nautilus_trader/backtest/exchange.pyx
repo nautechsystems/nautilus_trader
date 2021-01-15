@@ -915,10 +915,10 @@ cdef class SimulatedExchange:
             self._clock.utc_now(),
         )
 
-        # Calculate potential P&L
+        # Calculate potential PnL
         cdef Money pnl = None
         if position is not None and position.entry != order.side:
-            # Calculate P&L
+            # Calculate PnL
             pnl = position.calculate_pnl(
                 avg_open=position.avg_open,
                 avg_close=fill_price,
@@ -946,7 +946,7 @@ cdef class SimulatedExchange:
             total_commissions = self.total_commissions.get(currency, Decimal()) + commission
             self.total_commissions[currency] = Money(total_commissions, currency)
 
-            # Final P&L
+            # Final PnL
             pnl = Money(pnl - commission, self.default_currency)
         else:
             currency = instrument.settlement_currency
