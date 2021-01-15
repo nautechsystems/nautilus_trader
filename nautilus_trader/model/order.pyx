@@ -415,6 +415,10 @@ cdef class Order:
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.WORKING)
             self._working(event)
+        elif isinstance(event, OrderAmended):
+            Condition.equal(self.id, event.order_id, "id", "event.order_id")
+            self._fsm.trigger(OrderState.WORKING)
+            self._amended(event)
         elif isinstance(event, OrderCancelled):
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.CANCELLED)
@@ -423,10 +427,6 @@ cdef class Order:
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
-        elif isinstance(event, OrderAmended):
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
-            self._fsm.trigger(OrderState.WORKING)
-            self._amended(event)
         elif isinstance(event, OrderFilled):
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             leaves_qty: Decimal = self.quantity - self.filled_qty - event.fill_qty
@@ -455,15 +455,15 @@ cdef class Order:
     cdef void _working(self, OrderWorking event) except *:
         self.id = event.order_id
 
+    cdef void _amended(self, OrderAmended event) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplemented("method must be implemented in subclass")
+
     cdef void _cancelled(self, OrderCancelled event) except *:
         pass  # Do nothing else
 
     cdef void _expired(self, OrderExpired event) except *:
         pass  # Do nothing else
-
-    cdef void _amended(self, OrderAmended event) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
 
     cdef void _filled(self, OrderFilled event) except *:
         """Abstract method (implement in subclass)."""
@@ -542,6 +542,9 @@ cdef class PassiveOrder(Order):
             If time_in_force is GTD and the expire_time is None.
 
         """
+        # Condition for order_side not UNDEFINED checked in OrderInitialized
+        # Condition for order_type not UNDEFINED checked in OrderInitialized
+        # Condition for time_in_force not UNDEFINED checked in OrderInitialized
         Condition.positive(quantity, "quantity")
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         if time_in_force == TimeInForce.GTD:

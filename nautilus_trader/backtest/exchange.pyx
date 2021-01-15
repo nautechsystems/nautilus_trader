@@ -91,7 +91,7 @@ cdef class SimulatedExchange:
         venue : Venue
             The venue to simulate for the backtest.
         oms_type : OMSType
-            The order management employed by the exchange/broker for this market.
+            The order management system type used by the exchange.
         generate_position_ids : bool
             If the exchange should generate position identifiers.
         is_frozen_account : bool
@@ -225,14 +225,14 @@ cdef class SimulatedExchange:
 
     cpdef void process_tick(self, Tick tick) except *:
         """
-        Process the exchanges markets with the given tick.
+        Process the exchanges market for the given tick.
 
-        Market dynamics are simulated against working orders for the ticks symbol.
+        Market dynamics are simulated by auctioning working orders.
 
         Parameters
         ----------
         tick : Tick
-            The tick data to process with. Can be `QuoteTick` or `TradeTick`.
+            The tick data to process with (`QuoteTick` or `TradeTick`).
 
         """
         Condition.not_none(tick, "tick")
@@ -262,8 +262,7 @@ cdef class SimulatedExchange:
                 if bid is None:
                     bid = ask
                 self._market_asks[symbol] = ask
-            else:
-                raise RuntimeError("invalid trade side")
+            # tick.side must be BUY or SELL (condition checked in TradeTick)
 
         cdef datetime now = self._clock.utc_now()
 
@@ -287,8 +286,7 @@ cdef class SimulatedExchange:
                 self._auction_buy_order(order, ask)
             elif order.side == OrderSide.SELL:
                 self._auction_sell_order(order, bid)
-            else:
-                raise RuntimeError("invalid order side")
+            # order.side must be BUY or SELL (condition checked in Order)
 
             # Check for order expiry
             if order.expire_time and now >= order.expire_time:
@@ -864,10 +862,10 @@ cdef class SimulatedExchange:
         return market == order_price and self.fill_model.is_limit_filled()
 
     cdef inline void _fill_order(
-            self,
-            Order order,
-            Price fill_price,
-            LiquiditySide liquidity_side,
+        self,
+        Order order,
+        Price fill_price,
+        LiquiditySide liquidity_side,
     ) except *:
         # Query if there is an existing position for this order
         cdef PositionId position_id = self._position_index.get(order.cl_ord_id)
@@ -982,12 +980,12 @@ cdef class SimulatedExchange:
         # Check held OCO orders and remove any paired with the given cl_ord_id
         cdef ClientOrderId oco_cl_ord_id = self._oco_orders.pop(cl_ord_id, None)
         if oco_cl_ord_id is None:
-            return  # No OCO order
+            return  # No linked order
 
         del self._oco_orders[oco_cl_ord_id]
         cdef PassiveOrder oco_order = self._working_orders.pop(oco_cl_ord_id, None)
         if oco_order is None:
-            return  # No OCO order
+            return  # No linked order
 
         # Reject any latent bracket child orders first
         cdef ClientOrderId bracket_order_id
@@ -1009,7 +1007,7 @@ cdef class SimulatedExchange:
 
     cdef inline void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *:
         # order is the OCO order to reject
-        # oco_order_id is the other order_id for this OCO pair
+        # other_oco is the linked ClientOrderId
         if order.is_completed_c():
             self._log.debug(f"Cannot reject order, state was already {order.state_string_c()}.")
             return
@@ -1028,7 +1026,6 @@ cdef class SimulatedExchange:
 
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *:
         # order is the OCO order to cancel
-        # oco_order_id is the other order_id for this OCO pair
         if order.is_completed_c():
             self._log.debug(f"Cannot cancel order, state was already {order.state_string_c()}.")
             return

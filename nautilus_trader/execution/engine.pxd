@@ -31,26 +31,25 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
 from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionEngine(Component):
-    cdef PositionIdGenerator _pos_id_generator
     cdef dict _clients
     cdef dict _strategies
+    cdef PositionIdGenerator _pos_id_generator
+    cdef Portfolio _portfolio
 
     cdef readonly TraderId trader_id
     """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
     cdef readonly ExecutionCache cache
     """The engines execution cache.\n\n:returns: `ExecutionCache`"""
-    cdef readonly Portfolio portfolio
-    """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
@@ -87,8 +86,8 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
     cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
-    cdef inline void _invalidate_order(self, Order order, str reason) except *
-    cdef inline void _deny_order(self, Order order, str reason) except *
+    cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _deny_order(self, ClientOrderId cl_ord_id, str reason) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
@@ -98,8 +97,8 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_event(self, OrderEvent event) except *
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef inline void _handle_order_fill(self, OrderFilled event) except *
-    cdef inline void _fill_system_assigned_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
-    cdef inline void _fill_exchange_assigned_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef inline void _fill_when_system_assigned_pos_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef inline void _fill_when_exchange_assigned_pos_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
     cdef inline void _open_position(self, OrderFilled event) except *
     cdef inline void _update_position(self, OrderFilled event) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *

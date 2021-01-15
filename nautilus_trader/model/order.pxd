@@ -61,9 +61,9 @@ cdef class Order:
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
-    """The account identifier associated with the order.\n\n:returns: `AccountId`"""
+    """The account identifier associated with the order.\n\n:returns: `AccountId` or None"""
     cdef readonly ExecutionId execution_id
-    """The orders last execution identifier.\n\n:returns: `ExecutionId`"""
+    """The orders last execution identifier.\n\n:returns: `ExecutionId` or None"""
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide side
@@ -79,9 +79,9 @@ cdef class Order:
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly datetime filled_timestamp
-    """The order last filled timestamp.\n\n:returns: `datetime`"""
+    """The order last filled timestamp.\n\n:returns: `datetime` or None"""
     cdef readonly object avg_price
-    """The order average fill price.\n\n:returns: `Decimal`"""
+    """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID init_id
@@ -115,9 +115,9 @@ cdef class Order:
     cdef void _rejected(self, OrderRejected event) except *
     cdef void _accepted(self, OrderAccepted event) except *
     cdef void _working(self, OrderWorking event) except *
+    cdef void _amended(self, OrderAmended event) except *
     cdef void _cancelled(self, OrderCancelled event) except *
     cdef void _expired(self, OrderExpired event) except *
-    cdef void _amended(self, OrderAmended event) except *
     cdef void _filled(self, OrderFilled event) except *
     cdef object _calculate_avg_price(self, Price fill_price, Quantity fill_quantity)
 

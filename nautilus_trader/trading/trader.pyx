@@ -43,6 +43,7 @@ cdef class Trader(Component):
         self,
         TraderId trader_id not None,
         list strategies not None,
+        Portfolio portfolio not None,
         DataEngine data_engine not None,
         ExecutionEngine exec_engine not None,
         Clock clock not None,
@@ -57,6 +58,8 @@ cdef class Trader(Component):
             The identifier for the trader.
         strategies : list[TradingStrategy]
             The initial strategies for the trader.
+        portfolio : Portfolio
+            The portfolio for the trader.
         data_engine : DataEngine
             The data engine to register the traders strategies with.
         exec_engine : ExecutionEngine
@@ -83,14 +86,13 @@ cdef class Trader(Component):
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
         super().__init__(clock, logger)
 
-        # Private components
+        self._strategies = []
+        self._portfolio = portfolio
         self._data_engine = data_engine
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
-        self._strategies = []
 
         self.id = trader_id
-        self.portfolio = exec_engine.portfolio
         self.analyzer = PerformanceAnalyzer()
 
         self.initialize_strategies(strategies)
@@ -148,7 +150,7 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.reset()
 
-        self.portfolio.reset()
+        self._portfolio.reset()
         self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
