@@ -28,6 +28,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef dict _order_id_index
     cdef dict _event_buffer
 
+    cdef dict _account_last_free
+    cdef dict _account_last_used
+    cdef dict _account_last_total
+
     cdef object _update_instruments_task
     cdef object _watch_balances_task
     cdef object _watch_orders_task
@@ -49,3 +53,4 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef inline void _generate_order_filled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
     cdef inline void _generate_order_working(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
     cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *

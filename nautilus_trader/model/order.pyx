@@ -608,7 +608,7 @@ cdef class PassiveOrder(Order):
 cdef set _MARKET_ORDER_VALID_TIF = {
     TimeInForce.DAY,
     TimeInForce.IOC,
-    TimeInForce.FOC,
+    TimeInForce.FOK,
 }
 
 

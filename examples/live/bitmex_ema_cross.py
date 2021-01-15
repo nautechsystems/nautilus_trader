@@ -84,7 +84,7 @@ strategy = EMACross(
     bar_spec=time_bars,
     fast_ema=10,
     slow_ema=20,
-    trade_size=Decimal("100"),
+    trade_size=Decimal("10"),
 )
 
 # Instantiate the node passing a list of strategies and configuration

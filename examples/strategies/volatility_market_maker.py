@@ -193,8 +193,8 @@ class VolatilityMarketMaker(TradingStrategy):
             quantity=Quantity(self.trade_size),
             price=Price(last.bid - self.atr.value, self.price_precision),
             time_in_force=TimeInForce.GTC,
-            post_only=True,
-            hidden=False,
+            post_only=True,  # Default value is True
+            hidden=False,    # Default value is False
         )
 
         self.buy_order = order
@@ -210,8 +210,8 @@ class VolatilityMarketMaker(TradingStrategy):
             quantity=Quantity(self.trade_size),
             price=Price(last.ask + self.atr.value, self.price_precision),
             time_in_force=TimeInForce.GTC,
-            post_only=True,
-            hidden=False,
+            post_only=True,   # Default value is True
+            hidden=False,     # Default value is False
         )
 
         self.sell_order = order
