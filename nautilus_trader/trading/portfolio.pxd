@@ -39,7 +39,7 @@ cdef class PortfolioFacade:
 
     cpdef Account account(self, Venue venue)
 
-    cpdef dict init_margins(self, Venue venue)
+    cpdef dict initial_margins(self, Venue venue)
     cpdef dict maint_margins(self, Venue venue)
     cpdef dict unrealized_pnls(self, Venue venue)
     cpdef dict market_values(self, Venue venue)
@@ -90,7 +90,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef inline void _handle_position_changed(self, PositionChanged event) except *
     cdef inline void _handle_position_closed(self, PositionClosed event) except *
     cdef inline void _update_net_position(self, Symbol symbol, set positions_open) except *
-    cdef inline void _update_init_margin(self, Venue venue) except *
+    cdef inline void _update_initial_margin(self, Venue venue) except *
     cdef inline void _update_maint_margin(self, Venue venue) except *
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol)
     cdef object _calculate_xrate(self, Instrument instrument, Account account, OrderSide side)

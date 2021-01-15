@@ -327,7 +327,7 @@ cdef class Position:
         if currency == self.quote_currency:
             self.commission = cum_commission
 
-        # Calculate avg prices, points, return, P&L
+        # Calculate avg prices, points, return, PnL
         if event.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(event)
         else:  # event.order_side == OrderSide.SELL:
@@ -377,7 +377,7 @@ cdef class Position:
         quantity: Decimal,
     ):
         """
-        Return a generic P&L from the given parameters.
+        Return a generic PnL from the given parameters.
 
         Parameters
         ----------
@@ -408,7 +408,7 @@ cdef class Position:
 
     cpdef Money unrealized_pnl(self, Price last):
         """
-        Return the unrealized P&L from the given last quote tick.
+        Return the unrealized PnL from the given last quote tick.
 
         Parameters
         ----------
@@ -435,7 +435,7 @@ cdef class Position:
 
     cpdef Money total_pnl(self, Price last):
         """
-        Return the total P&L from the given last quote tick.
+        Return the total PnL from the given last quote tick.
 
         Parameters
         ----------
@@ -464,7 +464,7 @@ cdef class Position:
         return list(self._commissions.values())
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *:
-        # Initialize realized P&L for fill
+        # Initialize realized PnL for fill
         if event.commission.currency == self.quote_currency:
             realized_pnl: Decimal = -event.commission.as_decimal()
         else:
@@ -487,7 +487,7 @@ cdef class Position:
         self.relative_quantity = self.relative_quantity + event.fill_qty
 
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *:
-        # Initialize realized P&L for fill
+        # Initialize realized PnL for fill
         if event.commission.currency == self.quote_currency:
             realized_pnl: Decimal = -event.commission.as_decimal()
         else:

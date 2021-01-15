@@ -656,7 +656,7 @@ cdef class BacktestEngine:
             account = self._exec_engine.cache.account_for_venue(exchange.venue)
             self.analyzer.calculate_statistics(account, positions)
 
-            # Present P&L performance stats per asset
+            # Present PnL performance stats per asset
             for currency in account.currencies():
                 self._log.info(f" {str(currency)}")
                 self._log.info("-----------------------------------------------------------------")

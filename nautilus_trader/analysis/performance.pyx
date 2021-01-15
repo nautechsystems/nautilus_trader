@@ -105,7 +105,7 @@ cdef class PerformanceAnalyzer:
         position_id : PositionId
             The position identifier for the trade.
         realized_pnl : Money
-            The realized P&L for the trade.
+            The realized PnL for the trade.
 
         """
         Condition.not_none(position_id, "position_id")
@@ -164,7 +164,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double total_pnl(self, Currency currency=None) except *:
         """
-        Return the total P&L for the portfolio.
+        Return the total PnL for the portfolio.
 
         Returns
         -------
@@ -184,7 +184,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef double total_pnl_percentage(self, Currency currency=None) except *:
         """
-        Return the percentage change of the total P&L for the portfolio.
+        Return the percentage change of the total PnL for the portfolio.
 
         Returns
         -------
@@ -553,7 +553,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef dict get_performance_stats_pnls(self, Currency currency=None):
         """
-        Return the performance statistics for P&L from the last backtest run.
+        Return the performance statistics for PnL from the last backtest run.
 
         Money objects are converted to floats.
 
@@ -568,8 +568,8 @@ cdef class PerformanceAnalyzer:
 
         """
         return {
-            "P&L": self.total_pnl(currency),
-            "P&L%": self.total_pnl_percentage(currency),
+            "PnL": self.total_pnl(currency),
+            "PnL%": self.total_pnl_percentage(currency),
             "MaxWinner": self.max_winner(currency),
             "AvgWinner": self.avg_winner(currency),
             "MinWinner": self.min_winner(currency),
@@ -596,8 +596,8 @@ cdef class PerformanceAnalyzer:
 
         """
         return [
-            f"P&L:               {round(self.total_pnl(currency), currency.precision):,} {currency}",
-            f"P&L%:              {round(self.total_pnl_percentage(currency), 2)}%",
+            f"PnL:               {round(self.total_pnl(currency), currency.precision):,} {currency}",
+            f"PnL%:              {round(self.total_pnl_percentage(currency), 2)}%",
             f"Max Winner:        {round(self.max_winner(currency), currency.precision):,} {currency}",
             f"Avg Winner:        {round(self.avg_winner(currency), currency.precision):,} {currency}",
             f"Min Winner:        {round(self.min_winner(currency), currency.precision):,} {currency}",

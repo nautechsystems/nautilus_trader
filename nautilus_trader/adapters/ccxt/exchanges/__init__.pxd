@@ -12,21 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cpdef enum TimeInForce:
-    UNDEFINED = 0,  # Invalid value
-    DAY = 1,
-    GTC = 2,
-    IOC = 3,
-    FOK = 4,
-    GTD = 5
-
-
-cdef class TimeInForceParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef TimeInForce from_str(str value)

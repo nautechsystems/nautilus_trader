@@ -61,7 +61,7 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict init_margins(self, Venue venue):
+    cpdef dict initial_margins(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -205,7 +205,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Venue venue
         for venue in self._orders_working.keys():
-            self._update_init_margin(venue)
+            self._update_initial_margin(venue)
 
     cpdef void initialize_positions(self, set positions) except *:
         """
@@ -269,7 +269,7 @@ cdef class Portfolio(PortfolioFacade):
         self._ticks[tick.symbol] = tick
 
         if last is not None and (tick.bid != last.bid or tick.ask != last.ask):
-            # Clear cached unrealized P&Ls
+            # Clear cached unrealized PnLs
             self._unrealized_pnls[tick.symbol] = None
 
     cpdef void update_order(self, Order order) except *:
@@ -294,7 +294,7 @@ cdef class Portfolio(PortfolioFacade):
         elif order.is_completed_c():
             orders_working.discard(order)
 
-        self._update_init_margin(venue)
+        self._update_initial_margin(venue)
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -363,7 +363,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- QUERIES ---------------------------------------------------------------------------------
 
-    cpdef dict init_margins(self, Venue venue):
+    cpdef dict initial_margins(self, Venue venue):
         """
         Return the initial margins for the given venue (if found).
 
@@ -385,7 +385,7 @@ cdef class Portfolio(PortfolioFacade):
                             f"(no account registered for {venue}).")
             return None
 
-        return account.init_margins()
+        return account.initial_margins()
 
     cpdef dict maint_margins(self, Venue venue):
         """
@@ -438,10 +438,10 @@ cdef class Portfolio(PortfolioFacade):
         for symbol in symbols:
             pnl = self._unrealized_pnls.get(symbol)
             if pnl is not None:
-                # P&L already calculated
+                # PnL already calculated
                 unrealized_pnls[pnl.currency] = unrealized_pnls.get(pnl.currency, Decimal(0)) + pnl
                 continue  # To next symbol
-            # Calculate P&L
+            # Calculate PnL
             pnl = self._calculate_unrealized_pnl(symbol)
             if pnl is None:
                 return None  # Error already logged in `_calculate_unrealized_pnl`
@@ -520,12 +520,12 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef Money unrealized_pnl(self, Symbol symbol):
         """
-        Return the unrealized P&L for the given symbol (if found).
+        Return the unrealized PnL for the given symbol (if found).
 
         Parameters
         ----------
         symbol : Symbol
-            The symbol for the unrealized P&L.
+            The symbol for the unrealized PnL.
 
         Returns
         -------
@@ -764,7 +764,7 @@ cdef class Portfolio(PortfolioFacade):
         self._update_maint_margin(symbol.venue)
         self._log.info(f"{symbol} net_position={net_position}")
 
-    cdef inline void _update_init_margin(self, Venue venue) except *:
+    cdef inline void _update_initial_margin(self, Venue venue) except *:
         cdef Account account = self._accounts.get(venue)
         if account is None:
             self._log.error(f"Cannot update initial margin "
@@ -791,7 +791,7 @@ cdef class Portfolio(PortfolioFacade):
                 continue  # No margin necessary
 
             # Calculate margin
-            margin = instrument.calculate_init_margin(
+            margin = instrument.calculate_initial_margin(
                 order.quantity,
                 order.price,
             )
@@ -819,9 +819,9 @@ cdef class Portfolio(PortfolioFacade):
             margins[currency] = total_margin
 
         for currency, total_margin in margins.items():
-            account.update_init_margin(Money(total_margin, currency))
+            account.update_initial_margin(Money(total_margin, currency))
 
-            self._log.info(f"{venue}-{currency} init_margin={total_margin}")
+            self._log.info(f"{venue}-{currency} initial_margin={total_margin}")
 
     cdef inline void _update_maint_margin(self, Venue venue) except *:
         cdef Account account = self._accounts.get(venue)
@@ -872,7 +872,7 @@ cdef class Portfolio(PortfolioFacade):
                 )
 
                 if xrate == 0:
-                    self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
+                    self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     continue  # Cannot calculate
 
@@ -893,13 +893,13 @@ cdef class Portfolio(PortfolioFacade):
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)
         if account is None:
-            self._log.error(f"Cannot calculate unrealized P&L "
+            self._log.error(f"Cannot calculate unrealized PnL "
                             f"(no account registered for {symbol.venue}).")
             return None  # Cannot calculate
 
         cdef Instrument instrument = self._data.instrument(symbol)
         if instrument is None:
-            self._log.error(f"Cannot calculate unrealized P&L "
+            self._log.error(f"Cannot calculate unrealized PnL "
                             f"(no instrument for {symbol}).")
             return None  # Cannot calculate
 
@@ -926,7 +926,7 @@ cdef class Portfolio(PortfolioFacade):
 
             last = self._get_last_price(position)  # TODO: Optimize (could be long or short)
             if last is None:
-                self._log.error(f"Cannot calculate unrealized P&L (no prices for {symbol}).")
+                self._log.error(f"Cannot calculate unrealized PnL (no prices for {symbol}).")
                 return None  # Cannot calculate
 
             pnl = position.unrealized_pnl(last)
@@ -939,7 +939,7 @@ cdef class Portfolio(PortfolioFacade):
                 )
 
                 if xrate == 0:
-                    self._log.error(f"Cannot calculate unrealized P&L (insufficient data for "
+                    self._log.error(f"Cannot calculate unrealized PnL (insufficient data for "
                                     f"{instrument.settlement_currency}/{currency}).")
                     return None  # Cannot calculate
 
