@@ -14,22 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+
 from cpython.datetime cimport datetime
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
+from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceSubmitOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexSubmitOrderBuilder
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
@@ -138,6 +138,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
+            return
 
         # Schedule instruments update
         delay = _SECONDS_IN_HOUR
@@ -445,86 +446,29 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, Order order):
         # Build arguments for request
-        cdef list args = [order.symbol.code]
-        cdef dict custom_params = {
-            "recvWindow": 10000  # TODO: Server time sync issue for Binance?
-        }
+        cdef list args
+        cdef dict custom_params
 
-        # BINANCE (this will need extracting into its own class eventually)
-        # ----------------------------------------------------------------------
         if self.venue.value == "BINANCE":
-            custom_params["newClientOrderId"] = order.cl_ord_id.value
-
-            if order.type == OrderType.MARKET:
-                args.append("MARKET")
-                args.append(OrderSideParser.to_str(order.side))
-                args.append(str(order.quantity))
-            elif order.type == OrderType.LIMIT and order.is_post_only:
-                args.append("LIMIT_MAKER")
-                args.append(OrderSideParser.to_str(order.side))
-                args.append(str(order.quantity))
-                args.append(str(order.price))
-                # TimeInForce
-                if order.time_in_force == TimeInForce.DAY:
-                    self._log.error("TimeInForce DAY not supported in this version.")
-                elif order.time_in_force == TimeInForce.GTD:
-                    self._log.error("TimeInForce GTD not supported in this version.")
-            elif order.type == OrderType.LIMIT:
-                args.append("LIMIT")
-                args.append(OrderSideParser.to_str(order.side))
-                args.append(str(order.quantity))
-                args.append(str(order.price))
-                # TimeInForce
-                if order.time_in_force == TimeInForce.DAY:
-                    self._log.error("TimeInForce DAY not supported in this version.")
-                elif order.time_in_force == TimeInForce.GTD:
-                    self._log.error("TimeInForce GTD not supported in this version.")
-                else:
-                    custom_params["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
-            elif order.type == OrderType.STOP_MARKET:
-                if order.side == OrderSide.BUY:
-                    args.append("STOP_LOSS")
-                elif order.side == OrderSide.SELL:
-                    args.append("TAKE_PROFIT")
-                args.append(OrderSideParser.to_str(order.side))
-                args.append(str(order.quantity))
-                args.append(str(order.price))
-                # TimeInForce
-                if order.time_in_force == TimeInForce.DAY:
-                    self._log.error("TimeInForce DAY not supported in this version.")
-                elif order.time_in_force == TimeInForce.GTD:
-                    self._log.error("TimeInForce GTD not supported in this version.")
-
-        # BITMEX (this will need extracting into its own class eventually)
-        # ----------------------------------------------------------------------
+            args, custom_params = BinanceSubmitOrderBuilder.build(order)
         elif self.venue.value == "BITMEX":
-            custom_params["clOrdID"] = order.cl_ord_id.value
-
-            if order.type == OrderType.MARKET:
-                args.append("Market")
-                args.append(OrderSideParser.to_str(order.side).capitalize())
-                args.append(str(order.quantity))
-            elif order.type == OrderType.LIMIT:
-                args.append("Limit")
-                args.append(OrderSideParser.to_str(order.side).capitalize())
-                args.append(str(order.quantity))
-                args.append(str(order.price))
-            elif order.type == OrderType.STOP_MARKET:
-                args.append("StopMarket")
-                args.append(OrderSideParser.to_str(order.side).capitalize())
-                args.append(str(order.quantity))
-                custom_params["stopPx"] = str(order.price)
-
-        # OTHER (this will need extracting into its own class eventually)
-        # ----------------------------------------------------------------------
+            args, custom_params = BitmexSubmitOrderBuilder.build(order)
         else:
-            args.append(OrderTypeParser.to_str(order.type).lower())
-            args.append(OrderSideParser.to_str(order.side).lower())
-            args.append(str(order.quantity))
-            if isinstance(order, PassiveOrder):
-                args.append(str(order.quantity))
+            # OTHER EXCHANGE - Basic unified API only
+            # ----------------------------------------------------------------------
+            args = [
+                order.symbol.code,
+                OrderTypeParser.to_str(order.type).lower(),
+                OrderSideParser.to_str(order.side).lower(),
+                str(order.quantity),
+            ]
 
-        self._log.info(f"Submitting {order}...")
+            if isinstance(order, PassiveOrder):
+                args.append(str(order.price))
+
+            custom_params = None
+
+        self._log.debug(f"Submitting {order}...")
         self._generate_order_submitted(order.cl_ord_id, self._clock.utc_now())
 
         # Submit order and await response
@@ -622,7 +566,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             balances,
             balances_free,
             balances_locked,
-            {},
+            event["info"],
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
@@ -766,25 +710,33 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if position_id is None:
             position_id = PositionId.null_c()
 
+        # Determine quantities
+        cdef Quantity fill_qty = Quantity(event["filled"], instrument.size_precision)
+        cdef Quantity leaves_qty = Quantity(event["remaining"], instrument.size_precision)
+        cdef Quantity cum_qty = Quantity(order.quantity - leaves_qty)
+
+        # POSIX timestamp in milliseconds
+        cdef long timestamp = <long>event["timestamp"]
+
         # Generate event
         cdef OrderFilled filled = OrderFilled(
             self.account_id,
             order.cl_ord_id,
             order_id,
-            ExecutionId("timestamp"),
+            ExecutionId(str(timestamp)),
             position_id,
             order.strategy_id,
             order.symbol,
             order.side,
-            Quantity(event["amount"], instrument.size_precision),     # Filled
-            Quantity(event["filled"], instrument.size_precision),     # Cumulative
-            Quantity(event["remaining"], instrument.size_precision),  # Remaining
+            fill_qty,
+            cum_qty,
+            leaves_qty,
             Price(event["average"], instrument.price_precision),
             instrument.quote_currency,
             instrument.is_inverse,
             commission,
             LiquiditySide.TAKER if order.type != OrderType.LIMIT else LiquiditySide.MAKER,
-            from_posix_ms(event["timestamp"]),
+            from_posix_ms(timestamp),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
@@ -800,7 +752,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Fetch order from cache
         cdef Order order = self._engine.cache.order(cl_ord_id)
         if order is None:
-            self._log.error(f"Cannot fill order for cl_ord_id {cl_ord_id}, "
+            self._log.error(f"Cannot work order for cl_ord_id {cl_ord_id}, "
                             f"order_id {order_id} not found in cache.")
             return  # Cannot fill order
 
@@ -817,9 +769,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order.type,
             order.quantity,
             order.price,
-            order.time_in_force,  # TODO: Implement
-            order.expire_time,    # TODO: Implement
-            self._clock.utc_now(),
+            order.time_in_force,
+            order.expire_time,
+            from_posix_ms(event["timestamp"]),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )
