@@ -19,7 +19,7 @@ cpdef enum TimeInForce:
     DAY = 1,
     GTC = 2,
     IOC = 3,
-    FOC = 4,
+    FOK = 4,
     GTD = 5
 
 

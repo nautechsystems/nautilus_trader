@@ -443,7 +443,7 @@ class TimeInForceTests(unittest.TestCase):
         [TimeInForce.DAY, "DAY"],
         [TimeInForce.GTC, "GTC"],
         [TimeInForce.IOC, "IOC"],
-        [TimeInForce.FOC, "FOC"],
+        [TimeInForce.FOK, "FOK"],
         [TimeInForce.GTD, "GTD"],
     ])
     def test_time_in_force_to_str(self, enum, expected):
@@ -460,7 +460,7 @@ class TimeInForceTests(unittest.TestCase):
         ["DAY", TimeInForce.DAY],
         ["GTC", TimeInForce.GTC],
         ["IOC", TimeInForce.IOC],
-        ["FOC", TimeInForce.FOC],
+        ["FOK", TimeInForce.FOK],
         ["GTD", TimeInForce.GTD],
     ])
     def test_time_in_force_from_str(self, string, expected):
