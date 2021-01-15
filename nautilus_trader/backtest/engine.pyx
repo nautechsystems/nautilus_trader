@@ -260,6 +260,7 @@ cdef class BacktestEngine:
         self.trader = Trader(
             trader_id=trader_id,
             strategies=strategies,
+            portfolio=self.portfolio,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._test_clock,

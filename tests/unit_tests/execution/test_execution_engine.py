@@ -25,6 +25,7 @@ from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -740,11 +741,16 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
 
-        position_id_flipped = PositionId("P-000-AUD/USD.SIM-1F")
-
         # Assert
+        position_id_flipped = PositionId("P-000-AUD/USD.SIM-1F")
         position_flipped = self.cache.position(position_id_flipped)
+
         self.assertEqual(-50000, position_flipped.relative_quantity)
+        self.assertEqual(50000, position_flipped.last_event.fill_qty)
+        self.assertEqual(150000, position_flipped.last_event.cum_qty)
+        self.assertEqual(0, position_flipped.last_event.leaves_qty)
+        self.assertEqual(Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty)
+        self.assertEqual(0, self.cache.order(order1.cl_ord_id).last_event.leaves_qty)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
@@ -817,11 +823,16 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
 
-        position_id_flipped = PositionId("P-000-AUD/USD.SIM-1F")
-
         # Assert
+        position_id_flipped = PositionId("P-000-AUD/USD.SIM-1F")
         position_flipped = self.cache.position(position_id_flipped)
+
         self.assertEqual(50000, position_flipped.relative_quantity)
+        self.assertEqual(50000, position_flipped.last_event.fill_qty)
+        self.assertEqual(150000, position_flipped.last_event.cum_qty)
+        self.assertEqual(0, position_flipped.last_event.leaves_qty)
+        self.assertEqual(Quantity(100000), self.cache.order(order1.cl_ord_id).last_event.cum_qty)
+        self.assertEqual(0, self.cache.order(order1.cl_ord_id).last_event.leaves_qty)
         self.assertTrue(self.cache.position_exists(position_id))
         self.assertTrue(self.cache.position_exists(position_id_flipped))
         self.assertTrue(self.cache.is_position_closed(position_id))
