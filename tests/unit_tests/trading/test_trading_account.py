@@ -48,7 +48,7 @@ class AccountTests(unittest.TestCase):
         self.portfolio = Portfolio(self.clock, logger)
         self.portfolio.register_cache(DataCache(logger))
 
-    def test_instantiate_single_asset_account(self):
+    def test_instantiated_accounts_basic_properties(self):
         # Arrange
         event = AccountState(
             AccountId("SIM", "001"),
@@ -69,6 +69,32 @@ class AccountTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AccountId("SIM", "001"), account.id)
+        self.assertEqual("Account(id=SIM-001)", str(account))
+        self.assertEqual("Account(id=SIM-001)", repr(account))
+        self.assertEqual(int, type(hash(account)))
+        self.assertTrue(account == account)
+        self.assertFalse(account != account)
+
+    def test_instantiate_single_asset_account(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money(1_000_000, USD)],
+            [Money(1_000_000, USD)],
+            [Money(0, USD)],
+            info={"default_currency": "USD"},  # Set the default currency
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        # Act
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Assert
         self.assertEqual(USD, account.default_currency)
         self.assertEqual(event, account.last_event)
         self.assertEqual([event], account.events)
@@ -252,7 +278,7 @@ class AccountTests(unittest.TestCase):
         result = account.unrealized_pnl()
 
         # Assert
-        self.assertEqual(result, Money(0, USD))
+        self.assertEqual(Money(0, USD), result)
 
     def test_unrealized_pnl_with_multi_asset_account_when_no_open_positions_returns_zero(self):
         # Arrange
@@ -276,4 +302,162 @@ class AccountTests(unittest.TestCase):
         result = account.unrealized_pnl(BTC)
 
         # Assert
-        self.assertEqual(result, Money("0.00000000", BTC))
+        self.assertEqual(Money("0.00000000", BTC), result)
+
+    def test_equity_with_single_asset_account_no_default_returns_none(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money("100000.00", USD)],
+            [Money("0.00", USD)],
+            [Money("0.00", USD)],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Act
+        result = account.equity(BTC)
+
+        # Assert
+        self.assertIsNone(result)
+
+    def test_equity_with_single_asset_account_returns_expected_money(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money("100000.00", USD)],
+            [Money("0.00", USD)],
+            [Money("0.00", USD)],
+            info={"default_currency": "USD"},  # No default currency set
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Act
+        result = account.equity()
+
+        # Assert
+        self.assertEqual(Money("100000.00", USD), result)
+
+    def test_equity_with_multi_asset_account_returns_expected_money(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
+            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
+            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Act
+        result = account.equity(BTC)
+
+        # Assert
+        self.assertEqual(Money("10.00000000", BTC), result)
+
+    def test_equity_with_multi_asset_account_returns_expected_money(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
+            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
+            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Act
+        result = account.equity(BTC)
+
+        # Assert
+        self.assertEqual(Money("10.00000000", BTC), result)
+
+    def test_margin_available_for_single_asset_account(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money("100000.00", USD)],
+            [Money("0.00", USD)],
+            [Money("0.00", USD)],
+            info={"default_currency": "USD"},  # No default currency set
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Act
+        result1 = account.margin_available()
+        account.update_initial_margin(Money("500.00", USD))
+        result2 = account.margin_available()
+        account.update_maint_margin(Money("1000.00", USD))
+        result3 = account.margin_available()
+
+        # Assert
+        self.assertEqual(Money("100000.00", USD), result1)
+        self.assertEqual(Money("99500.00", USD), result2)
+        self.assertEqual(Money("98500.00", USD), result3)
+
+    def test_margin_available_for_multi_asset_account(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
+            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
+            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        # Act
+        result1 = account.margin_available(BTC)
+        account.update_initial_margin(Money("0.00010000", BTC))
+        result2 = account.margin_available(BTC)
+        account.update_maint_margin(Money("0.00020000", BTC))
+        result3 = account.margin_available(BTC)
+        result4 = account.margin_available(ETH)
+
+        # Assert
+        self.assertEqual(Money("10.00000000", BTC), result1)
+        self.assertEqual(Money("9.99990000", BTC), result2)
+        self.assertEqual(Money("9.99970000", BTC), result3)
+        self.assertEqual(Money("20.00000000", ETH), result4)

@@ -39,6 +39,42 @@ USDJPY_SIM = TestStubs.symbol_usdjpy_fxcm()
 
 class ExchangeRateCalculatorTests(unittest.TestCase):
 
+    def test_get_rate_when_price_type_last_raises_value_error(self):
+        # Arrange
+        converter = ExchangeRateCalculator()
+        bid_rates = {"AUD/USD": Decimal("0.80000")}
+        ask_rates = {"AUD/USD": Decimal("0.80010")}
+
+        # Act
+        # Assert
+        self.assertRaises(
+            ValueError,
+            converter.get_rate,
+            USD,
+            JPY,
+            PriceType.LAST,
+            bid_rates,
+            ask_rates,
+        )
+
+    def test_get_rate_when_from_currency_equals_to_currency_returns_one(self):
+        # Arrange
+        converter = ExchangeRateCalculator()
+        bid_rates = {"AUD/USD": Decimal("0.80000")}
+        ask_rates = {"AUD/USD": Decimal("0.80010")}
+
+        # Act
+        result = converter.get_rate(
+            USD,
+            USD,
+            PriceType.BID,
+            bid_rates,
+            ask_rates,
+        )
+
+        # Assert
+        self.assertEqual(1, result)
+
     def test_get_rate_when_no_currency_rate_returns_zero(self):
         # Arrange
         converter = ExchangeRateCalculator()

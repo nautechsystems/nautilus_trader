@@ -72,18 +72,19 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
+            If trader_id is not equal to the exec_engine.trader_id.
+        ValueError
+            If portfolio is not equal to the exec_engine._portfolio.
+        ValueError
             If strategies is None.
         ValueError
             If strategies list is empty.
         TypeError
             If strategies list contains a type other than TradingStrategy.
-        ValueError
-            If trader_id is not equal to the exec_engine.trader_id.
-        ValueError
-            If account_id is not equal to the exec_engine.account_id.
 
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
+        Condition.true(exec_engine.is_portfolio_equal(portfolio), "exec_engine.is_portfolio_equal(portfolio)")
         super().__init__(clock, logger)
 
         self._strategies = []
