@@ -100,7 +100,15 @@ class PortfolioFacadeTests(unittest.TestCase):
         # Assert
         self.assertRaises(NotImplementedError, portfolio.unrealized_pnl, BTCUSDT_BINANCE.symbol)
 
-    def test_open_value_raises_not_implemented_error(self):
+    def test_market_value_raises_not_implemented_error(self):
+        # Arrange
+        portfolio = PortfolioFacade()
+
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, portfolio.market_value, AUDUSD_SIM.symbol)
+
+    def test_market_values_raises_not_implemented_error(self):
         # Arrange
         portfolio = PortfolioFacade()
 
@@ -299,20 +307,13 @@ class PortfolioTests(unittest.TestCase):
             fill_price=Price("25000.00"),
         )
 
+        # Push state to FILLED
+        order1.apply(filled1)
+
         # Push state to WORKING
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))
-
-        filled2 = TestStubs.event_order_filled(
-            order2,
-            instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S", "1"),
-            fill_price=Price("25000.00"),
-        )
-
-        order1.apply(filled1)
-        order2.apply(filled2)
+        order2.apply(TestStubs.event_order_working(order2))
 
         # Update the last quote
         last = QuoteTick(

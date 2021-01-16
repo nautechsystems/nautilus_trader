@@ -143,6 +143,24 @@ cdef class ExecutionEngine(Component):
         """
         return sorted(list(self._strategies.keys()))
 
+    cpdef bint is_portfolio_equal(self, Portfolio portfolio) except *:
+        """
+        Return a value indicating whether the given portfolio is the same object
+        as the portfolio wired to the execution engine.
+
+        Parameters
+        ----------
+        portfolio : Portfolio
+            The portfolio to check.
+
+        Returns
+        -------
+        bool
+            True if same object, else False.
+
+        """
+        return portfolio == self._portfolio
+
     cpdef bint check_connected(self) except *:
         """
         Check all of the engines clients are connected.
