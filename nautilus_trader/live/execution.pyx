@@ -76,7 +76,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = asyncio.Queue()
+        self._queue = asyncio.Queue(maxsize=10000)
         self.is_running = True
 
     cpdef object get_event_loop(self):
@@ -116,6 +116,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Execute the given command.
 
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
+
         Parameters
         ----------
         command : VenueCommand
@@ -130,11 +133,18 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.not_none(command, "command")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._queue.put_nowait(command)
+        try:
+            self._queue.put_nowait(command)
+        except asyncio.QueueFull:
+            self._log.warning(f"Blocking on `put` as queue full at {self._queue.qsize()} items.")
+            self._queue.put(command)  # Block until qsize reduces below maxsize
 
     cpdef void process(self, Event event) except *:
         """
         Process the given event.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
 
         Parameters
         ----------
@@ -150,7 +160,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Condition.not_none(event, "event")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._queue.put_nowait(event)
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            self._log.warning(f"Blocking on `put` as queue full at {self._queue.qsize()} items.")
+            self._queue.put(event)  # Block until qsize reduces below maxsize
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
