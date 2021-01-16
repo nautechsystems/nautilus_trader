@@ -138,10 +138,13 @@ cpdef inline double fast_std_with_mean(list values, double mean) except *:
     -------
     double
 
+    Warnings
+    --------
+    Garbage in garbage out for given mean.
+
     Notes
     -----
     > 10x faster than `np.std`.
-    Garbage in garbage out for given mean.
 
     """
     cdef int length = len(values)

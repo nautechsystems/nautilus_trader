@@ -1150,8 +1150,8 @@ cdef class TradingStrategy(Component):
         price : Price, optional
             The amended price for the given order.
 
-        Notes
-        -----
+        References
+        ----------
         https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
 
         """

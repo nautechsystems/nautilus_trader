@@ -73,7 +73,7 @@ cdef class ExecutionEngine(Component):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
-    cpdef void integrity_check(self) except *
+    cpdef void check_integrity(self) except *
     cpdef void execute(self, VenueCommand command) except *
     cpdef void process(self, Event event) except *
     cpdef void check_residuals(self) except *

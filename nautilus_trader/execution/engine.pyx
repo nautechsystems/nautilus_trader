@@ -316,17 +316,21 @@ cdef class ExecutionEngine(Component):
         self.cache.cache_orders()
         self.cache.cache_positions()
         self.cache.build_index()
+        self.cache.check_integrity()
         self._set_position_symbol_counts()
 
         # Update portfolio
         for account in self.cache.accounts():
             self._portfolio.register_account(account)
 
-    cpdef void integrity_check(self) except *:
+    cpdef void check_integrity(self) except *:
         """
-        Check integrity of data within the execution cache and database.
+        Check integrity of data within the cache and clients.
         """
-        self.cache.integrity_check()
+        self.cache.check_integrity()
+
+        # For each client check integrity
+        # TODO: Implement
 
     cpdef void execute(self, VenueCommand command) except *:
         """

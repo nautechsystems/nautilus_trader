@@ -156,12 +156,13 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertIn(strategy.id, self.exec_engine.registered_strategies)
 
-    def test_integrity_check_calls_check_on_cache(self):
+    def test_check_integrity_calls_check_on_cache(self):
         # Arrange
         # Act
-        self.exec_engine.integrity_check()
+        self.exec_engine.check_integrity()
 
         # Assert
+        # TODO: WIP
         self.assertTrue(True)  # No exceptions raised
 
     def test_submit_order(self):
