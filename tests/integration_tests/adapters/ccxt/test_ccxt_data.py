@@ -41,7 +41,7 @@ from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
@@ -94,26 +94,29 @@ class CCXTDataClientTests(unittest.TestCase):
         )
 
         # Setup mock CCXT exchange
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
-        with open(TEST_PATH + "res_order_book.json") as response:
+        with open(TEST_PATH + "watch_order_book.json") as response:
             order_book = json.load(response)
 
-        with open(TEST_PATH + "res_trades.json") as response:
-            trades = json.load(response)
+        with open(TEST_PATH + "fetch_trades.json") as response:
+            fetch_trades = json.load(response)
+
+        with open(TEST_PATH + "watch_trades.json") as response:
+            watch_trades = json.load(response)
 
         self.mock_ccxt = MagicMock()
         self.mock_ccxt.name = "Binance"
         self.mock_ccxt.precisionMode = 2
-        self.mock_ccxt.markets = instruments
+        self.mock_ccxt.markets = markets
         self.mock_ccxt.currencies = currencies
         self.mock_ccxt.watch_order_book = order_book
-        self.mock_ccxt.watch_trades = trades
-        self.mock_ccxt.fetch_trades = trades
+        self.mock_ccxt.watch_trades = watch_trades
+        self.mock_ccxt.fetch_trades = fetch_trades
 
         self.client = CCXTDataClient(
             client=self.mock_ccxt,
@@ -474,10 +477,10 @@ class CCXTDataClientTests(unittest.TestCase):
     def test_request_bars(self):
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_bars.json") as response:
-                bars = json.load(response)
+            with open(TEST_PATH + "fetch_ohlcv.json") as response:
+                fetch_ohlcv = json.load(response)
 
-            self.mock_ccxt.fetch_ohlcv = bars
+            self.mock_ccxt.fetch_ohlcv = fetch_ohlcv
 
             self.data_engine.start()  # Also starts client
             await asyncio.sleep(0.3)  # Allow engine message queue to start

@@ -33,7 +33,7 @@ from tests import PACKAGE_ROOT
 # import ccxt  # uncomment to test against real API
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 
 # Monkey patch magic mock
@@ -61,16 +61,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     def test_load_all_when_decimal_precision_mode_exchange(self):
         # Arrange
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
         mock_client = MagicMock()
         mock_client.name = "Binance"
         mock_client.precisionMode = 2
-        mock_client.markets = instruments
+        mock_client.markets = markets
         mock_client.currencies = currencies
 
         provider = CCXTInstrumentProvider(client=mock_client)
@@ -83,16 +83,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     def test_load_all_when_tick_size_precision_mode_exchange(self):
         # Arrange
-        with open(TEST_PATH + "res_instruments2.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets2.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies2.json") as response:
+        with open(TEST_PATH + "currencies2.json") as response:
             currencies = json.load(response)
 
         mock_client = MagicMock()
         mock_client.name = "BitMEX"
         mock_client.precisionMode = 4
-        mock_client.markets = instruments
+        mock_client.markets = markets
         mock_client.currencies = currencies
 
         provider = CCXTInstrumentProvider(client=mock_client)
@@ -110,16 +110,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
         async def run_test():
             # Arrange
-            with open(TEST_PATH + "res_instruments.json") as response:
-                instruments = json.load(response)
+            with open(TEST_PATH + "markets.json") as response:
+                markets = json.load(response)
 
-            with open(TEST_PATH + "res_currencies.json") as response:
+            with open(TEST_PATH + "currencies.json") as response:
                 currencies = json.load(response)
 
             mock_client = MagicMock()
             mock_client.name = "Binance"
             mock_client.precisionMode = 2
-            mock_client.markets = instruments
+            mock_client.markets = markets
             mock_client.currencies = currencies
 
             provider = CCXTInstrumentProvider(client=mock_client)
@@ -150,16 +150,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
         mock_client = MagicMock()
         mock_client.name = "Binance"
         mock_client.precisionMode = 2
-        mock_client.markets = instruments
+        mock_client.markets = markets
         mock_client.currencies = currencies
 
         provider = CCXTInstrumentProvider(client=mock_client)
@@ -175,16 +175,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
         # Arrange
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
         mock_client = MagicMock()
         mock_client.name = "Binance"
         mock_client.precisionMode = 2
-        mock_client.markets = instruments
+        mock_client.markets = markets
         mock_client.currencies = currencies
 
         provider = CCXTInstrumentProvider(client=mock_client, load_all=True)
@@ -214,16 +214,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     def test_get_btcusdt_when_loaded_returns_expected_instrument(self):
         # Arrange
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
         mock_client = MagicMock()
         mock_client.name = "Binance"
         mock_client.precisionMode = 2
-        mock_client.markets = instruments
+        mock_client.markets = markets
         mock_client.currencies = currencies
 
         provider = CCXTInstrumentProvider(client=mock_client)
@@ -244,16 +244,16 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
 
     def test_get_btc_currency_when_loaded_returns_expected_currency(self):
         # Arrange
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
         mock_client = MagicMock()
         mock_client.name = "Binance"
         mock_client.precisionMode = 2
-        mock_client.markets = instruments
+        mock_client.markets = markets
         mock_client.currencies = currencies
 
         provider = CCXTInstrumentProvider(client=mock_client)

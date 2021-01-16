@@ -33,7 +33,7 @@ from nautilus_trader.trading.portfolio import Portfolio
 from tests import PACKAGE_ROOT
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
@@ -88,22 +88,25 @@ class CCXTExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        with open(TEST_PATH + "res_instruments.json") as response:
-            instruments = json.load(response)
+        with open(TEST_PATH + "markets.json") as response:
+            markets = json.load(response)
 
-        with open(TEST_PATH + "res_currencies.json") as response:
+        with open(TEST_PATH + "currencies.json") as response:
             currencies = json.load(response)
 
-        with open(TEST_PATH + "res_balances.json") as response:
-            balances = json.load(response)
+        with open(TEST_PATH + "fetch_balance.json") as response:
+            fetch_balance = json.load(response)
+
+        with open(TEST_PATH + "watch_balance.json") as response:
+            watch_balance = json.load(response)
 
         self.mock_ccxt = MagicMock()
         self.mock_ccxt.name = "Binance"
         self.mock_ccxt.precisionMode = 2
-        self.mock_ccxt.markets = instruments
+        self.mock_ccxt.markets = markets
         self.mock_ccxt.currencies = currencies
-        self.mock_ccxt.fetch_balance = balances
-        self.mock_ccxt.watch_balance = balances
+        self.mock_ccxt.fetch_balance = fetch_balance
+        self.mock_ccxt.watch_balance = None
 
         self.client = CCXTExecutionClient(
             client=self.mock_ccxt,

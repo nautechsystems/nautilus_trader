@@ -260,6 +260,7 @@ cdef class BacktestEngine:
         self.trader = Trader(
             trader_id=trader_id,
             strategies=strategies,
+            portfolio=self.portfolio,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._test_clock,
@@ -273,8 +274,19 @@ cdef class BacktestEngine:
         self.iteration = 0
 
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {self.time_to_initialize}.")
+        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
         self._backtest_memory()
+
+    cpdef ExecutionEngine get_exec_engine(self):
+        """
+        Return the execution engine for the backtest engine (used for testing).
+
+        Returns
+        -------
+        ExecutionEngine
+
+        """
+        return self._exec_engine
 
     cpdef void add_exchange(
         self,

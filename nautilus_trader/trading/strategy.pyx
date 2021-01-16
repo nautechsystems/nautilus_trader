@@ -468,7 +468,24 @@ cdef class TradingStrategy(Component):
 
         self._exec_engine = engine
         self.execution = engine.cache
-        self.portfolio = engine.portfolio
+
+    cpdef void register_portfolio(self, Portfolio portfolio) except *:
+        """
+        Register the strategy with the given portfolio.
+
+        Parameters
+        ----------
+        portfolio : Portfolio
+            The portfolio to register.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(portfolio, "portfolio")
+
+        self.portfolio = portfolio  # Assigned as PortfolioFacade
 
     cpdef void register_indicator_for_quote_ticks(self, Symbol symbol, Indicator indicator) except *:
         """
@@ -1133,8 +1150,8 @@ cdef class TradingStrategy(Component):
         price : Price, optional
             The amended price for the given order.
 
-        Notes
-        -----
+        References
+        ----------
         https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
 
         """

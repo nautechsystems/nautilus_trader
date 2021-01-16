@@ -63,7 +63,3 @@ jobs:
           redis-server --daemonize yes
           nox -s tests_with_integration --reuse-existing-virtualenvs
           redis-cli shutdown
-
-      - name: Run tests (without integrations test suite) [Windows]
-        if: runner.os == 'Windows'
-        run: nox -s tests_without_integration --reuse-existing-virtualenvs

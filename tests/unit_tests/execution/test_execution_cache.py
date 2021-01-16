@@ -13,24 +13,36 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
+from nautilus_trader.backtest.data_container import BacktestDataContainer
+from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.execution.cache import ExecutionCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
 
@@ -90,10 +102,10 @@ class ExecutionCacheTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exception raised
 
-    def test_integrity_check(self):
+    def test_check_integrity(self):
         # Arrange
         # Act
-        self.cache.integrity_check()
+        self.cache.check_integrity()
 
         # Assert
         # TODO: Implement functionality
@@ -670,3 +682,70 @@ class ExecutionCacheTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(True)  # No exception raised
+
+
+class ExecutionCacheIntegrityCheckTest(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.venue = Venue("SIM")
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", self.venue))
+        data = BacktestDataContainer()
+        data.add_instrument(self.usdjpy)
+        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+
+        self.engine = BacktestEngine(
+            data=data,
+            strategies=[TradingStrategy('000')],
+            bypass_logging=True,  # Uncomment this to see integrity check failure messages
+        )
+
+        self.engine.add_exchange(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[],
+        )
+
+        self.cache = self.engine.get_exec_engine().cache
+
+    def test_exec_cache_check_integrity_when_cache_cleared_fails(self):
+        # Arrange
+        strategy = EMACross(
+            symbol=self.usdjpy.symbol,
+            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+
+        # Generate a lot of data
+        self.engine.run(strategies=[strategy])
+
+        # Remove data
+        self.cache.clear_cache()
+
+        # Act
+        # Assert
+        self.assertFalse(self.cache.check_integrity())
+
+    def test_exec_cache_check_integrity_when_index_cleared_fails(self):
+        # Arrange
+        strategy = EMACross(
+            symbol=self.usdjpy.symbol,
+            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+
+        # Generate a lot of data
+        self.engine.run(strategies=[strategy])
+
+        # Clear index
+        self.cache.clear_index()
+
+        # Act
+        # Assert
+        self.assertFalse(self.cache.check_integrity())

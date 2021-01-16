@@ -28,7 +28,7 @@ from nautilus_trader.model.instrument import Instrument
 from tests import PACKAGE_ROOT
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         # Arrange
         mock_client = MagicMock()
 
-        with open(TEST_PATH + "res_instruments.json") as response:
+        with open(TEST_PATH + "instruments.json") as response:
             instruments = json.load(response)
 
         mock_client.request.return_value = instruments
@@ -66,7 +66,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         # Arrange
         mock_client = MagicMock()
 
-        with open(TEST_PATH + "res_instruments.json") as response:
+        with open(TEST_PATH + "instruments.json") as response:
             instruments = json.load(response)
 
         mock_client.request.return_value = instruments
@@ -86,7 +86,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         # Arrange
         mock_client = MagicMock()
 
-        with open(TEST_PATH + "res_instruments.json") as response:
+        with open(TEST_PATH + "instruments.json") as response:
             instruments = json.load(response)
 
         mock_client.request.return_value = instruments
@@ -105,7 +105,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         # Arrange
         mock_client = MagicMock()
 
-        with open(TEST_PATH + "res_instruments.json") as response:
+        with open(TEST_PATH + "instruments.json") as response:
             instruments = json.load(response)
 
         mock_client.request.return_value = instruments
