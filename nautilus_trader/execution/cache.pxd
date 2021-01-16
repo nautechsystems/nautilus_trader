@@ -58,7 +58,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void cache_orders(self) except *
     cpdef void cache_positions(self) except *
     cpdef void build_index(self) except *
-    cpdef void integrity_check(self) except *
+    cpdef bint check_integrity(self) except *
+    cpdef void check_residuals(self) except *
+    cpdef void reset(self) except *
+    cpdef void clear_cache(self) except *
+    cpdef void clear_index(self) except *
+    cpdef void flush_db(self) except *
 
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
@@ -75,11 +80,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
-
-    cpdef void check_residuals(self) except *
-    cpdef void reset(self) except *
-    cpdef void flush_db(self) except *
-    cdef void _clear_indexes(self) except *
 
     cdef void _build_index_venue_account(self) except *
     cdef void _cache_venue_account_id(self, AccountId account_id) except *

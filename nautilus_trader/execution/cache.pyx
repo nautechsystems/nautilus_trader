@@ -17,6 +17,8 @@
 The `ExecutionCache` provides an interface for querying on orders and positions.
 """
 
+import time
+
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -122,17 +124,298 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         Clear the current cache index and re-build.
         """
-        self._clear_indexes()
-        self._log.debug(f"Building indexes...")
+        self.clear_index()
+
+        self._log.debug(f"Building index...")
+        cdef double ts = time.time()
 
         self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
-        self._log.debug(f"Indexes built.")
+        self._log.debug(f"Index built in {time.time() - ts:.3f}s.")
 
-    cpdef void integrity_check(self) except *:
-        pass  # TODO: Implement
+    cpdef bint check_integrity(self) except *:
+        """
+        Return the result of checking the data integrity of the cache.
+
+        All data should be loaded from the database prior to this call. If an
+        error is found then a log error message will also be produced.
+
+        Returns
+        -------
+        bool
+            True if check passes, else False.
+
+        """
+        cdef Symbol symbol
+        cdef Venue venue
+        cdef AccountId account_id
+        cdef Account account
+        cdef ClientOrderId cl_ord_id
+        cdef Order order
+        cdef PositionId position_id
+        cdef Position position
+        cdef set cl_ord_ids
+        cdef set position_ids
+        cdef set strategy_ids
+
+        cdef int error_count = 0
+        cdef str failure = "Integrity failure"
+
+        # As there should be a bi-directional one-to-one relationship between
+        # caches and indexes, each cache and index must be checked individually
+
+        cdef double ts = time.time()
+        self._log.info("Checking data integrity...")
+
+        # Check object caches
+        # -------------------
+        for account_id, account in self._cached_accounts.items():
+            if account_id.issuer_as_venue() not in self._index_venue_account:
+                self._log.error(f"{failure} in _cached_accounts: "
+                                f"{repr(account_id)} not found in self._index_venue_account")
+                error_count += 1
+
+        for cl_ord_id, order in self._cached_orders.items():
+            if cl_ord_id not in self._index_order_position:
+                self._log.error(f"{failure} in _cached_orders: "
+                                f"{repr(cl_ord_id)} not found in self._index_order_position")
+                error_count += 1
+            if cl_ord_id not in self._index_order_strategy:
+                self._log.error(f"{failure} in _cached_orders: "
+                                f"{repr(cl_ord_id)} not found in self._index_order_strategy")
+                error_count += 1
+            if cl_ord_id not in self._index_orders:
+                self._log.error(f"{failure} in _cached_orders: "
+                                f"{repr(cl_ord_id)} not found in self._index_orders")
+                error_count += 1
+            if order.is_working_c() and cl_ord_id not in self._index_orders_working:
+                self._log.error(f"{failure} in _cached_orders: "
+                                f"{repr(cl_ord_id)} not found in self._index_orders_working")
+                error_count += 1
+            if order.is_completed_c() and cl_ord_id not in self._index_orders_completed:
+                self._log.error(f"{failure} in _cached_orders "
+                                f"{repr(cl_ord_id)} not found in self._index_orders_completed")
+                error_count += 1
+
+        for position_id, position in self._cached_positions.items():
+            if position_id not in self._index_position_strategy:
+                self._log.error(f"{failure} in _cached_positions: "
+                                f"{repr(position_id)} not found in self._index_position_strategy")
+                error_count += 1
+            if position_id not in self._index_position_orders:
+                self._log.error(f"{failure} in _cached_positions: "
+                                f"{repr(position_id)} not found in self._index_position_orders")
+                error_count += 1
+            if position_id not in self._index_positions:
+                self._log.error(f"{failure} in _cached_positions: "
+                                f"{repr(position_id)} not found in self._index_positions")
+                error_count += 1
+            if position.is_open_c() and position_id not in self._index_positions_open:
+                self._log.error(f"{failure} in _cached_positions: "
+                                f"{repr(position_id)} not found in self._index_positions_open")
+                error_count += 1
+            if position.is_closed_c() and position_id not in self._index_positions_closed:
+                self._log.error(f"{failure} in _cached_positions: "
+                                f"{repr(position_id)} not found in self._index_positions_closed")
+                error_count += 1
+
+        # Check indexes
+        # -------------
+        for venue, account_id in self._index_venue_account.items():
+            if account_id not in self._cached_accounts:
+                self._log.error(f"{failure} in _index_venue_account: "
+                                f"{repr(account_id)} not found in self._cached_accounts")
+                error_count += 1
+
+        for order_id, cl_ord_id in self._index_order_ids.items():
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_order_ids: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
+        for cl_ord_id, position_id in self._index_order_position.items():
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_order_position: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
+        for cl_ord_id, strategy_id in self._index_order_strategy.items():
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_order_strategy: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
+        for position_id, strategy_id in self._index_position_strategy.items():
+            if position_id not in self._cached_positions:
+                self._log.error(f"{failure} in _index_position_strategy: "
+                                f"{repr(position_id)} not found in self._cached_positions")
+                error_count += 1
+
+        for position_id, cl_ord_ids in self._index_position_orders.items():
+            if position_id not in self._cached_positions:
+                self._log.error(f"{failure} in _index_position_orders: "
+                                f"{repr(position_id)} not found in self._cached_positions")
+                error_count += 1
+
+        for symbol, cl_ord_ids in self._index_symbol_orders.items():
+            if symbol not in self._index_symbol_positions:
+                self._log.error(f"{failure} in _index_symbol_orders: "
+                                f"{repr(symbol)} not found in self._index_symbol_positions")
+                error_count += 1
+
+        for symbol, position_ids in self._index_symbol_positions.items():
+            if symbol not in self._index_symbol_orders:
+                self._log.error(f"{failure} in _index_symbol_positions: "
+                                f"{repr(symbol)} not found in self._index_symbol_orders")
+                error_count += 1
+
+        for strategy_id, cl_ord_ids in self._index_strategy_orders.items():
+            if strategy_id not in self._index_strategy_positions:
+                self._log.error(f"{failure} in _index_strategy_orders: "
+                                f"{repr(strategy_id)} not found in self._index_strategy_positions")
+                error_count += 1
+
+        for strategy_id, position_ids in self._index_strategy_positions.items():
+            if strategy_id not in self._index_strategy_orders:
+                self._log.error(f"{failure} in _index_strategy_positions: "
+                                f"{repr(strategy_id)} not found in self._index_strategy_orders")
+                error_count += 1
+
+        for cl_ord_id in self._index_orders:
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_orders: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
+        for cl_ord_id in self._index_orders_working:
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_orders_working: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
+        for cl_ord_id in self._index_orders_completed:
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_orders_completed: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
+        for position_id in self._index_positions:
+            if position_id not in self._cached_positions:
+                self._log.error(f"{failure} in _index_positions: "
+                                f"{repr(position_id)} not found in self._cached_positions")
+                error_count += 1
+
+        for position_id in self._index_positions_open:
+            if position_id not in self._cached_positions:
+                self._log.error(f"{failure} in _index_positions_open: "
+                                f"{repr(position_id)} not found in self._cached_positions")
+                error_count += 1
+
+        for position_id in self._index_positions_closed:
+            if position_id not in self._cached_positions:
+                self._log.error(f"{failure} in _index_positions_closed: "
+                                f"{repr(position_id)} not found in self._cached_positions")
+                error_count += 1
+
+        for strategy_id in self._index_strategies:
+            if strategy_id not in self._index_strategy_orders:
+                self._log.error(f"{failure} in _index_strategies: "
+                                f"{repr(strategy_id)} not found in self._index_strategy_orders")
+                error_count += 1
+            if strategy_id not in self._index_strategy_positions:
+                self._log.error(f"{failure} in _index_strategies: "
+                                f"{repr(strategy_id)} not found in self._index_strategy_positions")
+                error_count += 1
+
+        # Finally
+        cdef long total_ns = round((time.time() - ts) * 1000000)
+        if error_count == 0:
+            self._log.info(f"Integrity check passed in {total_ns}μs.")
+            return True
+        else:
+            self._log.error(f"Integrity check failed with {error_count} error(s) "
+                            f"in {total_ns}μs.")
+            return False
+
+    cpdef void check_residuals(self) except *:
+        """
+        Check for any residual objects and log warnings if any are found.
+        """
+        self._log.debug("Checking residuals...")
+
+        # Check for any residual active orders and log warnings if any are found
+        for order in self.orders_working():
+            self._log.warning(f"Residual {order}")
+
+        for position in self.positions_open():
+            self._log.warning(f"Residual {position}")
+
+    cpdef void reset(self) except *:
+        """
+        Reset the cache.
+
+        All stateful fields are reset to their initial value.
+        """
+        self._log.debug(f"Resetting...")
+
+        self.clear_cache()
+        self.clear_index()
+
+        self._log.info(f"Reset.")
+
+    cpdef void clear_cache(self) except *:
+        """
+        Clear the account, orders and positions caches.
+
+        Warnings
+        --------
+        Calling this without rebuilding the index will result in errors.
+
+        """
+        self._log.debug(f"Clearing cache...")
+
+        self._cached_accounts.clear()
+        self._cached_orders.clear()
+        self._cached_positions.clear()
+        self._log.debug(f"Cleared cache.")
+
+    cpdef void clear_index(self) except *:
+        self._log.debug(f"Clearing index...")
+
+        self._index_venue_account.clear()
+        self._index_order_ids.clear()
+        self._index_order_position.clear()
+        self._index_order_strategy.clear()
+        self._index_position_strategy.clear()
+        self._index_position_orders.clear()
+        self._index_symbol_orders.clear()
+        self._index_symbol_positions.clear()
+        self._index_strategy_orders.clear()
+        self._index_strategy_positions.clear()
+        self._index_orders.clear()
+        self._index_orders_working.clear()
+        self._index_orders_completed.clear()
+        self._index_positions.clear()
+        self._index_positions_open.clear()
+        self._index_positions_closed.clear()
+        self._index_strategies.clear()
+
+        self._log.debug(f"Index cleared.")
+
+    cpdef void flush_db(self) except *:
+        """
+        Flush the execution database which permanently removes all persisted data.
+
+        Warnings
+        --------
+        Permanent data loss.
+
+        """
+        self._log.debug("Flushing execution database...")
+        self._database.flush()
+        self._log.info("Execution database flushed.")
 
     cdef void _build_index_venue_account(self) except *:
         cdef AccountId account_id
@@ -218,7 +501,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             elif position.is_closed_c():
                 self._index_positions_closed.add(position_id)
 
-            # 8; Build _index_strategies -> {StrategyId}
+            # 8: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
@@ -573,68 +856,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # Update database
         self._database.delete_strategy(strategy.id)
         self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
-
-    cpdef void check_residuals(self) except *:
-        """
-        Check for any residual objects and log warnings if any are found.
-        """
-        self._log.debug("Checking residuals...")
-
-        # Check for any residual active orders and log warnings if any are found
-        for order in self.orders_working():
-            self._log.warning(f"Residual {order}")
-
-        for position in self.positions_open():
-            self._log.warning(f"Residual {position}")
-
-    cpdef void reset(self) except *:
-        """
-        Reset the cache.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
-        self._cached_accounts.clear()
-        self._cached_orders.clear()
-        self._cached_positions.clear()
-        self._clear_indexes()
-
-        self._log.info(f"Reset.")
-
-    cpdef void flush_db(self) except *:
-        """
-        Flush the execution database which permanently removes all persisted data.
-
-        WARNING: Permanent data loss.
-
-        """
-        self._log.debug("Flushing execution database...")
-        self._database.flush()
-        self._log.info("Execution database flushed.")
-
-    cdef void _clear_indexes(self) except *:
-        self._log.debug(f"Clearing indexes...")
-
-        self._index_venue_account.clear()
-        self._index_order_ids.clear()
-        self._index_order_position.clear()
-        self._index_order_strategy.clear()
-        self._index_position_strategy.clear()
-        self._index_position_orders.clear()
-        self._index_symbol_orders.clear()
-        self._index_symbol_positions.clear()
-        self._index_strategy_orders.clear()
-        self._index_strategy_positions.clear()
-        self._index_orders.clear()
-        self._index_orders_working.clear()
-        self._index_orders_completed.clear()
-        self._index_positions.clear()
-        self._index_positions_open.clear()
-        self._index_positions_closed.clear()
-        self._index_strategies.clear()
-
-        self._log.debug(f"Indexes cleared.")
 
 # -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 
