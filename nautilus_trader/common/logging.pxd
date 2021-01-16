@@ -121,6 +121,6 @@ cdef class TestLogger(Logger):
 
 cdef class LiveLogger(Logger):
     cdef object _queue
-    cdef object _thread
+    cdef object _process
 
     cpdef void _consume_messages(self) except *

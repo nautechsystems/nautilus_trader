@@ -18,9 +18,10 @@ import os
 import platform
 from platform import python_version
 import sys
+import queue
 import threading
 import traceback
-
+import multiprocessing
 import numpy as np
 import pandas as pd
 import psutil
@@ -475,7 +476,7 @@ cdef class LoggerAdapter:
                 self._logger.clock.utc_now(),
                 level,
                 self._format_message(message),
-                thread_id=threading.current_thread().ident),
+                threading.current_thread().ident),
             )
 
     cdef inline str _format_message(self, str message):
@@ -621,7 +622,8 @@ cdef class TestLogger(Logger):
 
 cdef class LiveLogger(Logger):
     """
-    Provides a thread safe logger for live concurrent operations.
+    Provides a high-performance logger which runs in a separate process for live
+    operations.
     """
 
     def __init__(
@@ -682,13 +684,16 @@ cdef class LiveLogger(Logger):
             log_file_path,
         )
 
-        self._queue = LogQueue()
-        self._thread = threading.Thread(target=self._consume_messages, daemon=True)
-        self._thread.start()
+        self._queue = multiprocessing.Queue(maxsize=10000)
+        self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
+        self._process.start()
 
     cpdef void log(self, LogMessage message) except *:
         """
         Log the given message.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
 
         Parameters
         ----------
@@ -698,10 +703,29 @@ cdef class LiveLogger(Logger):
         """
         Condition.not_none(message, "message")
 
-        self._queue.put(message)
+        try:
+            self._queue.put_nowait(message)
+        except queue.Full:
+            queue_full_msg = LogMessage(
+                timestamp=self.clock.utc_now(),
+                level=LogLevel.WARNING,
+                text=f"LiveLogger: Blocking on `put` as queue full at {self._queue.qsize()} items.",
+                thread_id=threading.current_thread().ident,
+            )
+            self._queue.put(queue_full_msg)
+            self._queue.put(message)  # Block until qsize reduces below maxsize
 
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message
-        while True:
-            message = self._queue.get()
-            self._log(message)
+        try:
+            while True:
+                message = self._queue.get()
+                self._log(message)
+        except KeyboardInterrupt:
+            # Current hacky solution to ignore one keyboard interrupt from the
+            # main thead, just to allow final log messages to be printed. As
+            # daemon=True when the main thread exits this will also terminate
+            # this process.
+            while True:
+                message = self._queue.get()
+                self._log(message)
