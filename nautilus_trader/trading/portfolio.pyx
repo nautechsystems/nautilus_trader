@@ -194,18 +194,20 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Order order
         cdef set orders_working
+        cdef int working_count = 0
         for order in orders:
             if order.is_working_c():
                 orders_working = self._orders_working.get(order.symbol.venue, set())
                 orders_working.add(order)
                 self._orders_working[order.symbol.venue] = orders_working
                 self._log.debug(f"Added working {order}")
-
-        self._log.info(f"Updated {len(orders)} order(s) working.")
+                working_count += 1
 
         cdef Venue venue
         for venue in self._orders_working.keys():
             self._update_initial_margin(venue)
+
+        self._log.info(f"Initialized {working_count} order(s) working.")
 
     cpdef void initialize_positions(self, set positions) except *:
         """
@@ -243,15 +245,15 @@ cdef class Portfolio(PortfolioFacade):
                 self._positions_closed[position.symbol.venue] = positions_closed
                 closed_count += 1
 
-        self._log.info(f"Updated {open_count} position(s) open.")
-        self._log.info(f"Updated {closed_count} position(s) closed.")
-
         cdef Venue venue
         cdef Symbol symbol
         for venue in self._positions_open.keys():
             self._update_maint_margin(venue)
             for symbol in self._symbols_open_for_venue(venue):
                 self._unrealized_pnls[symbol] = self._calculate_unrealized_pnl(symbol)
+
+        self._log.info(f"Initialized {open_count} position(s) open.")
+        self._log.info(f"Initialized {closed_count} position(s) closed.")
 
     cpdef void update_tick(self, QuoteTick tick) except *:
         """

@@ -40,7 +40,7 @@ from tests import PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/"
+TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")
 AUDUSD = Symbol("AUD/USD", OANDA)
@@ -96,7 +96,7 @@ class OandaDataClientTests(unittest.TestCase):
 
         self.data_engine.register_client(self.client)
 
-        with open(TEST_PATH + "res_instruments.json") as response:
+        with open(TEST_PATH + "instruments.json") as response:
             instruments = json.load(response)
 
         self.mock_oanda.request.return_value = instruments
@@ -272,11 +272,11 @@ class OandaDataClientTests(unittest.TestCase):
         async def run_test():
             # Arrange
 
-            with open(TEST_PATH + "res_instruments.json") as response:
+            with open(TEST_PATH + "instruments.json") as response:
                 instruments = json.load(response)
 
             # Arrange
-            with open(TEST_PATH + "res_bars.json") as response:
+            with open(TEST_PATH + "bars.json") as response:
                 bars = json.load(response)
 
             self.mock_oanda.request.side_effect = [instruments, bars]

@@ -121,6 +121,7 @@ class TraderTests(unittest.TestCase):
         self.trader = Trader(
             trader_id=trader_id,
             strategies=strategies,
+            portfolio=self.portfolio,
             data_engine=self.data_engine,
             exec_engine=self.exec_engine,
             clock=clock,

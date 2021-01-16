@@ -697,8 +697,22 @@ class TradingStrategyTests(unittest.TestCase):
         strategy.register_execution_engine(self.exec_engine)
 
         # Assert
-        self.assertIsNotNone(strategy.portfolio)
         self.assertIsNotNone(strategy.execution)
+
+    def test_register_portfolio(self):
+        # Arrange
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        # Act
+        strategy.register_portfolio(self.portfolio)
+
+        # Assert
+        self.assertIsNotNone(strategy.portfolio)
 
     def test_start(self):
         # Arrange

@@ -52,6 +52,7 @@ cdef class BacktestEngine:
     cdef readonly Portfolio portfolio
     cdef readonly PerformanceAnalyzer analyzer
 
+    cpdef ExecutionEngine get_exec_engine(self)
     cpdef void add_exchange(
         self,
         Venue venue,

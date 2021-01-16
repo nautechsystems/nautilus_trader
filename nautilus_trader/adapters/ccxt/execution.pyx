@@ -363,7 +363,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     exiting = True
 
                 if response is None:
-                    return  # TODO: Temporary workaround for testing
+                    continue  # TODO: Temporary workaround for testing
 
                 self._on_account_state(response)
 
@@ -397,7 +397,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     exiting = True
 
                 if response is None:
-                    return  # TODO: Temporary workaround for testing
+                    continue  # TODO: Temporary workaround for testing
 
                 # CCXTCache is set to 1 so expecting one response at a time
                 event = response[0]
@@ -566,7 +566,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             balances,
             balances_free,
             balances_locked,
-            event["info"],
+            {},
             self._uuid_factory.generate(),
             self._clock.utc_now(),
         )

@@ -112,7 +112,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef list trade_tick_frames = []
         self.execution_resolutions = []
 
-        timing_start_total = datetime.utcnow()
+        cdef double ts_total = time.time()
+        cdef double ts
         for instrument in data.instruments.values():
             symbol = instrument.symbol
             self._log.info(f"Preparing {symbol} data...")
@@ -124,7 +125,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Process quote tick data
             # -----------------------
             if data.has_quote_data(symbol):
-                timing_start = datetime.utcnow()  # Time data processing
+                ts = time.time()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
                     data_quotes=self._data.quote_ticks.get(symbol),
@@ -138,13 +139,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
                 self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {symbol} quote tick rows in "
-                               f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
+                               f"{time.time() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
             # -----------------------
             if data.has_trade_data(symbol):
-                timing_start = datetime.utcnow()  # Time data processing
+                ts = time.time()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
                     data=self._data.trade_ticks.get(symbol),
@@ -156,7 +157,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
                 self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {symbol} trade tick rows in "
-                               f"{round((datetime.utcnow() - timing_start).total_seconds(), 2)}s.")
+                               f"{time.time() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
@@ -219,9 +220,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         self.has_tick_data = False
 
-        processing_time = round((datetime.utcnow() - timing_start_total).total_seconds(), 2)
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
-                       f"total tick rows in {processing_time}s.")
+                       f"total tick rows in {time.time() - ts_total:.3f}s.")
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
@@ -523,7 +523,7 @@ cdef class CachedProducer(DataProducerFacade):
         self._log.info(f"Pre-caching ticks...")
         self._producer.setup(self.min_timestamp, self.max_timestamp)
 
-        timing_start_total = time.time()
+        cdef double ts = time.time()
 
         cdef Tick tick
         while self._producer.has_tick_data:
@@ -531,9 +531,8 @@ cdef class CachedProducer(DataProducerFacade):
             self._tick_cache.append(tick)
             self._ts_cache.append(tick.timestamp.timestamp())
 
-        processing_time = round((time.time() - timing_start_total), 2)
         self._log.info(f"Pre-cached {len(self._tick_cache):,} "
-                       f"total tick rows in {processing_time}s.")
+                       f"total tick rows in {time.time() - ts:.3f}s.")
 
         self._producer.reset()
         self._producer.clear()

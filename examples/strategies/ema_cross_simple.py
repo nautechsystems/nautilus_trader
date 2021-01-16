@@ -20,6 +20,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
@@ -175,6 +176,7 @@ class EMACross(TradingStrategy):
             symbol=self.symbol,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
+            # time_in_force=TimeInForce.FOK,
         )
 
         self.submit_order(order)
@@ -187,6 +189,7 @@ class EMACross(TradingStrategy):
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
+            # time_in_force=TimeInForce.FOK,
         )
 
         self.submit_order(order)

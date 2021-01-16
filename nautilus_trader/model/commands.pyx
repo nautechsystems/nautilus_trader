@@ -113,7 +113,7 @@ cdef class SubmitOrder(VenueCommand):
     def __repr__(self) -> str:
         cdef str position_id_str = "NULL" if self.position_id.is_null() else self.position_id.value
         return (f"{type(self).__name__}("
-                f"venue={self.venue.value}, "
+                f"{self.order.status_string_c()}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.order.cl_ord_id.value}, "

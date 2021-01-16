@@ -24,15 +24,14 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class Trader(Component):
+    cdef list _strategies
+    cdef Portfolio _portfolio
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
-    cdef list _strategies
 
     cdef readonly TraderId id
     """The trader identifier.\n\n:returns: `TraderId`"""
-    cdef readonly Portfolio portfolio
-    """The portfolio for the trader.\n\n:returns: `Portfolio`"""
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
