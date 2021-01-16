@@ -70,8 +70,8 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = asyncio.Queue()
-        self._message_queue = asyncio.Queue()
+        self._data_queue = asyncio.Queue(maxsize=10000)
+        self._message_queue = asyncio.Queue(maxsize=10000)
         self.is_running = False
 
     cpdef object get_event_loop(self):
@@ -122,6 +122,9 @@ cdef class LiveDataEngine(DataEngine):
         """
         Execute the given command.
 
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
+
         Parameters
         ----------
         command : VenueCommand
@@ -136,11 +139,19 @@ cdef class LiveDataEngine(DataEngine):
         Condition.not_none(command, "command")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._message_queue.put_nowait(command)
+        try:
+            self._message_queue.put_nowait(command)
+        except asyncio.QueueFull:
+            self._log.warning(f"Blocking on `put` as message_queue full at "
+                              f"{self._message_queue.qsize()} items.")
+            self._message_queue.put(command)  # Block until qsize reduces below maxsize
 
     cpdef void process(self, data) except *:
         """
         Process the given data.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
 
         Parameters
         ----------
@@ -156,37 +167,68 @@ cdef class LiveDataEngine(DataEngine):
         Condition.not_none(data, "data")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._data_queue.put_nowait(data)
+        try:
+            self._data_queue.put_nowait(data)
+        except asyncio.QueueFull:
+            self._log.warning(f"Blocking on `put` as data_queue full at "
+                              f"{self._message_queue.qsize()} items.")
+            self._data_queue.put(data)  # Block until qsize reduces below maxsize
 
     cpdef void send(self, DataRequest request) except *:
         """
         Handle the given request.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
 
         Parameters
         ----------
         request : DataRequest
             The request to handle.
 
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
         """
         Condition.not_none(request, "request")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, request)
+        try:
+            self._message_queue.put_nowait(request)
+        except asyncio.QueueFull:
+            self._log.warning(f"Blocking on `put` as message_queue full at "
+                              f"{self._message_queue.qsize()} items.")
+            self._message_queue.put(request)  # Block until qsize reduces below maxsize
 
     cpdef void receive(self, DataResponse response) except *:
         """
         Handle the given response.
+
+        If the internal queue is already full then will log a warning and block
+        until queue size reduces.
 
         Parameters
         ----------
         response : DataResponse
             The response to handle.
 
+        Warnings
+        --------
+        This method should only be called from the same thread the event loop is
+        running on.
+
         """
         Condition.not_none(response, "response")
         # Do not allow None through (None is a sentinel value which stops the queue)
 
-        self._loop.call_soon_threadsafe(self._message_queue.put_nowait, response)
+        try:
+            self._message_queue.put_nowait(response)
+        except asyncio.QueueFull:
+            self._log.warning(f"Blocking on `put` as message_queue full at "
+                              f"{self._message_queue.qsize()} items.")
+            self._message_queue.put(response)  # Block until qsize reduces below maxsize
 
     cpdef void _on_start(self) except *:
         if not self._loop.is_running():
