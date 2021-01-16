@@ -17,7 +17,10 @@ import unittest
 
 from parameterized import parameterized
 
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogColour
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
@@ -98,6 +101,39 @@ class TestLoggerTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exception raised
 
+    def test_log_info_messages_to_console_with_blue_colour(self):
+        # Arrange
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+
+        # Act
+        logger_adapter.info("This is a log message.", LogColour.BLUE)
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_log_info_messages_to_console_with_green_colour(self):
+        # Arrange
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+
+        # Act
+        logger_adapter.info("This is a log message.", LogColour.GREEN)
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_log_info_messages_to_console_with_invalid_colour(self):
+        # Arrange
+        logger = TestLogger(clock=TestClock(), level_console=LogLevel.INFO)
+        logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
+
+        # Act
+        logger_adapter.info("This is a log message.", 30)
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
     def test_log_warning_messages_to_console(self):
         # Arrange
         logger = TestLogger(clock=TestClock(), level_console=LogLevel.WARNING)
@@ -127,6 +163,35 @@ class TestLoggerTests(unittest.TestCase):
 
         # Act
         logger_adapter.critical("This is a log message.")
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+
+class TestLiveLogger(unittest.TestCase):
+
+    def test_stop_when_running_in_thread(self):
+        # Arrange
+        logger = LiveLogger(clock=LiveClock())
+        logger_adapter = LoggerAdapter("LIVE_LOGGER", logger)
+
+        logger_adapter.info("A log message.")
+
+        # Act
+        logger.stop()
+
+        # Assert
+        self.assertTrue(True)  # No exception raised
+
+    def test_stop_when_running_in_process(self):
+        # Arrange
+        logger = LiveLogger(clock=LiveClock(), run_in_process=True)
+        logger_adapter = LoggerAdapter("LIVE_LOGGER", logger)
+
+        logger_adapter.info("A log message.")
+
+        # Act
+        logger.stop()
 
         # Assert
         self.assertTrue(True)  # No exception raised

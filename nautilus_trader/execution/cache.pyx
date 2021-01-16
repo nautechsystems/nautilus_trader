@@ -21,6 +21,7 @@ import time
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -98,7 +99,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Loading accounts from database...")
 
         self._cached_accounts = self._database.load_accounts()
-        self._log.info(f"Cached {len(self._cached_accounts)} account(s) from database.")
+
+        cdef LogColour colour = LogColour.NORMAL if not self._cached_accounts else LogColour.BLUE
+        self._log.info(f"Cached {len(self._cached_accounts)} account(s) from database.", colour)
 
     cpdef void cache_orders(self) except *:
         """
@@ -108,7 +111,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Loading orders from database...")
 
         self._cached_orders = self._database.load_orders()
-        self._log.info(f"Cached {len(self._cached_orders)} order(s) from database.")
+
+        cdef LogColour colour = LogColour.NORMAL if not self._cached_orders else LogColour.BLUE
+        self._log.info(f"Cached {len(self._cached_orders)} order(s) from database.", colour)
 
     cpdef void cache_positions(self) except *:
         """
@@ -118,7 +123,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Loading positions from database...")
 
         self._cached_positions = self._database.load_positions()
-        self._log.info(f"Cached {len(self._cached_positions)} position(s) from database.")
+
+        cdef LogColour colour = LogColour.NORMAL if not self._cached_positions else LogColour.BLUE
+        self._log.info(f"Cached {len(self._cached_positions)} position(s) from database.", colour)
 
     cpdef void build_index(self) except *:
         """
@@ -332,7 +339,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # Finally
         cdef long total_ns = round((time.time() - ts) * 1000000)
         if error_count == 0:
-            self._log.info(f"Integrity check passed in {total_ns}μs.")
+            self._log.info(f"Integrity check passed in {total_ns}μs.", LogColour.GREEN)
             return True
         else:
             self._log.error(f"Integrity check failed with {error_count} error(s) "
@@ -379,6 +386,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
+
         self._log.debug(f"Cleared cache.")
 
     cpdef void clear_index(self) except *:
@@ -402,7 +410,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_positions_closed.clear()
         self._index_strategies.clear()
 
-        self._log.debug(f"Index cleared.")
+        self._log.debug(f"Cleared index.")
 
     cpdef void flush_db(self) except *:
         """
@@ -414,7 +422,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         """
         self._log.debug("Flushing execution database...")
+
         self._database.flush()
+
         self._log.info("Execution database flushed.")
 
     cdef void _build_index_venue_account(self) except *:

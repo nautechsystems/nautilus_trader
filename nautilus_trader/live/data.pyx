@@ -257,7 +257,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             while self.is_running:
                 data = await self._data_queue.get()
-                if data is None:  # Sentinel message
+                if data is None:  # Sentinel message (fast C-level check)
                     continue      # Returns to the top to check `self.is_running`
                 self._handle_data(data)
         except CancelledError:
@@ -273,7 +273,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             while self.is_running:
                 message = await self._message_queue.get()
-                if message is None:  # Sentinel message
+                if message is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
                 if message.type == MessageType.COMMAND:
                     self._execute_command(message)

@@ -33,7 +33,6 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.log_queue cimport LogQueue
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
@@ -42,10 +41,10 @@ from nautilus_trader.core.datetime cimport format_iso8601
 
 
 cdef str _HEADER = "\033[95m"
-cdef str _OK_BLUE = "\033[94m"
-cdef str _OK_GREEN = "\033[92m"
-cdef str _WARN = "\033[1;33m"
-cdef str _FAIL = "\033[01;31m"
+cdef str _BLUE = "\033[94m"
+cdef str _GREEN = "\033[92m"
+cdef str _YELLOW = "\033[1;33m"
+cdef str _RED = "\033[01;31m"
 cdef str _ENDC = "\033[0m"
 cdef str _BOLD = "\033[1m"
 cdef str _UNDERLINE = "\033[4m"
@@ -115,6 +114,7 @@ cdef class LogMessage:
         self,
         datetime timestamp not None,
         LogLevel level,
+        LogColour colour,
         str text not None,
         long thread_id=0,
     ):
@@ -127,6 +127,8 @@ cdef class LogMessage:
             The log message timestamp.
         level :  LogLevel
             The log message level.
+        colour :  LogColour
+            The log message colour.
         text : str
             The log message text.
         thread_id : long, optional
@@ -135,6 +137,7 @@ cdef class LogMessage:
         """
         self.timestamp = timestamp
         self.level = level
+        self.colour = colour
         self.text = text
         self.thread_id = thread_id
 
@@ -300,18 +303,23 @@ cdef class Logger:
         # Return the formatted log message from the given arguments
         cdef str time = format_iso8601(message.timestamp)
         cdef str thread = "" if self._log_thread is False else f"[{message.thread_id}]"
-        cdef str formatted_text
+        cdef str colour_cmd
 
-        if message.level == LogLevel.WARNING:
-            formatted_text = f"{_WARN}[{message.level_string()}] {message.text}{_ENDC}"
-        elif message.level == LogLevel.ERROR:
-            formatted_text = f"{_FAIL}[{message.level_string()}] {message.text}{_ENDC}"
-        elif message.level == LogLevel.CRITICAL:
-            formatted_text = f"{_FAIL}[{message.level_string()}] {message.text}{_ENDC}"
+        if message.colour == LogColour.NORMAL:
+            colour_cmd = ""
+        elif message.colour == LogColour.BLUE:
+            colour_cmd = _BLUE
+        elif message.colour == LogColour.GREEN:
+            colour_cmd = _GREEN
+        elif message.colour == LogColour.YELLOW:
+            colour_cmd = _YELLOW
+        elif message.colour == LogColour.RED:
+            colour_cmd = _RED
         else:
-            formatted_text = f"[{message.level_string()}] {message.text}"
+            colour_cmd = ""
 
-        return f"{_BOLD}{time}{_ENDC} {thread}{formatted_text}"
+        return (f"{_BOLD}{time}{_ENDC} {thread}{colour_cmd}"
+                f"[{LogLevelParser.to_str(message.level)}] {message.text}{_ENDC}")
 
     cdef void _in_memory_log_store(self, LogLevel level, str text) except *:
         # Store the given log message if the given log level is >= the log_level_store
@@ -363,7 +371,7 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
-    cpdef void verbose(self, str message) except *:
+    cpdef void verbose(self, str message, LogColour colour=LogColour.NORMAL) except *:
         """
         Log the given verbose message with the logger.
 
@@ -371,13 +379,15 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
+        colour : LogColour (Enum), optional
+            The text colour for the message (`NORMAL`, `BLUE` or `GREEN`).
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.VERBOSE, message)
+        self._send_to_logger(LogLevel.VERBOSE, colour, message)
 
-    cpdef void debug(self, str message) except *:
+    cpdef void debug(self, str message, LogColour colour=LogColour.NORMAL) except *:
         """
         Log the given debug message with the logger.
 
@@ -385,13 +395,15 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
+        colour : LogColour (Enum), optional
+            The text colour for the message (`NORMAL`, `BLUE` or `GREEN`).
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.DEBUG, message)
+        self._send_to_logger(LogLevel.DEBUG, colour, message)
 
-    cpdef void info(self, str message) except *:
+    cpdef void info(self, str message, LogColour colour=LogColour.NORMAL) except *:
         """
         Log the given information message with the logger.
 
@@ -399,11 +411,13 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
+        colour : LogColour (Enum), optional
+            The text colour for the message (`NORMAL`, `BLUE` or `GREEN`).
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.INFO, message)
+        self._send_to_logger(LogLevel.INFO, colour, message)
 
     cpdef void warning(self, str message) except *:
         """
@@ -417,7 +431,7 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.WARNING, message)
+        self._send_to_logger(LogLevel.WARNING, LogColour.YELLOW, message)
 
     cpdef void error(self, str message) except *:
         """
@@ -431,7 +445,7 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.ERROR, message)
+        self._send_to_logger(LogLevel.ERROR, LogColour.RED, message)
 
     cpdef void critical(self, str message) except *:
         """
@@ -445,7 +459,7 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.CRITICAL, message)
+        self._send_to_logger(LogLevel.CRITICAL, LogColour.RED, message)
 
     cpdef void exception(self, ex) except *:
         """
@@ -470,11 +484,17 @@ cdef class LoggerAdapter:
 
         self.error(f"{ex_string} {stack_trace_lines}")
 
-    cdef inline void _send_to_logger(self, LogLevel level, str message) except *:
+    cdef inline void _send_to_logger(
+        self,
+        LogLevel level,
+        LogColour colour,
+        str message,
+    ) except *:
         if not self.bypassed:
             self._logger.log(LogMessage(
                 self._logger.clock.utc_now(),
                 level,
+                colour,
                 self._format_message(message),
                 threading.current_thread().ident),
             )
@@ -519,14 +539,8 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     except NotImplementedError:
         cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
-    ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
-    ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
-    ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
-    ram_avail_pc = round(100 - psutil.virtual_memory()[2], 2)
-    logger.info(f"RAM-Total: {ram_total_mb:,} MB")
-    logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({round(100.0 - ram_avail_pc, 2)}%)")
-    logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc}%)")
     logger.info(f"OS: {platform.platform()}")
+    log_memory(logger)
     logger.info("=================================================================")
     logger.info(" VERSIONING")
     logger.info("=================================================================")
@@ -535,6 +549,19 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"numpy {np.__version__}")
     logger.info(f"scipy {scipy.__version__}")
     logger.info(f"pandas {pd.__version__}")
+
+
+cpdef void log_memory(LoggerAdapter logger) except *:
+    logger.info("=================================================================")
+    logger.info(" MEMORY USAGE")
+    logger.info("=================================================================")
+    ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
+    ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
+    ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
+    ram_avail_pc = 100 - psutil.virtual_memory()[2]
+    logger.info(f"RAM-Total: {ram_total_mb:,} MB")
+    logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
+    logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
 
 
 cdef class TestLogger(Logger):
@@ -634,6 +661,7 @@ cdef class LiveLogger(Logger):
         LogLevel level_console=LogLevel.INFO,
         LogLevel level_file=LogLevel.DEBUG,
         LogLevel level_store=LogLevel.WARNING,
+        bint run_in_process=False,
         bint console_prints=True,
         bint log_thread=False,
         bint log_to_file=False,
@@ -654,6 +682,8 @@ cdef class LiveLogger(Logger):
             The minimum log level for logging messages to the log file.
         level_store : LogLevel
             The minimum log level for storing log messages in memory.
+        run_in_process : bool
+            If the logger should be run in a separate multiprocessing process.
         console_prints : bool
             If log messages should print to the console.
         log_thread : bool
@@ -684,9 +714,14 @@ cdef class LiveLogger(Logger):
             log_file_path,
         )
 
-        self._queue = multiprocessing.Queue(maxsize=10000)
-        self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
-        self._process.start()
+        if run_in_process:
+            self._queue = multiprocessing.Queue(maxsize=10000)
+            self._process = multiprocessing.Process(target=self._consume_messages, daemon=True)
+            self._process.start()
+        else:
+            self._queue = queue.Queue(maxsize=10000)
+            self._thread = threading.Thread(target=self._consume_messages, daemon=True)
+            self._thread.start()
 
     cpdef void log(self, LogMessage message) except *:
         """
@@ -715,17 +750,25 @@ cdef class LiveLogger(Logger):
             self._queue.put(queue_full_msg)
             self._queue.put(message)  # Block until qsize reduces below maxsize
 
+    cpdef void stop(self) except *:
+        self._queue.put_nowait(None)  # Sentinel message pattern
+
     cpdef void _consume_messages(self) except *:
         cdef LogMessage message
         try:
             while True:
                 message = self._queue.get()
+                if message is None:  # Sentinel message (fast c-level check)
+                    break
                 self._log(message)
         except KeyboardInterrupt:
-            # Current hacky solution to ignore one keyboard interrupt from the
-            # main thead, just to allow final log messages to be printed. As
-            # daemon=True when the main thread exits this will also terminate
-            # this process.
-            while True:
-                message = self._queue.get()
-                self._log(message)
+            if self._process:  # Logger is running in a separate process
+                # Catches a single SIGTERM / keyboard interrupt from the
+                # main thead, just to allow final log messages to be processed.
+                # As daemon=True then when the main thread exits, this will the
+                # terminate the process.
+                while True:
+                    message = self._queue.get()
+                    if message is None:
+                        break
+                    self._log(message)

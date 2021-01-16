@@ -188,7 +188,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             while self.is_running:
                 message = await self._queue.get()
-                if message is None:  # Sentinel message
+                if message is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
                 if message.type == MessageType.EVENT:
                     self._handle_event(message)

@@ -39,6 +39,14 @@ cpdef enum LogLevel:
     FATAL = 7,
 
 
+cpdef enum LogColour:
+    NORMAL = 0,
+    GREEN = 1,
+    BLUE = 2,
+    YELLOW = 3,
+    RED = 4,
+
+
 cdef class LogLevelParser:
 
     @staticmethod
@@ -53,6 +61,8 @@ cdef class LogMessage:
     """The log message timestamp.\n\n:returns: `datetime`"""
     cdef readonly LogLevel level
     """The log level.\n\n:returns: `LogLevel`"""
+    cdef readonly LogColour colour
+    """The log text colour.\n\n:returns: `LogColour`"""
     cdef readonly str text
     """The log text.\n\n:returns: `str`"""
     cdef readonly long thread_id
@@ -101,18 +111,19 @@ cdef class LoggerAdapter:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void verbose(self, str message) except *
-    cpdef void debug(self, str message) except *
-    cpdef void info(self, str message) except *
+    cpdef void verbose(self, str message, LogColour colour=*) except *
+    cpdef void debug(self, str message, LogColour colour=*) except *
+    cpdef void info(self, str message, LogColour colour=*) except *
     cpdef void warning(self, str message) except *
     cpdef void error(self, str message) except *
     cpdef void critical(self, str message) except *
     cpdef void exception(self, ex) except *
-    cdef inline void _send_to_logger(self, LogLevel level, str message) except *
+    cdef inline void _send_to_logger(self, LogLevel level, LogColour colour, str message) except *
     cdef inline str _format_message(self, str message)
 
 
 cpdef void nautilus_header(LoggerAdapter logger) except *
+cpdef void log_memory(LoggerAdapter logger) except *
 
 
 cdef class TestLogger(Logger):
@@ -122,5 +133,7 @@ cdef class TestLogger(Logger):
 cdef class LiveLogger(Logger):
     cdef object _queue
     cdef object _process
+    cdef object _thread
 
+    cpdef void stop(self) except *
     cpdef void _consume_messages(self) except *
