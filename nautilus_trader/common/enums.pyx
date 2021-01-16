@@ -21,3 +21,5 @@ isort:skip_file
 
 from nautilus_trader.common.c_enums.component_state import ComponentState      # noqa F401 (being used)
 from nautilus_trader.common.c_enums.component_trigger import ComponentTrigger  # noqa F401 (being used)
+from nautilus_trader.common.logging import LogLevel   # noqa F401 (being used)
+from nautilus_trader.common.logging import LogColour  # noqa F401 (being used)

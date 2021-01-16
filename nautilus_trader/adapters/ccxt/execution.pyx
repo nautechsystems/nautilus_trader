@@ -25,6 +25,7 @@ from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexSubmitOrderBui
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -134,7 +135,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info("Connecting...")
 
         if self._client.check_required_credentials():
-            self._log.info("API credentials validated.")
+            self._log.info("API credentials validated.", LogColour.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")

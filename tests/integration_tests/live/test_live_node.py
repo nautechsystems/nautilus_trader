@@ -37,6 +37,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "log_level_console": "INF",
                 "log_level_file": "DBG",
                 "log_level_store": "WRN",
+                "run_in_process": False  # Avoid pytest hanging on multiprocessing resources
             },
 
             "exec_database": {
@@ -84,6 +85,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "log_level_console": "INF",
                 "log_level_file": "DBG",
                 "log_level_store": "WRN",
+                "run_in_process": False  # Avoid pytest hanging on multiprocessing resources
             },
 
             "exec_database": {
@@ -140,6 +142,7 @@ class TradingNodeOperationTests(unittest.TestCase):
                 "log_level_console": "INF",
                 "log_level_file": "DBG",
                 "log_level_store": "WRN",
+                "run_in_process": False  # Avoid pytest hanging on multiprocessing resources
             },
 
             "exec_database": {
@@ -190,7 +193,7 @@ class TradingNodeOperationTests(unittest.TestCase):
         self.loop.call_soon_threadsafe(self.node.stop)
 
         # Allow node to stop
-        time.sleep(3)
+        time.sleep(0.3)
 
         # Act
         # Assert
@@ -206,7 +209,7 @@ class TradingNodeOperationTests(unittest.TestCase):
         self.loop.call_soon_threadsafe(self.node.stop)
 
         # Allow node to stop
-        time.sleep(3)
+        time.sleep(0.3)
 
         self.node.dispose()
 
