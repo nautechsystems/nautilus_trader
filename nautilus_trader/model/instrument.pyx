@@ -67,9 +67,9 @@ cdef class Instrument:
         ----------
         symbol : Symbol
             The symbol.
-        asset_type : AssetClass
+        asset_type : AssetClass (Enum)
             The asset class.
-        asset_type : AssetType
+        asset_type : AssetType (Enum)
             The asset type.
         base_currency : Currency, optional
             The base currency. Not applicable for all asset classes.
@@ -328,7 +328,7 @@ cdef class Instrument:
 
         Parameters
         ----------
-        side : PositionSide
+        side : PositionSide (Enum)
             The currency position side.
         quantity : Quantity
             The currency position quantity.
@@ -370,7 +370,7 @@ cdef class Instrument:
             The quantity for the transaction.
         avg_price : Decimal or Price
             The average transaction price.
-        liquidity_side : LiquiditySide
+        liquidity_side : LiquiditySide (Enum)
             The liquidity side for the transaction.
 
         Returns

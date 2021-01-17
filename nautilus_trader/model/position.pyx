@@ -287,12 +287,12 @@ cdef class Position:
 
         Parameters
         ----------
-        side : OrderSide
+        side : OrderSide (Enum)
             The order side
 
         Returns
         -------
-        PositionSide
+        PositionSide (Enum)
 
         Raises
         ------

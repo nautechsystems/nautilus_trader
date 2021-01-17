@@ -134,9 +134,9 @@ cdef class BacktestDataContainer:
         ----------
         symbol : Symbol
             The symbol for the bar data.
-        aggregation : BarAggregation
+        aggregation : BarAggregation (Enum)
             The bar aggregation of the data.
-        price_type : PriceType
+        price_type : PriceType (Enum)
             The price type of the data.
         data : pd.DataFrame
             The bar data to add.

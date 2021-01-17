@@ -125,7 +125,7 @@ cdef class Currency:
             The currency code.
         precision : int
             The currency decimal precision.
-        currency_type : CurrencyType
+        currency_type : CurrencyType (Enum)
             The currency type.
 
         Raises

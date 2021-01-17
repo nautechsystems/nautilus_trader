@@ -26,9 +26,9 @@ cdef class BarSpecification:
     cdef readonly int step
     """The specified step size for bar aggregation.\n\n:returns: `int`"""
     cdef readonly BarAggregation aggregation
-    """The specified aggregation method for bars.\n\n:returns: `BarAggregation`"""
+    """The specified aggregation method for bars.\n\n:returns: `BarAggregation` (Enum)"""
     cdef readonly PriceType price_type
-    """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
+    """The specified price type for bar aggregation.\n\n:returns: `PriceType` (Enum)"""
 
     @staticmethod
     cdef BarSpecification from_str_c(str value)

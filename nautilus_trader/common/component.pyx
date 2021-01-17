@@ -58,7 +58,7 @@ cdef class ComponentFSMFactory:
         Returns
         -------
         dict[int, int]
-            C enums.
+            C Enums.
         """
         return _COMPONENT_STATE_TABLE.copy()
 
@@ -138,7 +138,7 @@ cdef class Component:
 
         Returns
         -------
-        ComponentState
+        ComponentState (Enum)
 
         """
         return self.state_c()

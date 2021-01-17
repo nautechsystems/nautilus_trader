@@ -62,13 +62,13 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly StrategyId strategy_id
     """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide order_side
-    """The order side.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly OrderType order_type
-    """The order type.\n\n:returns: `OrderType`"""
+    """The order type.\n\n:returns: `OrderType` (Enum)"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
 
@@ -112,15 +112,15 @@ cdef class OrderWorking(OrderEvent):
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
-    """The order side.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly OrderType order_type
-    """The order type.\n\n:returns: `OrderType`"""
+    """The order type.\n\n:returns: `OrderType` (Enum)"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
     """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
     cdef readonly datetime expire_time
     """The order expire time.\n\n:returns: `datetime` or `None`"""
     cdef readonly datetime working_time
@@ -175,7 +175,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide order_side
-    """The order side.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly Quantity fill_qty
     """The fill quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity cum_qty
@@ -191,7 +191,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Money commission
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
-    """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
+    """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide` (Enum)"""
     cdef readonly datetime execution_time
     """The execution timestamp.\n\n:returns: `datetime`"""
     cdef readonly dict info

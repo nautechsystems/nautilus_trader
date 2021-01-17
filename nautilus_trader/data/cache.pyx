@@ -396,7 +396,7 @@ cdef class DataCache(DataCacheFacade):
         ----------
         symbol : Symbol
             The symbol for the price.
-        price_type : PriceType
+        price_type : PriceType (Enum)
             The price type for the query.
 
         Returns
@@ -653,7 +653,7 @@ cdef class DataCache(DataCacheFacade):
             The currency to convert from.
         to_currency : Currency
             The currency to convert to.
-        price_type : PriceType
+        price_type : PriceType (Enum)
             The price type for the exchange rate.
 
         Returns

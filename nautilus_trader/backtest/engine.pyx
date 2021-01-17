@@ -307,7 +307,7 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The venue for the exchange.
-        oms_type : OMSType
+        oms_type : OMSType (Enum)
             The order management system type for the exchange.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
