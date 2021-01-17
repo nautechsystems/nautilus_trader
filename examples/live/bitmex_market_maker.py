@@ -37,6 +37,7 @@ config = {
         "log_level_console": "INF",
         "log_level_file": "DBG",
         "log_level_store": "WRN",
+        "log_thread_id": False,
         "log_to_file": False,
         "log_file_path": "logs/",
     },
@@ -71,8 +72,8 @@ config = {
 strategy = VolatilityMarketMaker(
     symbol=Symbol("BTC/USD", Venue("BITMEX")),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("10"),
-    atr_multiple=3.0,
+    trade_size=Decimal("1000"),
+    atr_multiple=1.0,
 )
 
 # Instantiate the node passing a list of strategies and configuration

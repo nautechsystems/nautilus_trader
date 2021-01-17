@@ -159,13 +159,13 @@ cdef class OrderInitialized(OrderEvent):
             The strategy identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide
+        order_side : OrderSide (Enum)
             The order side.
-        order_type : OrderType
+        order_type : OrderType (Enum)
             The order type.
         quantity : Quantity
             The order quantity.
-        time_in_force : TimeInForce
+        time_in_force : TimeInForce (Enum)
             The order time-in-force.
         event_id : UUID
             The event identifier.
@@ -497,15 +497,15 @@ cdef class OrderWorking(OrderEvent):
             The exchange/broker order identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide
+        order_side : OrderSide (Enum)
             The order side.
-        order_type : OrderType
+        order_type : OrderType (Enum)
             The order type.
         quantity : Quantity
             The order quantity.
         price : Price
             The order price.
-        time_in_force : TimeInForce
+        time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders only).
@@ -842,7 +842,7 @@ cdef class OrderFilled(OrderEvent):
             The strategy identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide
+        order_side : OrderSide (Enum)
             The execution order side.
         fill_qty : Quantity
             The filled quantity for this execution.
@@ -858,7 +858,7 @@ cdef class OrderFilled(OrderEvent):
             If quantity is expressed in quote currency.
         commission : Money
             The fill commission.
-        liquidity_side : LiquiditySide
+        liquidity_side : LiquiditySide (Enum)
             The execution liquidity side.
         execution_time : datetime
             The execution time.

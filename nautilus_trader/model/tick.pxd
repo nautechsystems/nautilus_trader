@@ -54,7 +54,7 @@ cdef class TradeTick(Tick):
     cdef readonly Quantity size
     """The ticks traded size.\n\n:returns: `Quantity`"""
     cdef readonly OrderSide side
-    """ The ticks traded side.\n\n:returns: `OrderSide`"""
+    """ The ticks traded side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly TradeMatchId match_id
     """The ticks trade match identifier.\n\n:returns: `TradeMatchId`"""
 

@@ -20,11 +20,12 @@ from cpython.datetime cimport datetime
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
-from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceSubmitOrderBuilder
-from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexSubmitOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderBuilder
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -125,7 +126,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Streaming tasks
         self._watch_balances_task = None
         self._watch_orders_task = None
-        self._watch_my_trades_task = None
+        # self._watch_my_trades_task = None
 
     cpdef void connect(self) except *:
         """
@@ -134,7 +135,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info("Connecting...")
 
         if self._client.check_required_credentials():
-            self._log.info("API credentials validated.")
+            self._log.info("API credentials validated.", LogColour.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
@@ -353,19 +354,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             while True:
                 try:
-                    response = await self._client.watch_balance(params)
+                    event = await self._client.watch_balance(params)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)
                     continue
                 except TypeError:
                     # Temporary workaround for testing
-                    response = self._client.watch_balance
+                    event = self._client.watch_balance
                     exiting = True
 
-                if response is None:
+                if event is None:
                     continue  # TODO: Temporary workaround for testing
 
-                self._on_account_state(response)
+                self._on_account_state(event)
 
                 if exiting:
                     break
@@ -387,20 +388,22 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             while True:
                 try:
                     # ArrayCacheBySymbolById
-                    response = await self._client.watch_orders()
+                    orders = await self._client.watch_orders()
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
                     continue
                 except TypeError:
                     # Temporary workaround for testing
-                    response = self._client.watch_orders
+                    orders = self._client.watch_orders
                     exiting = True
 
-                if response is None:
+                # TODO: Uncomment for development
+                # self._log.info("Raw: " + str(orders), LogColour.BLUE)
+                if orders is None:
                     continue  # TODO: Temporary workaround for testing
 
                 # CCXTCache is set to 1 so expecting one response at a time
-                event = response[0]
+                event = orders[0]
                 order_id = OrderId(event["id"])
                 self._check_and_process_order_event(order_id, event)
 
@@ -416,18 +419,18 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.error("`watch_my_trades` not available.")
             return
 
-        cdef dict response
+        cdef dict trades
         cdef bint exiting = False  # Flag to stop loop
         try:
             while True:
                 try:
-                    response = await self._client.watch_my_trades()
+                    trades = await self._client.watch_my_trades()
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_my_trades.__name__)
                     continue
                 except TypeError:
                     # Temporary workaround for testing
-                    response = self._client.watch_my_trades
+                    trades = self._client.watch_my_trades
                     exiting = True
 
                 # TODO: Development
@@ -450,9 +453,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef dict custom_params
 
         if self.venue.value == "BINANCE":
-            args, custom_params = BinanceSubmitOrderBuilder.build(order)
+            args, custom_params = BinanceOrderBuilder.build(order)
         elif self.venue.value == "BITMEX":
-            args, custom_params = BitmexSubmitOrderBuilder.build(order)
+            args, custom_params = BitmexOrderBuilder.build(order)
         else:
             # OTHER EXCHANGE - Basic unified API only
             # ----------------------------------------------------------------------
@@ -533,6 +536,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef str code
         cdef Currency currency
 
+        # Update total balances
+        for code, amount in event_total.items():
+            if amount:
+                currency = self._instrument_provider.currency(code)
+                if currency is None:
+                    self._log.error(f"Cannot update total balance for {code} "
+                                    f"(no currency loaded).")
+                balances.append(Money(amount, currency))
+
         # Update free balances
         for code, amount in event_free.items():
             if amount:
@@ -550,15 +562,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     self._log.error(f"Cannot update total balance for {code} "
                                     f"(no currency loaded).")
                 balances_locked.append(Money(amount, currency))
-
-        # Update total balances
-        for code, amount in event_total.items():
-            if amount:
-                currency = self._instrument_provider.currency(code)
-                if currency is None:
-                    self._log.error(f"Cannot update total balance for {code} "
-                                    f"(no currency loaded).")
-                balances.append(Money(amount, currency))
 
         # Generate event
         cdef AccountState account_state = AccountState(
@@ -711,8 +714,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             position_id = PositionId.null_c()
 
         # Determine quantities
-        cdef Quantity fill_qty = Quantity(event["filled"], instrument.size_precision)
-        cdef Quantity leaves_qty = Quantity(event["remaining"], instrument.size_precision)
+        filled_value = event.get("filled")
+        remaining_value = event.get("remaining")
+
+        if filled_value is None:
+            filled_value = "0"
+        if remaining_value is None:
+            remaining_value = "0"
+
+        cdef Quantity fill_qty = Quantity(filled_value, instrument.size_precision)
+        cdef Quantity leaves_qty = Quantity(remaining_value, instrument.size_precision)
         cdef Quantity cum_qty = Quantity(order.quantity - leaves_qty)
 
         # POSIX timestamp in milliseconds

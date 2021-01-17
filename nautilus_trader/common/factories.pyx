@@ -133,11 +133,11 @@ cdef class OrderFactory:
         ----------
         symbol : Symbol
             The orders symbol.
-        order_side : OrderSide
+        order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce (Enum), optional
             The orders time-in-force.
 
         Returns
@@ -184,13 +184,13 @@ cdef class OrderFactory:
         ----------
         symbol : Symbol
             The orders symbol.
-        order_side : OrderSide
+        order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce (Enum), optional
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).
@@ -245,13 +245,13 @@ cdef class OrderFactory:
         ----------
         symbol : Symbol
             The orders symbol.
-        order_side : OrderSide
+        order_side : OrderSide (Enum)
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
         price : Price
             The orders price.
-        time_in_force : TimeInForce, optional
+        time_in_force : TimeInForce (Enum), optional
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).

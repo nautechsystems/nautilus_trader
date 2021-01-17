@@ -71,9 +71,9 @@ cdef class BarSpecification:
         ----------
         step : int
             The step for binning samples for bar aggregation (> 0).
-        aggregation : BarAggregation
+        aggregation : BarAggregation (Enum)
             The type of bar aggregation.
-        price_type : PriceType
+        price_type : PriceType (Enum)
             The price type to use for aggregation.
 
         Raises

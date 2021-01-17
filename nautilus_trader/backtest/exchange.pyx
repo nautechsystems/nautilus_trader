@@ -90,7 +90,7 @@ cdef class SimulatedExchange:
         ----------
         venue : Venue
             The venue to simulate for the backtest.
-        oms_type : OMSType
+        oms_type : OMSType (Enum)
             The order management system type used by the exchange.
         generate_position_ids : bool
             If the exchange should generate position identifiers.
@@ -254,13 +254,13 @@ cdef class SimulatedExchange:
                 bid = tick.price
                 ask = self._market_asks.get(symbol)
                 if ask is None:
-                    ask = bid
+                    ask = bid  # Initialize ask
                 self._market_bids[symbol] = bid
             elif tick.side == OrderSide.BUY:  # TAKER lifted the offer
                 ask = tick.price
                 bid = self._market_bids.get(symbol)
                 if bid is None:
-                    bid = ask
+                    bid = ask  # Initialize bid
                 self._market_asks[symbol] = ask
             # tick.side must be BUY or SELL (condition checked in TradeTick)
 
@@ -272,14 +272,11 @@ cdef class SimulatedExchange:
             module.process(tick, now)
 
         cdef PassiveOrder order
-        cdef Instrument instrument
         for order in self._working_orders.copy().values():  # Copy dict for safe loop
             if order.symbol != tick.symbol:
                 continue  # Order is for a different symbol
             if not order.is_working_c():
                 continue  # Orders state has changed since the loop started
-
-            instrument = self.instruments[order.symbol]
 
             # Check for order fill
             if order.side == OrderSide.BUY:

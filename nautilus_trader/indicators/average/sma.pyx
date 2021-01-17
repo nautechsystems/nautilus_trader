@@ -37,7 +37,7 @@ cdef class SimpleMovingAverage(MovingAverage):
         ----------
         period : int
             The rolling window period for the indicator (> 0).
-        price_type : PriceType
+        price_type : PriceType (Enum)
             The specified price type for extracting values from quote ticks.
 
         Raises

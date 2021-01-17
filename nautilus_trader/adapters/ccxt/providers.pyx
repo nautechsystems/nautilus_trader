@@ -137,18 +137,22 @@ cdef class CCXTInstrumentProvider:
 
         cdef str code
         cdef dict values
+        cdef Currency currency
         for code, values in self._client.currencies.items():
             currency_type = self._parse_currency_type(code)
-            currency = Currency(
-                code=code,
-                precision=self._get_precision(values["precision"], precision_mode),
-                currency_type=currency_type,
-            )
+            currency = Currency.from_str_c(code)
+            if currency is None:
+                currency = Currency(
+                    code=code,
+                    precision=self._get_precision(values["precision"], precision_mode),
+                    currency_type=currency_type,
+                )
 
             self._currencies[code] = currency
 
     cdef inline int _tick_size_to_precision(self, double tick_size) except *:
-        return len(str(tick_size).partition('.')[2].rstrip('0'))
+        cdef tick_size_str = f"{tick_size:f}"
+        return len(tick_size_str.partition('.')[2].rstrip('0'))
 
     cdef inline int _get_precision(self, double value, int mode) except *:
         if mode == 2:  # DECIMAL_PLACE
@@ -238,6 +242,8 @@ cdef class CCXTInstrumentProvider:
         else:
             taker_fee = Decimal(taker_fee)
 
+        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
+
         return Instrument(
             symbol=symbol,
             asset_class=AssetClass.CRYPTO,
@@ -245,7 +251,7 @@ cdef class CCXTInstrumentProvider:
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=quote_currency,
-            is_inverse=False,
+            is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
             tick_size=tick_size,
