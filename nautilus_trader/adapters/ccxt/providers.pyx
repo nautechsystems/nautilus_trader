@@ -242,6 +242,8 @@ cdef class CCXTInstrumentProvider:
         else:
             taker_fee = Decimal(taker_fee)
 
+        cdef bint is_inverse = values.get("info", {}).get("isInverse", False)
+
         return Instrument(
             symbol=symbol,
             asset_class=AssetClass.CRYPTO,
@@ -249,7 +251,7 @@ cdef class CCXTInstrumentProvider:
             base_currency=base_currency,
             quote_currency=quote_currency,
             settlement_currency=quote_currency,
-            is_inverse=False,
+            is_inverse=is_inverse,
             price_precision=price_precision,
             size_precision=size_precision,
             tick_size=tick_size,
