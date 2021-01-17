@@ -67,15 +67,15 @@ cdef class Order:
     cdef readonly Symbol symbol
     """The order symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide side
-    """The order side.\n\n:returns: `OrderSide`"""
+    """The order side.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly OrderType type
-    """The order type.\n\n:returns: `OrderType`"""
+    """The order type.\n\n:returns: `OrderType` (Enum)"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly datetime timestamp
     """The order initialization timestamp.\n\n:returns: `datetime`"""
     cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly datetime filled_timestamp
@@ -126,7 +126,7 @@ cdef class PassiveOrder(Order):
     cdef readonly Price price
     """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly LiquiditySide liquidity_side
-    """The order liquidity size.\n\n:returns: `LiquiditySide`"""
+    """The order liquidity size.\n\n:returns: `LiquiditySide` (Enum)"""
     cdef readonly datetime expire_time
     """The order expire time (optional).\n\n:returns: `datetime` or `None`"""
 

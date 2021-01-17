@@ -194,7 +194,7 @@ cdef class Order:
 
         Returns
         -------
-        OrderState
+        OrderState (Enum)
 
         """
         return self.state_c()
@@ -335,7 +335,7 @@ cdef class Order:
 
         Parameters
         ----------
-        side : OrderSide
+        side : OrderSide (Enum)
             The original order side.
 
         Returns
@@ -352,7 +352,7 @@ cdef class Order:
 
         Parameters
         ----------
-        side : PositionSide
+        side : PositionSide (Enum)
             The position side to flatten.
 
         Returns
@@ -379,17 +379,15 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If event.cl_ord_id is not equal to the orders cl_ord_id.
-        ValueError
-            If event.account_id is not equal to the orders account_id.
+            If event.order_id not equal to self.id (if assigned and not being amended).
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
 
         """
-        # Fast C method to avoid overhead of subclassing
         self.apply_c(event)
 
     cdef void apply_c(self, OrderEvent event) except *:
+        # Fast C method to avoid overhead of subclassing
         Condition.not_none(event, "event")
 
         # Update events
@@ -416,7 +414,7 @@ cdef class Order:
             self._fsm.trigger(OrderState.WORKING)
             self._working(event)
         elif isinstance(event, OrderAmended):
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
+            # self.id could be different to event.order_id as its been amended
             self._fsm.trigger(OrderState.WORKING)
             self._amended(event)
         elif isinstance(event, OrderCancelled):
@@ -509,15 +507,15 @@ cdef class PassiveOrder(Order):
             The order strategy identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide (enum)
+        order_side : OrderSide (Enum)
             The order side (BUY or SELL).
-        order_type : OrderType (enum)
+        order_type : OrderType (Enum)
             The order type.
         quantity : Quantity
             The order quantity (> 0).
         price : Price
             The order price.
-        time_in_force : TimeInForce
+        time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time - for GTD orders only.
@@ -646,7 +644,7 @@ cdef class MarketOrder(Order):
             The order strategy identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide (enum)
+        order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
@@ -772,13 +770,13 @@ cdef class LimitOrder(PassiveOrder):
             The order strategy identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide (enum)
+        order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
         price : Price
             The order limit price.
-        time_in_force : TimeInForce
+        time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.
@@ -894,13 +892,13 @@ cdef class StopMarketOrder(PassiveOrder):
             The order strategy identifier.
         symbol : Symbol
             The order symbol.
-        order_side : OrderSide (enum)
+        order_side : OrderSide (Enum)
             The order side (BUY or SELL).
         quantity : Quantity
             The order quantity (> 0).
         price : Price
             The order stop price.
-        time_in_force : TimeInForce
+        time_in_force : TimeInForce (Enum)
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.

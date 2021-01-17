@@ -55,7 +55,7 @@ cdef class Currency:
     cdef readonly int precision
     """The specified precision of the currency.\n\n:returns: `int`"""
     cdef readonly CurrencyType currency_type
-    """The general type of the currency.\n\n:returns: `CurrencyType`"""
+    """The general type of the currency.\n\n:returns: `CurrencyType` (Enum)"""
 
     @staticmethod
     cdef Currency from_str_c(str code)

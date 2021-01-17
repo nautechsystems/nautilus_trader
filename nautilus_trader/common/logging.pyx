@@ -125,9 +125,9 @@ cdef class LogMessage:
         ----------
         timestamp : datetime
             The log message timestamp.
-        level :  LogLevel
+        level :  LogLevel (Enum)
             The log message level.
-        colour :  LogColour
+        colour :  LogColour (Enum)
             The log message colour.
         text : str
             The log message text.
@@ -195,11 +195,11 @@ cdef class Logger:
             The name of the logger.
         bypass_logging : bool
             If the logger should be completely bypassed.
-        level_console : LogLevel
+        level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_file : LogLevel
+        level_file : LogLevel (Enum)
             The minimum log level for logging messages to the log file.
-        level_store : LogLevel
+        level_store : LogLevel (Enum)
             The minimum log level for storing log messages in memory.
         console_prints : bool
             If log messages should print to the console.
@@ -380,7 +380,7 @@ cdef class LoggerAdapter:
         message : str
             The message to log.
         colour : LogColour (Enum), optional
-            The text colour for the message (`NORMAL`, `BLUE` or `GREEN`).
+            The text colour for the message.
 
         """
         Condition.not_none(message, "message")
@@ -396,7 +396,7 @@ cdef class LoggerAdapter:
         message : str
             The message to log.
         colour : LogColour (Enum), optional
-            The text colour for the message (`NORMAL`, `BLUE` or `GREEN`).
+            The text colour for the message.
 
         """
         Condition.not_none(message, "message")
@@ -412,7 +412,7 @@ cdef class LoggerAdapter:
         message : str
             The message to log.
         colour : LogColour (Enum), optional
-            The text colour for the message (`NORMAL`, `BLUE` or `GREEN`).
+            The text colour for the message.
 
         """
         Condition.not_none(message, "message")
@@ -559,9 +559,10 @@ cpdef void log_memory(LoggerAdapter logger) except *:
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
     ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
     ram_avail_pc = 100 - psutil.virtual_memory()[2]
+    ram_avail_colour = LogColour.NORMAL if ram_avail_pc > 50 else LogColour.YELLOW
     logger.info(f"RAM-Total: {ram_total_mb:,} MB")
     logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
-    logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)")
+    logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)", ram_avail_colour)
 
 
 cdef class TestLogger(Logger):
@@ -594,11 +595,11 @@ cdef class TestLogger(Logger):
             The name of the logger.
         bypass_logging : bool
             If logging should be entirely bypasses.
-        level_console : LogLevel
+        level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_file : LogLevel
+        level_file : LogLevel (Enum)
             The minimum log level for logging messages to the log file.
-        level_store : LogLevel
+        level_store : LogLevel (Enum)
             The minimum log level for storing log messages in memory.
         console_prints : bool
             If log messages should print to the console.
@@ -676,11 +677,11 @@ cdef class LiveLogger(Logger):
             The clock for the logger.
         name : str
             The name of the logger.
-        level_console : LogLevel
+        level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
-        level_file : LogLevel
+        level_file : LogLevel (Enum)
             The minimum log level for logging messages to the log file.
-        level_store : LogLevel
+        level_store : LogLevel (Enum)
             The minimum log level for storing log messages in memory.
         run_in_process : bool
             If the logger should be run in a separate multiprocessing process.

@@ -30,9 +30,9 @@ cdef class Instrument:
     cdef readonly Symbol symbol
     """The symbol of the instrument.\n\n:returns: `Symbol`"""
     cdef readonly AssetClass asset_class
-    """The asset class of the instrument.\n\n:returns: `AssetClass`"""
+    """The asset class of the instrument.\n\n:returns: `AssetClass` (Enum)"""
     cdef readonly AssetType asset_type
-    """The asset type of the instrument.\n\n:returns: `AssetType`"""
+    """The asset type of the instrument.\n\n:returns: `AssetType` (Enum)"""
     cdef readonly Currency base_currency
     """The base currency of the instrument.\n\n:returns: `Currency` or `None`"""
     cdef readonly Currency quote_currency

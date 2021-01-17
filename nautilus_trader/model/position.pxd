@@ -49,9 +49,9 @@ cdef class Position:
     cdef readonly Symbol symbol
     """The positions symbol.\n\n:returns: `Symbol`"""
     cdef readonly OrderSide entry
-    """The entry direction from open.\n\n:returns: `OrderSide`"""
+    """The entry direction from open.\n\n:returns: `OrderSide` (Enum)"""
     cdef readonly PositionSide side
-    """The current position side.\n\n:returns: `PositionSide`"""
+    """The current position side.\n\n:returns: `PositionSide` (Enum)"""
     cdef readonly object relative_quantity
     """The relative quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity

@@ -60,9 +60,9 @@ cdef class LogMessage:
     cdef readonly datetime timestamp
     """The log message timestamp.\n\n:returns: `datetime`"""
     cdef readonly LogLevel level
-    """The log level.\n\n:returns: `LogLevel`"""
+    """The log level.\n\n:returns: `LogLevel` (Enum)"""
     cdef readonly LogColour colour
-    """The log text colour.\n\n:returns: `LogColour`"""
+    """The log text colour.\n\n:returns: `LogColour` (Enum)"""
     cdef readonly str text
     """The log text.\n\n:returns: `str`"""
     cdef readonly long thread_id
