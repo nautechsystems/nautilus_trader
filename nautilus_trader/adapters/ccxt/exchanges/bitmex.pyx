@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.order cimport Order
 
 
-cdef class BitmexSubmitOrderBuilder:
+cdef class BitmexOrderBuilder:
 
     @staticmethod
     cdef tuple build(Order order):

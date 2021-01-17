@@ -22,6 +22,7 @@ from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Price
@@ -160,28 +161,18 @@ class VolatilityMarketMaker(TradingStrategy):
 
         last: QuoteTick = self.data.quote_tick(self.symbol)
         if last is None:
-            self.log.error("Last quotes not found.")
+            self.log.error("No quotes yet.")
             return
 
         # Maintain buy orders
-        if self.buy_order is None or self.buy_order.is_completed:
-            self.create_buy_order(last)
-        else:
-            if self.portfolio.net_position(self.symbol) < self.trade_size * 5:
-                self.flatten_all_positions(self.symbol)
-                self.create_buy_order(last)
-            else:
-                self.work_buy_order(last)
+        if self.buy_order and self.buy_order.is_working:
+            self.cancel_order(self.buy_order)
+        self.create_buy_order(last)
 
         # Maintain sell orders
-        if self.sell_order is None or self.sell_order.is_completed:
-            self.create_sell_order(last)
-        else:
-            if self.portfolio.net_position(self.symbol) > self.trade_size * 5:
-                self.flatten_all_positions(self.symbol)
-                self.create_sell_order(last)
-            else:
-                self.work_sell_order(last)
+        if self.sell_order and self.sell_order.is_working:
+            self.cancel_order(self.sell_order)
+        self.create_sell_order(last)
 
     def create_buy_order(self, last: QuoteTick):
         """
@@ -191,8 +182,8 @@ class VolatilityMarketMaker(TradingStrategy):
             symbol=self.symbol,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
-            price=Price(last.bid - self.atr.value, self.price_precision),
-            time_in_force=TimeInForce.GTC,
+            price=Price(last.bid - (self.atr.value * self.atr_multiple), self.price_precision),
+            time_in_force=TimeInForce.DAY,
             post_only=True,  # Default value is True
             hidden=False,    # Default value is False
         )
@@ -208,44 +199,14 @@ class VolatilityMarketMaker(TradingStrategy):
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
-            price=Price(last.ask + self.atr.value, self.price_precision),
-            time_in_force=TimeInForce.GTC,
+            price=Price(last.ask + (self.atr.value * self.atr_multiple), self.price_precision),
+            time_in_force=TimeInForce.DAY,
             post_only=True,   # Default value is True
             hidden=False,     # Default value is False
         )
 
         self.sell_order = order
         self.submit_order(order)
-
-    def work_buy_order(self, last: QuoteTick):
-        """
-        A market makers simple modification method (example).
-        """
-        order: LimitOrder = self.buy_order
-
-        if order is None:
-            # Example of user adding a log message
-            self.log.warning("Cannot work buy order (buy order is None).")
-            return
-
-        new_price = Price(last.bid - self.atr.value, self.price_precision)
-        if new_price != order.price:
-            self.amend_order(order, price=new_price)
-
-    def work_sell_order(self, last: QuoteTick):
-        """
-        A market makers simple modification method (example).
-        """
-        order: LimitOrder = self.sell_order
-
-        if order is None:
-            # Example of user adding a log message
-            self.log.warning("Cannot work sell order (sell order is None).")
-            return
-
-        new_price = Price(last.ask + self.atr.value, self.price_precision)
-        if new_price != order.price:
-            self.amend_order(order, price=new_price)
 
     def on_data(self, data):
         """
@@ -269,7 +230,19 @@ class VolatilityMarketMaker(TradingStrategy):
             The event received.
 
         """
-        pass
+        last: QuoteTick = self.data.quote_tick(self.symbol)
+        if last is None:
+            self.log.error("No quotes yet.")
+            return
+
+        # If order filled then replace order at atr multiple distance from the market
+        if isinstance(event, OrderFilled):
+            if event.order_side == OrderSide.BUY:
+                if self.buy_order.is_completed:
+                    self.create_buy_order(last)
+            elif event.order_side == OrderSide.SELL:
+                if self.sell_order.is_completed:
+                    self.create_sell_order(last)
 
     def on_stop(self):
         """
