@@ -16,7 +16,7 @@
 from nautilus_trader.model.order cimport Order
 
 
-cdef class BinanceSubmitOrderBuilder:
+cdef class BinanceOrderBuilder:
 
     @staticmethod
     cdef tuple build(Order order)

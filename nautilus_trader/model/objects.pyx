@@ -374,7 +374,7 @@ cdef class Price(BaseDecimal):
 
         Parameters
         ----------
-        value : integer, float, string, Decimal or Decimal
+        value : integer, float, string, Decimal or BaseDecimal
             The value of the price. If value is a float, then a precision must
             be specified.
         precision : int, optional

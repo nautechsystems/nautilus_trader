@@ -1257,6 +1257,9 @@ cdef class TradingStrategy(Component):
             self.log.info("No working orders to cancel.")
             return
 
+        cdef int count = len(working_orders)
+        self.log.info(f"Cancelling {count} working order{'' if count == 1 else 's'}...")
+
         cdef Order order
         for order in working_orders:
             self.cancel_order(order)
@@ -1330,7 +1333,8 @@ cdef class TradingStrategy(Component):
             self.log.info("No open positions to flatten.")
             return
 
-        self.log.info(f"Flattening {len(positions_open)} open position(s)...")
+        cdef int count = len(positions_open)
+        self.log.info(f"Flattening {count} open position{'' if count == 1 else 's'}...")
 
         cdef Position position
         for position in positions_open:

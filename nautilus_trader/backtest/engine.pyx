@@ -33,6 +33,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport nautilus_header
+from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -275,7 +276,8 @@ cdef class BacktestEngine:
 
         self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
-        self._backtest_memory()
+        log_memory(self._log)
+        self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
 
     cpdef ExecutionEngine get_exec_engine(self):
         """
@@ -305,7 +307,7 @@ cdef class BacktestEngine:
         ----------
         venue : Venue
             The venue for the exchange.
-        oms_type : OMSType
+        oms_type : OMSType (Enum)
             The order management system type for the exchange.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
@@ -515,7 +517,7 @@ cdef class BacktestEngine:
             self._logger.change_log_file_name(backtest_log_name)
             self._test_logger.change_log_file_name(backtest_log_name)
 
-        self._backtest_header(run_started, start, stop)
+        self._log_header(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
 
         # Reset engine to fresh state (in case already run)
@@ -557,7 +559,7 @@ cdef class BacktestEngine:
 
         self.trader.stop()
 
-        self._backtest_footer(run_started, self._clock.utc_now(), start, stop)
+        self._log_footer(run_started, self._clock.utc_now(), start, stop)
         if print_log_store:
             self.print_log_store()
 
@@ -573,20 +575,7 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(timestamp)
 
-    cdef void _backtest_memory(self) except *:
-        self._log.info("=================================================================")
-        self._log.info(" MEMORY USAGE")
-        self._log.info("=================================================================")
-        ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
-        ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
-        ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
-        ram_avail_pc = round(100 - psutil.virtual_memory()[2], 2)
-        self._log.info(f"RAM-Total: {ram_total_mb:,} MB")
-        self._log.info(f"RAM-Used:  {ram_used__mb:,} MB ({round(100.0 - ram_avail_pc, 2)}%)")
-        self._log.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc}%)")
-        self._log.info(f"Data size: {format_bytes(get_size_of(self._data_engine))}")
-
-    cdef void _backtest_header(
+    cdef void _log_header(
         self,
         datetime run_started,
         datetime start,
@@ -611,7 +600,7 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef void _backtest_footer(
+    cdef void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,

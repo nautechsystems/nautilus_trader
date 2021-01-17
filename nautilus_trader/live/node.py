@@ -98,6 +98,7 @@ class TradingNode:
         config_adapters = config.get("adapters", {})
 
         self._clock = LiveClock()
+        self.created_time = self._clock.utc_now()
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
@@ -114,18 +115,19 @@ class TradingNode:
         )
 
         # Setup logging
-        logger = LiveLogger(
+        self._logger = LiveLogger(
             clock=self._clock,
             name=self.trader_id.value,
             level_console=LogLevelParser.from_str_py(config_log.get("log_level_console")),
             level_file=LogLevelParser.from_str_py(config_log.get("log_level_file")),
             level_store=LogLevelParser.from_str_py(config_log.get("log_level_store")),
-            log_thread=config_log.get("log_thread_id", True),
+            run_in_process=config_log.get("run_in_process", True),  # Run logger in a separate process
+            log_thread=config_log.get("log_thread_id", False),
             log_to_file=config_log.get("log_to_file", False),
             log_file_path=config_log.get("log_file_path", ""),
         )
 
-        self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=logger)
+        self._log = LoggerAdapter(component_name=self.__class__.__name__, logger=self._logger)
         self._log_header()
         self._log.info("Building...")
 
@@ -133,14 +135,14 @@ class TradingNode:
 
         self.portfolio = Portfolio(
             clock=self._clock,
-            logger=logger,
+            logger=self._logger,
         )
 
         self._data_engine = LiveDataEngine(
             loop=self._loop,
             portfolio=self.portfolio,
             clock=self._clock,
-            logger=logger,
+            logger=self._logger,
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
@@ -149,7 +151,7 @@ class TradingNode:
         if config_exec_db["type"] == "redis":
             exec_db = RedisExecutionDatabase(
                 trader_id=self.trader_id,
-                logger=logger,
+                logger=self._logger,
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 config={
@@ -160,7 +162,7 @@ class TradingNode:
         else:
             exec_db = BypassExecutionDatabase(
                 trader_id=self.trader_id,
-                logger=logger,
+                logger=self._logger,
             )
 
         self._exec_engine = LiveExecutionEngine(
@@ -168,11 +170,11 @@ class TradingNode:
             database=exec_db,
             portfolio=self.portfolio,
             clock=self._clock,
-            logger=logger,
+            logger=self._logger,
         )
 
         self._exec_engine.load_cache()
-        self._setup_adapters(config_adapters, logger)
+        self._setup_adapters(config_adapters, self._logger)
 
         self.trader = Trader(
             trader_id=self.trader_id,
@@ -181,7 +183,7 @@ class TradingNode:
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
-            logger=logger,
+            logger=self._logger,
         )
 
         self._check_residuals_delay = 2.0  # Hard coded delay (refactor)
@@ -192,6 +194,8 @@ class TradingNode:
             self.trader.load()
 
         self._log.info("state=INITIALIZED.")
+        self.time_to_initialize = self._clock.delta(self.created_time)
+        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
 
     @property
     def is_running(self) -> bool:
@@ -216,6 +220,17 @@ class TradingNode:
 
         """
         return self._loop
+
+    def get_logger(self) -> LiveLogger:
+        """
+        Return the logger for the trading node.
+
+        Returns
+        -------
+        LiveLogger
+
+        """
+        return self._logger
 
     def start(self) -> None:
         """
@@ -304,7 +319,8 @@ class TradingNode:
                 self._log.info(f"loop.is_closed={self._loop.is_closed()}")
 
             self._log.info("state=DISPOSED.")
-            time.sleep(0.1)  # Assist final logging to daemonic logging thread
+            self._logger.stop()  # Ensure process is stopped
+            time.sleep(0.1)      # Ensure final log messages
 
     def _log_header(self) -> None:
         nautilus_header(self._log)

@@ -21,6 +21,7 @@ import time
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -98,7 +99,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Loading accounts from database...")
 
         self._cached_accounts = self._database.load_accounts()
-        self._log.info(f"Cached {len(self._cached_accounts)} account(s) from database.")
+
+        cdef int count = len(self._cached_accounts)
+        cdef LogColour colour = LogColour.NORMAL if not self._cached_accounts else LogColour.BLUE
+        self._log.info(f"Cached {count} account{'' if count == 1 else 's'} from database.", colour)
 
     cpdef void cache_orders(self) except *:
         """
@@ -108,7 +112,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Loading orders from database...")
 
         self._cached_orders = self._database.load_orders()
-        self._log.info(f"Cached {len(self._cached_orders)} order(s) from database.")
+
+        cdef int count = len(self._cached_orders)
+        cdef LogColour colour = LogColour.NORMAL if not self._cached_orders else LogColour.BLUE
+        self._log.info(f"Cached {count} order{'' if count == 1 else 's'} from database.", colour)
 
     cpdef void cache_positions(self) except *:
         """
@@ -118,7 +125,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._log.debug(f"Loading positions from database...")
 
         self._cached_positions = self._database.load_positions()
-        self._log.info(f"Cached {len(self._cached_positions)} position(s) from database.")
+
+        cdef int count = len(self._cached_positions)
+        cdef LogColour colour = LogColour.NORMAL if not self._cached_positions else LogColour.BLUE
+        self._log.info(f"Cached {count} position{'' if count == 1 else 's'} from database.", colour)
 
     cpdef void build_index(self) except *:
         """
@@ -156,6 +166,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef Order order
         cdef PositionId position_id
         cdef Position position
+        cdef StrategyId strategy_id
         cdef set cl_ord_ids
         cdef set position_ids
         cdef set strategy_ids
@@ -260,10 +271,11 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         for symbol, cl_ord_ids in self._index_symbol_orders.items():
-            if symbol not in self._index_symbol_positions:
-                self._log.error(f"{failure} in _index_symbol_orders: "
-                                f"{repr(symbol)} not found in self._index_symbol_positions")
-                error_count += 1
+            for cl_ord_id in cl_ord_ids:
+                if cl_ord_id not in self._cached_orders:
+                    self._log.error(f"{failure} in _index_symbol_orders: "
+                                    f"{repr(symbol)} not found in self._cached_orders")
+                    error_count += 1
 
         for symbol, position_ids in self._index_symbol_positions.items():
             if symbol not in self._index_symbol_orders:
@@ -272,16 +284,18 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         for strategy_id, cl_ord_ids in self._index_strategy_orders.items():
-            if strategy_id not in self._index_strategy_positions:
-                self._log.error(f"{failure} in _index_strategy_orders: "
-                                f"{repr(strategy_id)} not found in self._index_strategy_positions")
-                error_count += 1
+            for cl_ord_id in cl_ord_ids:
+                if cl_ord_id not in self._cached_orders:
+                    self._log.error(f"{failure} in _index_strategy_orders: "
+                                    f"{repr(cl_ord_id)} not found in self._cached_orders")
+                    error_count += 1
 
         for strategy_id, position_ids in self._index_strategy_positions.items():
-            if strategy_id not in self._index_strategy_orders:
-                self._log.error(f"{failure} in _index_strategy_positions: "
-                                f"{repr(strategy_id)} not found in self._index_strategy_orders")
-                error_count += 1
+            for position_id in position_ids:
+                if position_id not in self._cached_positions:
+                    self._log.error(f"{failure} in _index_strategy_positions: "
+                                    f"{repr(position_id)} not found in self._caches_positions")
+                    error_count += 1
 
         for cl_ord_id in self._index_orders:
             if cl_ord_id not in self._cached_orders:
@@ -324,18 +338,15 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._log.error(f"{failure} in _index_strategies: "
                                 f"{repr(strategy_id)} not found in self._index_strategy_orders")
                 error_count += 1
-            if strategy_id not in self._index_strategy_positions:
-                self._log.error(f"{failure} in _index_strategies: "
-                                f"{repr(strategy_id)} not found in self._index_strategy_positions")
-                error_count += 1
 
         # Finally
         cdef long total_ns = round((time.time() - ts) * 1000000)
         if error_count == 0:
-            self._log.info(f"Integrity check passed in {total_ns}μs.")
+            self._log.info(f"Integrity check passed in {total_ns}μs.", LogColour.GREEN)
             return True
         else:
-            self._log.error(f"Integrity check failed with {error_count} error(s) "
+            self._log.error(f"Integrity check failed with "
+                            f"{error_count} error{'' if error_count == 1 else 's'} "
                             f"in {total_ns}μs.")
             return False
 
@@ -379,6 +390,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cached_accounts.clear()
         self._cached_orders.clear()
         self._cached_positions.clear()
+
         self._log.debug(f"Cleared cache.")
 
     cpdef void clear_index(self) except *:
@@ -402,7 +414,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_positions_closed.clear()
         self._index_strategies.clear()
 
-        self._log.debug(f"Index cleared.")
+        self._log.debug(f"Cleared index.")
 
     cpdef void flush_db(self) except *:
         """
@@ -414,7 +426,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         """
         self._log.debug("Flushing execution database...")
+
         self._database.flush()
+
         self._log.info("Execution database flushed.")
 
     cdef void _build_index_venue_account(self) except *:
@@ -489,7 +503,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             # 4: Build _index_strategy_positions -> {StrategyId, {PositionId}}
             if position.strategy_id is not None and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
-            self._index_strategy_positions[position.strategy_id].add(position.strategy_id)
+            self._index_strategy_positions[position.strategy_id].add(position.id)
 
             # 5: Build _index_positions -> {PositionId}
             self._index_positions.add(position_id)

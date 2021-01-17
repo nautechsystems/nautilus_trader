@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Provides the C enums as Python enums for external use.
+Provides the C Enums as Python Enums for external use.
 
 isort:skip_file
 """

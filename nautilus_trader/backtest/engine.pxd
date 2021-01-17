@@ -76,14 +76,13 @@ cdef class BacktestEngine:
     ) except *
 
     cdef void _advance_time(self, datetime timestamp) except *
-    cdef void _backtest_memory(self) except *
-    cdef void _backtest_header(
+    cdef void _log_header(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
     ) except *
-    cdef void _backtest_footer(
+    cdef void _log_footer(
         self,
         datetime run_started,
         datetime run_finished,
