@@ -588,8 +588,8 @@ cdef class ExecutionEngine(Component):
             # Search cache for ClientOrderId matching the OrderId
             cl_ord_id = self.cache.cl_ord_id(event.order_id)
             if cl_ord_id is None:
-                self._log.error(f"Cannot apply {event} to any order, "
-                                f"no ClientOrderId found matching .")
+                self._log.error(f"Cannot apply event to any order, "
+                                f"no matching ClientOrderId found in cache.")
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
@@ -600,7 +600,7 @@ cdef class ExecutionEngine(Component):
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
-            event.replace_cl_ord_id(cl_ord_id)
+            event.cl_ord_id = cl_ord_id
             self._log.warning(f"{repr(cl_ord_id)} was found in cache and "
                               f"applying event to order with {repr(order.id)}.")
 
