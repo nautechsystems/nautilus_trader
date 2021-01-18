@@ -16,7 +16,7 @@
 
 from decimal import Decimal
 
-from examples.strategies.volatility_market_maker import VolatilityMarketMaker
+from examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
@@ -29,9 +29,9 @@ from nautilus_trader.model.identifiers import Venue
 # file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",               # Not sent beyond system boundary
-        "id_tag": "001",                # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 10.0,  # How long to wait after stopping for residual events (secs)
+        "name": "TESTER",             # Not sent beyond system boundary
+        "id_tag": "001",              # Used to ensure orders are unique for this trader
+        "check_residuals_delay": 10,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -55,38 +55,28 @@ config = {
     },
 
     "adapters": {
-        "ccxt-binance": {
-            "data_client": True,                 # If a data client should be created
-            "exec_client": True,                 # If a exec client should be created
-            "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "BINANCE_API_KEY",        # value is the environment variable key
-            "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,               # If clients use the testnet
+        "ccxt-bitmex": {
+            "data_client": True,                # If a data client should be created
+            "exec_client": True,                # If a exec client should be created
+            "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
+            "api_key": "BITMEX_API_KEY",        # value is the environment variable key
+            "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
         },
     },
 }
 
 
-# BarSpecification options
-# ------------------------
-# price types include BID, ASK, MID, LAST
-# Current aggregations TICK, SECOND, MINUTE, HOUR, DAY, VOLUME, VALUE
-# These can be combined in any way, for example;
-tick_bars = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
-time_bars = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
-volu_bars = BarSpecification(100, BarAggregation.VOLUME, PriceType.MID)
-valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
-
-
 # Instantiate your strategies to pass into the trading node. You could add
 # custom options into the configuration file or even use another configuration
 # file.
-strategy = VolatilityMarketMaker(
-    symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=time_bars,
-    trade_size=Decimal("0.02"),
+strategy = EMACrossStopEntryTrail(
+    symbol=Symbol("BTC/USD", Venue("BITMEX")),
+    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+    trade_size=Decimal("1000"),
+    fast_ema_period=10,
+    slow_ema_period=20,
     atr_period=20,
-    atr_multiple=1.0,
+    trail_atr_multiple=2.0,
 )
 
 # Instantiate the node passing a list of strategies and configuration

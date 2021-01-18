@@ -385,7 +385,7 @@ class MsgPackEventSerializerTests(unittest.TestCase):
 
     def test_serialize_and_deserialize_order_initialized_events(self):
         # Arrange
-        options = {'Price': '1.0005'}
+        options = {'Price': '1.0005', 'ReduceOnly': False}
 
         event = OrderInitialized(
             ClientOrderId("O-123456"),

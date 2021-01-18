@@ -607,7 +607,7 @@ cdef class PassiveOrder(Order):
 
 
 cdef set _MARKET_ORDER_VALID_TIF = {
-    TimeInForce.DAY,
+    TimeInForce.GTC,
     TimeInForce.IOC,
     TimeInForce.FOK,
 }
@@ -662,11 +662,11 @@ cdef class MarketOrder(Order):
         ValueError
             If time_in_force is UNDEFINED.
         ValueError
-            If time_in_force is other than DAY, IOC or FOC.
+            If time_in_force is other than GTC, IOC or FOK.
 
         """
         Condition.positive(quantity, "quantity")
-        Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force is DAY, IOC or FOC")
+        Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force is GTC, IOC or FOK")
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,
@@ -757,6 +757,7 @@ cdef class LimitOrder(PassiveOrder):
         UUID init_id not None,
         datetime timestamp not None,
         bint post_only=True,
+        bint reduce_only=False,
         bint hidden=False,
     ):
         """
@@ -784,10 +785,12 @@ cdef class LimitOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
-        post_only : bool, optional;
+        post_only : bool, optional
             If the order will only make a market.
+        reduce_only : bool, optional
+            If the order will only reduce an open position.
         hidden : bool, optional
-            If the order should be hidden from the public book.
+            If the order will be hidden from the public book.
 
         Raises
         ------
@@ -799,13 +802,20 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD and expire_time is None.
+        ValueError
+            If post_only and hidden.
+        ValueError
+            If hidden and post_only.
 
         """
-        self.is_post_only = post_only
-        self.is_hidden = hidden
+        if post_only:
+            Condition.true(not hidden, "A post-only order is not hidden")
+        if hidden:
+            Condition.true(not post_only, "A hidden order is not post-only")
 
         cdef dict options = {
             POST_ONLY: post_only,
+            REDUCE_ONLY: reduce_only,
             HIDDEN: hidden,
         }
 
@@ -823,6 +833,10 @@ cdef class LimitOrder(PassiveOrder):
             timestamp,
             options,
         )
+
+        self.is_post_only = post_only
+        self.is_reduce_only = reduce_only
+        self.is_hidden = hidden
 
     @staticmethod
     cdef LimitOrder create(OrderInitialized event):
@@ -858,8 +872,9 @@ cdef class LimitOrder(PassiveOrder):
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
-            post_only=event.options.get(POST_ONLY, True),
-            hidden=event.options.get(HIDDEN, False),
+            post_only=event.options[POST_ONLY],
+            reduce_only=event.options[REDUCE_ONLY],
+            hidden=event.options[HIDDEN],
         )
 
 
@@ -880,6 +895,7 @@ cdef class StopMarketOrder(PassiveOrder):
         datetime expire_time,  # Can be None
         UUID init_id not None,
         datetime timestamp not None,
+        bint reduce_only=False,
     ):
         """
         Initialize a new instance of the `StopMarketOrder` class.
@@ -906,6 +922,8 @@ cdef class StopMarketOrder(PassiveOrder):
             The order initialization event identifier.
         timestamp : datetime
             The order initialization timestamp.
+        reduce_only : bool, optional
+            If the order will only reduce an open position.
 
         Raises
         ------
@@ -919,6 +937,10 @@ cdef class StopMarketOrder(PassiveOrder):
             If time_in_force is GTD and the expire_time is None.
 
         """
+        cdef dict options = {
+            REDUCE_ONLY: reduce_only,
+        }
+
         super().__init__(
             cl_ord_id,
             strategy_id,
@@ -931,8 +953,10 @@ cdef class StopMarketOrder(PassiveOrder):
             expire_time,
             init_id,
             timestamp,
-            options={},
+            options=options,
         )
+
+        self.is_reduce_only = reduce_only
 
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized event):
@@ -968,6 +992,7 @@ cdef class StopMarketOrder(PassiveOrder):
             expire_time=event.options.get(EXPIRE_TIME),
             init_id=event.id,
             timestamp=event.timestamp,
+            reduce_only=event.options[REDUCE_ONLY],
         )
 
 
