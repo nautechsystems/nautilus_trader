@@ -264,8 +264,8 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY)", str(order))  # noqa
-        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY)", repr(order))  # noqa
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC)", str(order))  # noqa
+        self.assertEqual("MarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC)", repr(order))  # noqa
 
     def test_initialize_limit_order(self):
         # Arrange
@@ -280,7 +280,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.LIMIT, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state)
-        self.assertEqual(TimeInForce.DAY, order.time_in_force)
+        self.assertEqual(TimeInForce.GTC, order.time_in_force)
         self.assertFalse(order.is_completed)
         self.assertEqual(OrderInitialized, type(order.init_event))
 
@@ -319,7 +319,7 @@ class OrderTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderType.STOP_MARKET, order.type)
         self.assertEqual(OrderState.INITIALIZED, order.state)
-        self.assertEqual(TimeInForce.DAY, order.time_in_force)
+        self.assertEqual(TimeInForce.GTC, order.time_in_force)
         self.assertFalse(order.is_completed)
         self.assertEqual(OrderInitialized, type(order.init_event))
 
@@ -423,8 +423,8 @@ class OrderTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
-        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET DAY), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC), SL=0.99990, TP=1.00010)", str(bracket_order))  # noqa
+        self.assertEqual("BracketOrder(id=BO-19700101-000000-000-001-1, EntryMarketOrder(cl_ord_id=O-19700101-000000-000-001-1, state=INITIALIZED, BUY 100,000 AUD/USD.SIM MARKET GTC), SL=0.99990, TP=1.00010)", repr(bracket_order))  # noqa
 
     def test_apply_order_invalid_event(self):
         # Arrange

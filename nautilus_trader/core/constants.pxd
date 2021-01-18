@@ -47,6 +47,7 @@ cdef str POSITION_ID
 cdef str ORDER_SIDE
 cdef str ORDER_TYPE
 cdef str POST_ONLY
+cdef str REDUCE_ONLY
 cdef str HIDDEN
 cdef str ENTRY
 cdef str STOP_LOSS

@@ -124,7 +124,7 @@ cdef class OrderFactory:
         Symbol symbol,
         OrderSide order_side,
         Quantity quantity,
-        TimeInForce time_in_force=TimeInForce.DAY,
+        TimeInForce time_in_force=TimeInForce.GTC,
     ):
         """
         Create a new market order.
@@ -138,7 +138,7 @@ cdef class OrderFactory:
         quantity : Quantity
             The orders quantity (> 0).
         time_in_force : TimeInForce (Enum), optional
-            The orders time-in-force.
+            The orders time-in-force. Often not applicable for market orders.
 
         Returns
         -------
@@ -151,7 +151,7 @@ cdef class OrderFactory:
         ValueError
             If time_in_force is UNDEFINED.
         ValueError
-            If time_in_force is other than DAY, IOC or FOC.
+            If time_in_force is other than GTC, IOC or FOK.
 
         """
         return MarketOrder(
@@ -170,9 +170,10 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        TimeInForce time_in_force=TimeInForce.DAY,
+        TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint post_only=True,
+        bint reduce_only=False,
         bint hidden=False,
     ):
         """
@@ -196,6 +197,8 @@ cdef class OrderFactory:
             The order expire time (for GTD orders).
         post_only : bool, optional
             If the order will only make a market.
+        reduce_only : bool, optional
+            If the order will only reduce an open position.
         hidden : bool, optional
             If the order should be hidden from the public book.
 
@@ -211,6 +214,10 @@ cdef class OrderFactory:
             If time_in_force is UNDEFINED.
         ValueError
             If time_in_force is GTD and expire_time is None.
+        ValueError
+            If post_only and hidden.
+        ValueError
+            If hidden and post_only.
 
         """
         return LimitOrder(
@@ -225,6 +232,7 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.utc_now(),
             post_only=post_only,
+            reduce_only=reduce_only,
             hidden=hidden)
 
     cpdef StopMarketOrder stop_market(
@@ -233,8 +241,9 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        TimeInForce time_in_force=TimeInForce.DAY,
+        TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
+        bint reduce_only=False,
     ):
         """
         Create a new stop-market order.
@@ -255,6 +264,8 @@ cdef class OrderFactory:
             The orders time-in-force.
         expire_time : datetime, optional
             The order expire time (for GTD orders).
+        reduce_only : bool,
+            If the order will only reduce an open position.
 
         Returns
         -------
@@ -281,6 +292,7 @@ cdef class OrderFactory:
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
             timestamp=self._clock.utc_now(),
+            reduce_only=reduce_only,
         )
 
     cpdef BracketOrder bracket(
@@ -338,6 +350,7 @@ cdef class OrderFactory:
             stop_loss,
             TimeInForce.GTC,
             expire_time=None,
+            reduce_only=True,
         )
 
         cdef Order take_profit_order = None
@@ -349,6 +362,7 @@ cdef class OrderFactory:
                 take_profit,
                 TimeInForce.GTC,
                 expire_time=None,
+                reduce_only=True,
             )
 
         return BracketOrder(entry_order, stop_loss_order, take_profit_order)
