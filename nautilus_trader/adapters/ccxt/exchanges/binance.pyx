@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -25,6 +26,30 @@ cdef class BinanceOrderBuilder:
 
     @staticmethod
     cdef tuple build(Order order):
+        """
+        Build the CCXT arguments and custom parameters to create the given order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to build.
+
+        Returns
+        -------
+        list[object], dict[str, object]
+            The arguments and custom parameters.
+
+        """
+        Condition.not_none(order, "order")
+
+        if order.time_in_force == TimeInForce.GTD:
+            raise ValueError(f"Cannot submit {order}. "
+                             f"GTD not supported in this version.")
+
+        if order.time_in_force == TimeInForce.DAY:
+            raise ValueError(f"Cannot submit {order}."
+                             f"Binance does not support TimeInForce.DAY.")
+
         cdef str order_side = OrderSideParser.to_str(order.side).capitalize()
         cdef str order_qty = str(order.quantity)
 
@@ -40,23 +65,19 @@ cdef class BinanceOrderBuilder:
             args.append(order_side)
             args.append(order_qty)
         elif order.type == OrderType.LIMIT and order.is_post_only:
+            # Cannot be hidden as post only is True
             args.append("LIMIT_MAKER")
             args.append(order_side)
             args.append(order_qty)
             args.append(str(order.price))
         elif order.type == OrderType.LIMIT:
+            if order.is_hidden:
+                raise ValueError("Binance does not support hidden orders.")
             args.append("LIMIT")
             args.append(order_side)
             args.append(order_qty)
             args.append(str(order.price))
-            # TimeInForce
-            # -----------
-            if order.time_in_force == TimeInForce.DAY:
-                pass
-            elif order.time_in_force == TimeInForce.GTD:
-                pass
-            else:
-                custom_params["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
+            custom_params["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
         elif order.type == OrderType.STOP_MARKET:
             if order.side == OrderSide.BUY:
                 args.append("STOP_LOSS")
@@ -64,12 +85,27 @@ cdef class BinanceOrderBuilder:
                 args.append("TAKE_PROFIT")
             args.append(order_side)
             args.append(order_qty)
-            args.append(str(order.price))
-            # TimeInForce
-            # -----------
-            if order.time_in_force == TimeInForce.DAY:
-                pass
-            elif order.time_in_force == TimeInForce.GTD:
-                pass
+            custom_params["stopPrice"] = str(order.price)
 
         return args, custom_params
+
+    @staticmethod
+    def build_py(Order order):
+        """
+        Build the CCXT arguments and custom parameters to create the given order.
+
+        Wraps the `build` method for testing and access from pure Python. For
+        best performance use the C access `build` method.
+
+        Parameters
+        ----------
+        order : Order
+            The order to build.
+
+        Returns
+        -------
+        list[object], dict[str, object]
+            The arguments and custom parameters.
+
+        """
+        return BinanceOrderBuilder.build(order)
