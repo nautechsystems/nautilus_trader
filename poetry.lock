@@ -109,7 +109,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.40.63"
+version = "1.40.74"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -287,7 +287,7 @@ pyflakes = ">=2.2.0,<2.3.0"
 
 [[package]]
 name = "identify"
-version = "1.5.12"
+version = "1.5.13"
 description = "File identification library for Python"
 category = "dev"
 optional = false
@@ -983,7 +983,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "99e1c893343af70da7bcff087f8df578ae744396e40f7bfd9226117eae27f2af"
+content-hash = "05a66a544ef0e6f055cdd1aadb77ebb1bdecbf238534fad42b8345b375f898d3"
 
 [metadata.files]
 aiodns = [
@@ -1062,8 +1062,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.40.63-py2.py3-none-any.whl", hash = "sha256:fb104c25cda2860742dbca176aef7a6dd93572f92213de9a848ab1325a27b64f"},
-    {file = "ccxt-1.40.63.tar.gz", hash = "sha256:b413735870a9f4e6f5342c36eb643896500e753c4b473b8cb6ae30c01d6a01e3"},
+    {file = "ccxt-1.40.74-py2.py3-none-any.whl", hash = "sha256:6c22a123ecb07f2f5bc637d15ca28acd61bc7c0e5c24472cafa32b4352d18f93"},
+    {file = "ccxt-1.40.74.tar.gz", hash = "sha256:37f304ffd18ba5074431b0ef1e35f2a12afdc3e2f0782298afca0047a4720f88"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1241,8 +1241,8 @@ flake8 = [
     {file = "flake8-3.8.4.tar.gz", hash = "sha256:aadae8761ec651813c24be05c6f7b4680857ef6afaae4651a4eccaef97ce6c3b"},
 ]
 identify = [
-    {file = "identify-1.5.12-py2.py3-none-any.whl", hash = "sha256:18994e850ba50c37bcaed4832be8b354d6a06c8fb31f54e0e7ece76d32f69bc8"},
-    {file = "identify-1.5.12.tar.gz", hash = "sha256:892473bf12e655884132a3a32aca737a3cbefaa34a850ff52d501773a45837bc"},
+    {file = "identify-1.5.13-py2.py3-none-any.whl", hash = "sha256:9dfb63a2e871b807e3ba62f029813552a24b5289504f5b071dea9b041aee9fe4"},
+    {file = "identify-1.5.13.tar.gz", hash = "sha256:70b638cf4743f33042bebb3b51e25261a0a10e80f978739f17e7fd4837664a66"},
 ]
 idna = [
     {file = "idna-2.10-py2.py3-none-any.whl", hash = "sha256:b97d804b1e9b523befed77c48dacec60e6dcb0b5391d57af6a65a312a90648c0"},
