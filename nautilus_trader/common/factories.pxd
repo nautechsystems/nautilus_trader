@@ -64,6 +64,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint post_only=*,
+        bint reduce_only=*,
         bint hidden=*,
     )
 
@@ -75,6 +76,7 @@ cdef class OrderFactory:
         Price price,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
+        bint reduce_only=*,
     )
 
     cpdef BracketOrder bracket(
