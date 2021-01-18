@@ -125,26 +125,6 @@ cdef class OrderEvent(Event):
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
 
-    cpdef void replace_cl_ord_id(self, ClientOrderId cl_ord_id) except *:
-        """
-        Replace the events ClientOrderId with the given identifier.
-
-        Parameters
-        ----------
-        cl_ord_id : ClientOrderId
-            The replacement client order identifier.
-
-        Warnings
-        --------
-        The presence of this method means that the ClientOrderId of order events
-        cannot be considered immutable.
-
-        This method will be deprecated in a future version.
-
-        """
-        Condition.not_none(cl_ord_id, "cl_ord_id")
-        self.cl_ord_id = cl_ord_id
-
 
 cdef class OrderInitialized(OrderEvent):
     """
