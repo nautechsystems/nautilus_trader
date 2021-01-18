@@ -114,8 +114,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self.is_connected = False
 
-        self._order_id_index = {}    # type: dict[OrderId, ClientOrderId]
-        self._event_buffer = {}      # type: dict[OrderId, list]
+        self._order_id_index = {}  # type: dict[OrderId, ClientOrderId]
+        self._event_buffer = {}    # type: dict[OrderId, list]
 
         self._account_last_free = {}
         self._account_last_used = {}
@@ -127,7 +127,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Streaming tasks
         self._watch_balances_task = None
         self._watch_orders_task = None
-        # self._watch_my_trades_task = None
 
     cpdef void connect(self) except *:
         """
@@ -190,10 +189,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._watch_orders_task.cancel()
             # TODO: CCXT Pro issues for exchange.close()
             # stop_tasks.append(self._watch_orders_task)
-        if self._watch_my_trades_task:
-            self._watch_my_trades_task.cancel()
-            # TODO: CCXT Pro issues for exchange.close()
-            # stop_tasks.append(self._watch_my_trades_task)
 
         # Wait for all tasks to complete
         if stop_tasks:
@@ -345,7 +340,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     async def _watch_balances(self):
-        if not self._client.has["watchBalance"]:
+        if not self._client.has.get("watchBalance", False):
             self._log.error("`watch_balance` not available.")
             return
 
@@ -377,7 +372,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.exception(ex)
 
     async def _watch_orders(self):
-        if not self._client.has["watchOrders"]:
+        if not self._client.has.get("watchOrders", False):
             self._log.error("`watch_orders` not available.")
             return
 
@@ -398,8 +393,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     orders = self._client.watch_orders
                     exiting = True
 
-                # TODO: Uncomment for development
-                # self._log.info("Raw: " + str(orders), LogColour.BLUE)
+                # TODO: Development
+                self._log.info("Raw: " + str(orders), LogColour.BLUE)
 
                 if orders is None:
                     continue  # TODO: Temporary workaround for testing
@@ -413,37 +408,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     break
         except asyncio.CancelledError as ex:
             self._log.debug(f"Cancelled `_watch_orders`.")
-        except Exception as ex:
-            self._log.exception(ex)
-
-    async def _watch_my_trades(self):
-        if not self._client.has["watchMyTrades"]:
-            self._log.error("`watch_my_trades` not available.")
-            return
-
-        cdef dict trades
-        cdef bint exiting = False  # Flag to stop loop
-        try:
-            while True:
-                try:
-                    trades = await self._client.watch_my_trades()
-                except CCXTError as ex:
-                    self._log_ccxt_error(ex, self._watch_my_trades.__name__)
-                    continue
-                except TypeError:
-                    # Temporary workaround for testing
-                    trades = self._client.watch_my_trades
-                    exiting = True
-
-                # TODO: Development
-                # self._log.critical("_watch_my_trades ran!")
-                # with open('res_watch_my_trades.json', 'w') as json_file:
-                #     json.dump(response, json_file)
-
-                if exiting:
-                    break
-        except asyncio.CancelledError as ex:
-            self._log.debug(f"Cancelled `_watch_my_trades`.")
         except Exception as ex:
             self._log.exception(ex)
 
@@ -620,8 +584,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif status == "expired":
             self._generate_order_expired(cl_ord_id, order_id, event)
         else:
-            # TODO: Development
-            self._log.critical("NEW EVENT! " + str(event))
+            self._log.warning(f"Unrecognized CCXT status '{status}'.")
 
     cdef inline void _generate_order_denied(
         self,
@@ -725,18 +688,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if position_id is None:
             position_id = PositionId.null_c()
 
-        # Determine quantities
-        filled_value = event.get("filled")
-        remaining_value = event.get("remaining")
-
-        if filled_value is None:
-            filled_value = "0"
-        if remaining_value is None:
-            remaining_value = "0"
-
-        cdef Quantity fill_qty = Quantity(filled_value, instrument.size_precision)
-        cdef Quantity leaves_qty = Quantity(remaining_value, instrument.size_precision)
-        cdef Quantity cum_qty = Quantity(order.quantity - leaves_qty)
+        # Determine quantities (we have to do it per exchange for now)
+        cdef Quantity cum_qty = Quantity(event["filled"], instrument.size_precision)
+        cdef Quantity fill_qty = Quantity(event["info"], instrument.size_precision)
+        cdef Quantity leaves_qty = Quantity(order.quantity - cum_qty, instrument.size_precision)
 
         # POSIX timestamp in milliseconds
         cdef long timestamp = <long>event["timestamp"]

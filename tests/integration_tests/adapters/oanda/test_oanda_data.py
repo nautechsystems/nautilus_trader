@@ -59,7 +59,7 @@ class OandaDataClientTests(unittest.TestCase):
         asyncio.set_event_loop(self.loop)
         self.executor = concurrent.futures.ThreadPoolExecutor()
         self.loop.set_default_executor(self.executor)
-        self.loop.set_debug(False)  # TODO: Development
+        self.loop.set_debug(True)  # TODO: Development
 
         # Setup logging
         logger = LiveLogger(

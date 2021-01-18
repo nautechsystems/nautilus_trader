@@ -249,10 +249,6 @@ cdef class EMACross(TradingStrategy):
 
         Create and return a state dictionary of values to be saved.
 
-        Notes
-        -----
-        'OrderIdCount' is a reserved key for the returned state dictionary.
-
         """
         return {}
 

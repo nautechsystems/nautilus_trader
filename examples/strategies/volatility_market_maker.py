@@ -280,10 +280,6 @@ class VolatilityMarketMaker(TradingStrategy):
         -------
         dict
 
-        Notes
-        -----
-        "OrderIdCount' is a reserved key for the returned state dictionary.
-
         """
         return {}
 
