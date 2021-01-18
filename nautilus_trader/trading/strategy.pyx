@@ -57,6 +57,8 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
+from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -73,6 +75,8 @@ from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+
+cdef tuple _WARNING_EVENTS = (OrderInvalid, OrderDenied, OrderRejected, OrderCancelReject)
 
 
 cdef class TradingStrategy(Component):
@@ -511,7 +515,7 @@ cdef class TradingStrategy(Component):
 
         if indicator not in self._indicators_for_quotes[symbol]:
             self._indicators_for_quotes[symbol].append(indicator)
-            self.log.info(f"Indicator {indicator} registered for {symbol} quote ticks.")
+            self.log.info(f"Registered indicator {indicator} for {symbol} quote ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {symbol} quote ticks.")
 
@@ -539,7 +543,7 @@ cdef class TradingStrategy(Component):
 
         if indicator not in self._indicators_for_trades[symbol]:
             self._indicators_for_trades[symbol].append(indicator)
-            self.log.info(f"Indicator {indicator} registered for {symbol} trade ticks.")
+            self.log.info(f"Registered indicator {indicator} for {symbol} trade ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {symbol} trade ticks.")
 
@@ -567,7 +571,7 @@ cdef class TradingStrategy(Component):
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Indicator {indicator} registered for {bar_type} bars.")
+            self.log.info(f"Registered indicator {indicator} for {bar_type} bars.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
@@ -1620,7 +1624,7 @@ cdef class TradingStrategy(Component):
     cdef void handle_event_c(self, Event event) except *:
         Condition.not_none(event, "event")
 
-        if isinstance(event, (OrderRejected, OrderCancelReject)):
+        if isinstance(event, _WARNING_EVENTS):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
