@@ -98,8 +98,8 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_event(self, OrderEvent event) except *
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef inline void _handle_order_fill(self, OrderFilled event) except *
-    cdef inline void _fill_when_system_assigned_pos_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
-    cdef inline void _fill_when_exchange_assigned_pos_ids(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef inline void _fill_with_no_position_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
+    cdef inline void _fill_with_assigned_position_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
     cdef inline void _open_position(self, OrderFilled event) except *
     cdef inline void _update_position(self, OrderFilled event) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
@@ -110,4 +110,4 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _set_position_symbol_counts(self) except *
+    cdef inline void _set_position_id_counts(self) except *

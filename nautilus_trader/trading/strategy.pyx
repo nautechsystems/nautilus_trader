@@ -37,6 +37,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
@@ -251,11 +252,6 @@ cdef class TradingStrategy(Component):
 
         Create and return a state dictionary of values to be saved.
 
-        Notes
-        -----
-        'OrderIdCount' and 'PositionIdCount' are reserved keys for
-        the returned state dictionary.
-
         Warnings
         --------
         System method (not intended to be called by user code).
@@ -398,6 +394,7 @@ cdef class TradingStrategy(Component):
         TraderId trader_id,
         Clock clock,
         Logger logger,
+        int order_id_count=0,
     ) except *:
         """
         Register the strategy with a trader.
@@ -405,11 +402,13 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         trader_id : TraderId
-            The trader_id for the strategy.
+            The trader identifier for the strategy.
         clock : Clock
             The clock for the strategy.
         logger : Logger
             The logger for the strategy.
+        order_id_count : int, optional
+            The running order identifier count for the strategy.
 
         Warnings
         --------
@@ -434,6 +433,9 @@ cdef class TradingStrategy(Component):
             strategy_id=self.id,
             clock=self.clock,
         )
+
+        self.order_factory.set_count(order_id_count)
+        self.log.info(f"Set ClientOrderId count to {order_id_count}.", LogColour.BLUE)
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
         """
@@ -630,24 +632,19 @@ cdef class TradingStrategy(Component):
 
         Warnings
         --------
-        Exceptions raised in `on_save` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         self._check_trader_registered()
 
-        self.log.info("Saving state...")
-
-        cpdef dict state = {"OrderIdCount": self.order_factory.count_c()}
-
         try:
+            self.log.info("Saving state...")
             user_state = self.on_save()
+            self.log.info("Saved state.")
+            return user_state
         except Exception as ex:
             self.log.exception(ex)
-            raise ex  # Invalid state information could be saved
-
-        self.log.info("Saved state.")
-
-        return {**state, **user_state}
+            raise  # Otherwise invalid state information could be saved
 
     cpdef void load(self, dict state) except *:
         """
@@ -667,26 +664,20 @@ cdef class TradingStrategy(Component):
 
         Warnings
         --------
-        Exceptions raised in `on_load` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         Condition.not_none(state, "state")
 
         self._check_trader_registered()
 
-        self.log.debug("Loading state...")
-
-        cdef int order_id_count = state.get("OrderIdCount", 0)
-        self.order_factory.set_count(order_id_count)
-        self.log.info(f"Setting OrderIdGenerator count to {order_id_count}.")
-
         try:
+            self.log.debug("Loading state...")
             self.on_load(state)
+            self.log.info("Loaded state.")
         except Exception as ex:
             self.log.exception(ex)
-            raise ex
-
-        self.log.info("Loaded state.")
+            raise
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -1369,7 +1360,7 @@ cdef class TradingStrategy(Component):
                 self.on_instrument(instrument)
             except Exception as ex:
                 self.log.exception(ex)
-                raise ex
+                raise
 
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
@@ -1406,7 +1397,7 @@ cdef class TradingStrategy(Component):
                 self.on_quote_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                raise ex
+                raise
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1473,7 +1464,7 @@ cdef class TradingStrategy(Component):
                 self.on_trade_tick(tick)
             except Exception as ex:
                 self.log.exception(ex)
-                raise ex
+                raise
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1543,7 +1534,7 @@ cdef class TradingStrategy(Component):
                 self.on_bar(bar_type, bar)
             except Exception as ex:
                 self.log.exception(ex)
-                raise ex
+                raise
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
@@ -1601,7 +1592,7 @@ cdef class TradingStrategy(Component):
                 self.on_data(data)
             except Exception as ex:
                 self.log.exception(ex)
-                raise ex
+                raise
 
     cpdef void handle_event(self, Event event) except *:
         """
@@ -1634,4 +1625,4 @@ cdef class TradingStrategy(Component):
                 self.on_event(event)
             except Exception as ex:
                 self.log.exception(ex)
-                raise ex
+                raise

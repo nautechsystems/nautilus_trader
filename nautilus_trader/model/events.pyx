@@ -902,9 +902,9 @@ cdef class OrderFilled(OrderEvent):
         self.symbol = symbol
         self.order_side = order_side
         self.fill_qty = fill_qty
-        self.fill_price = fill_price
         self.cum_qty = cum_qty
         self.leaves_qty = leaves_qty
+        self.fill_price = fill_price
         self.currency = currency
         self.is_inverse = is_inverse
         self.commission = commission

@@ -656,7 +656,7 @@ cdef class OandaDataClient(LiveDataClient):
         except asyncio.CancelledError:
             pass  # Expected cancellation
         except Exception as ex:
-            self._log.exception(ex)  # TODO: Development
+            self._log.exception(ex)
 
     cdef inline QuoteTick _parse_quote_tick(self, Symbol symbol, dict values):
         return QuoteTick(

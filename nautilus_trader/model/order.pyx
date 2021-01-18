@@ -427,8 +427,7 @@ cdef class Order:
             self._expired(event)
         elif isinstance(event, OrderFilled):
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
-            leaves_qty: Decimal = self.quantity - self.filled_qty - event.fill_qty
-            if leaves_qty > 0:
+            if self.quantity - self.filled_qty - event.fill_qty > 0:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
                 self._fsm.trigger(OrderState.FILLED)

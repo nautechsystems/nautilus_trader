@@ -100,6 +100,7 @@ cdef class TradingStrategy(Component):
         TraderId trader_id,
         Clock clock,
         Logger logger,
+        int order_id_count=*,
     ) except *
     cpdef void register_data_engine(self, DataEngine engine) except *
     cpdef void register_execution_engine(self, ExecutionEngine engine) except *

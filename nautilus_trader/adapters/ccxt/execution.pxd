@@ -35,7 +35,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _update_instruments_task
     cdef object _watch_balances_task
     cdef object _watch_orders_task
-    cdef object _watch_my_trades_task
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
