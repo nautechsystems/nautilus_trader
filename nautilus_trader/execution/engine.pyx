@@ -600,7 +600,7 @@ cdef class ExecutionEngine(Component):
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
-            event.override_cl_ord_id(cl_ord_id)
+            event.replace_cl_ord_id(cl_ord_id)
             self._log.warning(f"{repr(cl_ord_id)} was found in cache and "
                               f"applying event to order with {repr(order.id)}.")
 

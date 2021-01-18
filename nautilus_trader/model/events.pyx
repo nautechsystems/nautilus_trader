@@ -66,7 +66,7 @@ cdef class AccountState(Event):
         balances_free : list[Money]
             The account balances free for trading.
         balances_locked : list[Money]
-            The account balances locked (assigned to pending orders).
+            The account balances locked (assigned as margin collateral).
         info : dict [str, object]
             The additional implementation specific account information.
         event_id : UUID
@@ -125,7 +125,23 @@ cdef class OrderEvent(Event):
         self.cl_ord_id = cl_ord_id
         self.order_id = order_id
 
-    cpdef void override_cl_ord_id(self, ClientOrderId cl_ord_id) except *:
+    cpdef void replace_cl_ord_id(self, ClientOrderId cl_ord_id) except *:
+        """
+        Replace the events ClientOrderId with the given identifier.
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The replacement client order identifier.
+
+        Warnings
+        --------
+        The presence of this method means that the ClientOrderId of order events
+        cannot be considered immutable.
+
+        This method will be deprecated in a future version.
+
+        """
         Condition.not_none(cl_ord_id, "cl_ord_id")
         self.cl_ord_id = cl_ord_id
 
@@ -133,6 +149,11 @@ cdef class OrderEvent(Event):
 cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
+
+    This is a seed event that any order can then be instantiated from through
+    a creation method. This event should contain enough information to be able
+    send it over a wire and have a valid order instantiated with exactly the
+    same parameters as if it had been instantiated locally.
     """
 
     def __init__(
@@ -172,7 +193,8 @@ cdef class OrderInitialized(OrderEvent):
         event_timestamp : datetime
             The event timestamp.
         options : dict[str, str]
-            The order initialization options. Contains mappings for specific order parameters.
+            The order initialization options. Contains mappings for specific
+            order parameters.
 
         Raises
         ------
@@ -189,7 +211,7 @@ cdef class OrderInitialized(OrderEvent):
         Condition.not_equal(time_in_force, TimeInForce.UNDEFINED, "time_in_force", "UNDEFINED")
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),    # Pending submission
+            OrderId.null_c(),  # Pending assignment by exchange/broker
             event_id,
             event_timestamp,
         )
@@ -211,6 +233,10 @@ cdef class OrderInvalid(OrderEvent):
     """
     Represents an event where an order has been invalidated by the Nautilus
     system.
+
+    This could be due to a duplicated identifier, invalid combination of
+    parameters, or for any other reason that the order is considered to be
+    invalid.
     """
 
     def __init__(
@@ -243,7 +269,7 @@ cdef class OrderInvalid(OrderEvent):
         Condition.valid_string(reason, "invalid_reason")
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),    # Never submitted
+            OrderId.null_c(),  # Never assigned
             event_id,
             event_timestamp,
         )
@@ -260,6 +286,9 @@ cdef class OrderInvalid(OrderEvent):
 cdef class OrderDenied(OrderEvent):
     """
     Represents an event where an order has been denied by the Nautilus system.
+
+    This could be due an unsupported feature, a risk limit exceedance, or for
+    any other reason that an otherwise valid order is not able to be submitted.
     """
 
     def __init__(
@@ -292,7 +321,7 @@ cdef class OrderDenied(OrderEvent):
         Condition.valid_string(reason, "denied_reason")
         super().__init__(
             cl_ord_id,
-            OrderId.null_c(),    # Never submitted
+            OrderId.null_c(),  # Never assigned
             event_id,
             event_timestamp,
         )
@@ -319,6 +348,7 @@ cdef class OrderSubmitted(OrderEvent):
         datetime submitted_time not None,
         UUID event_id not None,
         datetime event_timestamp not None,
+        long latency=0,
     ):
         """
         Initialize a new instance of the `OrderSubmitted` class.
@@ -335,6 +365,8 @@ cdef class OrderSubmitted(OrderEvent):
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
+        latency : long
+            The latency from order initialization to submission.
 
         """
         super().__init__(
@@ -346,12 +378,14 @@ cdef class OrderSubmitted(OrderEvent):
 
         self.account_id = account_id
         self.submitted_time = submitted_time
+        self.latency = latency
 
     def __repr__(self) -> str:
+        cdef str latency_str = f", latency={self.latency}μs.)" if self.latency else ')'
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"id={self.id})")
+                f"id={self.id}{latency_str}")
 
 
 cdef class OrderRejected(OrderEvent):
