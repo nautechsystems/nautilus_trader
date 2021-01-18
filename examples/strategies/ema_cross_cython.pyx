@@ -22,9 +22,9 @@ from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.order import MarketOrder
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -45,21 +45,23 @@ cdef class EMACross(TradingStrategy):
 
     When the fast EMA crosses the slow EMA then enter a position in that
     direction.
+
+    Cancels all orders and flattens all positions on stop.
     """
     # Backing fields are necessary
     cdef Symbol symbol
     cdef BarType bar_type
     cdef object trade_size
-    cdef ExponentialMovingAverage fast_ema
-    cdef ExponentialMovingAverage slow_ema
+    cdef ExponentialMovingAverage fast_ema_period
+    cdef ExponentialMovingAverage slow_ema_period
 
     def __init__(
         self,
         Symbol symbol,
         BarSpecification bar_spec,
         trade_size: Decimal,
-        int fast_ema=10,
-        int slow_ema=20,
+        int fast_ema_period=10,
+        int slow_ema_period=20,
     ):
         """
         Initialize a new instance of the `EMACross` class.
@@ -72,10 +74,10 @@ cdef class EMACross(TradingStrategy):
             The bar specification for the strategy.
         trade_size : Decimal
             The position size per trade.
-        fast_ema : int
-            The fast EMA period.
-        slow_ema : int
-            The slow EMA period.
+        fast_ema_period : int
+            The period for the fast EMA.
+        slow_ema_period : int
+            The period for the slow EMA.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are
@@ -88,8 +90,8 @@ cdef class EMACross(TradingStrategy):
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(fast_ema)
-        self.slow_ema = ExponentialMovingAverage(slow_ema)
+        self.fast_ema = ExponentialMovingAverage(fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(slow_ema_period)
 
     cpdef void on_start(self) except *:
         """Actions to be performed on strategy start."""

@@ -13,59 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order import MarketOrder
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
-
-class EMACross(TradingStrategy):
+class MyStrategy(TradingStrategy):
     """
-    A simple moving average cross example strategy.
-
-    When the fast EMA crosses the slow EMA then enter a position in that
-    direction.
-
-    Cancels all orders and flattens all positions on stop.
+    A blank template strategy.
     """
 
-    def __init__(
-        self,
-        symbol: Symbol,
-        bar_spec: BarSpecification,
-        trade_size: Decimal,
-        fast_ema_period: int=10,
-        slow_ema_period: int=20,
-    ):
+    def __init__(self, symbol: Symbol):
         """
-        Initialize a new instance of the `EMACross` class.
+        Initialize a new instance of the `MyStrategy` class.
 
         Parameters
         ----------
         symbol : Symbol
             The symbol for the strategy.
-        bar_spec : BarSpecification
-            The bar specification for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        fast_ema_period : int
-            The period for the fast EMA.
-        slow_ema_period : int
-            The period for the slow EMA.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are
@@ -74,26 +43,10 @@ class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.symbol = symbol
-        self.bar_type = BarType(symbol, bar_spec)
-        self.trade_size = trade_size
-
-        # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(fast_ema_period)
-        self.slow_ema = ExponentialMovingAverage(slow_ema_period)
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.fast_ema)
-        self.register_indicator_for_bars(self.bar_type, self.slow_ema)
-
-        # Get historical data
-        self.request_bars(self.bar_type)
-
-        # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
-        # self.subscribe_quote_ticks(self.symbol)  # For debugging
-        # self.subscribe_trade_ticks(self.symbol)  # For debugging
+        pass
 
     def on_instrument(self, instrument: Instrument):
         """
@@ -118,7 +71,6 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -131,7 +83,6 @@ class EMACross(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -146,55 +97,19 @@ class EMACross(TradingStrategy):
             The bar received.
 
         """
-        self.log.info(f"Received {bar_type} {repr(bar)}")
-
-        # Check if indicators ready
-        if not self.indicators_initialized():
-            self.log.info(f"Waiting for indicators to warm up "
-                          f"[{self.data.bar_count(self.bar_type)}]...")
-            return  # Wait for indicators to warm up...
-
-        # BUY LOGIC
-        if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
-                self.buy()
-            elif self.portfolio.is_net_short(self.symbol):
-                self.flatten_all_positions(self.symbol)
-                self.buy()
-
-        # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
-                self.sell()
-            elif self.portfolio.is_net_long(self.symbol):
-                self.flatten_all_positions(self.symbol)
-                self.sell()
+        pass
 
     def buy(self):
         """
         Users simple buy method (example).
         """
-        order: MarketOrder = self.order_factory.market(
-            symbol=self.symbol,
-            order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            # time_in_force=TimeInForce.FOK,
-        )
-
-        self.submit_order(order)
+        pass
 
     def sell(self):
         """
         Users simple sell method (example).
         """
-        order: MarketOrder = self.order_factory.market(
-            symbol=self.symbol,
-            order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            # time_in_force=TimeInForce.FOK,
-        )
-
-        self.submit_order(order)
+        pass
 
     def on_data(self, data):
         """
@@ -224,21 +139,13 @@ class EMACross(TradingStrategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.symbol)
-        self.flatten_all_positions(self.symbol)
-
-        # Unsubscribe from data
-        self.unsubscribe_bars(self.bar_type)
-        # self.unsubscribe_quote_ticks(self.symbol)
-        # self.unsubscribe_trade_ticks(self.symbol)
+        pass
 
     def on_reset(self):
         """
         Actions to be performed when the strategy is reset.
         """
-        # Reset indicators here
-        self.fast_ema.reset()
-        self.slow_ema.reset()
+        pass
 
     def on_save(self) -> {}:
         """

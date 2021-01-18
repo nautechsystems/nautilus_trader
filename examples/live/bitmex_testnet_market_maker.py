@@ -29,8 +29,9 @@ from nautilus_trader.model.identifiers import Venue
 # file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",  # Not sent beyond system boundary
-        "id_tag": "001",   # Used to ensure orders are unique for this trader
+        "name": "TESTER",               # Not sent beyond system boundary
+        "id_tag": "001",                # Used to ensure orders are unique for this trader
+        "check_residuals_delay": 10.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -57,9 +58,9 @@ config = {
         "ccxt-bitmex": {
             "data_client": True,  # If a data client should be created
             "exec_client": True,  # If a exec client should be created
-            "account_id": "BITMEX_TESTNET_ACCOUNT_ID",  # value is the environment variable key
-            "api_key": "BITMEX_TESTNET_API_KEY",        # value is the environment variable key
-            "api_secret": "BITMEX_TESTNET_API_SECRET",  # value is the environment variable key
+            "account_id": "BITMEX_ACCOUNT_ID_SANDBOX",  # value is the environment variable key
+            "api_key": "BITMEX_API_KEY_SANDBOX",        # value is the environment variable key
+            "api_secret": "BITMEX_API_SECRET_SANDBOX",  # value is the environment variable key
             "sandbox_mode": True,  # If clients use the testnet
         },
     },
