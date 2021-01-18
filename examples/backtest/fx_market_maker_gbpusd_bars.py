@@ -65,6 +65,7 @@ if __name__ == "__main__":
         symbol=GBPUSD.symbol,
         bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
         trade_size=Decimal(500_000),
+        atr_period=20,
         atr_multiple=3.0,
     )
 
