@@ -186,7 +186,7 @@ class TradingNode:
             logger=self._logger,
         )
 
-        self._check_residuals_delay = 2.0  # Hard coded delay (refactor)
+        self._check_residuals_delay = config_trader.get("check_residuals_delay", 5.0)
         self._load_strategy_state = config_strategy.get("load_state", True)
         self._save_strategy_state = config_strategy.get("save_state", True)
 
@@ -440,7 +440,7 @@ class TradingNode:
 
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
-            self._log.info("Awaiting residual state...")
+            self._log.info(f"Awaiting residual state ({self._check_residuals_delay}s delay)...")
             await asyncio.sleep(self._check_residuals_delay)
             self.trader.check_residuals()
 

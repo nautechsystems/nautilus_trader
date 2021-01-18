@@ -400,6 +400,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
                 # TODO: Uncomment for development
                 # self._log.info("Raw: " + str(orders), LogColour.BLUE)
+
                 if orders is None:
                     continue  # TODO: Temporary workaround for testing
 

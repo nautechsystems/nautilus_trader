@@ -43,12 +43,10 @@ cdef class BinanceOrderBuilder:
         Condition.not_none(order, "order")
 
         if order.time_in_force == TimeInForce.GTD:
-            raise ValueError(f"Cannot submit {order}. "
-                             f"GTD not supported in this version.")
+            raise ValueError("TimeInForce.GTD not supported in this version.")
 
         if order.time_in_force == TimeInForce.DAY:
-            raise ValueError(f"Cannot submit {order}."
-                             f"Binance does not support TimeInForce.DAY.")
+            raise ValueError("Binance does not support TimeInForce.DAY.")
 
         cdef str order_side = OrderSideParser.to_str(order.side).capitalize()
         cdef str order_qty = str(order.quantity)
