@@ -763,11 +763,12 @@ cdef class LiveLogger(Logger):
                     break
                 self._log(message)
         except KeyboardInterrupt:
-            if self._process:  # Logger is running in a separate process
-                # Catches a single SIGTERM / keyboard interrupt from the
-                # main thead, just to allow final log messages to be processed.
-                # As daemon=True then when the main thread exits, this will the
-                # terminate the process.
+            if self._process:
+                # Logger is running in a separate process.
+                # Here we have caught a single SIGTERM / keyboard interrupt from
+                # the main thead, this is to allow final log messages to be
+                # processed. Because daemon=True is set, when the main
+                # thread exits this will then terminate the process.
                 while True:
                     message = self._queue.get()
                     if message is None:

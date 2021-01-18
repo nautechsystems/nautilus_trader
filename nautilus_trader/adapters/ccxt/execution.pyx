@@ -16,6 +16,7 @@
 import asyncio
 
 from cpython.datetime cimport datetime
+from libc.math cimport round as c_round
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
@@ -399,6 +400,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
                 # TODO: Uncomment for development
                 # self._log.info("Raw: " + str(orders), LogColour.BLUE)
+
                 if orders is None:
                     continue  # TODO: Temporary workaround for testing
 
@@ -452,27 +454,35 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef list args
         cdef dict custom_params
 
-        if self.venue.value == "BINANCE":
-            args, custom_params = BinanceOrderBuilder.build(order)
-        elif self.venue.value == "BITMEX":
-            args, custom_params = BitmexOrderBuilder.build(order)
-        else:
-            # OTHER EXCHANGE - Basic unified API only
-            # ----------------------------------------------------------------------
-            args = [
-                order.symbol.code,
-                OrderTypeParser.to_str(order.type).lower(),
-                OrderSideParser.to_str(order.side).lower(),
-                str(order.quantity),
-            ]
+        try:
+            if self.venue.value == "BINANCE":
+                args, custom_params = BinanceOrderBuilder.build(order)
+            elif self.venue.value == "BITMEX":
+                args, custom_params = BitmexOrderBuilder.build(order)
+            else:
+                # OTHER EXCHANGE - Basic unified API only
+                # ----------------------------------------------------------------------
+                args = [
+                    order.symbol.code,
+                    OrderTypeParser.to_str(order.type).lower(),
+                    OrderSideParser.to_str(order.side).lower(),
+                    str(order.quantity),
+                ]
 
-            if isinstance(order, PassiveOrder):
-                args.append(str(order.price))
+                if isinstance(order, PassiveOrder):
+                    args.append(str(order.price))
 
-            custom_params = None
+                custom_params = None
+        except ValueError as ex:
+            self._generate_order_denied(order.cl_ord_id, str(ex))
+            return
 
-        self._log.debug(f"Submitting {order}...")
-        self._generate_order_submitted(order.cl_ord_id, self._clock.utc_now())
+        self._log.debug(f"Submitted {order}.")
+        self._generate_order_submitted(
+            order.cl_ord_id,
+            self._clock.utc_now(),
+            <long>c_round(order.init_event_c().timestamp.timestamp() * 1000000),
+        )
 
         # Submit order and await response
         cdef dict response
@@ -630,6 +640,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef inline void _generate_order_submitted(
         self, ClientOrderId cl_ord_id,
         datetime timestamp,
+        long init_ts,
     ) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
@@ -637,7 +648,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             cl_ord_id,
             timestamp,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            timestamp,
+            latency=c_round(timestamp.timestamp() * 1000000) - init_ts
         )
         self._handle_event(submitted)
 

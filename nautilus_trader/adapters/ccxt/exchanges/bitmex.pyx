@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -23,6 +24,25 @@ cdef class BitmexOrderBuilder:
 
     @staticmethod
     cdef tuple build(Order order):
+        """
+        Build the CCXT arguments and custom parameters to create the given order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to build.
+
+        Returns
+        -------
+        list[object], dict[str, object]
+            The arguments and custom parameters.
+
+        """
+        Condition.not_none(order, "order")
+
+        if order.time_in_force == TimeInForce.GTD:
+            raise ValueError("GTD not supported in this version.")
+
         cdef str order_side = OrderSideParser.to_str(order.side).capitalize()
         cdef str order_qty = str(order.quantity)
 
@@ -32,6 +52,7 @@ cdef class BitmexOrderBuilder:
             "clOrdID": order.cl_ord_id.value,
         }
 
+        cdef str exec_inst = None
         if order.type == OrderType.MARKET:
             args.append("Market")
             args.append(order_side)
@@ -41,15 +62,28 @@ cdef class BitmexOrderBuilder:
             args.append(order_side)
             args.append(order_qty)
             args.append(str(order.price))
+
+            # Execution instructions
             if order.is_post_only:
-                custom_params["execInst"] = "ParticipateDoNotInitiate"
-            if order.is_hidden:
+                exec_inst = "ParticipateDoNotInitiate"
+            elif order.is_hidden:
                 custom_params["displayQty"] = 0
+            if order.is_reduce_only:
+                if exec_inst:
+                    exec_inst += ",ReduceOnly"
+                else:
+                    exec_inst = "ReduceOnly"
+
+            if exec_inst:
+                custom_params["execInst"] = exec_inst
+
         elif order.type == OrderType.STOP_MARKET:
             args.append("StopMarket")
             args.append(order_side)
             args.append(order_qty)
             custom_params["stopPx"] = str(order.price)
+            if order.is_reduce_only:
+                custom_params["execInst"] = "ReduceOnly"
 
         if order.time_in_force == TimeInForce.DAY:
             custom_params["timeInForce"] = "Day"
@@ -61,3 +95,24 @@ cdef class BitmexOrderBuilder:
             custom_params["timeInForce"] = "FillOrKill"
 
         return args, custom_params
+
+    @staticmethod
+    def build_py(Order order):
+        """
+        Build the CCXT arguments and custom parameters to create the given order.
+
+        Wraps the `build` method for testing and access from pure Python. For
+        best performance use the C access `build` method.
+
+        Parameters
+        ----------
+        order : Order
+            The order to build.
+
+        Returns
+        -------
+        list[object], dict[str, object]
+            The arguments and custom parameters.
+
+        """
+        return BitmexOrderBuilder.build(order)

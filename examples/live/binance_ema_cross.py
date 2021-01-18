@@ -29,8 +29,9 @@ from nautilus_trader.model.identifiers import Venue
 # file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",  # Not sent beyond system boundary
-        "id_tag": "001",   # Used to ensure orders are unique for this trader
+        "name": "TESTER",               # Not sent beyond system boundary
+        "id_tag": "001",                # Used to ensure orders are unique for this trader
+        "check_residuals_delay": 10.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -83,8 +84,8 @@ valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 strategy = EMACross(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
     bar_spec=time_bars,
-    fast_ema=10,
-    slow_ema=20,
+    fast_ema_period=10,
+    slow_ema_period=20,
     trade_size=Decimal("0.02"),
 )
 

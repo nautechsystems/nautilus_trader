@@ -166,7 +166,10 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
 
         if isinstance(order, LimitOrder):
             package[POST_ONLY] = order.is_post_only
+            package[REDUCE_ONLY] = order.is_reduce_only
             package[HIDDEN] = order.is_hidden
+        elif isinstance(order, StopMarketOrder):
+            package[REDUCE_ONLY] = order.is_reduce_only
 
         return MsgPackSerializer.serialize(package)
 
@@ -235,6 +238,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 init_id=init_id,
                 timestamp=timestamp,
                 post_only=unpacked[POST_ONLY],
+                reduce_only=unpacked[REDUCE_ONLY],
                 hidden=unpacked[HIDDEN],
             )
 
@@ -250,6 +254,7 @@ cdef class MsgPackOrderSerializer(OrderSerializer):
                 expire_time=expire_time,
                 init_id=init_id,
                 timestamp=timestamp,
+                reduce_only=unpacked[REDUCE_ONLY],
             )
 
         raise ValueError(f"Invalid order_type, was {OrderTypeParser.to_str(order_type)}")
@@ -465,14 +470,16 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[QUANTITY] = str(event.quantity)
             package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
 
-            if event.order_type == OrderType.STOP_MARKET:
+            if event.order_type == OrderType.LIMIT:
                 package[PRICE] = str(event.options[PRICE])
-                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)
-            elif event.order_type == OrderType.LIMIT:
+                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)  # Can be None
+                package[POST_ONLY] = event.options[POST_ONLY]
+                package[REDUCE_ONLY] = event.options[REDUCE_ONLY]
+                package[HIDDEN] = event.options[HIDDEN]
+            elif event.order_type == OrderType.STOP_MARKET:
                 package[PRICE] = str(event.options[PRICE])
-                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)
-                package[POST_ONLY] = event.options.get(POST_ONLY, True)
-                package[HIDDEN] = event.options.get(HIDDEN, False)
+                package[EXPIRE_TIME] = event.options.get(EXPIRE_TIME)  # Can be None
+                package[REDUCE_ONLY] = event.options[REDUCE_ONLY]
 
         elif isinstance(event, OrderSubmitted):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
@@ -598,14 +605,17 @@ cdef class MsgPackEventSerializer(EventSerializer):
         elif event_type == OrderInitialized.__name__:
             options = {}
             order_type = OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE]))
-            if order_type == OrderType.STOP_MARKET:
-                options[PRICE] = Price(unpacked[PRICE])
-                options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
-            elif order_type == OrderType.LIMIT:
+            if order_type == OrderType.LIMIT:
                 options[PRICE] = Price(unpacked[PRICE])
                 options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
                 options[POST_ONLY] = unpacked[POST_ONLY]
+                options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
                 options[HIDDEN] = unpacked[HIDDEN]
+            elif order_type == OrderType.STOP_MARKET:
+                options[PRICE] = Price(unpacked[PRICE])
+                options[EXPIRE_TIME] = unpacked[EXPIRE_TIME]
+                options[REDUCE_ONLY] = unpacked[REDUCE_ONLY]
+
             return OrderInitialized(
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 self.identifier_cache.get_strategy_id(unpacked[STRATEGY_ID]),
