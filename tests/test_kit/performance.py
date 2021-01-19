@@ -20,10 +20,6 @@ import sys
 import timeit
 
 
-_MILLISECONDS_IN_SECOND = 1000
-_MICROSECONDS_IN_SECOND = 1000000
-
-
 def get_size_of(obj) -> int:
     """
     Return the size of the given object in memory.
@@ -65,6 +61,11 @@ def get_size_of(obj) -> int:
     return size
 
 
+_MILLISECONDS_IN_SECOND = 1000
+_MICROSECONDS_IN_SECOND = 1_000_000
+_NANOSECONDS_IN_SECOND = 1_000_000_000
+
+
 class PerformanceHarness:
 
     @staticmethod
@@ -89,15 +90,22 @@ class PerformanceHarness:
         float
 
         """
+        if iterations < 1:
+            raise ValueError("iterations cannot be less than 1")
+
         results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
         minimum = min(results)
 
         if print_output:
-            result_milliseconds = math.floor(minimum * _MILLISECONDS_IN_SECOND)
-            result_microseconds = math.floor(minimum * _MICROSECONDS_IN_SECOND)
+            result_milliseconds = minimum * _MILLISECONDS_IN_SECOND
+            result_microseconds = minimum * _MICROSECONDS_IN_SECOND
+            result_nanoseconds = minimum * _NANOSECONDS_IN_SECOND
             print(f"\nPerformance test: {str(inspect.getmembers(function)[4][1])} ")
-            print(f"# ~{result_milliseconds}ms ({result_microseconds}μs) minimum "
-                  f"of {runs} runs @ {iterations:,} iterations each run.")
+            print(f"# ~{result_milliseconds:.1f}ms "
+                  f"/ ~{result_microseconds:.1f}μs "
+                  f"/ {result_nanoseconds:.0f}ns "
+                  f"minimum of {runs:,} runs @ {iterations:,} "
+                  f"iteration{'s' if iterations > 1 else ''} each run.")
 
         return minimum
 
@@ -120,6 +128,6 @@ class PerformanceHarness:
         size = get_size_of(x)
 
         if print_output:
-            print(f"\n# Object size test: {type(x)} is {size} bytes.")
+            print(f"\n# Object size {type(x)} is {size} bytes.")
 
         return size

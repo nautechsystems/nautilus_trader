@@ -23,14 +23,14 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd()
 AUDUSD_1MIN_BID = TestStubs.bartype_audusd_1min_bid()
 
 
 class ObjectTests:
 
     @staticmethod
-    def symbol_using_str():
+    def symbol_to_str():
         str(AUDUSD_SIM)
 
     @staticmethod
@@ -61,16 +61,16 @@ class ObjectTests:
 class ObjectPerformanceTests(unittest.TestCase):
 
     @staticmethod
-    def test_symbol_using_str():
-        PerformanceHarness.profile_function(ObjectTests.symbol_using_str, 3, 1000000)
-        # ~140ms (140233μs) minimum of 3 runs @ 1,000,000 iterations each run.
+    def test_symbol_to_str():
+        PerformanceHarness.profile_function(ObjectTests.symbol_to_str, 100000, 1)
+        # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_build_bar_no_checking():
-        PerformanceHarness.profile_function(ObjectTests.build_bar_no_checking, 3, 100000)
-        # ~250ms (250123μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(ObjectTests.build_bar_no_checking, 100000, 1)
+        # ~0.0ms / ~2.5μs / 2512ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_build_bar_with_checking():
-        PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 3, 100000)
-        # ~302ms (302758μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(ObjectTests.build_bar_with_checking, 100000, 1)
+        # ~0.0ms / ~2.7μs / 2717ns minimum of 100,000 runs @ 1 iteration each run.
