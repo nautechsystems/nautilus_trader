@@ -83,26 +83,11 @@ Alternatively, to install from source using pip, run:
 
     pip install .
 
-## CCXT Pro Integration
+## Integrations
 An integration adapter for CCXT Pro is currently under active development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
 
 See https://ccxt.pro for more information.
-
-It's expected that the CCXT unified API will work for market data on all supported
-exchanges. For live trading, to ensure the platform behaves as per the designed
-specification, each exchange is being integrated individually. So at this early
-stage it is _strongly recommended_ that each user carry out extensive
-testing of their own trading setup, whilst referring to both the exchange APIs
-and CCXT docs before committing large amounts of capital.
-
-**Note:** So far when trading on an exchange through the CCXT unified API, orders
-will only be reported as filled when they are filled completely. This should be
-ok for most orders which will fill almost immediately at their prices.
-
-However for very large orders there could be a delay in received the final event
-which will change the orders status to FILLED (i.e it will not pass through a
-PARTIALLY_FILLED status).
 
 ## Development
 

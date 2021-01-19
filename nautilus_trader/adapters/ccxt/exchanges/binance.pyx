@@ -31,7 +31,7 @@ cdef class BinanceOrderRequestBuilder:
         Parameters
         ----------
         order : Order
-            The order to build.
+            The order for the request.
 
         Returns
         -------
@@ -47,29 +47,29 @@ cdef class BinanceOrderRequestBuilder:
         if order.time_in_force == TimeInForce.DAY:
             raise ValueError("Binance does not support TimeInForce.DAY.")
 
-        cdef dict request = {
+        cdef dict params = {
             "newClientOrderId": order.cl_ord_id.value,
             "recvWindow": 10000  # TODO: Server time sync issue?
         }
 
         if order.type == OrderType.MARKET:
-            request["type"] = "MARKET"
+            params["type"] = "MARKET"
         elif order.type == OrderType.LIMIT and order.is_post_only:
             # Cannot be hidden as post only is True
-            request["type"] = "LIMIT_MAKER"
+            params["type"] = "LIMIT_MAKER"
         elif order.type == OrderType.LIMIT:
             if order.is_hidden:
                 raise ValueError("Binance does not support hidden orders.")
-            request["type"] = "LIMIT"
-            request["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
+            params["type"] = "LIMIT"
+            params["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
         elif order.type == OrderType.STOP_MARKET:
             if order.side == OrderSide.BUY:
-                request["type"] = "STOP_LOSS"
+                params["type"] = "STOP_LOSS"
             elif order.side == OrderSide.SELL:
-                request["type"] = "TAKE_PROFIT"
-            request["stopPrice"] = str(order.price)
+                params["type"] = "TAKE_PROFIT"
+            params["stopPrice"] = str(order.price)
 
-        return request
+        return params
 
     @staticmethod
     def build_py(Order order):
@@ -96,19 +96,15 @@ cdef class BinanceOrderRequestBuilder:
 cdef class BinanceOrderFillParser:
 
     @staticmethod
-    cdef dict parse(str symbol, dict info, dict fee):
+    cdef dict parse(dict report):
         """
-        Parse the information needed to generate an order filled event from the
+        Parse the information needed to generate an `OrderFilled` event from the
         given parameters.
 
         Parameters
         ----------
-        symbol : str
-            The fill symbol.
-        info : dict
-            The raw fill info.
-        fee : dict
-            The fill fee.
+        report : dict[str, object]
+            The execution report.
 
         Returns
         -------
@@ -116,37 +112,32 @@ cdef class BinanceOrderFillParser:
             The parsed information.
 
         """
-        Condition.valid_string(symbol, "symbol")
-        Condition.not_none(info, "info")
-        Condition.not_none(fee, "fee")
+        Condition.not_none(report, "report")
 
         return {
-            "symbol": symbol,
-            "fee": fee,
-            "fill_qty": info["l"],  # Last executed quantity
-            "cum_qty": info["z"],   # Cumulative filled quantity
-            "average": info["L"],   # Last executed price
-            "timestamp": info["T"],  # Transaction time
+            "symbol": report["symbol"],
+            "fill_qty": report["l"],             # Last executed quantity
+            "cum_qty": report["z"],              # Cumulative filled quantity
+            "avg_px": report["L"],               # Last executed price
+            "commission": report["n"],           # Commission amount
+            "commission_currency": report["N"],  # Commission asset
+            "timestamp": report["T"],            # Transaction time
         }
 
     @staticmethod
-    def parse_py(str symbol, dict info, dict fee):
+    def parse_py(dict report):
         """
         Parse the information needed to generate an order filled event from the
         given parameters.
 
         Parameters
         ----------
-        symbol : str
-            The fill symbol.
-        info : dict
-            The raw fill info.
-        fee : dict
-            The fill fee.
+        report : dict[str, object]
+            The execution report.
 
         Returns
         -------
         OrderFilled
 
         """
-        return BinanceOrderFillParser.parse(symbol, info, fee)
+        return BinanceOrderFillParser.parse(report)
