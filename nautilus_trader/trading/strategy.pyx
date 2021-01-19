@@ -94,7 +94,8 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         order_id_tag : str
-            The order_id tag for the strategy (must be unique at trader level).
+            The unique order identifier tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader identifier.
 
         Raises
         ------
