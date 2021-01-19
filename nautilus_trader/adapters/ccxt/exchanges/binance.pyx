@@ -96,15 +96,19 @@ cdef class BinanceOrderRequestBuilder:
 cdef class BinanceOrderFillParser:
 
     @staticmethod
-    cdef dict parse(dict info):
+    cdef dict parse(str symbol, dict info, dict fee):
         """
         Parse the information needed to generate an order filled event from the
         given parameters.
 
         Parameters
         ----------
+        symbol : str
+            The fill symbol.
         info : dict
-            The fill CCXT information.
+            The raw fill info.
+        fee : dict
+            The fill fee.
 
         Returns
         -------
@@ -112,30 +116,37 @@ cdef class BinanceOrderFillParser:
             The parsed information.
 
         """
+        Condition.valid_string(symbol, "symbol")
         Condition.not_none(info, "info")
+        Condition.not_none(fee, "fee")
 
         return {
-            "symbol": info["symbol"],
+            "symbol": symbol,
+            "fee": fee,
             "fill_qty": info["l"],  # Last executed quantity
             "cum_qty": info["z"],   # Cumulative filled quantity
             "average": info["L"],   # Last executed price
-            "fee": info.get("fee"),
             "timestamp": info["T"],  # Transaction time
         }
 
     @staticmethod
-    def parse_py(dict info):
+    def parse_py(str symbol, dict info, dict fee):
         """
-        Parse the order filled event from the given parameters.
+        Parse the information needed to generate an order filled event from the
+        given parameters.
 
         Parameters
         ----------
+        symbol : str
+            The fill symbol.
         info : dict
-            The fill CCXT information.
+            The raw fill info.
+        fee : dict
+            The fill fee.
 
         Returns
         -------
         OrderFilled
 
         """
-        return BinanceOrderFillParser.parse(info)
+        return BinanceOrderFillParser.parse(symbol, info, fee)

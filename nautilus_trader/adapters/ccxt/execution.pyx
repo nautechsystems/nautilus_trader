@@ -115,9 +115,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self.is_connected = False
 
-        self._order_id_index = {}  # type: dict[OrderId, ClientOrderId]
-        self._event_buffer = {}    # type: dict[OrderId, list]
-
         self._account_last_free = {}
         self._account_last_used = {}
         self._account_last_total = {}
@@ -160,7 +157,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Start streams
         self._watch_balances_task = self._loop.create_task(self._watch_balances())
         self._watch_orders_task = self._loop.create_task(self._watch_orders())
-        # self._watch_my_trades_task = self._loop.create_task(self._watch_my_trades())
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -175,7 +171,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info("Disconnecting...")
 
         stop_tasks = []
-        # Cancel update instruments
+        # Cancel scheduled tasks
         if self._update_instruments_task:
             self._update_instruments_task.cancel()
             # TODO: This task is not finishing
@@ -212,14 +208,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._log.info("Resetting...")
 
-        # TODO: Reset client
         self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
             load_all=False,
         )
-
-        self._order_id_index = {}
-        self._event_buffer = {}
 
         self._account_last_free = {}
         self._account_last_used = {}
@@ -371,7 +363,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_orders()
                     # CCXTCache is set to 1 so expecting one response at a time
-                    self._check_and_handle_order_event(events[0])
+                    self._on_order_event(events[0])
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
                     continue
@@ -394,50 +386,31 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 # CCXT Unified API
                 # ----------------
                 request = {"type": OrderTypeParser.to_str(order.type)}
-
-                if isinstance(order, PassiveOrder):
-                    request["price"] = str(order.price)
         except ValueError as ex:
             self._generate_order_denied(order.cl_ord_id, str(ex))
             return
 
         self._log.debug(f"Submitted {order}.")
+        # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
             order.cl_ord_id,
             self._clock.utc_now(),
             <long>c_round(order.init_event_c().timestamp.timestamp() * 1000000),
         )
 
-        cdef dict response
         try:
             # Submit order and await response
-            response = await self._client.create_order(
+            await self._client.create_order(
                 symbol=order.symbol.code,
                 type=request["type"],  # In request
                 side=OrderSideParser.to_str(order.side),
                 amount=str(order.quantity),
-                price=str(order.price) if order.price else None,
+                price=str(order.price) if isinstance(order, PassiveOrder) else None,
                 params=request,
             )
         except CCXTError as ex:
             self._generate_order_rejected(order.cl_ord_id, str(ex))
             return
-
-        cdef OrderId order_id = OrderId(response["id"])
-        cdef datetime timestamp = from_posix_ms(response["timestamp"])
-        self._generate_order_accepted(order.cl_ord_id, order_id, timestamp)
-
-        # Index order_id
-        self._order_id_index[order_id] = order.cl_ord_id
-        cdef list events = self._event_buffer.pop(order_id, None)
-        cdef dict event
-        if events:
-            # Process buffered events which are any events received before the
-            # order_id was indexed. We must wait for the above response with the
-            # order_id to ensure order management will work for any exchange
-            # regardless of whether a ClientOrderId was able to be set for the order.
-            for event in events:
-                self._handle_order_event(order.cl_ord_id, order_id, event)
 
     async def _cancel_order(self, ClientOrderId cl_ord_id):
         cdef Order order = self._engine.cache.order(cl_ord_id)
@@ -518,54 +491,46 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._handle_event(account_state)
 
-    cdef inline void _check_and_handle_order_event(self, dict event) except *:
-        cdef OrderId order_id = OrderId(event["id"])
-        cdef ClientOrderId cl_ord_id = self._order_id_index.get(order_id)
-        cdef list events
-        if cl_ord_id is None:
-            # Order event received before OrderId was indexed
-            # and OrderAccepted event generated.
-            events = self._event_buffer.get(order_id)
-            if events is None:
-                self._event_buffer[order_id] = [event]
-            else:
-                events.append(event)
-            return  # Waiting for OrderAccepted event to generate...
-
-        self._handle_order_event(cl_ord_id, order_id, event)
-
-    cdef inline void _handle_order_event(
-        self,
-        ClientOrderId cl_ord_id,
-        OrderId order_id,
-        dict event,
-    ) except *:
+    cdef inline void _on_order_event(self, dict event) except *:
         # TODO: Development
         self._log.info("Raw: " + str(event), LogColour.BLUE)
 
-        cdef timestamp = from_posix_ms(event["timestamp"])
-
         cdef dict info
+        cdef ClientOrderId cl_ord_id
+        cdef OrderId order_id
+        cdef datetime timestamp
         cdef str exec_type
+        cdef dict fill_info
         if self.venue.value == "BINANCE":
+            # -- BINANCE -------------------------------------------------------
             info = event["info"]
+            order_id = OrderId(str(info["i"]))
+            timestamp = from_posix_ms(info["E"])  # Event time (generic for now)
+
             exec_type = info["x"]
-            if exec_type == "NEW" and info["o"] != "MARKET":
-                self._generate_order_working(cl_ord_id, order_id, timestamp)
+            if exec_type == "NEW":
+                cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
+                self._generate_order_accepted(cl_ord_id, order_id, timestamp)
+                if info["o"] != "MARKET":
+                    self._generate_order_working(cl_ord_id, order_id, timestamp)
             elif exec_type == "TRADE":
-                info["symbol"] = event["symbol"]  # Binance has no / in symbols
-                info["fee"] = event.get("fee")
-                event = BinanceOrderFillParser.parse(info)  # Reassign event
-                self._generate_order_filled(cl_ord_id, order_id, event)
+                cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
+                fill_info = BinanceOrderFillParser.parse(event["symbol"], info, event.get("fee"))
+                self._generate_order_filled(cl_ord_id, order_id, fill_info)
             elif exec_type == "CANCELED":
+                cl_ord_id = ClientOrderId(info["C"])  # Original ClientOrderId
                 self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
             elif exec_type == "EXPIRED":
+                cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
                 self._generate_order_expired(cl_ord_id, order_id, timestamp)
         elif self.venue.value == "BITMEX":
+            # -- BITMEX --------------------------------------------------------
             pass  # TODO: Implement
         else:
-            # CCXT Unified API
-            # ----------------
+            # -- CCXT Unified --------------------------------------------------
+            cl_ord_id = ClientOrderId(event["clientOrderId"])
+            order_id = OrderId(event["id"])
+            timestamp = from_posix_ms(event["timestamp"])
             status = event["status"]
             filled: float = event["filled"]
             if status == "open" and filled == 0:
