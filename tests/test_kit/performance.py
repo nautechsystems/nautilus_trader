@@ -15,9 +15,81 @@
 
 import gc
 import inspect
-import math
 import sys
 import timeit
+
+
+class PerformanceHarness:
+
+    @staticmethod
+    def profile_function(function, runs, iterations, print_output=True) -> float:
+        """
+        Profile the given function.
+
+        Return the minimum elapsed time in seconds taken to call the given
+        function iteration times.
+
+        Also prints the elapsed time in milliseconds (ms), microseconds (μs) and
+        nanoseconds (ns). As a rule of thumb a CPU cycles in 1 nanosecond per
+        GHz of clock speed.
+
+        Parameters
+        ----------
+        function : callable
+            The function call to profile.
+        runs : int
+            The number of runs for the test.
+        iterations : int
+            The number of call iterations per run.
+        print_output : bool
+            If the output should be printed to the console.
+
+        Returns
+        -------
+        float
+
+        """
+        if iterations < 1:
+            raise ValueError("iterations cannot be less than 1")
+
+        results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
+        minimum = min(results)  # In seconds
+
+        if print_output:
+            result_milli = minimum * 1000          # 1,000ms in 1 second
+            result_micro = minimum * 1_000_000     # 1,000,000μs in 1 second
+            result_nano = minimum * 1_000_000_000  # 1,000,000,000ns in 1 second
+            print(f"\nPerformance test: {str(inspect.getmembers(function)[4][1])} ")
+            print(f"# ~{result_milli:.1f}ms "
+                  f"/ ~{result_micro:.1f}μs "
+                  f"/ {result_nano:.0f}ns "
+                  f"minimum of {runs:,} runs @ {iterations:,} "
+                  f"iteration{'s' if iterations > 1 else ''} each run.")
+
+        return minimum
+
+    @staticmethod
+    def object_size(x, print_output=True) -> int:
+        """Return the object size in bytes and optionally print the message.
+
+        Parameters
+        ----------
+        x : object
+            The object to check.
+        print_output : bool
+            If the output should be printed to the console.
+
+        Returns
+        -------
+        int
+
+        """
+        size = get_size_of(x)
+
+        if print_output:
+            print(f"\n# Object size {type(x)} is {size} bytes.")
+
+        return size
 
 
 def get_size_of(obj) -> int:
@@ -59,75 +131,3 @@ def get_size_of(obj) -> int:
         marked.update(new_ref.keys())
 
     return size
-
-
-_MILLISECONDS_IN_SECOND = 1000
-_MICROSECONDS_IN_SECOND = 1_000_000
-_NANOSECONDS_IN_SECOND = 1_000_000_000
-
-
-class PerformanceHarness:
-
-    @staticmethod
-    def profile_function(function, runs, iterations, print_output=True) -> float:
-        """Profile the given function.
-
-        Return the minimum time in seconds taken to call the given function iteration times.
-
-        Parameters
-        ----------
-        function : callable
-            The function call to profile.
-        runs : int
-            The number of runs for the test.
-        iterations : int
-            The number of call iterations per run.
-        print_output : bool
-            If the output should be printed to the console.
-
-        Returns
-        -------
-        float
-
-        """
-        if iterations < 1:
-            raise ValueError("iterations cannot be less than 1")
-
-        results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
-        minimum = min(results)
-
-        if print_output:
-            result_milliseconds = minimum * _MILLISECONDS_IN_SECOND
-            result_microseconds = minimum * _MICROSECONDS_IN_SECOND
-            result_nanoseconds = minimum * _NANOSECONDS_IN_SECOND
-            print(f"\nPerformance test: {str(inspect.getmembers(function)[4][1])} ")
-            print(f"# ~{result_milliseconds:.1f}ms "
-                  f"/ ~{result_microseconds:.1f}μs "
-                  f"/ {result_nanoseconds:.0f}ns "
-                  f"minimum of {runs:,} runs @ {iterations:,} "
-                  f"iteration{'s' if iterations > 1 else ''} each run.")
-
-        return minimum
-
-    @staticmethod
-    def object_size(x, print_output=True) -> int:
-        """Return the object size in bytes and optionally print the message.
-
-        Parameters
-        ----------
-        x : object
-            The object to check.
-        print_output : bool
-            If the output should be printed to the console.
-
-        Returns
-        -------
-        int
-
-        """
-        size = get_size_of(x)
-
-        if print_output:
-            print(f"\n# Object size {type(x)} is {size} bytes.")
-
-        return size
