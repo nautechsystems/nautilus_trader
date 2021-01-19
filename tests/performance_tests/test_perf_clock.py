@@ -43,4 +43,4 @@ class TestClockPerformanceTests(unittest.TestCase):
 
         iterations = 1
         PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)
-        # ~1484ms (1484100μs) minimum of 1 runs @ 1000000 iterations each run.
+        # ~526ms (526952μs) minimum of 1 runs @ 1 iterations each run. (100000 advances)

@@ -95,37 +95,42 @@ class DecimalPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_builtin_decimal_size():
         PerformanceHarness.object_size(Decimal("1.00000"))
-        # Object size test: <class 'nautilus_trader.base.Decimal'> is 104 bytes
+        # Object size <class 'decimal.Decimal'> is 104 bytes.
 
     @staticmethod
     def test_decimal_size():
         PerformanceHarness.object_size(_DECIMAL1)
-        # Object size test: <class 'nautilus_trader.model.objects.Decimal'> is 176 bytes.
+        # Object size <class 'nautilus_trader.model.objects.BaseDecimal'> is 168 bytes.
 
     @staticmethod
     def test_make_builtin_decimal():
-        PerformanceHarness.profile_function(DecimalTesting.make_builtin_decimal, 3, 100000)
-        # ~20ms (20605μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(DecimalTesting.make_builtin_decimal, 100000, 1)
+        # ~0.0ms / ~0.3μs / 253ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_make_decimal():
-        PerformanceHarness.profile_function(DecimalTesting.make_decimal, 3, 100000)
-        # ~29ms (29376μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(DecimalTesting.make_decimal, 100000, 1)
+        # ~0.0ms / ~0.3μs / 338ns minimum of 100,000 runs @ 1 iteration each run.
+
+    @staticmethod
+    def test_make_one_decimal():
+        PerformanceHarness.profile_function(DecimalTesting.make_decimal, 100000, 1)
+        # ~0.0ms / ~0.4μs / 359ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_make_price():
-        PerformanceHarness.profile_function(DecimalTesting.make_price, 3, 100000)
-        # ~44ms (44346μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(DecimalTesting.make_price, 100000, 1)
+        # ~0.0ms / ~0.5μs / 521ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_float_comparisons():
-        PerformanceHarness.profile_function(DecimalTesting.float_comparisons, 3, 100000)
-        # ~6ms (6314μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(DecimalTesting.float_comparisons, 100000, 1)
+        # ~0.0ms / ~0.1μs / 122ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_decimal_comparisons():
-        PerformanceHarness.profile_function(DecimalTesting.decimal_comparisons, 3, 100000)
-        # ~44ms (44222μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(DecimalTesting.decimal_comparisons, 100000, 1)
+        # ~0.0ms / ~0.4μs / 429ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_builtin_decimal_comparisons():

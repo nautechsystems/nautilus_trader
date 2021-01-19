@@ -41,17 +41,17 @@ class FunctionPerformanceTests(unittest.TestCase):
         fast_std(self.values)
 
     def test_np_mean(self):
-        PerformanceHarness.profile_function(self.np_mean, 3, 10000)
-        # ~90ms (90648μs) minimum of 3 runs @ 10,000 iterations each run.
+        PerformanceHarness.profile_function(self.np_mean, 10000, 1)
+        # ~0ms / ~9μs / 8464ns minimum of 10000 runs @ 1 iterations each run.
 
     def test_np_std(self):
-        PerformanceHarness.profile_function(self.np_std, 3, 10000)
-        # ~211ms (211428μs) minimum of 3 runs @ 10,000 iterations each run.
+        PerformanceHarness.profile_function(self.np_std, 10000, 1)
+        # ~0ms / ~20μs / 19517ns minimum of 10000 runs @ 1 iterations each run.
 
     def test_fast_mean(self):
-        PerformanceHarness.profile_function(self.fast_mean, 3, 10000)
-        # ~8ms (11443μs) minimum of 3 runs @ 10,000 iterations each run.
+        PerformanceHarness.profile_function(self.fast_mean, 100000, 1)
+        # ~0ms / ~1μs / 945ns minimum of 100000 runs @ 1 iterations each run.
 
     def test_fast_std(self):
-        PerformanceHarness.profile_function(self.fast_std, 3, 10000)
-        # ~19ms (19964μs) minimum of 3 runs @ 10,000 iterations each run.
+        PerformanceHarness.profile_function(self.fast_std, 100000, 1)
+        # ~0ms / ~3μs / 2015ns minimum of 100000 runs @ 1 iterations each run.

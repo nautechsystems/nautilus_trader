@@ -35,10 +35,10 @@ class UUIDPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_make_builtin_uuid():
-        PerformanceHarness.profile_function(UUIDTests.make_builtin_uuid, 3, 100000)
-        # ~279ms (279583μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(UUIDTests.make_builtin_uuid, 100000, 1)
+        # ~0ms / 5μs / 4136ns minimum of 100000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_make_nautilus_uuid():
-        PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 3, 100000)
-        # ~215ms (215908μs) minimum of 3 runs @ 100,000 iterations each run.
+        PerformanceHarness.profile_function(UUIDTests.make_nautilus_uuid, 100000, 1)
+        # ~0ms / ~4μs / 3582ns minimum of 100000 runs @ 1 iteration each run.
