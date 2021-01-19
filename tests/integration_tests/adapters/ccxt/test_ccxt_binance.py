@@ -16,6 +16,7 @@
 from datetime import timedelta
 import unittest
 
+from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderFillParser
 from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderRequestBuilder
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -34,7 +35,7 @@ BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
 
 
-class BinanceOrderBuilderTests(unittest.TestCase):
+class BinanceOrderRequestBuilderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -43,8 +44,6 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
-
-        self.builder = BinanceOrderRequestBuilder()
 
     def test_order_with_gtd_tif_raises_value_error(self):
         # Arrange
@@ -58,7 +57,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             post_only=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BinanceOrderRequestBuilder.build_py, order)
 
     def test_order_with_day_tif_raises_value_error(self):
         # Arrange
@@ -71,7 +70,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             post_only=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BinanceOrderRequestBuilder.build_py, order)
 
     def test_market_order(self):
         # Arrange
@@ -82,7 +81,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
         expected = {
@@ -103,7 +102,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
         expected = {
@@ -125,7 +124,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             hidden=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BinanceOrderRequestBuilder.build_py, order)
 
     def test_limit_buy_ioc(self):
         # Arrange
@@ -139,7 +138,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
         expected = {
@@ -162,7 +161,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
         expected = {
@@ -184,7 +183,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
         expected = {
@@ -192,5 +191,36 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             'recvWindow': 10000,
             'stopPrice': '100000',
             'type': 'TAKE_PROFIT',
+        }
+        self.assertEqual(expected, result)
+
+
+class BinanceOrderFillParserTests(unittest.TestCase):
+
+    def test_given_symbol_info_and_fee_returns_expected_fill_info(self):
+        # Arrange
+        symbol = "ETH/USDT"
+        info = {
+            "l": "0.02",
+            "z": "0.02",
+            "L": "2350.10000",
+            "T": 1611033130693,
+        }
+        fee = {
+            "currency": "USDT",
+            "cost": "0.026304"
+        }
+
+        # Act
+        result = BinanceOrderFillParser.parse_py(symbol, info, fee)
+
+        # Assert
+        expected = {
+            'average': '2350.10000',
+            'cum_qty': '0.02',
+            'fee': {'cost': '0.026304', 'currency': 'USDT'},
+            'fill_qty': '0.02',
+            'symbol': 'ETH/USDT',
+            'timestamp': 1611033130693,
         }
         self.assertEqual(expected, result)

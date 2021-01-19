@@ -25,4 +25,4 @@ cdef class BinanceOrderRequestBuilder:
 cdef class BinanceOrderFillParser:
 
     @staticmethod
-    cdef dict parse(dict info)
+    cdef dict parse(str symbol, dict info, dict fee)

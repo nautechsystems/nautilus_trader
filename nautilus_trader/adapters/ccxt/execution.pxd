@@ -25,9 +25,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
 
-    cdef dict _order_id_index
-    cdef dict _event_buffer
-
     cdef dict _account_last_free
     cdef dict _account_last_used
     cdef dict _account_last_total
@@ -43,8 +40,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- EVENTS ----------------------------------------------------------------------------------------
 
     cdef inline void _on_account_state(self, dict event) except *
-    cdef inline void _check_and_handle_order_event(self, dict event) except *
-    cdef inline void _handle_order_event(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _on_order_event(self, dict event) except *
     cdef inline void _generate_order_denied(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp, long init_ts) except *
     cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason) except *
