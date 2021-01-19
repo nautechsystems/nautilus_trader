@@ -26,6 +26,7 @@ total risk exposures and total net positions.
 
 from decimal import Decimal
 
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
@@ -207,8 +208,10 @@ cdef class Portfolio(PortfolioFacade):
         for venue in self._orders_working.keys():
             self._update_initial_margin(venue)
 
-        self._log.info(f"Initialized {working_count} "
-                       f"working order{'' if working_count == 1 else 's'}.")
+        self._log.info(
+            f"Initialized {working_count} working order{'' if working_count == 1 else 's'}.",
+            colour=LogColour.NORMAL if working_count == 0 else LogColour.BLUE,
+        )
 
     cpdef void initialize_positions(self, set positions) except *:
         """
@@ -253,10 +256,14 @@ cdef class Portfolio(PortfolioFacade):
             for symbol in self._symbols_open_for_venue(venue):
                 self._unrealized_pnls[symbol] = self._calculate_unrealized_pnl(symbol)
 
-        self._log.info(f"Initialized {open_count} "
-                       f"open position{'' if open_count == 1 else 's'}.")
-        self._log.info(f"Initialized {closed_count} "
-                       f"closed position{'' if closed_count == 1 else 's'}.")
+        self._log.info(
+            f"Initialized {open_count} open position{'' if open_count == 1 else 's'}.",
+            colour=LogColour.NORMAL if open_count == 0 else LogColour.BLUE,
+        )
+        self._log.info(
+            f"Initialized {closed_count} closed position{'' if closed_count == 1 else 's'}.",
+            colour=LogColour.NORMAL if closed_count == 0 else LogColour.BLUE,
+        )
 
     cpdef void update_tick(self, QuoteTick tick) except *:
         """

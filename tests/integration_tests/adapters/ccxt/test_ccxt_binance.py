@@ -16,7 +16,7 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderRequestBuilder
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -44,7 +44,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.builder = BinanceOrderBuilder()
+        self.builder = BinanceOrderRequestBuilder()
 
     def test_order_with_gtd_tif_raises_value_error(self):
         # Arrange
@@ -85,9 +85,12 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         result = self.builder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'MARKET', 'Buy', '0.10000000']
-        expected_custom_params = {'newClientOrderId': 'O-19700101-000000-000-001-1', 'recvWindow': 10000}
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'newClientOrderId': 'O-19700101-000000-000-001-1',
+            'recvWindow': 10000,
+            'type': 'MARKET',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_buy_post_only_order(self):
         # Arrange
@@ -103,12 +106,12 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         result = self.builder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'LIMIT_MAKER', 'Buy', '1.0', '50000']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
+            'type': 'LIMIT_MAKER',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
 
     def test_limit_hidden_order_raises_value_error(self):
         # Arrange
@@ -139,13 +142,13 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         result = self.builder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'LIMIT', 'Buy', '1.0', '50000']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
             'timeInForce': 'IOC',
+            'type': 'LIMIT',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
 
     def test_limit_sell_fok_order(self):
         # Arrange
@@ -162,13 +165,13 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         result = self.builder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'LIMIT', 'Sell', '1.0', '50000']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
             'timeInForce': 'FOK',
+            'type': 'LIMIT',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
 
     def test_stop_market_buy_order(self):
         # Arrange
@@ -184,10 +187,10 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         result = self.builder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'TAKE_PROFIT', 'Sell', '1.0']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
             'stopPrice': '100000',
+            'type': 'TAKE_PROFIT',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
