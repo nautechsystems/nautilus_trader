@@ -16,7 +16,13 @@
 from nautilus_trader.model.order cimport Order
 
 
-cdef class BinanceOrderBuilder:
+cdef class BinanceOrderRequestBuilder:
 
     @staticmethod
-    cdef tuple build(Order order)
+    cdef dict build(Order order)
+
+
+cdef class BinanceOrderFillParser:
+
+    @staticmethod
+    cdef dict parse(str symbol, dict info, dict fee)

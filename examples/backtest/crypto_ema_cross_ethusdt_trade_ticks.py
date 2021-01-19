@@ -55,9 +55,10 @@ if __name__ == "__main__":
     strategy = EMACross(
         symbol=ETHUSDT_BINANCE.symbol,
         bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-        fast_ema=10,
-        slow_ema=20,
+        fast_ema_period=10,
+        slow_ema_period=20,
         trade_size=Decimal(100),
+        order_id_tag="001",
     )
 
     # Build the backtest engine

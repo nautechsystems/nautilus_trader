@@ -15,19 +15,18 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.order cimport Order
 
 
-cdef class BinanceOrderBuilder:
+cdef class BinanceOrderRequestBuilder:
 
     @staticmethod
-    cdef tuple build(Order order):
+    cdef dict build(Order order):
         """
-        Build the CCXT arguments and custom parameters to create the given order.
+        Build the CCXT request to create the given order for Binance.
 
         Parameters
         ----------
@@ -36,8 +35,8 @@ cdef class BinanceOrderBuilder:
 
         Returns
         -------
-        list[object], dict[str, object]
-            The arguments and custom parameters.
+        dict[str, object]
+            The arguments for the create order request.
 
         """
         Condition.not_none(order, "order")
@@ -48,44 +47,29 @@ cdef class BinanceOrderBuilder:
         if order.time_in_force == TimeInForce.DAY:
             raise ValueError("Binance does not support TimeInForce.DAY.")
 
-        cdef str order_side = OrderSideParser.to_str(order.side).capitalize()
-        cdef str order_qty = str(order.quantity)
-
-        # Build args and custom params
-        cdef list args = [order.symbol.code]
-        cdef dict custom_params = {
+        cdef dict request = {
             "newClientOrderId": order.cl_ord_id.value,
             "recvWindow": 10000  # TODO: Server time sync issue?
         }
 
         if order.type == OrderType.MARKET:
-            args.append("MARKET")
-            args.append(order_side)
-            args.append(order_qty)
+            request["type"] = "MARKET"
         elif order.type == OrderType.LIMIT and order.is_post_only:
             # Cannot be hidden as post only is True
-            args.append("LIMIT_MAKER")
-            args.append(order_side)
-            args.append(order_qty)
-            args.append(str(order.price))
+            request["type"] = "LIMIT_MAKER"
         elif order.type == OrderType.LIMIT:
             if order.is_hidden:
                 raise ValueError("Binance does not support hidden orders.")
-            args.append("LIMIT")
-            args.append(order_side)
-            args.append(order_qty)
-            args.append(str(order.price))
-            custom_params["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
+            request["type"] = "LIMIT"
+            request["timeInForce"] = TimeInForceParser.to_str(order.time_in_force)
         elif order.type == OrderType.STOP_MARKET:
             if order.side == OrderSide.BUY:
-                args.append("STOP_LOSS")
+                request["type"] = "STOP_LOSS"
             elif order.side == OrderSide.SELL:
-                args.append("TAKE_PROFIT")
-            args.append(order_side)
-            args.append(order_qty)
-            custom_params["stopPrice"] = str(order.price)
+                request["type"] = "TAKE_PROFIT"
+            request["stopPrice"] = str(order.price)
 
-        return args, custom_params
+        return request
 
     @staticmethod
     def build_py(Order order):
@@ -106,4 +90,63 @@ cdef class BinanceOrderBuilder:
             The arguments and custom parameters.
 
         """
-        return BinanceOrderBuilder.build(order)
+        return BinanceOrderRequestBuilder.build(order)
+
+
+cdef class BinanceOrderFillParser:
+
+    @staticmethod
+    cdef dict parse(str symbol, dict info, dict fee):
+        """
+        Parse the information needed to generate an order filled event from the
+        given parameters.
+
+        Parameters
+        ----------
+        symbol : str
+            The fill symbol.
+        info : dict
+            The raw fill info.
+        fee : dict
+            The fill fee.
+
+        Returns
+        -------
+        dict[str, object]
+            The parsed information.
+
+        """
+        Condition.valid_string(symbol, "symbol")
+        Condition.not_none(info, "info")
+        Condition.not_none(fee, "fee")
+
+        return {
+            "symbol": symbol,
+            "fee": fee,
+            "fill_qty": info["l"],  # Last executed quantity
+            "cum_qty": info["z"],   # Cumulative filled quantity
+            "average": info["L"],   # Last executed price
+            "timestamp": info["T"],  # Transaction time
+        }
+
+    @staticmethod
+    def parse_py(str symbol, dict info, dict fee):
+        """
+        Parse the information needed to generate an order filled event from the
+        given parameters.
+
+        Parameters
+        ----------
+        symbol : str
+            The fill symbol.
+        info : dict
+            The raw fill info.
+        fee : dict
+            The fill fee.
+
+        Returns
+        -------
+        OrderFilled
+
+        """
+        return BinanceOrderFillParser.parse(symbol, info, fee)

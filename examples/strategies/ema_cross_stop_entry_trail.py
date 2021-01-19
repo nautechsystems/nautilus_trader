@@ -56,10 +56,11 @@ class EMACrossStopEntryTrail(TradingStrategy):
         symbol: Symbol,
         bar_spec: BarSpecification,
         trade_size: Decimal,
-        fast_ema_period: int=10,
-        slow_ema_period: int=20,
-        atr_period: int=20,
-        trail_atr_multiple: float=2.0,
+        fast_ema_period: int,
+        slow_ema_period: int,
+        atr_period: int,
+        trail_atr_multiple: float,
+        order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
         Initialize a new instance of the `EMACrossStopEntryWithTrailingStop` class.
@@ -80,11 +81,12 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The period for the ATR indicator.
         trail_atr_multiple : float
             The ATR multiple for the trailing stop.
+        order_id_tag : str
+            The unique order identifier tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader identifier.
 
         """
-        # The order_id_tag should be unique at the 'trader level', here we are
-        # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=symbol.code.replace('/', ""))
+        super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -350,10 +352,6 @@ class EMACrossStopEntryTrail(TradingStrategy):
         Returns
         -------
         dict
-
-        Notes
-        -----
-        "OrderIdCount' is a reserved key for the returned state dictionary.
 
         """
         return {}

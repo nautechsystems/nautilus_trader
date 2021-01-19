@@ -292,7 +292,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM, PositionId.null()))
 
-        expected_id = PositionId("P-000-AUD/USD.SIM-1")  # Generated inside engine
+        expected_id = PositionId("P-19700101-000000-000-001-1")  # Generated inside engine
 
         # Assert
         self.assertTrue(self.cache.position_exists(expected_id))
@@ -718,7 +718,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        position_id = PositionId("P-000-AUD/USD.SIM-1")
+        position_id = PositionId("P-19700101-000000-000-001-1")
 
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
@@ -743,7 +743,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
 
         # Assert
-        position_id_flipped = PositionId("P-000-AUD/USD.SIM-1F")
+        position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
         self.assertEqual(-50000, position_flipped.relative_quantity)
@@ -800,7 +800,7 @@ class ExecutionEngineTests(unittest.TestCase):
             self.clock.utc_now(),
         )
 
-        position_id = PositionId("P-000-AUD/USD.SIM-1")
+        position_id = PositionId("P-19700101-000000-000-001-1")
 
         self.exec_engine.execute(submit_order1)
         self.exec_engine.process(TestStubs.event_order_submitted(order1))
@@ -825,7 +825,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id))
 
         # Assert
-        position_id_flipped = PositionId("P-000-AUD/USD.SIM-1F")
+        position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
         self.assertEqual(50000, position_flipped.relative_quantity)

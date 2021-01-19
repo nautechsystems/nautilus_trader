@@ -190,14 +190,13 @@ cdef class Component:
         --------
         Do not override.
 
-        Exceptions raised in `_start` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         self._trigger_fsm(
             trigger1=ComponentTrigger.START,  # -> STARTING
             trigger2=ComponentTrigger.RUNNING,
             action=self._start,
-
         )
 
     cpdef void stop(self) except *:
@@ -213,7 +212,7 @@ cdef class Component:
         --------
         Do not override.
 
-        Exceptions raised in `_stop` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         self._trigger_fsm(
@@ -235,7 +234,7 @@ cdef class Component:
         --------
         Do not override.
 
-        Exceptions raised in `_resume` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         self._trigger_fsm(
@@ -259,7 +258,7 @@ cdef class Component:
         --------
         Do not override.
 
-        Exceptions raised in `_reset` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         self._trigger_fsm(
@@ -284,7 +283,7 @@ cdef class Component:
         --------
         Do not override.
 
-        Exceptions raised in `_dispose` will be caught, logged, and reraised.
+        Exceptions raised will be caught, logged, and reraised.
 
         """
         self._trigger_fsm(
@@ -305,7 +304,7 @@ cdef class Component:
             self._fsm.trigger(trigger1)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
-            raise ex  # Guards against component being put in an invalid state
+            raise  # Guards against component being put in an invalid state
 
         self._log.info(f"state={self._fsm.state_string_c()}...")
 
@@ -313,7 +312,7 @@ cdef class Component:
             action()
         except Exception as ex:
             self._log.exception(ex)
-            raise ex
+            raise
         finally:
             self._fsm.trigger(trigger2)
             self._log.info(f"state={self._fsm.state_string_c()}.")
