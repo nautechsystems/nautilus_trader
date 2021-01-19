@@ -199,26 +199,25 @@ class BinanceOrderFillParserTests(unittest.TestCase):
 
     def test_given_symbol_info_and_fee_returns_expected_fill_info(self):
         # Arrange
-        symbol = "ETH/USDT"
         info = {
+            "symbol": "ETH/USDT",
             "l": "0.02",
             "z": "0.02",
             "L": "2350.10000",
             "T": 1611033130693,
-        }
-        fee = {
-            "currency": "USDT",
-            "cost": "0.026304"
+            "n": "0.026304",
+            "N": "USDT",
         }
 
         # Act
-        result = BinanceOrderFillParser.parse_py(symbol, info, fee)
+        result = BinanceOrderFillParser.parse_py(info)
 
         # Assert
         expected = {
-            'average': '2350.10000',
+            'avg_px': '2350.10000',
+            'commission': '0.026304',
+            'commission_currency': 'USDT',
             'cum_qty': '0.02',
-            'fee': {'cost': '0.026304', 'currency': 'USDT'},
             'fill_qty': '0.02',
             'symbol': 'ETH/USDT',
             'timestamp': 1611033130693,

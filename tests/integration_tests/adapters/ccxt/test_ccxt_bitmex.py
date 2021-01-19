@@ -16,7 +16,7 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.adapters.ccxt.exchanges.bitmex import BitmexOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.bitmex import BitmexOrderRequestBuilder
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -44,8 +44,6 @@ class BitmexOrderBuilderTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.builder = BitmexOrderBuilder()
-
     def test_order_with_gtd_tif_raises_value_error(self):
         # Arrange
         order = self.order_factory.limit(
@@ -58,7 +56,7 @@ class BitmexOrderBuilderTests(unittest.TestCase):
             post_only=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BitmexOrderRequestBuilder.build_py, order)
 
     def test_market_order(self):
         # Arrange
@@ -69,13 +67,15 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'Market', 'Buy', '0.10000000']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1',
-                                  'timeInForce': 'GoodTillCancel'}
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'timeInForce': 'GoodTillCancel',
+            'type': 'Market',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_buy_post_only_reduce_only_order(self):
         # Arrange
@@ -89,15 +89,16 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'Limit', 'Buy', '1.0', '50000']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1',
-                                  'execInst': 'ParticipateDoNotInitiate,ReduceOnly',
-                                  'timeInForce': 'GoodTillCancel'}
-        self.assertTrue(order.is_post_only)
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'execInst': 'ParticipateDoNotInitiate,ReduceOnly',
+            'timeInForce': 'GoodTillCancel',
+            'type': 'Limit',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_sell_hidden_reduce_only_order(self):
         # Arrange
@@ -112,15 +113,17 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'Limit', 'Buy', '1.0', '50000']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1',
-                                  'displayQty': 0,
-                                  'execInst': 'ReduceOnly',
-                                  'timeInForce': 'GoodTillCancel'}
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'displayQty': 0,
+            'execInst': 'ReduceOnly',
+            'timeInForce': 'GoodTillCancel',
+            'type': 'Limit',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_sell_hidden(self):
         # Arrange
@@ -135,15 +138,16 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'Limit', 'Buy', '1.0', '50000']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1',
-                                  'displayQty': 0,
-                                  'timeInForce': 'ImmediateOrCancel'}
-        self.assertFalse(order.is_post_only)
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'displayQty': 0,
+            'timeInForce': 'ImmediateOrCancel',
+            'type': 'Limit',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_buy_ioc(self):
         # Arrange
@@ -157,13 +161,15 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'Limit', 'Buy', '1.0', '50000']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1', 'timeInForce': 'ImmediateOrCancel'}
-        self.assertFalse(order.is_post_only)
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'timeInForce': 'ImmediateOrCancel',
+            'type': 'Limit',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_sell_fok_order(self):
         # Arrange
@@ -177,13 +183,15 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'Limit', 'Sell', '1.0', '50000']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1', 'timeInForce': 'FillOrKill'}
-        self.assertFalse(order.is_post_only)
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'timeInForce': 'FillOrKill',
+            'type': 'Limit',
+        }
+        self.assertEqual(expected, result)
 
     def test_stop_market_buy_order(self):
         # Arrange
@@ -196,14 +204,16 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'StopMarket', 'Sell', '1.0']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1',
-                                  'stopPx': '100000',
-                                  'timeInForce': 'GoodTillCancel'}
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'stopPx': '100000',
+            'timeInForce': 'GoodTillCancel',
+            'type': 'StopMarket',
+        }
+        self.assertEqual(expected, result)
 
     def test_stop_market_sell_reduce_only_order(self):
         # Arrange
@@ -216,11 +226,13 @@ class BitmexOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BitmexOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'StopMarket', 'Sell', '1.0']
-        expected_custom_params = {'clOrdID': 'O-19700101-000000-000-001-1',
-                                  'stopPx': '100000',
-                                  'timeInForce': 'GoodTillCancel'}
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'clOrdID': 'O-19700101-000000-000-001-1',
+            'stopPx': '100000',
+            'timeInForce': 'GoodTillCancel',
+            'type': 'StopMarket',
+        }
+        self.assertEqual(expected, result)

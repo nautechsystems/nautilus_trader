@@ -23,7 +23,7 @@ from ccxt.base.errors import BaseError as CCXTError
 
 from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceOrderRequestBuilder
 from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceOrderFillParser
-from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderRequestBuilder
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -32,7 +32,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
@@ -64,6 +63,7 @@ from nautilus_trader.live.execution cimport LiveExecutionClient
 from nautilus_trader.live.execution cimport LiveExecutionEngine
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
+cdef tuple _INTEGRATED_VENUES = ("BINANCE", "BITMEX")
 
 
 cdef class CCXTExecutionClient(LiveExecutionClient):
@@ -96,8 +96,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             The logger for the client.
 
         """
+        venue_code = client.name.upper()
+        # Ensure only integrated exchanges for execution
+        if venue_code not in _INTEGRATED_VENUES:
+            raise RuntimeError(f"{venue_code} has not been integrated in this version.")
+
         super().__init__(
-            Venue(client.name.upper()),
+            Venue(venue_code),
             account_id,
             engine,
             clock,
@@ -274,6 +279,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         Condition.not_none(command, "command")
 
+        # TODO: Implement
         self._log.error("Cannot amend orders in this version.")
 
     cpdef void cancel_order(self, CancelOrder command) except *:
@@ -357,13 +363,18 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.error("`watch_orders` not available.")
             return
 
+        cdef dict event
+        cdef dict event0
         try:
             while True:
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_orders()
+                    event0 = events[0]
+                    event = event0["info"]
+                    event["symbol"] = event0["symbol"]  # Replace for symbol with '/'
                     # CCXTCache is set to 1 so expecting one response at a time
-                    self._on_order_event(events[0])
+                    self._on_order_event(event)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
                     continue
@@ -375,17 +386,22 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
-        # Build arguments for request
-        cdef dict request
+        # Common arguments
+        cdef str symbol = order.symbol.code
+        cdef str order_type  # Assign for specific API
+        cdef str order_side = OrderSideParser.to_str(order.side)
+        cdef str quantity = str(order.quantity)
+        cdef str price = str(order.price) if isinstance(order, PassiveOrder) else None
+        cdef dict params     # Assign for specific API
         try:
+            # Exchange specific arguments
+            # Eventually refactor the below into separate classes
             if self.venue.value == "BINANCE":
-                request = BinanceOrderRequestBuilder.build(order)
-            # elif self.venue.value == "BITMEX":
-            #     request = BitmexOrderBuilder.build(order)
-            else:
-                # CCXT Unified API
-                # ----------------
-                request = {"type": OrderTypeParser.to_str(order.type)}
+                params = BinanceOrderRequestBuilder.build(order)
+                order_type = params["type"]
+            elif self.venue.value == "BITMEX":
+                params = BitmexOrderRequestBuilder.build(order)
+                order_type = params["type"]
         except ValueError as ex:
             self._generate_order_denied(order.cl_ord_id, str(ex))
             return
@@ -401,12 +417,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=order.symbol.code,
-                type=request["type"],  # In request
-                side=OrderSideParser.to_str(order.side),
-                amount=str(order.quantity),
-                price=str(order.price) if isinstance(order, PassiveOrder) else None,
-                params=request,
+                symbol=symbol,
+                type=order_type,
+                side=order_side,
+                amount=quantity,
+                price=price,
+                params=params,
             )
         except CCXTError as ex:
             self._generate_order_rejected(order.cl_ord_id, str(ex))
@@ -415,11 +431,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     async def _cancel_order(self, ClientOrderId cl_ord_id):
         cdef Order order = self._engine.cache.order(cl_ord_id)
         if order is None:
-            self._log.error(f"Cannot cancel order, order for {cl_ord_id} not found.")
+            self._log.error(f"Cannot cancel order, {repr(cl_ord_id)} not found.")
             return  # Cannot cancel
 
         if not order.is_working_c():
-            self._log.error(f"Cannot cancel order, order is not working.")
+            self._log.error(f"Cannot cancel order, OrderState={order.state_string_c()}.")
             return  # Cannot cancel
 
         try:
@@ -495,7 +511,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # TODO: Development
         self._log.info("Raw: " + str(event), LogColour.BLUE)
 
-        cdef dict info
         cdef ClientOrderId cl_ord_id
         cdef OrderId order_id
         cdef datetime timestamp
@@ -503,51 +518,29 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef dict fill_info
         if self.venue.value == "BINANCE":
             # -- BINANCE -------------------------------------------------------
-            info = event["info"]
-            order_id = OrderId(str(info["i"]))
-            timestamp = from_posix_ms(info["E"])  # Event time (generic for now)
+            order_id = OrderId(str(event["i"]))
+            timestamp = from_posix_ms(event["E"])  # Event time (generic for now)
 
-            exec_type = info["x"]
+            exec_type = event["x"]
             if exec_type == "NEW":
-                cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
+                cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
                 self._generate_order_accepted(cl_ord_id, order_id, timestamp)
-                if info["o"] != "MARKET":
+                if event["o"] != "MARKET":
                     self._generate_order_working(cl_ord_id, order_id, timestamp)
             elif exec_type == "TRADE":
-                cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
-                fill_info = BinanceOrderFillParser.parse(event["symbol"], info, event.get("fee"))
+                cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
+                fill_info = BinanceOrderFillParser.parse(event)
                 self._generate_order_filled(cl_ord_id, order_id, fill_info)
             elif exec_type == "CANCELED":
-                cl_ord_id = ClientOrderId(info["C"])  # Original ClientOrderId
+                cl_ord_id = ClientOrderId(event["C"])  # Original ClientOrderId
                 self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
             elif exec_type == "EXPIRED":
-                cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
+                cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
                 self._generate_order_expired(cl_ord_id, order_id, timestamp)
-        # elif self.venue.value == "BITMEX":
-        #     # -- BITMEX --------------------------------------------------------
-        #     pass  # TODO: Implement
-        else:
-            # -- CCXT Unified --------------------------------------------------
-            cl_ord_id = ClientOrderId(event["clientOrderId"])
-            order_id = OrderId(event["id"])
-            timestamp = from_posix_ms(event["timestamp"])
-            status = event["status"]
-            filled: float = event["filled"]
-            if status == "open" and filled == 0:
-                self._generate_order_working(cl_ord_id, order_id, timestamp)
-            elif status == "closed":
-                # We have to wait until order closed to get all of the correct
-                # fill information from CCXT
-                event["fill_qty"] = filled
-                event["cum_qty"] = filled
-                event["leaves_qty"] = 0
-                self._generate_order_filled(cl_ord_id, order_id, event)
-            elif status == "canceled":
-                self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-            elif status == "expired":
-                self._generate_order_expired(cl_ord_id, order_id, timestamp)
-            else:
-                self._log.warning(f"Unrecognized CCXT status '{status}'.")
+        elif self.venue.value == "BITMEX":
+            # -- BITMEX --------------------------------------------------------
+            raise RuntimeError("Bitmex not integrated in this version.")
+            pass  # TODO: Implement
 
     cdef inline void _generate_order_denied(
         self,
@@ -632,19 +625,20 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot fill order
 
         # Determine commission
+        cdef str commission_str = event["commission"]
+        cdef str currency_str = event["commission_currency"]
         cdef Money commission = None
         cdef Currency currency = None
-        cdef dict fees = event.get("fee")
-        if fees is None:
+        if currency_str is None:
             commission = Money(0, instrument.quote_currency)
         else:
-            currency = self._instrument_provider.currency(fees["currency"])
+            currency = self._instrument_provider.currency(currency_str)
             if currency is None:
                 self._log.error(f"Cannot determine commission for {order_id}, "
-                                f"currency for {fees['currency']} not found.")
+                                f"currency for {currency_str} not found.")
                 commission = Money(0, instrument.quote_currency)
             else:
-                commission = Money(fees["cost"], currency)
+                commission = Money(commission_str, currency)
 
         # Determine position identifier
         cdef PositionId position_id = self._engine.cache.position_id(order.cl_ord_id)
@@ -672,7 +666,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             fill_qty,
             cum_qty,
             leaves_qty,
-            Price(event["average"], instrument.price_precision),
+            Price(event["avg_px"], instrument.price_precision),
             instrument.quote_currency,
             instrument.is_inverse,
             commission,

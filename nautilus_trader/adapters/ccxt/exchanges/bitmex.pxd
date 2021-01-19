@@ -16,7 +16,13 @@
 from nautilus_trader.model.order cimport Order
 
 
-cdef class BitmexOrderBuilder:
+cdef class BitmexOrderRequestBuilder:
 
     @staticmethod
-    cdef tuple build(Order order)
+    cdef dict build(Order order)
+
+
+cdef class BitmexOrderFillParser:
+
+    @staticmethod
+    cdef dict parse(str symbol, dict info, dict fee)

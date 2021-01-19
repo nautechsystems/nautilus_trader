@@ -614,7 +614,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cache_venue_account_id(account.id)
 
         self._log.debug(f"Added Account(id={account.id.value}).")
-        self._log.debug(f"Indexed {repr(account.id)} for {account.id.issuer}.")
+        self._log.debug(f"Indexed {repr(account.id)}.")
 
         # Update database
         self._database.add_account(account)
@@ -1596,7 +1596,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId cl_ord_id):
         """
-        Return the strategy identifier associated with the given identifier (if found).
+        Return the strategy identifier associated with the given identifier
+        (if found).
 
         Parameters
         ----------
@@ -1614,7 +1615,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """
-        Return the strategy identifier associated with the given identifier (if found).
+        Return the strategy identifier associated with the given identifier
+        (if found).
 
         Parameters
         ----------
