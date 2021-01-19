@@ -866,12 +866,20 @@ cdef class SimulatedExchange:
     ) except *:
         # Query if there is an existing position for this order
         cdef PositionId position_id = self._position_index.get(order.cl_ord_id)
-        # position_id could be None here
+        # *** position_id could be None here ***
 
+        cdef PositionId new_position_id
         cdef Position position = None
         if position_id is None:
-            position_id = self._generate_position_id(order.symbol)
-            self._position_index[order.cl_ord_id] = position_id
+            # Generate a new position identifier
+            new_position_id = self._generate_position_id(order.symbol)
+            self._position_index[order.cl_ord_id] = new_position_id
+            if self.generate_position_ids:
+                # Set the filled position identifier
+                position_id = new_position_id
+            else:
+                # Only use the position identifier internally to the exchange
+                position_id = PositionId.null_c()
         else:
             position = self.exec_cache.position(position_id)
             position_id = position.id
@@ -903,7 +911,7 @@ cdef class SimulatedExchange:
             fill_price,
             instrument.quote_currency,
             instrument.is_inverse,
-            commission,  # In instrument settlement currency
+            commission,
             liquidity_side,
             self._clock.utc_now(),
             self._uuid_factory.generate(),
