@@ -16,7 +16,8 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderBuilder
+from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderFillParser
+from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderRequestBuilder
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.enums import OrderSide
@@ -34,7 +35,7 @@ BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)
 
 
-class BinanceOrderBuilderTests(unittest.TestCase):
+class BinanceOrderRequestBuilderTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -43,8 +44,6 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             strategy_id=StrategyId("S", "001"),
             clock=TestClock(),
         )
-
-        self.builder = BinanceOrderBuilder()
 
     def test_order_with_gtd_tif_raises_value_error(self):
         # Arrange
@@ -58,7 +57,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             post_only=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BinanceOrderRequestBuilder.build_py, order)
 
     def test_order_with_day_tif_raises_value_error(self):
         # Arrange
@@ -71,7 +70,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             post_only=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BinanceOrderRequestBuilder.build_py, order)
 
     def test_market_order(self):
         # Arrange
@@ -82,12 +81,15 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'MARKET', 'Buy', '0.10000000']
-        expected_custom_params = {'newClientOrderId': 'O-19700101-000000-000-001-1', 'recvWindow': 10000}
-        self.assertEqual((expected_args, expected_custom_params), result)
+        expected = {
+            'newClientOrderId': 'O-19700101-000000-000-001-1',
+            'recvWindow': 10000,
+            'type': 'MARKET',
+        }
+        self.assertEqual(expected, result)
 
     def test_limit_buy_post_only_order(self):
         # Arrange
@@ -100,15 +102,15 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'LIMIT_MAKER', 'Buy', '1.0', '50000']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
+            'type': 'LIMIT_MAKER',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
 
     def test_limit_hidden_order_raises_value_error(self):
         # Arrange
@@ -122,7 +124,7 @@ class BinanceOrderBuilderTests(unittest.TestCase):
             hidden=True,
         )
 
-        self.assertRaises(ValueError, self.builder.build_py, order)
+        self.assertRaises(ValueError, BinanceOrderRequestBuilder.build_py, order)
 
     def test_limit_buy_ioc(self):
         # Arrange
@@ -136,16 +138,16 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'LIMIT', 'Buy', '1.0', '50000']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
             'timeInForce': 'IOC',
+            'type': 'LIMIT',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
 
     def test_limit_sell_fok_order(self):
         # Arrange
@@ -159,16 +161,16 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'LIMIT', 'Sell', '1.0', '50000']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
             'timeInForce': 'FOK',
+            'type': 'LIMIT',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
 
     def test_stop_market_buy_order(self):
         # Arrange
@@ -181,13 +183,44 @@ class BinanceOrderBuilderTests(unittest.TestCase):
         )
 
         # Act
-        result = self.builder.build_py(order)
+        result = BinanceOrderRequestBuilder.build_py(order)
 
         # Assert
-        expected_args = ['BTC/USDT', 'TAKE_PROFIT', 'Sell', '1.0']
-        expected_custom_params = {
+        expected = {
             'newClientOrderId': 'O-19700101-000000-000-001-1',
             'recvWindow': 10000,
             'stopPrice': '100000',
+            'type': 'TAKE_PROFIT',
         }
-        self.assertEqual((expected_args, expected_custom_params), result)
+        self.assertEqual(expected, result)
+
+
+class BinanceOrderFillParserTests(unittest.TestCase):
+
+    def test_given_symbol_info_and_fee_returns_expected_fill_info(self):
+        # Arrange
+        symbol = "ETH/USDT"
+        info = {
+            "l": "0.02",
+            "z": "0.02",
+            "L": "2350.10000",
+            "T": 1611033130693,
+        }
+        fee = {
+            "currency": "USDT",
+            "cost": "0.026304"
+        }
+
+        # Act
+        result = BinanceOrderFillParser.parse_py(symbol, info, fee)
+
+        # Assert
+        expected = {
+            'average': '2350.10000',
+            'cum_qty': '0.02',
+            'fee': {'cost': '0.026304', 'currency': 'USDT'},
+            'fill_qty': '0.02',
+            'symbol': 'ETH/USDT',
+            'timestamp': 1611033130693,
+        }
+        self.assertEqual(expected, result)

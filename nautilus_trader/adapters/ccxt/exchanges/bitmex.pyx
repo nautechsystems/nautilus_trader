@@ -69,12 +69,12 @@ cdef class BitmexOrderBuilder:
             elif order.is_hidden:
                 custom_params["displayQty"] = 0
             if order.is_reduce_only:
-                if exec_inst:
+                if exec_inst is not None:
                     exec_inst += ",ReduceOnly"
                 else:
                     exec_inst = "ReduceOnly"
 
-            if exec_inst:
+            if exec_inst is not None:
                 custom_params["execInst"] = exec_inst
 
         elif order.type == OrderType.STOP_MARKET:

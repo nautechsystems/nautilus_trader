@@ -29,9 +29,9 @@ from nautilus_trader.model.identifiers import Venue
 # file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",               # Not sent beyond system boundary
-        "id_tag": "001",                # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 10.0,  # How long to wait after stopping for residual events (secs)
+        "name": "TESTER",              # Not sent beyond system boundary
+        "id_tag": "001",               # Used to ensure orders are unique for this trader
+        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -74,6 +74,7 @@ strategy1 = EMACross(
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal(10000),
+    order_id_tag="001",
 )
 
 strategy2 = EMACross(
@@ -82,6 +83,7 @@ strategy2 = EMACross(
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal(10000),
+    order_id_tag="002",
 )
 
 strategy3 = EMACross(
@@ -90,6 +92,7 @@ strategy3 = EMACross(
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal(10000),
+    order_id_tag="003",
 )
 
 strategies = [

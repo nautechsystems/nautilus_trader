@@ -21,7 +21,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport StrategyId
 
 
 cdef class IdentifierGenerator:
@@ -29,83 +29,20 @@ cdef class IdentifierGenerator:
     Provides a generator for unique identifier strings.
     """
 
-    def __init__(
-        self,
-        str prefix not None,
-        IdTag id_tag_trader not None,
-        IdTag id_tag_strategy not None,
-        Clock clock not None,
-        int initial_count=0,
-    ):
+    def __init__(self, IdTag id_tag_trader not None, Clock clock not None):
         """
         Initialize a new instance of the `IdentifierGenerator` class.
 
         Parameters
         ----------
-        prefix : str
-            The prefix for each generated identifier.
         id_tag_trader : IdTag
             The identifier tag for the trader.
-        id_tag_strategy : IdTag
-            The identifier tag for the strategy.
         clock : Clock
             The internal clock.
-        initial_count : int
-            The initial count for the generator.
-
-        Raises
-        ------
-        ValueError
-            If prefix is not a valid string.
-        ValueError
-            If initial_count is negative (< 0).
 
         """
-        Condition.valid_string(prefix, "prefix")
-        Condition.not_negative_int(initial_count, "initial_count")
-
         self._clock = clock
-        self._prefix = prefix
-        self._id_tag_trader = id_tag_trader
-        self._id_tag_strategy = id_tag_strategy
-        self.count = initial_count
-
-    cpdef void set_count(self, int count) except *:
-        """
-        Set the internal counter to the given count.
-
-        Parameters
-        ----------
-        count : int
-            The count to set.
-
-        """
-        self.count = count
-
-    cpdef void reset(self) except *:
-        """
-        Reset the identifier generator.
-
-        All stateful fields are reset to their initial value.
-        """
-        self.count = 0
-
-    cdef str _generate(self):
-        """
-        Return a unique identifier string.
-
-        Returns
-        -------
-        str
-
-        """
-        self.count += 1
-
-        return (f"{self._prefix}-"
-                f"{self._get_datetime_tag()}-"
-                f"{self._id_tag_trader.value}-"
-                f"{self._id_tag_strategy.value}-"
-                f"{self.count}")
+        self._id_tag_trader = id_tag_trader.value
 
     cdef str _get_datetime_tag(self):
         """
@@ -128,7 +65,7 @@ cdef class IdentifierGenerator:
 
 cdef class OrderIdGenerator(IdentifierGenerator):
     """
-    Provides a generator for unique OrderId(s).
+    Provides a generator for unique ClientOrderId(s).
     """
 
     def __init__(
@@ -158,13 +95,23 @@ cdef class OrderIdGenerator(IdentifierGenerator):
             If initial_count is negative (< 0).
 
         """
-        super().__init__(
-            "O",
-            id_tag_trader,
-            id_tag_strategy,
-            clock,
-            initial_count,
-        )
+        Condition.not_negative_int(initial_count, "initial_count")
+        super().__init__(id_tag_trader, clock)
+
+        self._id_tag_strategy = id_tag_strategy.value
+        self.count = initial_count
+
+    cpdef void set_count(self, int count) except *:
+        """
+        Set the internal counter to the given count.
+
+        Parameters
+        ----------
+        count : int
+            The count to set.
+
+        """
+        self.count = count
 
     cpdef ClientOrderId generate(self):
         """
@@ -175,15 +122,31 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         ClientOrderId
 
         """
-        return ClientOrderId(self._generate())
+        self.count += 1
+
+        return ClientOrderId(
+            f"O-"
+            f"{self._get_datetime_tag()}-"
+            f"{self._id_tag_trader}-"
+            f"{self._id_tag_strategy}-"
+            f"{self.count}",
+        )
+
+    cpdef void reset(self) except *:
+        """
+        Reset the identifier generator.
+
+        All stateful fields are reset to their initial value.
+        """
+        self.count = 0
 
 
-cdef class PositionIdGenerator:
+cdef class PositionIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique PositionId(s).
     """
 
-    def __init__(self, IdTag id_tag_trader not None):
+    def __init__(self, IdTag id_tag_trader not None, Clock clock not None):
         """
         Initialize a new instance of the `PositionIdGenerator` class.
 
@@ -193,25 +156,19 @@ cdef class PositionIdGenerator:
             The position identifier tag for the trader.
 
         """
-        self._id_tag_trader = id_tag_trader
-        self._counts = {}
+        super().__init__(id_tag_trader, clock)
 
-    cpdef void reset(self) except *:
-        """
-        Reset the identifier generator.
+        self._id_tag_trader = id_tag_trader.value
+        self._counts = {}  # type: dict[StrategyId, int]
 
-        All stateful fields are reset to their initial value.
+    cpdef void set_count(self, StrategyId strategy_id, int count):
         """
-        self._counts = {}
-
-    cpdef void set_count(self, Symbol symbol, int count):
-        """
-        Set the internal position count.
+        Set the internal position count for the given strategy identifier.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol count to set.
+        strategy_id : StrategyId
+            The strategy identifier associated with the count.
         count : int
             The count to set.
 
@@ -221,19 +178,19 @@ cdef class PositionIdGenerator:
             If the count is negative (< 0).
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(strategy_id, "strategy_id")
         Condition.not_negative_int(count, "count")
 
-        self._counts[symbol] = count
+        self._counts[strategy_id] = count
 
-    cpdef PositionId generate(self, Symbol symbol, bint flipped=False):
+    cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=False):
         """
         Return a unique position identifier.
 
         Parameters
         ----------
-        symbol : Symbol
-            The symbol for the identifier.
+        strategy_id : StrategyId
+            The strategy identifier for the position.
         flipped : bool
             If the position is being flipped. If True then the generated id
             will be appended with 'F'.
@@ -243,12 +200,24 @@ cdef class PositionIdGenerator:
         PositionId
 
         """
-        Condition.not_none(symbol, "symbol")
+        Condition.not_none(strategy_id, "strategy_id")
 
-        cdef int count = self._counts.get(symbol, 0)
+        cdef int count = self._counts.get(strategy_id, 0)
         count += 1
-        self._counts[symbol] = count
+        self._counts[strategy_id] = count
 
-        cdef str flipped_str = 'F' if flipped else ''
+        return PositionId(
+            f"P-"
+            f"{self._get_datetime_tag()}-"
+            f"{self._id_tag_trader}-"
+            f"{strategy_id.tag.value}-"
+            f"{count}{'F' if flipped else ''}",
+        )
 
-        return PositionId(f"P-{self._id_tag_trader.value}-{symbol.value}-{count}{flipped_str}")
+    cpdef void reset(self) except *:
+        """
+        Reset the identifier generator.
+
+        All stateful fields are reset to their initial value.
+        """
+        self._counts = {}  # type: dict[StrategyId, int]

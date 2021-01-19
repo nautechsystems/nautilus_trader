@@ -63,9 +63,10 @@ if __name__ == "__main__":
     strategy = EMACross(
         symbol=GBPUSD.symbol,
         bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
-        fast_ema=10,
-        slow_ema=20,
+        fast_ema_period=10,
+        slow_ema_period=20,
         trade_size=Decimal(1_000_000),
+        order_id_tag="001",
     )
 
     # Build the backtest engine
@@ -74,6 +75,7 @@ if __name__ == "__main__":
         strategies=[strategy],  # List of 'any' number of strategies
         use_tick_cache=True,    # Pre-cache ticks for increased performance on repeated runs
         # exec_db_type="redis",
+        # exec_db_flush=False,
         # bypass_logging=True
     )
 

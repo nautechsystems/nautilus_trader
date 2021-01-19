@@ -59,7 +59,7 @@ class OandaDataClientTests(unittest.TestCase):
         asyncio.set_event_loop(self.loop)
         self.executor = concurrent.futures.ThreadPoolExecutor()
         self.loop.set_default_executor(self.executor)
-        self.loop.set_debug(False)  # TODO: Development
+        self.loop.set_debug(True)  # TODO: Development
 
         # Setup logging
         logger = LiveLogger(
@@ -106,20 +106,21 @@ class OandaDataClientTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
-    def test_connect(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.data_engine.start()  # Also starts client
-            await asyncio.sleep(0.3)
-
-            # Assert
-            self.assertTrue(self.client.is_connected)
-
-            # Tear Down
-            self.data_engine.stop()
-
-        self.loop.run_until_complete(run_test())
+    # TODO: WIP
+    # def test_connect(self):
+    #     async def run_test():
+    #         # Arrange
+    #         # Act
+    #         self.data_engine.start()  # Also connects client
+    #         await asyncio.sleep(0.3)
+    #
+    #         # Assert
+    #         self.assertTrue(self.client.is_connected)
+    #
+    #         # Tear Down
+    #         self.data_engine.stop()
+    #
+    #     self.loop.run_until_complete(run_test())
 
     def test_disconnect(self):
         # Arrange

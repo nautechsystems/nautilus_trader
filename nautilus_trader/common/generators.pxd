@@ -15,35 +15,31 @@
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport IdTag
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport StrategyId
 
 
 cdef class IdentifierGenerator:
     cdef Clock _clock
-    cdef str _prefix
-    cdef IdTag _id_tag_trader
-    cdef IdTag _id_tag_strategy
+    cdef str _id_tag_trader
+
+    cdef str _get_datetime_tag(self)
+
+
+cdef class OrderIdGenerator(IdentifierGenerator):
+    cdef str _id_tag_strategy
 
     cdef readonly int count
     """The count of identifiers generated.\n\n:returns: `int`"""
 
     cpdef void set_count(self, int count) except *
-    cpdef void reset(self) except *
-
-    cdef str _generate(self)
-    cdef str _get_datetime_tag(self)
-
-
-cdef class OrderIdGenerator(IdentifierGenerator):
     cpdef ClientOrderId generate(self)
-
-
-cdef class PositionIdGenerator:
-    cdef dict _counts
-    cdef IdTag _id_tag_trader
-
-    cpdef void set_count(self, Symbol symbol, int count)
     cpdef void reset(self) except *
-    cpdef PositionId generate(self, Symbol symbol, bint flipped=*)
+
+
+cdef class PositionIdGenerator(IdentifierGenerator):
+    cdef dict _counts
+
+    cpdef void set_count(self, StrategyId strategy_id, int count)
+    cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=*)
+    cpdef void reset(self) except *

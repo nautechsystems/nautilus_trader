@@ -407,7 +407,7 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
             self._log.debug(f"Saving {strategy.id} state {{ {key}: {value} }}")
         cdef list reply = pipe.execute()
 
-        self._log.info(f"Saved strategy state for {strategy.id.value}.")
+        self._log.debug(f"Saved strategy state for {strategy.id.value}.")
 
     cpdef void update_account(self, Account account) except *:
         """

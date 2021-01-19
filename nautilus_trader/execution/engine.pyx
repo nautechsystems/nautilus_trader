@@ -37,6 +37,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -63,7 +64,6 @@ from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
@@ -111,7 +111,10 @@ cdef class ExecutionEngine(Component):
 
         self._clients = {}     # type: dict[Venue, ExecutionClient]
         self._strategies = {}  # type: dict[StrategyId, TradingStrategy]
-        self._pos_id_generator = PositionIdGenerator(database.trader_id.tag)
+        self._pos_id_generator = PositionIdGenerator(
+            id_tag_trader=database.trader_id.tag,
+            clock=clock,
+        )
         self._portfolio = portfolio
 
         self.trader_id = database.trader_id
@@ -339,7 +342,7 @@ cdef class ExecutionEngine(Component):
         self.cache.cache_positions()
         self.cache.build_index()
         self.cache.check_integrity()
-        self._set_position_symbol_counts()
+        self._set_position_id_counts()
 
         self._log.info(f"Loaded cache in {time.time() - ts:.3f}s.")
 
@@ -588,8 +591,8 @@ cdef class ExecutionEngine(Component):
             # Search cache for ClientOrderId matching the OrderId
             cl_ord_id = self.cache.cl_ord_id(event.order_id)
             if cl_ord_id is None:
-                self._log.error(f"Cannot apply {event} to any order, "
-                                f"no ClientOrderId found matching .")
+                self._log.error(f"Cannot apply event to any order, "
+                                f"no matching ClientOrderId found in cache.")
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
@@ -600,7 +603,7 @@ cdef class ExecutionEngine(Component):
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
-            event.replace_cl_ord_id(cl_ord_id)
+            event.cl_ord_id = cl_ord_id
             self._log.warning(f"{repr(cl_ord_id)} was found in cache and "
                               f"applying event to order with {repr(order.id)}.")
 
@@ -647,11 +650,11 @@ cdef class ExecutionEngine(Component):
             return  # Cannot process event further
 
         if fill.position_id.is_null():  # Exchange not assigning position_ids
-            self._fill_when_system_assigned_pos_ids(position_id, fill, strategy_id)
+            self._fill_with_no_position_id(position_id, fill, strategy_id)
         else:
-            self._fill_when_exchange_assigned_pos_ids(position_id, fill, strategy_id)
+            self._fill_with_assigned_position_id(position_id, fill, strategy_id)
 
-    cdef inline void _fill_when_system_assigned_pos_ids(
+    cdef inline void _fill_with_no_position_id(
         self,
         PositionId position_id,
         OrderFilled fill,
@@ -659,7 +662,7 @@ cdef class ExecutionEngine(Component):
     ) except *:
         if position_id is None:  # No position yet
             # Generate identifier and assign
-            fill.position_id = self._pos_id_generator.generate(fill.symbol)
+            fill.position_id = self._pos_id_generator.generate(strategy_id)
 
             # Create new position
             self._open_position(fill)
@@ -668,7 +671,7 @@ cdef class ExecutionEngine(Component):
             fill.strategy_id = strategy_id
             self._update_position(fill)
 
-    cdef inline void _fill_when_exchange_assigned_pos_ids(
+    cdef inline void _fill_with_assigned_position_id(
         self,
         PositionId position_id,
         OrderFilled fill,
@@ -755,7 +758,7 @@ cdef class ExecutionEngine(Component):
 
         # Generate position identifier for flipped position
         cdef PositionId position_id_flip = self._pos_id_generator.generate(
-            symbol=fill.symbol,
+            strategy_id=fill.strategy_id,
             flipped=True,
         )
 
@@ -826,25 +829,25 @@ cdef class ExecutionEngine(Component):
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef inline void _set_position_symbol_counts(self) except *:
+    cdef inline void _set_position_id_counts(self) except *:
         # For the internal position identifier generator
         cdef list positions = self.cache.positions()
 
         # Count positions per symbol
-        cdef dict counts = {}  # type: dict[Symbol, int]
+        cdef dict counts = {}  # type: dict[StrategyId, int]
         cdef int count
         cdef Position position
         for position in positions:
-            count = counts.get(position.symbol, 0)
+            count = counts.get(position.strategy_id, 0)
             count += 1
             # noinspection PyUnresolvedReferences
-            counts[position.symbol] = count
+            counts[position.strategy_id] = count
 
         # Reset position identifier generator
         self._pos_id_generator.reset()
 
         # Set counts
-        cdef Symbol symbol
-        for symbol, count in counts.items():
-            self._pos_id_generator.set_count(symbol, count)
-            self._log.info(f"Set position count {symbol} to {count}")
+        cdef StrategyId strategy_id
+        for strategy_id, count in counts.items():
+            self._pos_id_generator.set_count(strategy_id, count)
+            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.", LogColour.BLUE)

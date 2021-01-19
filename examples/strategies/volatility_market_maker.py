@@ -50,8 +50,9 @@ class VolatilityMarketMaker(TradingStrategy):
         symbol: Symbol,
         bar_spec: BarSpecification,
         trade_size: Decimal,
-        atr_period: int=20,
-        atr_multiple: float=2.0,
+        atr_period: int,
+        atr_multiple: float,
+        order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
         Initialize a new instance of the `VolatilityMarketMaker` class.
@@ -68,11 +69,12 @@ class VolatilityMarketMaker(TradingStrategy):
             The period for the ATR indicator.
         atr_multiple : float
             The ATR multiple for bracketing limit orders.
+        order_id_tag : str
+            The unique order identifier tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader identifier.
 
         """
-        # The order_id_tag should be unique at the 'trader level', here we are
-        # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=symbol.code.replace('/', ""))
+        super().__init__(order_id_tag=order_id_tag)
 
         # Custom strategy variables
         self.symbol = symbol
@@ -279,10 +281,6 @@ class VolatilityMarketMaker(TradingStrategy):
         Returns
         -------
         dict
-
-        Notes
-        -----
-        "OrderIdCount' is a reserved key for the returned state dictionary.
 
         """
         return {}
