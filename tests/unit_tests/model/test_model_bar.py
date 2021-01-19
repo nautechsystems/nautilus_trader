@@ -31,8 +31,8 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
-GBPUSD_SIM = TestStubs.symbol_gbpusd_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd()
+GBPUSD_SIM = TestStubs.symbol_gbpusd()
 
 
 class BarSpecificationTests(unittest.TestCase):

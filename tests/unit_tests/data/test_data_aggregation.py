@@ -49,7 +49,7 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusd_bitmex()
 
 
@@ -245,7 +245,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -269,7 +269,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -293,7 +293,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -342,7 +342,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -391,7 +391,7 @@ class TickBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TickBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -453,7 +453,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -477,7 +477,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -501,7 +501,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -550,7 +550,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -599,7 +599,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -658,7 +658,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(10000, BarAggregation.VOLUME, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -717,7 +717,7 @@ class VolumeBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(1000, BarAggregation.VOLUME, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = VolumeBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -779,7 +779,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -804,7 +804,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -829,7 +829,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.BID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -879,7 +879,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(100000, BarAggregation.VALUE, PriceType.LAST)
         bar_type = BarType(symbol, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -934,7 +934,7 @@ class ValueBarAggregatorTests(unittest.TestCase):
         # Arrange
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(1000, BarAggregation.VALUE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = ValueBarAggregator(bar_type, handler, TestLogger(TestClock()))
@@ -997,7 +997,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
 
@@ -1024,7 +1024,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_type = BarType(symbol, bar_spec)
 
         # Act
@@ -1038,7 +1038,7 @@ class TimeBarAggregatorTests(unittest.TestCase):
         clock = TestClock()
         bar_store = ObjectStorer()
         handler = bar_store.store
-        symbol = TestStubs.symbol_audusd_fxcm()
+        symbol = TestStubs.symbol_audusd()
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
         aggregator = TimeBarAggregator(bar_type, handler, True, TestClock(), TestLogger(clock))
@@ -1095,7 +1095,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.wrangler = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
             data_quotes=tick_data,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -1104,7 +1104,7 @@ class BulkTickBarBuilderTests(unittest.TestCase):
 
         bar_store = ObjectStorer()
         handler = bar_store.store_2
-        symbol = TestStubs.symbol_usdjpy_fxcm()
+        symbol = TestStubs.symbol_usdjpy()
         bar_spec = BarSpecification(3, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(symbol, bar_spec)
 

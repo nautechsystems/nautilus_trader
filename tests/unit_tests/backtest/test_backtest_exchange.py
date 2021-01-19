@@ -59,8 +59,8 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 
 SIM = Venue("SIM")
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy())
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
 
