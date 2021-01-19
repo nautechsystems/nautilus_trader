@@ -43,13 +43,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- EVENTS ----------------------------------------------------------------------------------------
 
     cdef inline void _on_account_state(self, dict event) except *
-    cdef inline void _check_and_process_order_event(self, OrderId order_id, dict event) except *
-    cdef inline void _process_order_event(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _check_and_handle_order_event(self, dict event) except *
+    cdef inline void _handle_order_event(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
     cdef inline void _generate_order_denied(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp, long init_ts) except *
     cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason) except *
-    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline void _generate_order_filled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
-    cdef inline void _generate_order_working(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
-    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
-    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
+    cdef inline void _generate_order_working(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
+    cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
+    cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *

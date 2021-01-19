@@ -639,9 +639,9 @@ cdef class TradingStrategy(Component):
         self._check_trader_registered()
 
         try:
-            self.log.info("Saving state...")
+            self.log.debug("Saving state...")
             user_state = self.on_save()
-            self.log.info("Saved state.")
+            self.log.info("Saved state.", LogColour.BLUE)
             return user_state
         except Exception as ex:
             self.log.exception(ex)
@@ -675,7 +675,7 @@ cdef class TradingStrategy(Component):
         try:
             self.log.debug("Loading state...")
             self.on_load(state)
-            self.log.info("Loaded state.")
+            self.log.info("Loaded state.", LogColour.BLUE)
         except Exception as ex:
             self.log.exception(ex)
             raise

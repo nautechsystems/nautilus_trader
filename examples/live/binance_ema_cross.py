@@ -29,9 +29,9 @@ from nautilus_trader.model.identifiers import Venue
 # file. Here it is hardcoded into the example for clarity.
 config = {
     "trader": {
-        "name": "TESTER",               # Not sent beyond system boundary
-        "id_tag": "001",                # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 10.0,  # How long to wait after stopping for residual events (secs)
+        "name": "TESTER",              # Not sent beyond system boundary
+        "id_tag": "001",               # Used to ensure orders are unique for this trader
+        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
