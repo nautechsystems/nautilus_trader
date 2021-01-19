@@ -77,6 +77,7 @@ strategy = EMACrossStopEntryTrail(
     slow_ema_period=20,
     atr_period=20,
     trail_atr_multiple=2.0,
+    order_id_tag="001",
 )
 
 # Instantiate the node passing a list of strategies and configuration

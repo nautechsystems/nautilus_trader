@@ -75,6 +75,7 @@ strategy = VolatilityMarketMaker(
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("10"),
     atr_multiple=3.0,
+    order_id_tag="001",
 )
 
 # Instantiate the node passing a list of strategies and configuration

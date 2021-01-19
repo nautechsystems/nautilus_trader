@@ -83,6 +83,7 @@ strategy1 = EMACross(
     trade_size=Decimal("0.02"),
     fast_ema_period=10,
     slow_ema_period=20,
+    order_id_tag="001",
 )
 
 strategy2 = EMACrossStopEntryTrail(
@@ -93,6 +94,7 @@ strategy2 = EMACrossStopEntryTrail(
     slow_ema_period=20,
     atr_period=20,
     trail_atr_multiple=2.0,
+    order_id_tag="002",
 )
 
 # Instantiate the node passing a list of strategies and configuration

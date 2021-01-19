@@ -87,6 +87,7 @@ strategy = VolatilityMarketMaker(
     trade_size=Decimal("0.02"),
     atr_period=20,
     atr_multiple=1.0,
+    order_id_tag="001",
 )
 
 # Instantiate the node passing a list of strategies and configuration

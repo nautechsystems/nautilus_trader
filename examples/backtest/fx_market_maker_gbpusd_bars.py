@@ -67,6 +67,7 @@ if __name__ == "__main__":
         trade_size=Decimal(500_000),
         atr_period=20,
         atr_multiple=3.0,
+        order_id_tag="001",
     )
 
     # Build the backtest engine

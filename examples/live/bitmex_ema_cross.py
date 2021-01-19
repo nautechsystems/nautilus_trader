@@ -87,6 +87,7 @@ strategy = EMACross(
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("10"),
+    order_id_tag="001",
 )
 
 # Instantiate the node passing a list of strategies and configuration
