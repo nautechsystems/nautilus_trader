@@ -31,7 +31,7 @@ config = {
     "trader": {
         "name": "TESTER",              # Not sent beyond system boundary
         "id_tag": "001",               # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "check_residuals_delay": 2.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {

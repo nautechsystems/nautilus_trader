@@ -14,28 +14,27 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.order cimport Order
 
 
-cdef class BitmexOrderBuilder:
+cdef class BitmexOrderRequestBuilder:
 
     @staticmethod
-    cdef tuple build(Order order):
+    cdef dict build(Order order):
         """
         Build the CCXT arguments and custom parameters to create the given order.
 
         Parameters
         ----------
         order : Order
-            The order to build.
+            The order for the request.
 
         Returns
         -------
-        list[object], dict[str, object]
-            The arguments and custom parameters.
+        dict[str, object]
+            The arguments for the create order request.
 
         """
         Condition.not_none(order, "order")
@@ -43,58 +42,43 @@ cdef class BitmexOrderBuilder:
         if order.time_in_force == TimeInForce.GTD:
             raise ValueError("GTD not supported in this version.")
 
-        cdef str order_side = OrderSideParser.to_str(order.side).capitalize()
-        cdef str order_qty = str(order.quantity)
-
-        # Build args and custom params
-        cdef list args = [order.symbol.code]
-        cdef dict custom_params = {
+        cdef dict params = {
             "clOrdID": order.cl_ord_id.value,
         }
 
         cdef str exec_inst = None
         if order.type == OrderType.MARKET:
-            args.append("Market")
-            args.append(order_side)
-            args.append(order_qty)
+            params["type"] = "Market"
         elif order.type == OrderType.LIMIT:
-            args.append("Limit")
-            args.append(order_side)
-            args.append(order_qty)
-            args.append(str(order.price))
-
+            params["type"] = "Limit"
             # Execution instructions
             if order.is_post_only:
                 exec_inst = "ParticipateDoNotInitiate"
             elif order.is_hidden:
-                custom_params["displayQty"] = 0
+                params["displayQty"] = 0
             if order.is_reduce_only:
                 if exec_inst is not None:
                     exec_inst += ",ReduceOnly"
                 else:
                     exec_inst = "ReduceOnly"
-
             if exec_inst is not None:
-                custom_params["execInst"] = exec_inst
-
+                params["execInst"] = exec_inst
         elif order.type == OrderType.STOP_MARKET:
-            args.append("StopMarket")
-            args.append(order_side)
-            args.append(order_qty)
-            custom_params["stopPx"] = str(order.price)
+            params["type"] = "StopMarket"
+            params["stopPx"] = str(order.price)
             if order.is_reduce_only:
-                custom_params["execInst"] = "ReduceOnly"
+                params["execInst"] = "ReduceOnly"
 
         if order.time_in_force == TimeInForce.DAY:
-            custom_params["timeInForce"] = "Day"
+            params["timeInForce"] = "Day"
         elif order.time_in_force == TimeInForce.GTC:
-            custom_params["timeInForce"] = "GoodTillCancel"
+            params["timeInForce"] = "GoodTillCancel"
         elif order.time_in_force == TimeInForce.IOC:
-            custom_params["timeInForce"] = "ImmediateOrCancel"
+            params["timeInForce"] = "ImmediateOrCancel"
         elif order.time_in_force == TimeInForce.FOK:
-            custom_params["timeInForce"] = "FillOrKill"
+            params["timeInForce"] = "FillOrKill"
 
-        return args, custom_params
+        return params
 
     @staticmethod
     def build_py(Order order):
@@ -115,4 +99,58 @@ cdef class BitmexOrderBuilder:
             The arguments and custom parameters.
 
         """
-        return BitmexOrderBuilder.build(order)
+        return BitmexOrderRequestBuilder.build(order)
+
+
+cdef class BitmexOrderFillParser:
+
+    @staticmethod
+    cdef dict parse(str symbol, dict info, dict fee):
+        """
+        Parse the information needed to generate an `OrderFilled` event from the
+        given parameters.
+
+        Parameters
+        ----------
+        symbol : str
+            The fill symbol.
+        info : dict
+            The raw fill info.
+        fee : dict
+            The fill fee.
+
+        Returns
+        -------
+        dict[str, object]
+            The parsed information.
+
+        """
+        Condition.valid_string(symbol, "symbol")
+        Condition.not_none(info, "info")
+        Condition.not_none(fee, "fee")
+
+        return {
+
+        }
+
+    @staticmethod
+    def parse_py(str symbol, dict info, dict fee):
+        """
+        Parse the information needed to generate an order filled event from the
+        given parameters.
+
+        Parameters
+        ----------
+        symbol : str
+            The fill symbol.
+        info : dict
+            The raw fill info.
+        fee : dict
+            The fill fee.
+
+        Returns
+        -------
+        OrderFilled
+
+        """
+        return BitmexOrderFillParser.parse(symbol, info, fee)
