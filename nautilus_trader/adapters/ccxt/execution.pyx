@@ -380,8 +380,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             if self.venue.value == "BINANCE":
                 request = BinanceOrderRequestBuilder.build(order)
-            elif self.venue.value == "BITMEX":
-                request = BitmexOrderBuilder.build(order)
+            # elif self.venue.value == "BITMEX":
+            #     request = BitmexOrderBuilder.build(order)
             else:
                 # CCXT Unified API
                 # ----------------
@@ -523,9 +523,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             elif exec_type == "EXPIRED":
                 cl_ord_id = ClientOrderId(info["c"])  # ClientOrderId
                 self._generate_order_expired(cl_ord_id, order_id, timestamp)
-        elif self.venue.value == "BITMEX":
-            # -- BITMEX --------------------------------------------------------
-            pass  # TODO: Implement
+        # elif self.venue.value == "BITMEX":
+        #     # -- BITMEX --------------------------------------------------------
+        #     pass  # TODO: Implement
         else:
             # -- CCXT Unified --------------------------------------------------
             cl_ord_id = ClientOrderId(event["clientOrderId"])
@@ -676,7 +676,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             instrument.quote_currency,
             instrument.is_inverse,
             commission,
-            LiquiditySide.TAKER if order.type != OrderType.LIMIT else LiquiditySide.MAKER,
+            LiquiditySide.TAKER if order.type != OrderType.LIMIT else LiquiditySide.MAKER,  # TODO: Implement
             from_posix_ms(timestamp),
             self._uuid_factory.generate(),
             self._clock.utc_now(),
