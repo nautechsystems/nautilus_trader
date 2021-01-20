@@ -218,7 +218,9 @@ class BinanceOrderFillParserTests(unittest.TestCase):
             'commission': '0.026304',
             'commission_currency': 'USDT',
             'cum_qty': '0.02',
+            'exec_id': '1611033130693',
             'fill_qty': '0.02',
+            'liquidity_side': 2,
             'symbol': 'ETH/USDT',
             'timestamp': 1611033130693,
         }

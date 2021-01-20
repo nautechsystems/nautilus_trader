@@ -48,7 +48,6 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -501,18 +500,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
             package[ACCOUNT_ID] = event.account_id.value
             package[REJECTED_TIME] = ObjectParser.datetime_to_str(event.rejected_time)
             package[REASON] = event.reason
-        elif isinstance(event, OrderWorking):
-            package[CLIENT_ORDER_ID] = event.cl_ord_id.value
-            package[ACCOUNT_ID] = event.account_id.value
-            package[ORDER_ID] = event.order_id.value
-            package[SYMBOL] = event.symbol.value
-            package[ORDER_SIDE] = self.convert_snake_to_camel(OrderSideParser.to_str(event.order_side))
-            package[ORDER_TYPE] = self.convert_snake_to_camel(OrderTypeParser.to_str(event.order_type))
-            package[QUANTITY] = str(event.quantity)
-            package[PRICE] = str(event.price)
-            package[TIME_IN_FORCE] = TimeInForceParser.to_str(event.time_in_force)
-            package[EXPIRE_TIME] = ObjectParser.datetime_to_str(event.expire_time)
-            package[WORKING_TIME] = ObjectParser.datetime_to_str(event.working_time)
         elif isinstance(event, OrderCancelReject):
             package[CLIENT_ORDER_ID] = event.cl_ord_id.value
             package[ORDER_ID] = event.order_id.value
@@ -665,22 +652,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
                 ClientOrderId(unpacked[CLIENT_ORDER_ID]),
                 ObjectParser.string_to_datetime(unpacked[REJECTED_TIME]),
                 unpacked[REASON],
-                event_id,
-                event_timestamp,
-            )
-        elif event_type == OrderWorking.__name__:
-            return OrderWorking(
-                self.identifier_cache.get_account_id(unpacked[ACCOUNT_ID]),
-                ClientOrderId(unpacked[CLIENT_ORDER_ID]),
-                OrderId(unpacked[ORDER_ID]),
-                Symbol.from_str_c(unpacked[SYMBOL]),
-                OrderSideParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_SIDE])),
-                OrderTypeParser.from_str(self.convert_camel_to_snake(unpacked[ORDER_TYPE])),
-                Quantity(unpacked[QUANTITY]),
-                Price(unpacked[PRICE]),
-                TimeInForceParser.from_str(unpacked[TIME_IN_FORCE]),
-                ObjectParser.string_to_datetime(unpacked[EXPIRE_TIME]),
-                ObjectParser.string_to_datetime(unpacked[WORKING_TIME]),
                 event_id,
                 event_timestamp,
             )

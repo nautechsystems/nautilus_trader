@@ -58,9 +58,9 @@ from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
-USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy())
 
 
 class TradingStrategyTests(unittest.TestCase):
@@ -1660,7 +1660,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertIn(entry, strategy.execution.orders())
-        self.assertEqual(OrderState.WORKING, entry.state)
+        self.assertEqual(OrderState.ACCEPTED, entry.state)
         self.assertIn(entry, strategy.execution.orders_working())
         self.assertTrue(strategy.execution.is_order_working(entry.cl_ord_id))
         self.assertFalse(strategy.execution.is_order_completed(entry.cl_ord_id))
@@ -1748,7 +1748,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(order, strategy.execution.orders()[0])
-        self.assertEqual(OrderState.WORKING, strategy.execution.orders()[0].state)
+        self.assertEqual(OrderState.ACCEPTED, strategy.execution.orders()[0].state)
         self.assertEqual(Quantity(110000), strategy.execution.orders()[0].quantity)
         self.assertEqual(Price("90.002"), strategy.execution.orders()[0].price)
         self.assertTrue(strategy.execution.order_exists(order.cl_ord_id))

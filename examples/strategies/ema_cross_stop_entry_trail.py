@@ -218,7 +218,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The last bar received.
 
         """
-        order = self.order_factory.stop_market(
+        order: StopMarketOrder = self.order_factory.stop_market(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),

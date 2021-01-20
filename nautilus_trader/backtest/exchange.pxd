@@ -125,7 +125,6 @@ cdef class SimulatedExchange:
     cdef inline void _process_market_order(self, MarketOrder order, Price market_bid, Price market_ask) except *
     cdef inline void _process_limit_order(self, LimitOrder order, Price market_bid, Price market_ask) except *
     cdef inline void _process_passive_order(self, PassiveOrder order, Price market_bid, Price market_ask) except *
-    cdef inline void _work_order(self, PassiveOrder order) except *
     cdef inline void _auction_buy_order(self, PassiveOrder order, Price market) except *
     cdef inline void _auction_buy_stop_order(self, PassiveOrder order, Price market) except *
     cdef inline void _auction_buy_limit_order(self, PassiveOrder order, Price market) except *

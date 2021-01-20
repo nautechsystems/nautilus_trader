@@ -31,7 +31,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_SIM = TestStubs.symbol_audusd_fxcm()
+AUDUSD_SIM = TestStubs.symbol_audusd()
 
 
 class QuoteTickDataWranglerTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.usdjpy_ticks()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
             data_quotes=tick_data,
             data_bars_bid=None,
             data_bars_ask=None,
@@ -72,7 +72,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
             data_quotes=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -103,7 +103,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.audusd_ticks()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd()),
             data_quotes=tick_data,
             data_bars_bid=None,
             data_bars_ask=None,
@@ -126,7 +126,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         bid_data = TestDataProvider.usdjpy_1min_bid()
         ask_data = TestDataProvider.usdjpy_1min_ask()
         self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
             data_quotes=None,
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
@@ -163,7 +163,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
         # Arrange
         tick_data = TestDataProvider.ethusdt_trades()
         self.tick_builder = TradeTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()),
+            instrument=TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()),
             data=tick_data,
         )
 

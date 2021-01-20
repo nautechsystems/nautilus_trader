@@ -77,15 +77,15 @@ cdef class CCXTClientsFactory:
         client: ccxtpro.Exchange = client_cls({
             "apiKey": os.getenv(config.get("api_key", ""), ""),
             "secret": os.getenv(config.get("api_secret", ""), ""),
-            "timeout": 10000,                          # Hard coded for now
-            "enableRateLimit": True,                   # Hard coded for now
+            "timeout": 10000,         # Hard coded for now
+            "enableRateLimit": True,  # Hard coded for now
             "asyncio_loop": data_engine.get_event_loop(),
 
             # Set cache limits
             "options": {
+                "OHLCVLimit": 1,
                 "balancesLimit": 1,
                 "tradesLimit": 1,
-                "OHLCVLimit": 1,
                 "ordersLimit": 1,
             },
         })

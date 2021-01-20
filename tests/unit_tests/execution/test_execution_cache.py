@@ -46,8 +46,8 @@ from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd_fxcm())
-GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
 
 
 class ExecutionCacheTests(unittest.TestCase):
@@ -308,7 +308,7 @@ class ExecutionCacheTests(unittest.TestCase):
         # Assert
         self.assertEqual(position, result)
 
-    def test_update_order_for_working_order(self):
+    def test_update_order_for_accepted_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.symbol,
@@ -324,9 +324,6 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order)
 
         order.apply(TestStubs.event_order_accepted(order))
-        self.cache.update_order(order)
-
-        order.apply(TestStubs.event_order_working(order))
 
         # Act
         self.cache.update_order(order)
@@ -565,9 +562,6 @@ class ExecutionCacheTests(unittest.TestCase):
         order2.apply(TestStubs.event_order_accepted(order2))
         self.cache.update_order(order2)
 
-        order2.apply(TestStubs.event_order_working(order2))
-        self.cache.update_order(order2)
-
         # Act
         self.cache.check_residuals()
 
@@ -615,9 +609,6 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order2)
 
         order2.apply(TestStubs.event_order_accepted(order2))
-        self.cache.update_order(order2)
-
-        order2.apply(TestStubs.event_order_working(order2))
         self.cache.update_order(order2)
 
         self.cache.update_order(order2)
@@ -671,9 +662,6 @@ class ExecutionCacheTests(unittest.TestCase):
         self.cache.update_order(order2)
 
         order2.apply(TestStubs.event_order_accepted(order2))
-        self.cache.update_order(order2)
-
-        order2.apply(TestStubs.event_order_working(order2))
         self.cache.update_order(order2)
 
         # Act
