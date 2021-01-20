@@ -93,8 +93,9 @@ class EMACrossStopEntryTrail(TradingStrategy):
         self.bar_type = BarType(symbol, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
-        self.instrument = None  # Initialize in on_start
-        self.tick_size = None   # Initialize in on_start
+        self.instrument = None       # Initialize in on_start
+        self.tick_size = None        # Initialize in on_start
+        self.price_precision = None  # Initialize in on_start
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(fast_ema_period)
@@ -114,6 +115,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             return
 
         self.tick_size = self.instrument.tick_size
+        self.price_precision = self.instrument.price_precision
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.fast_ema)
@@ -183,7 +185,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
                           f"[{self.data.bar_count(self.bar_type)}]...")
             return  # Wait for indicators to warm up...
 
-        if self.portfolio.is_flat:
+        if self.portfolio.is_flat(self.symbol):
             if self.entry is not None:
                 self.cancel_order(self.entry)
             # BUY LOGIC
@@ -202,7 +204,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             symbol=self.symbol,
             order_side=OrderSide.BUY,
             quantity=Quantity(self.trade_size),
-            price=Price(last_bar.high + self.tick_size),
+            price=Price(last_bar.high + (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -222,7 +224,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
             symbol=self.symbol,
             order_side=OrderSide.SELL,
             quantity=Quantity(self.trade_size),
-            price=Price(last_bar.low - self.tick_size),
+            price=Price(last_bar.low - (self.tick_size * 2)),
         )
 
         self.entry = order
@@ -238,7 +240,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The last bar received.
 
         """
-        price: Decimal = last_bar.high + (self.atr.value * self.trail_atr_multiple)
+        # Round price to nearest 0.5 (for XBT/USD)
+        price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
         order: StopMarketOrder = self.order_factory.stop_market(
             symbol=self.symbol,
             order_side=OrderSide.BUY,
@@ -254,7 +257,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         """
         Users simple trailing stop SELL for (LONG positions).
         """
-        price: Decimal = last_bar.low - (self.atr.value * self.trail_atr_multiple)
+        # Round price to nearest 0.5 (for XBT/USD)
+        price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
         order: StopMarketOrder = self.order_factory.stop_market(
             symbol=self.symbol,
             order_side=OrderSide.SELL,
@@ -276,19 +280,22 @@ class EMACrossStopEntryTrail(TradingStrategy):
             The last bar received.
 
         """
+        self.log.info("Managing trailing stop...")
         if not self.trailing_stop:
             self.log.error("Trailing Stop order was None!")
             self.flatten_all_positions(self.symbol)
             return
 
         if self.trailing_stop.is_sell:
-            new_trailing_price = last_bar.low - (self.atr.value * self.trail_atr_multiple)
+            new_trailing_price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
             if new_trailing_price > self.trailing_stop.price:
+                self.log.info(f"Moving SELL trailing stop to {new_trailing_price}.")
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_sell(last_bar)
         else:  # trailing_stop.is_buy
-            new_trailing_price = last_bar.high + (self.atr.value * self.trail_atr_multiple)
+            new_trailing_price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
             if new_trailing_price < self.trailing_stop.price:
+                self.log.info(f"Moving BUY trailing stop to {new_trailing_price}.")
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_buy(last_bar)
 
@@ -315,14 +322,16 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         """
         if isinstance(event, OrderFilled):
-            if event.cl_ord_id == self.entry.cl_ord_id:
-                last_bar = self.data.bar(self.bar_type)
-                if event.order_side == OrderSide.BUY:
-                    self.trailing_stop_sell(last_bar)
-                elif event.order_side == OrderSide.SELL:
-                    self.trailing_stop_buy(last_bar)
-            elif event.cl_ord_id == self.trailing_stop.cl_ord_id:
-                self.trailing_stop = None
+            if self.entry:
+                if event.cl_ord_id == self.entry.cl_ord_id:
+                    last_bar = self.data.bar(self.bar_type)
+                    if event.order_side == OrderSide.BUY:
+                        self.trailing_stop_sell(last_bar)
+                    elif event.order_side == OrderSide.SELL:
+                        self.trailing_stop_buy(last_bar)
+            if self.trailing_stop:
+                if event.cl_ord_id == self.trailing_stop.cl_ord_id:
+                    self.trailing_stop = None
 
     def on_stop(self):
         """
