@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock

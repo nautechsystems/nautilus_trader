@@ -513,7 +513,7 @@ cdef class TimeBarAggregator(BarAggregator):
         datetime
 
         """
-        cdef datetime now = self._clock.utc_now()
+        cdef datetime now = self._clock.utc_now_c()
         cdef int step = self.bar_type.spec.step
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
             return datetime(

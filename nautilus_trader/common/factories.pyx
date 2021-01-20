@@ -162,7 +162,7 @@ cdef class OrderFactory:
             quantity,
             time_in_force,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now())
+            timestamp=self._clock.utc_now_c())
 
     cpdef LimitOrder limit(
         self,
@@ -230,7 +230,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now(),
+            timestamp=self._clock.utc_now_c(),
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden)
@@ -291,7 +291,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now(),
+            timestamp=self._clock.utc_now_c(),
             reduce_only=reduce_only,
         )
 
