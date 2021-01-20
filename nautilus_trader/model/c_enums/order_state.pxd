@@ -22,11 +22,10 @@ cpdef enum OrderState:
     SUBMITTED = 4,
     ACCEPTED = 5,
     REJECTED = 6,
-    WORKING = 7,
-    CANCELLED = 8,
-    EXPIRED = 9,
-    PARTIALLY_FILLED = 10,
-    FILLED = 11
+    CANCELLED = 7,
+    EXPIRED = 8,
+    PARTIALLY_FILLED = 9,
+    FILLED = 10
 
 
 cdef class OrderStateParser:

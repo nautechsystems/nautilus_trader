@@ -33,7 +33,6 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
@@ -300,27 +299,6 @@ class TestStubs:
             execution_time=UNIX_EPOCH,
             event_id=uuid4(),
             event_timestamp=UNIX_EPOCH,
-        )
-
-    @staticmethod
-    def event_order_working(order, working_price=None) -> OrderWorking:
-        if working_price is None:
-            working_price = Price("1.00000")
-
-        return OrderWorking(
-            TestStubs.account_id(),
-            order.cl_ord_id,
-            order.id,
-            order.symbol,
-            order.side,
-            order.type,
-            order.quantity,
-            order.price if working_price is None else working_price,
-            order.time_in_force,
-            order.expire_time,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH,
         )
 
     @staticmethod

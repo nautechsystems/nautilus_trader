@@ -1138,6 +1138,6 @@ class BitmexExchangeTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(LiquiditySide.TAKER, self.strategy.object_storer.get_store()[2].liquidity_side)
-        self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[7].liquidity_side)
+        self.assertEqual(LiquiditySide.MAKER, self.strategy.object_storer.get_store()[6].liquidity_side)
         self.assertEqual(Money("0.00652529", BTC), self.strategy.object_storer.get_store()[2].commission)
-        self.assertEqual(Money("-0.00217511", BTC), self.strategy.object_storer.get_store()[7].commission)
+        self.assertEqual(Money("-0.00217511", BTC), self.strategy.object_storer.get_store()[6].commission)

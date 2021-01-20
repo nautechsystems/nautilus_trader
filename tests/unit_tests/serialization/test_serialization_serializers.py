@@ -40,7 +40,6 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -482,56 +481,6 @@ class MsgPackEventSerializerTests(unittest.TestCase):
             ClientOrderId("O-123456"),
             UNIX_EPOCH,
             "ORDER_ID_INVALID",
-            uuid4(),
-            UNIX_EPOCH,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(event)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(deserialized, event)
-
-    def test_serialize_and_deserialize_order_working_events(self):
-        # Arrange
-        event = OrderWorking(
-            self.account_id,
-            ClientOrderId("O-123456"),
-            OrderId("B-123456"),
-            AUDUSD_SIM.symbol,
-            OrderSide.SELL,
-            OrderType.STOP_MARKET,
-            Quantity(100000),
-            Price("1.50000"),
-            TimeInForce.DAY,
-            None,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(event)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        self.assertEqual(deserialized, event)
-
-    def test_serialize_and_deserialize_order_working_events_with_expire_time(self):
-        # Arrange
-        event = OrderWorking(
-            self.account_id,
-            ClientOrderId("O-123456"),
-            OrderId("B-123456"),
-            AUDUSD_SIM.symbol,
-            OrderSide.SELL,
-            OrderType.STOP_MARKET,
-            Quantity(100000),
-            Price("1.50000"),
-            TimeInForce.DAY,
-            UNIX_EPOCH,
-            UNIX_EPOCH,
             uuid4(),
             UNIX_EPOCH,
         )

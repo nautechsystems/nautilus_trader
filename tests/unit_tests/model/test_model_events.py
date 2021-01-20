@@ -34,7 +34,6 @@ from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import Exchange
@@ -185,33 +184,6 @@ class EventTests(unittest.TestCase):
                          f"order_id={123456}, id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"order_id={123456}, id={uuid})", repr(event))  # noqa
-
-    def test_order_working(self):
-        # Arrange
-        uuid = uuid4()
-        event = OrderWorking(
-            account_id=AccountId("SIM", "000"),
-            cl_ord_id=ClientOrderId("O-2020872378423"),
-            order_id=OrderId("123456"),
-            symbol=Symbol("BTC/USDT", Exchange("BINANCE")),
-            order_side=OrderSide.BUY,
-            order_type=OrderType.LIMIT,
-            quantity=Quantity("0.561000"),
-            price=Price("21015.00"),
-            time_in_force=TimeInForce.DAY,
-            expire_time=None,
-            working_time=UNIX_EPOCH,
-            event_id=uuid,
-            event_timestamp=UNIX_EPOCH,
-        )
-
-        # Act
-        self.assertEqual(f"OrderWorking(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, BUY 0.561000 BTC/USDT.BINANCE LIMIT @ 21015.00 DAY, "
-                         f"id={uuid})", str(event))
-        self.assertEqual(f"OrderWorking(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, BUY 0.561000 BTC/USDT.BINANCE LIMIT @ 21015.00 DAY, "
-                         f"id={uuid})", repr(event))
 
     def test_order_cancel_reject(self):
         # Arrange
