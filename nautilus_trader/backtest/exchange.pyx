@@ -44,7 +44,6 @@ from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
@@ -744,8 +743,8 @@ cdef class SimulatedExchange:
                 return  # Filled
 
         # Order is valid and accepted
+        self._working_orders[order.cl_ord_id] = order
         self._accept_order(order)
-        self._work_order(order)
 
     cdef inline void _process_passive_order(self, PassiveOrder order, Price market_bid, Price market_ask) except *:
         if order.side == OrderSide.BUY:
@@ -760,31 +759,8 @@ cdef class SimulatedExchange:
                 return  # Invalid price
 
         # Order is valid and accepted
-        self._accept_order(order)
-        self._work_order(order)
-
-    cdef inline void _work_order(self, PassiveOrder order) except *:
-        # Order now becomes working
         self._working_orders[order.cl_ord_id] = order
-
-        # Generate event
-        cdef OrderWorking working = OrderWorking(
-            self.exec_client.account_id,
-            order.cl_ord_id,
-            order.id,
-            order.symbol,
-            order.side,
-            order.type,
-            order.quantity,
-            order.price,
-            order.time_in_force,
-            order.expire_time,
-            self._clock.utc_now(),
-            self._uuid_factory.generate(),
-            self._clock.utc_now(),
-        )
-
-        self.exec_client.handle_event(working)
+        self._accept_order(order)
 
     cdef inline void _auction_buy_order(self, PassiveOrder order, Price market) except *:
         if order.type == OrderType.STOP_MARKET:
@@ -998,7 +974,7 @@ cdef class SimulatedExchange:
         cdef PassiveOrder order
         for child_orders in self._child_orders.values():
             for order in child_orders:
-                if oco_order == order and order.state_c() != OrderState.WORKING:
+                if oco_order == order and not order.is_working_c():
                     self._reject_oco_order(order, cl_ord_id)
 
         # Cancel working OCO order

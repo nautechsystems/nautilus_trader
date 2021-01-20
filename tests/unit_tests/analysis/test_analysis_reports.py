@@ -118,7 +118,6 @@ class ReportProviderTests(unittest.TestCase):
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
-        order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
             AUDUSD_SIM.symbol,
@@ -129,7 +128,6 @@ class ReportProviderTests(unittest.TestCase):
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))
-        order2.apply(TestStubs.event_order_working(order2))
 
         event = TestStubs.event_order_filled(
             order1,
@@ -170,7 +168,6 @@ class ReportProviderTests(unittest.TestCase):
 
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
-        order1.apply(TestStubs.event_order_working(order1))
 
         order2 = self.order_factory.limit(
             AUDUSD_SIM.symbol,
@@ -181,7 +178,6 @@ class ReportProviderTests(unittest.TestCase):
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))
-        order2.apply(TestStubs.event_order_working(order2))
 
         filled = TestStubs.event_order_filled(
             order1,

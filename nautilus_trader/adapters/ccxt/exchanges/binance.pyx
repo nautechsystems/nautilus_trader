@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -115,10 +116,12 @@ cdef class BinanceOrderFillParser:
         Condition.not_none(report, "report")
 
         return {
+            "exec_id": str(report["T"]),         # TODO: Transaction time for now
             "symbol": report["symbol"],
             "fill_qty": report["l"],             # Last executed quantity
             "cum_qty": report["z"],              # Cumulative filled quantity
             "avg_px": report["L"],               # Last executed price
+            "liquidity_side": LiquiditySide.TAKER,  # TODO: Implement
             "commission": report["n"],           # Commission amount
             "commission_currency": report["N"],  # Commission asset
             "timestamp": report["T"],            # Transaction time

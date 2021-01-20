@@ -30,14 +30,12 @@ cdef class OrderStateParser:
         elif value == 6:
             return "REJECTED"
         elif value == 7:
-            return "WORKING"
-        elif value == 8:
             return "CANCELLED"
-        elif value == 9:
+        elif value == 8:
             return "EXPIRED"
-        elif value == 10:
+        elif value == 9:
             return "PARTIALLY_FILLED"
-        elif value == 11:
+        elif value == 10:
             return "FILLED"
         else:
             return "UNDEFINED"
@@ -56,8 +54,6 @@ cdef class OrderStateParser:
             return OrderState.ACCEPTED
         elif value == "REJECTED":
             return OrderState.REJECTED
-        elif value == "WORKING":
-            return OrderState.WORKING
         elif value == "CANCELLED":
             return OrderState.CANCELLED
         elif value == "EXPIRED":

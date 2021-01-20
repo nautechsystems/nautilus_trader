@@ -197,7 +197,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef set orders_working
         cdef int working_count = 0
         for order in orders:
-            if order.is_working_c():
+            if order.is_passive_c() and order.is_working_c():
                 orders_working = self._orders_working.get(order.symbol.venue, set())
                 orders_working.add(order)
                 self._orders_working[order.symbol.venue] = orders_working

@@ -33,7 +33,6 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderWorking
 from nautilus_trader.model.events import PositionChanged
 from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
@@ -76,15 +75,15 @@ class TestStubs:
         return Symbol("ETH/USDT", Venue("BINANCE"))
 
     @staticmethod
-    def symbol_audusd_fxcm() -> Symbol:
+    def symbol_audusd() -> Symbol:
         return Symbol("AUD/USD", Venue("SIM"))
 
     @staticmethod
-    def symbol_gbpusd_fxcm() -> Symbol:
+    def symbol_gbpusd() -> Symbol:
         return Symbol("GBP/USD", Venue("SIM"))
 
     @staticmethod
-    def symbol_usdjpy_fxcm() -> Symbol:
+    def symbol_usdjpy() -> Symbol:
         return Symbol("USD/JPY", Venue("SIM"))
 
     @staticmethod
@@ -109,31 +108,31 @@ class TestStubs:
 
     @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_audusd_fxcm(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.symbol_audusd(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_audusd_1min_ask() -> BarType:
-        return BarType(TestStubs.symbol_audusd_fxcm(), TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.symbol_audusd(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_gbpusd_fxcm(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.symbol_gbpusd(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_gbpusd_1min_ask() -> BarType:
-        return BarType(TestStubs.symbol_gbpusd_fxcm(), TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.symbol_gbpusd(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_gbpusd_1sec_mid() -> BarType:
-        return BarType(TestStubs.symbol_gbpusd_fxcm(), TestStubs.bar_spec_1sec_mid())
+        return BarType(TestStubs.symbol_gbpusd(), TestStubs.bar_spec_1sec_mid())
 
     @staticmethod
     def bartype_usdjpy_1min_bid() -> BarType:
-        return BarType(TestStubs.symbol_usdjpy_fxcm(), TestStubs.bar_spec_1min_bid())
+        return BarType(TestStubs.symbol_usdjpy(), TestStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_usdjpy_1min_ask() -> BarType:
-        return BarType(TestStubs.symbol_usdjpy_fxcm(), TestStubs.bar_spec_1min_ask())
+        return BarType(TestStubs.symbol_usdjpy(), TestStubs.bar_spec_1min_ask())
 
     @staticmethod
     def bartype_btcusdt_binance_1min_bid() -> BarType:
@@ -168,7 +167,7 @@ class TestStubs:
     @staticmethod
     def quote_tick_3decimal(symbol=None) -> QuoteTick:
         return QuoteTick(
-            symbol if symbol is not None else TestStubs.symbol_usdjpy_fxcm(),
+            symbol if symbol is not None else TestStubs.symbol_usdjpy(),
             Price("90.002"),
             Price("90.003"),
             Quantity(1),
@@ -179,7 +178,7 @@ class TestStubs:
     @staticmethod
     def quote_tick_5decimal(symbol=None) -> QuoteTick:
         return QuoteTick(
-            symbol if symbol is not None else TestStubs.symbol_audusd_fxcm(),
+            symbol if symbol is not None else TestStubs.symbol_audusd(),
             Price("1.00001"),
             Price("1.00003"),
             Quantity(1),
@@ -190,7 +189,7 @@ class TestStubs:
     @staticmethod
     def trade_tick_5decimal(symbol=None) -> TradeTick:
         return TradeTick(
-            symbol if symbol is not None else TestStubs.symbol_audusd_fxcm(),
+            symbol if symbol is not None else TestStubs.symbol_audusd(),
             Price("1.00001"),
             Quantity(100000),
             OrderSide.BUY,
@@ -300,27 +299,6 @@ class TestStubs:
             execution_time=UNIX_EPOCH,
             event_id=uuid4(),
             event_timestamp=UNIX_EPOCH,
-        )
-
-    @staticmethod
-    def event_order_working(order, working_price=None) -> OrderWorking:
-        if working_price is None:
-            working_price = Price("1.00000")
-
-        return OrderWorking(
-            TestStubs.account_id(),
-            order.cl_ord_id,
-            order.id,
-            order.symbol,
-            order.side,
-            order.type,
-            order.quantity,
-            order.price if working_price is None else working_price,
-            order.time_in_force,
-            order.expire_time,
-            UNIX_EPOCH,
-            uuid4(),
-            UNIX_EPOCH,
         )
 
     @staticmethod

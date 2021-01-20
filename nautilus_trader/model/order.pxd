@@ -34,7 +34,6 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport BracketOrderId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -97,6 +96,8 @@ cdef class Order:
     cdef str status_string_c(self)
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
+    cdef bint is_passive_c(self) except *
+    cdef bint is_aggressive_c(self) except *
     cdef bint is_working_c(self) except *
     cdef bint is_completed_c(self) except *
 
@@ -114,7 +115,6 @@ cdef class Order:
     cdef void _submitted(self, OrderSubmitted event) except *
     cdef void _rejected(self, OrderRejected event) except *
     cdef void _accepted(self, OrderAccepted event) except *
-    cdef void _working(self, OrderWorking event) except *
     cdef void _amended(self, OrderAmended event) except *
     cdef void _cancelled(self, OrderCancelled event) except *
     cdef void _expired(self, OrderExpired event) except *

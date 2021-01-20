@@ -26,7 +26,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
 
-USDJPY = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd_fxcm())
+USDJPY = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
 
 
 class PositionSizerTests(unittest.TestCase):
@@ -215,7 +215,7 @@ class FixedRiskSizerTests(unittest.TestCase):
 
     def test_calculate_for_usdjpy_with_commission(self):
         # Arrange
-        sizer = FixedRiskSizer(TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy_fxcm()))
+        sizer = FixedRiskSizer(TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_usdjpy()))
         equity = Money(1_000_000, USD)
 
         # Act
