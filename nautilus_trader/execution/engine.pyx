@@ -612,11 +612,15 @@ cdef class ExecutionEngine(Component):
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
+        except ValueError as ex:
+            # Catches order identifier validations
+            self._log.exception(ex)
+            return  # Not re-raising to avoid crashing engine
 
         self.cache.update_order(order)
 
         # Update portfolio
-        if order.is_working_c() or order.is_completed_c():
+        if order.is_passive_c() and (order.is_working_c() or order.is_completed_c()):
             self._portfolio.update_order(order)
 
         if isinstance(event, OrderFilled):

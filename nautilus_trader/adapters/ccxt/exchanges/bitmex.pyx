@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.order cimport Order
@@ -105,19 +106,15 @@ cdef class BitmexOrderRequestBuilder:
 cdef class BitmexOrderFillParser:
 
     @staticmethod
-    cdef dict parse(str symbol, dict info, dict fee):
+    cdef dict parse(dict report):
         """
         Parse the information needed to generate an `OrderFilled` event from the
         given parameters.
 
         Parameters
         ----------
-        symbol : str
-            The fill symbol.
-        info : dict
-            The raw fill info.
-        fee : dict
-            The fill fee.
+        report : dict[str, object]
+            The execution report.
 
         Returns
         -------
@@ -125,32 +122,36 @@ cdef class BitmexOrderFillParser:
             The parsed information.
 
         """
-        Condition.valid_string(symbol, "symbol")
-        Condition.not_none(info, "info")
-        Condition.not_none(fee, "fee")
+        Condition.not_none(report, "report")
 
+        cdef double exec_comm = report.get("execComm", 0) / 0.00000001  # Commission in XBt (Satoshi)
+        cdef int liq_side = LiquiditySide.TAKER if report["lastLiquidityInd"] == "RemovedLiquidity" else LiquiditySide.MAKER
         return {
-
+            "exec_id": report["execID"],
+            "symbol": report["symbol"],
+            "fill_qty": report["lastQty"],
+            "cum_qty": report["cumQty"],
+            "avg_px": report["lastPx"],
+            "liquidity_side": liq_side,
+            "commission": exec_comm,
+            "commission_currency": "BTC",
+            "timestamp": report["timestamp"],
         }
 
     @staticmethod
-    def parse_py(str symbol, dict info, dict fee):
+    def parse_py(dict report):
         """
         Parse the information needed to generate an order filled event from the
         given parameters.
 
         Parameters
         ----------
-        symbol : str
-            The fill symbol.
-        info : dict
-            The raw fill info.
-        fee : dict
-            The fill fee.
+        report : dict[str, object]
+            The execution report.
 
         Returns
         -------
         OrderFilled
 
         """
-        return BitmexOrderFillParser.parse(symbol, info, fee)
+        return BitmexOrderFillParser.parse(report)

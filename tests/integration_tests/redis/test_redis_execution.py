@@ -153,10 +153,8 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.database.update_order(order)
 
         order.apply(TestStubs.event_order_accepted(order))
-        self.database.update_order(order)
 
         # Act
-        order.apply(TestStubs.event_order_working(order))
         self.database.update_order(order)
 
         # Assert
@@ -439,7 +437,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         position_id = PositionId('P-1')
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1))
-        order1.apply(TestStubs.event_order_working(order1))
         order1.apply(TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
@@ -498,7 +495,6 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
 
         order2.apply(TestStubs.event_order_submitted(order2))
         order2.apply(TestStubs.event_order_accepted(order2))
-        order2.apply(TestStubs.event_order_working(order2))
 
         self.database.update_order(order2)
 

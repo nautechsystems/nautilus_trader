@@ -29,9 +29,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef dict _account_last_used
     cdef dict _account_last_total
 
+    cdef dict _active_orders
+
     cdef object _update_instruments_task
     cdef object _watch_balances_task
     cdef object _watch_orders_task
+    cdef object _watch_exec_reports_task
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -40,12 +43,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- EVENTS ----------------------------------------------------------------------------------------
 
     cdef inline void _on_account_state(self, dict event) except *
-    cdef inline void _on_order_event(self, dict event) except *
-    cdef inline void _generate_order_denied(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _on_order_status(self, dict event) except *
+    cdef inline void _on_exec_report(self, dict event) except *
+    cdef inline void _on_binance_order_status(self, dict event) except *
+    cdef inline void _on_binance_exec_report(self, dict event) except *
+    cdef inline void _on_bitmex_order_status(self, dict event) except *
+    cdef inline void _on_bitmex_exec_report(self, dict event) except *
+    cdef inline void _generate_order_invalid(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp, long init_ts) except *
-    cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason, datetime timestamp) except *
     cdef inline void _generate_order_accepted(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline void _generate_order_filled(self, ClientOrderId cl_ord_id, OrderId order_id, dict event) except *
-    cdef inline void _generate_order_working(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *

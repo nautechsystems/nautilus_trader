@@ -25,4 +25,4 @@ cdef class BitmexOrderRequestBuilder:
 cdef class BitmexOrderFillParser:
 
     @staticmethod
-    cdef dict parse(str symbol, dict info, dict fee)
+    cdef dict parse(dict report)

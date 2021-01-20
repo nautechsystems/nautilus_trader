@@ -106,27 +106,6 @@ cdef class OrderAccepted(OrderEvent):
     """The order accepted time.\n\n:returns: `datetime`"""
 
 
-cdef class OrderWorking(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly Symbol symbol
-    """The order symbol.\n\n:returns: `Symbol`"""
-    cdef readonly OrderSide order_side
-    """The order side.\n\n:returns: `OrderSide` (Enum)"""
-    cdef readonly OrderType order_type
-    """The order type.\n\n:returns: `OrderType` (Enum)"""
-    cdef readonly Quantity quantity
-    """The order quantity.\n\n:returns: `Quantity`"""
-    cdef readonly Price price
-    """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
-    cdef readonly TimeInForce time_in_force
-    """The order time-in-force.\n\n:returns: `TimeInForce` (Enum)"""
-    cdef readonly datetime expire_time
-    """The order expire time.\n\n:returns: `datetime` or `None`"""
-    cdef readonly datetime working_time
-    """The order working.\n\n:returns: `datetime`"""
-
-
 cdef class OrderCancelReject(OrderEvent):
     cdef readonly AccountId account_id
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""

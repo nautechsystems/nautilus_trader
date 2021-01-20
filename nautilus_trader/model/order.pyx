@@ -44,7 +44,6 @@ from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderWorking
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
@@ -65,25 +64,18 @@ cdef set _COMPLETED_STATES = {
 
 # State being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
-    (OrderState.INITIALIZED, OrderState.CANCELLED): OrderState.CANCELLED,
     (OrderState.INITIALIZED, OrderState.INVALID): OrderState.INVALID,
     (OrderState.INITIALIZED, OrderState.DENIED): OrderState.DENIED,
     (OrderState.INITIALIZED, OrderState.SUBMITTED): OrderState.SUBMITTED,
-    (OrderState.SUBMITTED, OrderState.CANCELLED): OrderState.CANCELLED,
     (OrderState.SUBMITTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.SUBMITTED, OrderState.CANCELLED): OrderState.CANCELLED,
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
-    (OrderState.SUBMITTED, OrderState.WORKING): OrderState.WORKING,
-    (OrderState.REJECTED, OrderState.REJECTED): OrderState.REJECTED,
-    (OrderState.ACCEPTED, OrderState.REJECTED): OrderState.REJECTED,
+    (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
     (OrderState.ACCEPTED, OrderState.CANCELLED): OrderState.CANCELLED,
-    (OrderState.ACCEPTED, OrderState.WORKING): OrderState.WORKING,
+    (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.WORKING, OrderState.CANCELLED): OrderState.CANCELLED,
-    (OrderState.WORKING, OrderState.WORKING): OrderState.WORKING,
-    (OrderState.WORKING, OrderState.EXPIRED): OrderState.EXPIRED,
-    (OrderState.WORKING, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
-    (OrderState.WORKING, OrderState.FILLED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
@@ -181,8 +173,14 @@ cdef class Order:
     cdef bint is_sell_c(self) except *:
         return self.side == OrderSide.SELL
 
+    cdef bint is_passive_c(self) except *:
+        return self.type != OrderType.MARKET
+
+    cdef bint is_aggressive_c(self) except *:
+        return self.type == OrderType.MARKET
+
     cdef bint is_working_c(self) except *:
-        return self._fsm.state == OrderState.WORKING
+        return self._fsm.state == OrderState.ACCEPTED
 
     cdef bint is_completed_c(self) except *:
         return self._fsm.state in _COMPLETED_STATES
@@ -286,14 +284,42 @@ cdef class Order:
         return self.is_sell_c()
 
     @property
-    def is_working(self):
+    def is_passive(self):
         """
-        If the order is `WORKING`.
+        If the order is passive.
 
         Returns
         -------
         bool
-            True if WORKING, else False.
+            True if order type not MARKET, else False.
+
+        """
+        return self.is_passive_c()
+
+    @property
+    def is_aggressive(self):
+        """
+        If the order is aggressive.
+
+        Returns
+        -------
+        bool
+            True if order type MARKET, else False.
+
+        """
+        return self.is_aggressive_c()
+
+    @property
+    def is_working(self):
+        """
+        If the order is working at the venue.
+
+        An order is considered working when its state is `ACCEPTED`.
+
+        Returns
+        -------
+        bool
+            True if ACCEPTED, else False.
 
         """
         return self.is_working_c()
@@ -389,6 +415,7 @@ cdef class Order:
     cdef void apply_c(self, OrderEvent event) except *:
         # Fast C method to avoid overhead of subclassing
         Condition.not_none(event, "event")
+        Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
 
         # Update events
         self._events.append(event)
@@ -409,29 +436,29 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
-        elif isinstance(event, OrderWorking):
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
-            self._fsm.trigger(OrderState.WORKING)
-            self._working(event)
         elif isinstance(event, OrderAmended):
-            # self.id could be different to event.order_id as its been amended
-            self._fsm.trigger(OrderState.WORKING)
+            # TODO: Implement
+            Condition.true(self._fsm.state == OrderState.ACCEPTED, "state == OrderState.ACCEPTED")
             self._amended(event)
         elif isinstance(event, OrderCancelled):
+            # OrderId should have been assigned
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.CANCELLED)
             self._cancelled(event)
         elif isinstance(event, OrderExpired):
+            # OrderId should have been assigned
             Condition.equal(self.id, event.order_id, "id", "event.order_id")
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
         elif isinstance(event, OrderFilled):
-            Condition.equal(self.id, event.order_id, "id", "event.order_id")
+            if self.id.not_null():
+                Condition.equal(self.id, event.order_id, "id", "event.order_id")
+            else:
+                self.id = event.order_id
             if self.quantity - self.filled_qty - event.fill_qty > 0:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
                 self._fsm.trigger(OrderState.FILLED)
-
             self._filled(event)
 
     cdef void _invalid(self, OrderInvalid event) except *:
@@ -447,9 +474,6 @@ cdef class Order:
         pass  # Do nothing else
 
     cdef void _accepted(self, OrderAccepted event) except *:
-        self.id = event.order_id
-
-    cdef void _working(self, OrderWorking event) except *:
         self.id = event.order_id
 
     cdef void _amended(self, OrderAmended event) except *:
