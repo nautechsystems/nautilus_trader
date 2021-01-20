@@ -70,6 +70,7 @@ cdef class SimulatedExchange:
 
     cdef readonly dict instruments
     cdef readonly dict data_ticks
+
     cdef dict _market_bids
     cdef dict _market_asks
     cdef dict _slippages
