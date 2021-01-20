@@ -529,7 +529,7 @@ cdef class ExecutionEngine(Component):
             cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
 
         self._handle_event(invalid)
@@ -540,7 +540,7 @@ cdef class ExecutionEngine(Component):
             cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
 
         self._handle_event(denied)

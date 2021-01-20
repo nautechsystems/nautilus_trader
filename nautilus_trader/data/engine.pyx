@@ -852,7 +852,7 @@ cdef class DataEngine(Component):
             },
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
+            request_timestamp=self._clock.utc_now_c(),
         )
 
         # Send request directly to handler as we're already inside engine

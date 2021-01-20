@@ -56,6 +56,11 @@ cdef class Clock:
         # As the method implies, this should return a tz-aware UTC datetime
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cdef datetime utc_now_c(self):
+        """Abstract method (implement in subclass)."""
+        # As the method implies, this should return a tz-aware UTC datetime
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef datetime local_now(self, tzinfo tz):
         """
         Calculate the current datetime of the clock in the given local timezone.
@@ -71,7 +76,7 @@ cdef class Clock:
             tz-aware as local timezone.
 
         """
-        return self.utc_now().astimezone(tz)
+        return self.utc_now_c().astimezone(tz)
 
     cpdef timedelta delta(self, datetime time):
         """
@@ -90,7 +95,7 @@ cdef class Clock:
         """
         Condition.not_none(time, "time")
 
-        return self.utc_now() - time
+        return self.utc_now_c() - time
 
     cpdef list timer_names(self):
         """
@@ -185,7 +190,7 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        cdef datetime now = self.utc_now()
+        cdef datetime now = self.utc_now_c()
         Condition.true(alert_time >= now, "alert_time >= time_now()")
         Condition.callable(handler, "handler")
 
@@ -254,7 +259,7 @@ cdef class Clock:
         Condition.true(interval.total_seconds() > 0, "interval positive")
         Condition.callable(handler, "handler")
 
-        cdef datetime now = self.utc_now()
+        cdef datetime now = self.utc_now_c()
         if start_time is None:
             start_time = now
         if stop_time is not None:
@@ -395,6 +400,9 @@ cdef class TestClock(Clock):
         """
         return self._time
 
+    cdef datetime utc_now_c(self):
+        return self._time
+
     cpdef void set_time(self, datetime to_time) except *:
         """
         Set the clocks datetime to the given time (UTC).
@@ -491,6 +499,9 @@ cdef class LiveClock(Clock):
             The current tz-aware UTC time of the clock.
 
         """
+        return self.utc_now_c()
+
+    cdef datetime utc_now_c(self):
         # From the pytz docs https://pythonhosted.org/pytz/
         # -------------------------------------------------
         # Unfortunately using the tzinfo argument of the standard datetime
@@ -520,7 +531,7 @@ cdef class LiveClock(Clock):
         )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
-        cdef datetime now = self.utc_now()
+        cdef datetime now = self.utc_now_c()
         cdef TimeEvent event = timer.pop_event(self._uuid_factory.generate())
         timer.iterate_next_time(now)
         self._handle_time_event(event)

@@ -325,7 +325,6 @@ cdef class OrderSubmitted(OrderEvent):
         datetime submitted_time not None,
         UUID event_id not None,
         datetime event_timestamp not None,
-        long latency=0,
     ):
         """
         Initialize a new instance of the `OrderSubmitted` class.
@@ -342,8 +341,6 @@ cdef class OrderSubmitted(OrderEvent):
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
-        latency : long
-            The latency from order initialization to submission.
 
         """
         super().__init__(
@@ -355,14 +352,12 @@ cdef class OrderSubmitted(OrderEvent):
 
         self.account_id = account_id
         self.submitted_time = submitted_time
-        self.latency = latency
 
     def __repr__(self) -> str:
-        cdef str latency_str = f", latency={self.latency}μs.)" if self.latency else ')'
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"id={self.id}{latency_str}")
+                f"id={self.id})")
 
 
 cdef class OrderRejected(OrderEvent):
