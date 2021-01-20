@@ -78,7 +78,7 @@ if __name__ == "__main__":
     # Walk directories to clean and remove files by extension
     removed_count = 0
     for directory in DIRS_TO_CLEAN:
-        for root, _dirs, files in os.walk(root_dir + "/nautilus_trader/"):
+        for root, _dirs, files in os.walk(root_dir + directory):
             for name in files:
                 path = os.path.join(root, name)
                 if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
