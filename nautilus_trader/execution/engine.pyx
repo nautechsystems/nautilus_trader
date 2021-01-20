@@ -30,8 +30,6 @@ Alternative implementations can be written on top which just need to override
 the engines `execute` and `process` methods.
 """
 
-import time
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -42,6 +40,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.time cimport unix_time
 from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
@@ -335,7 +334,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef long ts = time.time()
+        cdef double ts = unix_time()
 
         self.cache.cache_accounts()
         self.cache.cache_orders()
@@ -344,7 +343,7 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {time.time() - ts:.3f}s.")
+        self._log.info(f"Loaded cache in {unix_time() - ts:.3f}s.")
 
         # Update portfolio
         for account in self.cache.accounts():

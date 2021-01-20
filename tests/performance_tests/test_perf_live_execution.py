@@ -16,8 +16,8 @@
 import asyncio
 import cProfile
 import pstats
-import unittest
 import time
+import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import LiveClock
