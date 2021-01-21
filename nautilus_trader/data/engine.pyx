@@ -31,6 +31,7 @@ the engines `execute`, `process`, `send` and `receive` methods.
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.messages cimport DataRequest
@@ -766,7 +767,11 @@ cdef class DataEngine(Component):
                 self._log.debug(f"Applying partial bar {partial} for {bar_type}.")
                 aggregator.set_partial(partial)
             else:
-                self._log.error("No aggregator for partial bar update.")
+                if self._fsm.state == ComponentState.RUNNING:
+                    # Only log this error if the component is running as here
+                    # there may have been an immediate stop after start with the
+                    # partial bar being for a now removed aggregator.
+                    self._log.error("No aggregator for partial bar update.")
 
         callback(bar_type, bars)
 
@@ -852,7 +857,7 @@ cdef class DataEngine(Component):
             },
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
-            request_timestamp=self._clock.utc_now(),
+            request_timestamp=self._clock.utc_now_c(),
         )
 
         # Send request directly to handler as we're already inside engine

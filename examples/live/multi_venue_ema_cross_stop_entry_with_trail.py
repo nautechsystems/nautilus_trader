@@ -32,7 +32,7 @@ config = {
     "trader": {
         "name": "TESTER",              # Not sent beyond system boundary
         "id_tag": "001",               # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "check_residuals_delay": 2.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -83,7 +83,7 @@ strategy1 = EMACross(
     trade_size=Decimal("0.02"),
     fast_ema_period=10,
     slow_ema_period=20,
-    order_id_tag="001",
+    order_id_tag="003",
 )
 
 strategy2 = EMACrossStopEntryTrail(
@@ -94,7 +94,7 @@ strategy2 = EMACrossStopEntryTrail(
     slow_ema_period=20,
     atr_period=20,
     trail_atr_multiple=2.0,
-    order_id_tag="002",
+    order_id_tag="004",
 )
 
 # Instantiate the node passing a list of strategies and configuration

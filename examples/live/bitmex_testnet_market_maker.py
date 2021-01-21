@@ -31,7 +31,7 @@ config = {
     "trader": {
         "name": "TESTER",              # Not sent beyond system boundary
         "id_tag": "001",               # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "check_residuals_delay": 2.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -74,8 +74,9 @@ strategy = VolatilityMarketMaker(
     symbol=Symbol("BTC/USD", Venue("BITMEX")),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("10"),
-    atr_multiple=3.0,
-    order_id_tag="001",
+    atr_period=20,
+    atr_multiple=1.5,
+    order_id_tag="091",
 )
 
 # Instantiate the node passing a list of strategies and configuration

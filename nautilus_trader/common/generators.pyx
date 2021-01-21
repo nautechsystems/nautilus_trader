@@ -53,7 +53,7 @@ cdef class IdentifierGenerator:
         str
 
         """
-        cdef datetime utc_now = self._clock.utc_now()
+        cdef datetime utc_now = self._clock.utc_now_c()
         return (f"{utc_now.year}"
                 f"{utc_now.month:02d}"
                 f"{utc_now.day:02d}"
@@ -63,7 +63,7 @@ cdef class IdentifierGenerator:
                 f"{utc_now.second:02d}")
 
 
-cdef class OrderIdGenerator(IdentifierGenerator):
+cdef class ClientOrderIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique ClientOrderId(s).
     """
@@ -76,7 +76,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         int initial_count=0,
     ):
         """
-        Initialize a new instance of the `OrderIdGenerator` class.
+        Initialize a new instance of the `ClientOrderIdGenerator` class.
 
         Parameters
         ----------

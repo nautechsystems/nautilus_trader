@@ -240,7 +240,7 @@ cdef class DataClient:
             data=instruments,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            response_timestamp=self._clock.utc_now_c(),
         )
 
         self._engine.receive(response)
@@ -253,7 +253,7 @@ cdef class DataClient:
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            response_timestamp=self._clock.utc_now_c(),
         )
 
         self._engine.receive(response)
@@ -266,7 +266,7 @@ cdef class DataClient:
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            response_timestamp=self._clock.utc_now_c(),
         )
 
         self._engine.receive(response)
@@ -279,7 +279,7 @@ cdef class DataClient:
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            response_timestamp=self._clock.utc_now(),
+            response_timestamp=self._clock.utc_now_c(),
         )
 
         self._engine.receive(response)

@@ -250,7 +250,8 @@ class EMACross(TradingStrategy):
 
         Returns
         -------
-        dict
+        dict[str, bytes]
+            The strategy state dictionary.
 
         """
         return {}
@@ -263,7 +264,7 @@ class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        state : dict
+        state : dict[str, bytes]
             The strategy state dictionary.
 
         """

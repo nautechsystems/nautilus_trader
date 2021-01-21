@@ -277,14 +277,11 @@ class EMACross(TradingStrategy):
 
         Returns
         -------
-        dict
-
-        Notes
-        -----
-        "OrderIdCount' is a reserved key for the returned state dictionary.
+        dict[str, bytes]
+            The strategy state dictionary.
 
         """
-        return {}
+        return {'example': b'123456'}
 
     def on_load(self, state: {}):
         """
@@ -294,11 +291,11 @@ class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        state : dict
+        state : dict[str, bytes]
             The strategy state dictionary.
 
         """
-        pass
+        self.log.info(f"Loaded users state {state['example']}")
 
     def on_dispose(self):
         """

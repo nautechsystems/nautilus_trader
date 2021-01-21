@@ -111,7 +111,6 @@ Index
 
     adapter_reference/ccxtpro
     adapter_reference/oanda
-    adapter_reference/tda
 
 .. toctree::
     :glob:

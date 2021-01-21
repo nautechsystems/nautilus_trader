@@ -830,10 +830,12 @@ cdef class Portfolio(PortfolioFacade):
             total_margin += margin
             margins[currency] = total_margin
 
+        cdef Money total_margin_money
         for currency, total_margin in margins.items():
-            account.update_initial_margin(Money(total_margin, currency))
+            total_margin_money = Money(total_margin, currency)
+            account.update_initial_margin(total_margin_money)
 
-            self._log.info(f"{venue}-{currency} initial_margin={total_margin}")
+            self._log.info(f"{venue} initial_margin={total_margin_money}")
 
     cdef inline void _update_maint_margin(self, Venue venue) except *:
         cdef Account account = self._accounts.get(venue)
@@ -897,10 +899,12 @@ cdef class Portfolio(PortfolioFacade):
             total_margin += margin
             margins[currency] = total_margin
 
+        cdef Money total_margin_money
         for currency, total_margin in margins.items():
-            account.update_maint_margin(Money(total_margin, currency))
+            total_margin_money = Money(total_margin, currency)
+            account.update_maint_margin(total_margin_money)
 
-            self._log.info(f"{venue}-{currency} maint_margin={total_margin}")
+            self._log.info(f"{venue} maint_margin={total_margin_money}")
 
     cdef Money _calculate_unrealized_pnl(self, Symbol symbol):
         cdef Account account = self._accounts.get(symbol.venue)

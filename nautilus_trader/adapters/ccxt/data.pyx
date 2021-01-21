@@ -630,8 +630,18 @@ cdef class CCXTDataClient(LiveDataClient):
                     order_book = self._client.watch_order_book
                     exiting = True
 
-                best_bid = order_book["bids"][0]
-                best_ask = order_book["asks"][0]
+                bids = order_book.get("bids")
+                asks = order_book.get("asks")
+
+                if bids:
+                    best_bid = bids[0]
+                else:
+                    continue
+
+                if asks:
+                    best_ask = asks[0]
+                else:
+                    continue
 
                 generate_tick = False
                 # Cache last quotes if changed
