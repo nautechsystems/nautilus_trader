@@ -24,8 +24,9 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -42,6 +43,7 @@ from tests.test_kit.stubs import TestStubs
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
 class ExecutionEngineTests(unittest.TestCase):
@@ -58,6 +60,12 @@ class ExecutionEngineTests(unittest.TestCase):
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S", "001"),
+            clock=TestClock(),
+        )
+
+        self.random_order_factory = OrderFactory(
+            trader_id=TraderId("RANDOM", "042"),
+            strategy_id=StrategyId("S", "042"),
             clock=TestClock(),
         )
 
@@ -156,14 +164,156 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertIn(strategy.id, self.exec_engine.registered_strategies)
 
+    def test_check_connected_when_client_disconnected_returns_false(self):
+        # Arrange
+        self.exec_client.disconnect()
+
+        # Act
+        result = self.exec_engine.check_connected()
+
+        # Assert
+        self.assertFalse(result)
+
+    def test_check_connected_when_client_connected_returns_true(self):
+        # Arrange
+        self.exec_client.connect()
+
+        # Act
+        result = self.exec_engine.check_connected()
+
+        # Assert
+        self.assertTrue(result)
+
+    def test_check_disconnected_when_client_disconnected_returns_true(self):
+        # Arrange
+        # Act
+        result = self.exec_engine.check_connected()
+
+        # Assert
+        self.assertFalse(result)
+
+    def test_check_disconnected_when_client_connected_returns_false(self):
+        # Arrange
+        self.exec_client.connect()
+
+        # Act
+        result = self.exec_engine.check_disconnected()
+
+        # Assert
+        self.assertFalse(result)
+
+    def test_check_resolved_when_client_state_not_resolved_returns_false(self):
+        # Arrange
+        self.exec_client.connect()
+
+        # Act
+        result = self.exec_engine.check_resolved()
+
+        # Assert
+        self.assertFalse(result)
+
+    def test_check_resolved_when_client_state_resolved_returns_true(self):
+        # Arrange
+        self.exec_client.connect()
+        self.exec_client.resolve_state([])
+
+        # Act
+        result = self.exec_engine.check_resolved()
+
+        # Assert
+        self.assertTrue(result)
+
     def test_check_integrity_calls_check_on_cache(self):
         # Arrange
         # Act
-        self.exec_engine.check_integrity()
+        result = self.exec_engine.check_integrity()
 
         # Assert
-        # TODO: WIP
-        self.assertTrue(True)  # No exceptions raised
+        self.assertTrue(result)  # No exceptions raised
+
+    def test_given_random_command_logs_and_continues(self):
+        # Arrange
+        random = TradingCommand(
+            self.venue,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.execute(random)
+
+    def test_submit_order_with_duplicate_cl_ord_id_logs(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.execute(submit_order)  # Duplicate command
+
+        # Assert
+        self.assertEqual(OrderState.SUBMITTED, order.state)
+
+    def test_submit_order_for_none_existent_position_id_invalidates_order(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId("RANDOM"),  # Invalid PositionId
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_order)
+
+        # Assert
+        self.assertEqual(OrderState.INVALID, order.state)
 
     def test_submit_order(self):
         # Arrange
@@ -201,6 +351,71 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertIn(submit_order, self.exec_client.commands)
         self.assertTrue(self.cache.order_exists(order.cl_ord_id))
+
+    def test_resolve_state_with_multiple_active_orders_resolved_correctly1(self):
+        # Submitted orders
+
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        random = self.random_order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity(1),
+        )
+
+        self.exec_engine.cache.add_order(random, PositionId.null())
+
+        submit_order1 = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order1,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        submit_order2 = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order2,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.execute(submit_order1)
+        self.exec_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+
+        # Act
+        self.exec_engine.resolve_state()
 
     def test_handle_order_fill_event(self):
         # Arrange
