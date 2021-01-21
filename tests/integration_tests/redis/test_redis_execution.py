@@ -13,15 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import unittest
 
 import redis
 
+from nautilus_trader.backtest.data_container import BacktestDataContainer
+from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
+from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
@@ -30,7 +41,9 @@ from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
 
 
@@ -505,3 +518,57 @@ class RedisExecutionDatabaseTests(unittest.TestCase):
         self.assertIsNone(self.database.load_order(order1.cl_ord_id))
         self.assertIsNone(self.database.load_order(order2.cl_ord_id))
         self.assertIsNone(self.database.load_position(position1.id))
+
+
+class ExecutionCacheWithRedisDatabaseTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.venue = Venue("SIM")
+        self.usdjpy = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", self.venue))
+        data = BacktestDataContainer()
+        data.add_instrument(self.usdjpy)
+        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.BID, TestDataProvider.usdjpy_1min_bid())
+        data.add_bars(self.usdjpy.symbol, BarAggregation.MINUTE, PriceType.ASK, TestDataProvider.usdjpy_1min_ask())
+
+        self.engine = BacktestEngine(
+            data=data,
+            strategies=[TradingStrategy('000')],
+            bypass_logging=False,  # Uncomment this to see integrity check failure messages
+            exec_db_type='redis',
+            exec_db_flush=False,
+        )
+
+        self.engine.add_exchange(
+            venue=self.venue,
+            oms_type=OMSType.HEDGING,
+            starting_balances=[Money(1_000_000, USD)],
+            modules=[],
+        )
+
+        self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
+
+    def tearDown(self):
+        # Tests will start failing if redis is not flushed on tear down
+        self.test_redis.flushall()  # Comment this line out to preserve data between tests
+
+    def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
+        # Arrange
+        strategy = EMACross(
+            symbol=self.usdjpy.symbol,
+            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+
+        # Generate a lot of data
+        self.engine.run(strategies=[strategy])
+
+        # Reset engine
+        self.engine.reset()
+        self.engine.run()
+
+        # Act
+        # Assert
+        self.assertTrue(self.engine.get_exec_engine().cache.check_integrity())
