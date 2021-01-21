@@ -45,6 +45,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
+    cdef set _index_orders_active
     cdef set _index_orders_working
     cdef set _index_orders_completed
     cdef set _index_positions
@@ -59,7 +60,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
     cpdef void cache_positions(self) except *
     cpdef void build_index(self) except *
     cpdef bint check_integrity(self) except *
-    cpdef void check_residuals(self) except *
+    cpdef bint check_residuals(self) except *
     cpdef void reset(self) except *
     cpdef void clear_cache(self) except *
     cpdef void clear_index(self) except *

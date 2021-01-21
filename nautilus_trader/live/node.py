@@ -394,7 +394,12 @@ class TradingNode:
             self._exec_engine.start()
 
             result: bool = await self._await_engines_connected()
+            if not result:
+                return
 
+            self._exec_engine.resolve_state()
+
+            result: bool = await self._await_state_resolved()
             if not result:
                 return
 
@@ -419,12 +424,13 @@ class TradingNode:
         # The execution engine clients will be set as connected when all
         # accounts are updated and the current order and position status is
         # confirmed. Thus any delay here will be due to blocking network IO.
-        seconds = 10  # Hard coded for now
+        seconds = 5  # Hard coded for now
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0.1)
             if self._clock.utc_now() >= timeout:
-                self._log.error(f"Timed out ({seconds}s) waiting for engines to initialize.")
+                self._log.error(f"Timed out ({seconds}s) waiting for "
+                                f"engines to initialize.")
                 return False
             if not self._data_engine.check_connected():
                 continue
@@ -433,6 +439,23 @@ class TradingNode:
             break
 
         return True  # Engines initialized
+
+    async def _await_state_resolved(self) -> bool:
+        self._log.info("Waiting for execution states to resolve...")
+
+        seconds = 5  # Hard coded for now
+        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0.1)
+            if self._clock.utc_now() >= timeout:
+                self._log.error(f"Timed out ({seconds}s) waiting for "
+                                f"execution states to resolve.")
+                return False
+            if not self._exec_engine.check_resolved():
+                continue
+            break
+
+        return True  # Execution states resolved
 
     async def _stop(self) -> None:
         self._is_stopping = True
