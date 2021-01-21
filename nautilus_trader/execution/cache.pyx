@@ -79,6 +79,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_strategy_orders = {}      # type: dict[StrategyId, set[ClientOrderId]]
         self._index_strategy_positions = {}   # type: dict[StrategyId, set[PositionId]]
         self._index_orders = set()            # type: set[ClientOrderId]
+        self._index_orders_active = set()     # type: set[ClientOrderId]
         self._index_orders_working = set()    # type: set[ClientOrderId]
         self._index_orders_completed = set()  # type: set[ClientOrderId]
         self._index_positions = set()         # type: set[PositionId]
@@ -146,7 +147,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
     cpdef bint check_integrity(self) except *:
         """
-        Return the result of checking the data integrity of the cache.
+        Check integrity of data within the cache and clients.
 
         All data should be loaded from the database prior to this call. If an
         error is found then a log error message will also be produced.
@@ -154,7 +155,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         Returns
         -------
         bool
-            True if check passes, else False.
+            True if checks pass, else False.
 
         """
         cdef Symbol symbol
@@ -199,6 +200,10 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             if cl_ord_id not in self._index_orders:
                 self._log.error(f"{failure} in _cached_orders: "
                                 f"{repr(cl_ord_id)} not found in self._index_orders")
+                error_count += 1
+            if order.is_active_c() and cl_ord_id not in self._index_orders_active:
+                self._log.error(f"{failure} in _cached_orders: "
+                                f"{repr(cl_ord_id)} not found in self._index_orders_active")
                 error_count += 1
             if order.is_working_c() and cl_ord_id not in self._index_orders_working:
                 self._log.error(f"{failure} in _cached_orders: "
@@ -302,6 +307,12 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                                 f"{repr(cl_ord_id)} not found in self._cached_orders")
                 error_count += 1
 
+        for cl_ord_id in self._index_orders_active:
+            if cl_ord_id not in self._cached_orders:
+                self._log.error(f"{failure} in _index_orders_active: "
+                                f"{repr(cl_ord_id)} not found in self._cached_orders")
+                error_count += 1
+
         for cl_ord_id in self._index_orders_working:
             if cl_ord_id not in self._cached_orders:
                 self._log.error(f"{failure} in _index_orders_working: "
@@ -349,18 +360,32 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                             f"in {total_ns}μs.")
             return False
 
-    cpdef void check_residuals(self) except *:
+    cpdef bint check_residuals(self) except *:
         """
-        Check for any residual objects and log warnings if any are found.
+        Check for any residual activate state and log warnings if any are found.
+
+        Active state is considered accepted/working orders and open positions.
+
+        Returns
+        -------
+        bool
+            True if residuals exist, else False.
+
         """
         self._log.debug("Checking residuals...")
 
+        cdef bint residuals = False
+
         # Check for any residual active orders and log warnings if any are found
         for order in self.orders_working():
+            residuals = True
             self._log.warning(f"Residual {order}")
 
         for position in self.positions_open():
+            residuals = True
             self._log.warning(f"Residual {position}")
+
+        return residuals
 
     cpdef void reset(self) except *:
         """
@@ -406,6 +431,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
         self._index_orders.clear()
+        self._index_orders_active.clear()
         self._index_orders_working.clear()
         self._index_orders_completed.clear()
         self._index_positions.clear()
@@ -467,14 +493,19 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             # 6: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(cl_ord_id)
 
-            # 7: Build _index_orders_working -> {ClientOrderId}
+            # 7: Build _index_orders_active -> {ClientOrderId}
+            if order.is_active_c():
+                self._index_orders_active.add(cl_ord_id)
+
+            # 8: Build _index_orders_working -> {ClientOrderId}
             if order.is_working_c():
                 self._index_orders_working.add(cl_ord_id)
-            # 8: Build _index_orders_completed -> {ClientOrderId}
-            elif order.is_completed_c():
+
+            # 9: Build _index_orders_completed -> {ClientOrderId}
+            if order.is_completed_c():
                 self._index_orders_completed.add(cl_ord_id)
 
-            # 9: Build _index_strategies -> {StrategyId}
+            # 10: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
@@ -668,6 +699,9 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
         self._log.debug(f"Added Order(id={order.cl_ord_id.value}{position_id_str}).")
 
+        # Index: Set[ClientOrderId]
+        self._index_orders_active.add(order.cl_ord_id)
+
         # Update database
         self._database.add_order(order)  # Logs
 
@@ -794,11 +828,15 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             # Assumes order_id does not change
             self._index_order_ids[order.id] = order.cl_ord_id
 
-        if order.is_working_c():
-            self._index_orders_working.add(order.cl_ord_id)
+        if order.is_active_c():
+            self._index_orders_active.add(order.cl_ord_id)
             self._index_orders_completed.discard(order.cl_ord_id)
+            if order.is_working_c():
+                # Working order is also active
+                self._index_orders_working.add(order.cl_ord_id)
         elif order.is_completed_c():
             self._index_orders_completed.add(order.cl_ord_id)
+            self._index_orders_active.discard(order.cl_ord_id)
             self._index_orders_working.discard(order.cl_ord_id)
 
         # Update database
@@ -993,6 +1031,30 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             return self._index_orders
         else:
             return self._index_orders.intersection(query)
+
+    cpdef set order_active_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
+        """
+        Return all active client order identifiers with the given query
+        filters.
+
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol query filter.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        set[ClientOrderId]
+
+        """
+        cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
+
+        if query is None:
+            return self._index_orders_active
+        else:
+            return self._index_orders_active.intersection(query)
 
     cpdef set order_working_ids(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
@@ -1195,6 +1257,33 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return orders
 
+    cpdef list orders_active(self, Symbol symbol=None, StrategyId strategy_id=None):
+        """
+        Return all active orders with the given query filters.
+
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
+        strategy_id : StrategyId, optional
+            The strategy identifier query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        cdef set cl_ord_ids = self.order_active_ids(symbol, strategy_id)
+
+        cdef ClientOrderId cl_ord_id
+        cdef list orders_active
+        try:
+            orders_active = [self._cached_orders[cl_ord_id] for cl_ord_id in cl_ord_ids]
+        except KeyError as ex:
+            self._log.error("Cannot find Order object in cache " + str(ex))
+
+        return orders_active
+
     cpdef list orders_working(self, Symbol symbol=None, StrategyId strategy_id=None):
         """
         Return all working orders with the given query filters.
@@ -1388,6 +1477,25 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         return cl_ord_id in self._index_orders
 
+    cpdef bint is_order_active(self, ClientOrderId cl_ord_id) except *:
+        """
+        Return a value indicating whether an order with the given identifier is
+        active.
+
+        Parameters
+        ----------
+        cl_ord_id : ClientOrderId
+            The client order identifier to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(cl_ord_id, "cl_ord_id")
+
+        return cl_ord_id in self._index_orders_active
+
     cpdef bint is_order_working(self, ClientOrderId cl_ord_id) except *:
         """
         Return a value indicating whether an order with the given identifier is
@@ -1443,6 +1551,24 @@ cdef class ExecutionCache(ExecutionCacheFacade):
 
         """
         return len(self.order_ids(symbol, strategy_id))
+
+    cpdef int orders_active_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
+        """
+        Return the count of active orders with the given query filters.
+
+        Parameters
+        ----------
+        symbol : Symbol, optional
+            The symbol identifier query filter.
+        strategy_id : StrategyId, optional
+            The strategy_id query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self.order_active_ids(symbol, strategy_id))
 
     cpdef int orders_working_count(self, Symbol symbol=None, StrategyId strategy_id=None) except *:
         """

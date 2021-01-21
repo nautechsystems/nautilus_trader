@@ -55,9 +55,12 @@ cdef class ExecutionEngine(Component):
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
-    cpdef bint is_portfolio_equal(self, Portfolio portfolio) except *
+    cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *
+    cpdef bint check_integrity(self) except *
     cpdef bint check_connected(self) except *
+    cpdef bint check_resolved(self) except *
     cpdef bint check_disconnected(self) except *
+    cpdef bint check_residuals(self) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -74,10 +77,9 @@ cdef class ExecutionEngine(Component):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
-    cpdef void check_integrity(self) except *
+    cpdef void resolve_state(self) except *
     cpdef void execute(self, VenueCommand command) except *
     cpdef void process(self, Event event) except *
-    cpdef void check_residuals(self) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------

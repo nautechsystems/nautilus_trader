@@ -83,7 +83,7 @@ valu_bars = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
 # file.
 strategy = EMACross(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec=tick_bars,
+    bar_spec=time_bars,
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.02"),

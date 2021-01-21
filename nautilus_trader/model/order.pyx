@@ -51,17 +51,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-# States which represent a 'completed' order
-cdef set _COMPLETED_STATES = {
-    OrderState.INVALID,
-    OrderState.DENIED,
-    OrderState.REJECTED,
-    OrderState.CANCELLED,
-    OrderState.EXPIRED,
-    OrderState.FILLED,
-}
-
-
 # State being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
     (OrderState.INITIALIZED, OrderState.INVALID): OrderState.INVALID,
@@ -180,10 +169,19 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_working_c(self) except *:
-        return self._fsm.state == OrderState.ACCEPTED
+        return self._fsm.state == OrderState.ACCEPTED \
+            or self._fsm.state == OrderState.PARTIALLY_FILLED
 
     cdef bint is_completed_c(self) except *:
-        return self._fsm.state in _COMPLETED_STATES
+        return self._fsm.state == OrderState.INVALID \
+            or self._fsm.state == OrderState.DENIED \
+            or self._fsm.state == OrderState.REJECTED \
+            or self._fsm.state == OrderState.CANCELLED \
+            or self._fsm.state == OrderState.EXPIRED \
+            or self._fsm.state == OrderState.FILLED
+
+    cdef bint is_active_c(self) except *:
+        return not self.is_completed_c()
 
     @property
     def state(self):
@@ -310,16 +308,35 @@ cdef class Order:
         return self.is_aggressive_c()
 
     @property
-    def is_working(self):
+    def is_active(self):
         """
-        If the order is working at the venue.
+        If the order is active.
 
-        An order is considered working when its state is `ACCEPTED`.
+        An order is considered active if it has been initialized in the system,
+        but has not yet reached a completed state. The possible states of active
+        orders include; `INITIALIZED`, `SUBMITTED`, `ACCEPTED`,  and
+        `PARTIALLY_FILLED`.
 
         Returns
         -------
         bool
-            True if ACCEPTED, else False.
+            True if active, else False.
+
+        """
+        return self.is_active_c()
+
+    @property
+    def is_working(self):
+        """
+        If the order is working at the venue.
+
+        An order is considered working when its state is either `ACCEPTED` or
+        `PARTIALLY_FILLED`.
+
+        Returns
+        -------
+        bool
+            True if working, else False.
 
         """
         return self.is_working_c()
@@ -329,8 +346,9 @@ cdef class Order:
         """
         If the order is completed.
 
-        An order is considered completed when in the states;
-        `INVALID`, `DENIED`, `REJECTED`, `CANCELLED`, `EXPIRED` or `FILLED`.
+        An order is considered completed when its state can no longer change.
+        The possible states of completed orders include; `INVALID`, `DENIED`,
+        `REJECTED`, `CANCELLED`, `EXPIRED` and `FILLED`.
 
 
         Returns

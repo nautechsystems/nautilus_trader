@@ -50,6 +50,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
     def test_order_ids_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.order_ids)
 
+    def test_order_active_ids_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.order_active_ids)
+
     def test_order_working_ids_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.order_working_ids)
 
@@ -77,6 +80,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
     def test_orders_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.orders)
 
+    def test_orders_active_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.orders_active)
+
     def test_orders_working_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.orders_working)
 
@@ -86,6 +92,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
     def test_order_exists_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.order_exists, ClientOrderId("O-123456"))
 
+    def test_is_order_active_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.is_order_active, ClientOrderId("O-123456"))
+
     def test_is_order_working_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.is_order_working, ClientOrderId("O-123456"))
 
@@ -94,6 +103,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
 
     def test_orders_total_count_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.orders_total_count)
+
+    def test_orders_active_count_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.orders_active_count)
 
     def test_orders_working_count_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.orders_working_count)
