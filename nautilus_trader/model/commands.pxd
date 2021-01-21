@@ -56,6 +56,17 @@ cdef class SubmitBracketOrder(VenueCommand):
     """The bracket order to submit.\n\n:returns: `BracketOrder`"""
 
 
+cdef class CancelOrder(VenueCommand):
+    cdef readonly TraderId trader_id
+    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
+    cdef readonly AccountId account_id
+    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
+    cdef readonly ClientOrderId cl_ord_id
+    """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
+    cdef readonly OrderId order_id
+    """The order identifier associated with the command.\n\n:returns: `OrderId`"""
+
+
 cdef class AmendOrder(VenueCommand):
     cdef readonly TraderId trader_id
     """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
@@ -67,14 +78,3 @@ cdef class AmendOrder(VenueCommand):
     """The quantity for the command.\n\n:returns: `Quantity`"""
     cdef readonly Price price
     """The price for the command.\n\n:returns: `Price`"""
-
-
-cdef class CancelOrder(VenueCommand):
-    cdef readonly TraderId trader_id
-    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
-    cdef readonly AccountId account_id
-    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
-    cdef readonly ClientOrderId cl_ord_id
-    """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderId order_id
-    """The order identifier associated with the command.\n\n:returns: `OrderId`"""

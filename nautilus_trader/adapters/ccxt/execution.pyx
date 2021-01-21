@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
 from cpython.datetime cimport datetime
-from libc.math cimport round as c_round
 
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
@@ -32,6 +32,8 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
+from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -117,6 +119,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         self.is_connected = False
+        self.is_resolved = False
 
         self._account_last_free = {}
         self._account_last_used = {}
@@ -169,6 +172,106 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.is_connected = True
         self._log.info("Connected.")
 
+    cpdef void resolve_state(self, list active_orders) except *:
+        """
+        Return a state replay stream based on the given list of accepted orders
+        and open positions.
+
+        Parameters
+        ----------
+        active_orders : list[Order]
+            The orders which currently have an active status.
+
+        Returns
+        -------
+        list[Event]
+
+        """
+        Condition.not_none(active_orders, "active_orders")
+
+        self._loop.create_task(self._resolve_state(active_orders))
+
+    async def _resolve_state(self, list active_orders) -> None:
+        """
+        Resolve the execution state by comparing the given active orders from
+        the execution cache with the order state from the exchange.
+
+        Parameters
+        ----------
+        active_orders : list[Order]
+            The orders which are active.
+
+        """
+        if not active_orders:
+            self.is_resolved = True
+            self._log.info("State resolved.", LogColor.GREEN)
+            return  # Nothing to resolve
+
+        cdef int count = len(active_orders)
+        self._log.info(f"Resolving states for {count} "
+                       f"active order{'s' if count > 1 else ''}...")
+
+        cdef dict target_states = {}  # type: dict[ClientOrderId, OrderState]
+
+        # TODO: Fetch open orders and compare to active_orders
+
+        cdef Order order
+        cdef str status
+        for order in active_orders:
+            if not order.is_active_c():
+                self._log.warning(f"Order was not active, "
+                                  f"was OrderState.{order.state_string_c()}.")
+                continue
+            if order.id.is_null():
+                self._log.error(f"OrderId was not assigned for {repr(order.cl_ord_id)}, "
+                                f"state is lost.")
+                continue
+            try:
+                response = await self._client.fetch_order(order.id.value, order.symbol.code)
+            except CCXTError as ex:
+                self._log_ccxt_error(ex, self._update_balances.__name__)
+                continue
+            if response is None:
+                self._log.error(f"No order found for {order.id.value}.")
+                continue
+            self._log.info(str(response), LogColor.BLUE)
+            # TODO: Refactor below
+            status = response["status"]
+            if status == "canceled":
+                timestamp = from_posix_ms(<long>response["timestamp"])
+                self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
+                target_states[order.cl_ord_id] = OrderState.CANCELLED
+            elif status == "closed":
+                filled_event = {
+                    "exec_id": str(response["timestamp"]),  # TODO: Transaction time for now
+                    "symbol": response["symbol"],
+                    "fill_qty": Decimal(response["filled"]) - order.filled_qty,
+                    "cum_qty": response["filled"],
+                    "avg_px": response["average"],
+                    "liquidity_side": LiquiditySide.TAKER,  # TODO: Implement
+                    "commission": None,
+                    "commission_currency": None,
+                    "timestamp": response["timestamp"],
+                }
+                self._generate_order_filled(order.cl_ord_id, order.id, filled_event)
+                target_states[order.cl_ord_id] = OrderState.FILLED
+            elif status == "expired":
+                self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
+                target_states[order.cl_ord_id] = OrderState.EXPIRED
+
+        while True:
+            await asyncio.sleep(0.1)
+            for order in active_orders:
+                order_state = target_states.get(order.cl_ord_id)
+                if order_state is None:
+                    continue
+                if not order.state_c() != target_states[order.cl_ord_id]:
+                    continue
+            break
+
+        self._log.info("State resolved.", LogColor.GREEN)
+        self.is_resolved = True
+
     cpdef void disconnect(self) except *:
         """
         Disconnect the client.
@@ -208,6 +311,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         await self._client.close()
 
         self.is_connected = False
+        self.is_resolved = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -691,7 +795,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Order order = self._active_orders.get(cl_ord_id)
         if order is None:
             # Fetch order from execution engines cache
-            self._log.warning(f"{repr(cl_ord_id)} was not found in _active_orders.")
             order = self._engine.cache.order(cl_ord_id)
             if order is None:
                 self._log.error(f"Cannot fill order for {repr(cl_ord_id)}, "

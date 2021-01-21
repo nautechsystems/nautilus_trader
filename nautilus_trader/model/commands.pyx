@@ -181,7 +181,12 @@ cdef class SubmitBracketOrder(VenueCommand):
 
 cdef class AmendOrder(VenueCommand):
     """
-    Represents a command to amend an order.
+    Represents a command to change to parameters of an existing order.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/4.4/msgType_G_71.html
+
     """
 
     def __init__(

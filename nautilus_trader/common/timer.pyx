@@ -17,7 +17,6 @@ from threading import Timer as TimerThread
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
-from cpython.datetime cimport total_seconds
 
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
@@ -137,7 +136,7 @@ cdef class Timer:
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
-        Condition.positive(total_seconds(interval), "interval")
+        Condition.positive(interval.total_seconds(), "interval")
         if stop_time:
             Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
 
@@ -353,7 +352,7 @@ cdef class LiveTimer(Timer):
 
     cdef object _start_timer(self, datetime now):
         timer = TimerThread(
-            interval=total_seconds(self.next_time - now),
+            interval=(self.next_time - now).total_seconds(),
             function=self.callback,
             args=[self],
         )
