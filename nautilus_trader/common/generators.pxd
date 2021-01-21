@@ -26,7 +26,7 @@ cdef class IdentifierGenerator:
     cdef str _get_datetime_tag(self)
 
 
-cdef class OrderIdGenerator(IdentifierGenerator):
+cdef class ClientOrderIdGenerator(IdentifierGenerator):
     cdef str _id_tag_strategy
 
     cdef readonly int count
