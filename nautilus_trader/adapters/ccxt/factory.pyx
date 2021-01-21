@@ -15,7 +15,6 @@
 
 import os
 import sys
-import time
 
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
