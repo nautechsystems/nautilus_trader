@@ -98,6 +98,7 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
+    cdef bint is_active_c(self) except *
     cdef bint is_working_c(self) except *
     cdef bint is_completed_c(self) except *
 

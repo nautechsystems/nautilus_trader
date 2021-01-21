@@ -84,7 +84,7 @@ cdef class Trader(Component):
 
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
-        Condition.true(exec_engine.is_portfolio_equal(portfolio), "exec_engine.is_portfolio_equal(portfolio)")
+        Condition.true(exec_engine.check_portfolio_equal(portfolio), "exec_engine.check_portfolio_equal(portfolio)")
         super().__init__(clock, logger)
 
         self._strategies = []
