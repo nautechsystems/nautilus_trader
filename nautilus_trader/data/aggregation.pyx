@@ -503,6 +503,8 @@ cdef class TimeBarAggregator(BarAggregator):
         self.interval = self._get_interval()
         self._set_build_timer()
         self.next_close = self._clock.timer(str(self.bar_type)).next_time
+        self._build_on_next_tick = False
+        self._stored_close = None
 
     cpdef datetime get_start_time(self):
         """
@@ -618,6 +620,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 return
 
         self._builder.update(price, size, timestamp)
+        if self._build_on_next_tick:  # (fast C-level check)
+            self._build_and_send(self._stored_close)
+            # Reset flag and clear stored close
+            self._build_on_next_tick = False
+            self._stored_close = None
 
     cpdef void _build_bar(self, datetime at_time) except *:
         cdef TestTimer timer = self._clock.timer(str(self.bar_type))
@@ -627,7 +634,9 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef void _build_event(self, TimeEvent event) except *:
         if self._builder.use_previous_close and not self._builder.initialized:
-            self._log.error(f"Cannot build {self.bar_type} (no prices received).")
+            # Set flag to build on next close with the stored close time
+            self._build_on_next_tick = True
+            self._stored_close = self.next_close
             return
 
         self._build_and_send(close=event.timestamp)
