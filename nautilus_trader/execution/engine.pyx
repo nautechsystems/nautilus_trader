@@ -35,7 +35,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
-from nautilus_trader.common.logging cimport LogColour
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -853,4 +853,4 @@ cdef class ExecutionEngine(Component):
         cdef StrategyId strategy_id
         for strategy_id, count in counts.items():
             self._pos_id_generator.set_count(strategy_id, count)
-            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.", LogColour.BLUE)
+            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.", LogColor.BLUE)

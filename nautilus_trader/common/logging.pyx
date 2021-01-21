@@ -114,7 +114,7 @@ cdef class LogMessage:
         self,
         datetime timestamp not None,
         LogLevel level,
-        LogColour colour,
+        LogColor color,
         str text not None,
         long thread_id=0,
     ):
@@ -127,8 +127,8 @@ cdef class LogMessage:
             The log message timestamp.
         level :  LogLevel (Enum)
             The log message level.
-        colour :  LogColour (Enum)
-            The log message colour.
+        color :  LogColor (Enum)
+            The log message color.
         text : str
             The log message text.
         thread_id : long, optional
@@ -137,7 +137,7 @@ cdef class LogMessage:
         """
         self.timestamp = timestamp
         self.level = level
-        self.colour = colour
+        self.color = color
         self.text = text
         self.thread_id = thread_id
 
@@ -305,15 +305,15 @@ cdef class Logger:
         cdef str thread = "" if self._log_thread is False else f"[{message.thread_id}]"
         cdef str colour_cmd
 
-        if message.colour == LogColour.NORMAL:
+        if message.color == LogColor.NORMAL:
             colour_cmd = ""
-        elif message.colour == LogColour.BLUE:
+        elif message.color == LogColor.BLUE:
             colour_cmd = _BLUE
-        elif message.colour == LogColour.GREEN:
+        elif message.color == LogColor.GREEN:
             colour_cmd = _GREEN
-        elif message.colour == LogColour.YELLOW:
+        elif message.color == LogColor.YELLOW:
             colour_cmd = _YELLOW
-        elif message.colour == LogColour.RED:
+        elif message.color == LogColor.RED:
             colour_cmd = _RED
         else:
             colour_cmd = ""
@@ -371,7 +371,7 @@ cdef class LoggerAdapter:
         """
         return self._logger
 
-    cpdef void verbose(self, str message, LogColour colour=LogColour.NORMAL) except *:
+    cpdef void verbose(self, str message, LogColor color=LogColor.NORMAL) except *:
         """
         Log the given verbose message with the logger.
 
@@ -379,15 +379,15 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
-        colour : LogColour (Enum), optional
-            The text colour for the message.
+        color : LogColor (Enum), optional
+            The text color for the message.
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.VERBOSE, colour, message)
+        self._send_to_logger(LogLevel.VERBOSE, color, message)
 
-    cpdef void debug(self, str message, LogColour colour=LogColour.NORMAL) except *:
+    cpdef void debug(self, str message, LogColor color=LogColor.NORMAL) except *:
         """
         Log the given debug message with the logger.
 
@@ -395,15 +395,15 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
-        colour : LogColour (Enum), optional
-            The text colour for the message.
+        color : LogColor (Enum), optional
+            The text color for the message.
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.DEBUG, colour, message)
+        self._send_to_logger(LogLevel.DEBUG, color, message)
 
-    cpdef void info(self, str message, LogColour colour=LogColour.NORMAL) except *:
+    cpdef void info(self, str message, LogColor color=LogColor.NORMAL) except *:
         """
         Log the given information message with the logger.
 
@@ -411,13 +411,13 @@ cdef class LoggerAdapter:
         ----------
         message : str
             The message to log.
-        colour : LogColour (Enum), optional
-            The text colour for the message.
+        color : LogColor (Enum), optional
+            The text color for the message.
 
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.INFO, colour, message)
+        self._send_to_logger(LogLevel.INFO, color, message)
 
     cpdef void warning(self, str message) except *:
         """
@@ -431,7 +431,7 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.WARNING, LogColour.YELLOW, message)
+        self._send_to_logger(LogLevel.WARNING, LogColor.YELLOW, message)
 
     cpdef void error(self, str message) except *:
         """
@@ -445,7 +445,7 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.ERROR, LogColour.RED, message)
+        self._send_to_logger(LogLevel.ERROR, LogColor.RED, message)
 
     cpdef void critical(self, str message) except *:
         """
@@ -459,7 +459,7 @@ cdef class LoggerAdapter:
         """
         Condition.not_none(message, "message")
 
-        self._send_to_logger(LogLevel.CRITICAL, LogColour.RED, message)
+        self._send_to_logger(LogLevel.CRITICAL, LogColor.RED, message)
 
     cpdef void exception(self, ex) except *:
         """
@@ -487,14 +487,14 @@ cdef class LoggerAdapter:
     cdef inline void _send_to_logger(
         self,
         LogLevel level,
-        LogColour colour,
+        LogColor color,
         str message,
     ) except *:
         if not self.bypassed:
             self._logger.log(LogMessage(
                 self._logger.clock.utc_now_c(),
                 level,
-                colour,
+                color,
                 self._format_message(message),
                 threading.current_thread().ident),
             )
@@ -559,7 +559,7 @@ cpdef void log_memory(LoggerAdapter logger) except *:
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
     ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)
     ram_avail_pc = 100 - psutil.virtual_memory()[2]
-    ram_avail_colour = LogColour.NORMAL if ram_avail_pc > 50 else LogColour.YELLOW
+    ram_avail_colour = LogColor.NORMAL if ram_avail_pc > 50 else LogColor.YELLOW
     logger.info(f"RAM-Total: {ram_total_mb:,} MB")
     logger.info(f"RAM-Used:  {ram_used__mb:,} MB ({100 - ram_avail_pc:.2f}%)")
     logger.info(f"RAM-Avail: {ram_avail_mb:,} MB ({ram_avail_pc:.2f}%)", ram_avail_colour)
