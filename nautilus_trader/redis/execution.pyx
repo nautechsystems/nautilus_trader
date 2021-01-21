@@ -300,10 +300,15 @@ cdef class RedisExecutionDatabase(ExecutionDatabase):
         strategy_id : StrategyId
             The identifier of the strategy state dictionary to load.
 
+        Returns
+        -------
+        dict[str, bytes]
+
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        return self._redis.hgetall(name=self._key_strategies + strategy_id.value + ":State")
+        cdef dict user_state = self._redis.hgetall(name=self._key_strategies + strategy_id.value + ":State")
+        return {k.decode('utf-8'): v for k, v in user_state.items()}
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         """

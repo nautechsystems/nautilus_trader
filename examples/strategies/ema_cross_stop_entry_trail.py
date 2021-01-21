@@ -360,7 +360,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         Returns
         -------
-        dict
+        dict[str, bytes]
+            The strategy state dictionary.
 
         """
         return {}
@@ -373,7 +374,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         Parameters
         ----------
-        state : dict
+        state : dict[str, bytes]
             The strategy state dictionary.
 
         """

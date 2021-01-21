@@ -340,7 +340,8 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         Returns
         -------
-        dict
+        dict[str, bytes]
+            The strategy state dictionary.
 
         """
         return {}
@@ -353,7 +354,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
 
         Parameters
         ----------
-        state : dict
+        state : dict[str, bytes]
             The strategy state dictionary.
 
         """
