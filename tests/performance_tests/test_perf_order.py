@@ -18,7 +18,7 @@ import unittest
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.generators import OrderIdGenerator
+from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import StrategyId
@@ -36,7 +36,7 @@ class OrderPerformanceTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.generator = OrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
+        self.generator = ClientOrderIdGenerator(IdTag("001"), IdTag("001"), LiveClock())
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER", "000"),
             strategy_id=StrategyId("S", "001"),

@@ -63,7 +63,7 @@ cdef class IdentifierGenerator:
                 f"{utc_now.second:02d}")
 
 
-cdef class OrderIdGenerator(IdentifierGenerator):
+cdef class ClientOrderIdGenerator(IdentifierGenerator):
     """
     Provides a generator for unique ClientOrderId(s).
     """
@@ -76,7 +76,7 @@ cdef class OrderIdGenerator(IdentifierGenerator):
         int initial_count=0,
     ):
         """
-        Initialize a new instance of the `OrderIdGenerator` class.
+        Initialize a new instance of the `ClientOrderIdGenerator` class.
 
         Parameters
         ----------

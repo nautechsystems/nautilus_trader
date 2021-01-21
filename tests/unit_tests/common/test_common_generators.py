@@ -16,7 +16,7 @@
 import unittest
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.generators import OrderIdGenerator
+from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import IdTag
@@ -28,7 +28,7 @@ class OrderIdGeneratorTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
-        self.order_id_generator = OrderIdGenerator(
+        self.order_id_generator = ClientOrderIdGenerator(
             id_tag_trader=IdTag("001"),
             id_tag_strategy=IdTag("001"),
             clock=TestClock())
