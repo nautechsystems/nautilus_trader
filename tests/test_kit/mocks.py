@@ -402,11 +402,16 @@ class MockExecutionClient(ExecutionClient):
 
     def connect(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
-        self._set_connected(True)
+        self._set_connected()
+
+    def resolve_state(self, active_orders):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self._set_resolved()
 
     def disconnect(self):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected(False)
+        self._set_resolved(False)
 
     def dispose(self):
         self.calls.append(inspect.currentframe().f_code.co_name)

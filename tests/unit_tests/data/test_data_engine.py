@@ -29,7 +29,7 @@ from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.commands import VenueCommand
+from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -211,7 +211,7 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
-        command = VenueCommand(
+        command = TradingCommand(
             venue=BINANCE,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),

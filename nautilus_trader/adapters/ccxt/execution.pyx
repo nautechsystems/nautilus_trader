@@ -579,7 +579,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         if not order.is_working_c():
-            self._log.error(f"Cannot cancel order, OrderState={order.state_string_c()}.")
+            self._log.error(f"Cannot cancel order, state=OrderState.{order.state_string_c()}.")
             return  # Cannot cancel
 
         try:

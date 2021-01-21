@@ -329,13 +329,13 @@ cdef class DataEngine(Component):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void execute(self, VenueCommand command) except *:
+    cpdef void execute(self, TradingCommand command) except *:
         """
         Execute the given command for a specified venue.
 
         Parameters
         ----------
-        command : VenueCommand
+        command : TradingCommand
             The venue to execute.
 
         """
@@ -387,7 +387,7 @@ cdef class DataEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, VenueCommand command) except *:
+    cdef inline void _execute_command(self, TradingCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
