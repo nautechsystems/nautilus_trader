@@ -561,7 +561,7 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(RuntimeError, strategy.load, {})
+        self.assertRaises(RuntimeError, strategy.load, {'something': b'123456'})
 
     def test_load(self):
         # Arrange

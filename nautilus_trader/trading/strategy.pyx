@@ -253,6 +253,11 @@ cdef class TradingStrategy(Component):
 
         Create and return a state dictionary of values to be saved.
 
+        Returns
+        -------
+        dict[str, bytes]
+            The strategy state dictionary.
+
         Warnings
         --------
         System method (not intended to be called by user code).
@@ -436,7 +441,8 @@ cdef class TradingStrategy(Component):
         )
 
         self.order_factory.set_count(order_id_count)
-        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.", LogColour.BLUE)
+        colour = LogColour.BLUE if order_id_count > 0 else LogColour.NORMAL
+        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.", colour)
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
         """
@@ -641,7 +647,10 @@ cdef class TradingStrategy(Component):
         try:
             self.log.debug("Saving state...")
             user_state = self.on_save()
-            self.log.info("Saved state.", LogColour.BLUE)
+            if len(user_state) > 0:
+                self.log.info(f"Saved state: {user_state}.", LogColour.BLUE)
+            else:
+                self.log.info("No user state to save.", LogColour.BLUE)
             return user_state
         except Exception as ex:
             self.log.exception(ex)
@@ -672,10 +681,14 @@ cdef class TradingStrategy(Component):
 
         self._check_trader_registered()
 
+        if len(state) == 0:
+            self.log.info("No user state to load.", LogColour.BLUE)
+            return
+
         try:
-            self.log.debug("Loading state...")
+            self.log.debug(f"Loading state...")
             self.on_load(state)
-            self.log.info("Loaded state.", LogColour.BLUE)
+            self.log.info(f"Loaded state {state}.", LogColour.BLUE)
         except Exception as ex:
             self.log.exception(ex)
             raise

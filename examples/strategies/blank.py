@@ -155,7 +155,8 @@ class MyStrategy(TradingStrategy):
 
         Returns
         -------
-        dict
+        dict[str, bytes]
+            The strategy state dictionary.
 
         """
         return {}
@@ -168,7 +169,7 @@ class MyStrategy(TradingStrategy):
 
         Parameters
         ----------
-        state : dict
+        state : dict[str, bytes]
             The strategy state dictionary.
 
         """
