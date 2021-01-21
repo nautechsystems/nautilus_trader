@@ -39,7 +39,7 @@ cpdef enum LogLevel:
     FATAL = 7,
 
 
-cpdef enum LogColour:
+cpdef enum LogColor:
     NORMAL = 0,
     GREEN = 1,
     BLUE = 2,
@@ -61,8 +61,8 @@ cdef class LogMessage:
     """The log message timestamp.\n\n:returns: `datetime`"""
     cdef readonly LogLevel level
     """The log level.\n\n:returns: `LogLevel` (Enum)"""
-    cdef readonly LogColour colour
-    """The log text colour.\n\n:returns: `LogColour` (Enum)"""
+    cdef readonly LogColor color
+    """The log text color.\n\n:returns: `LogColor` (Enum)"""
     cdef readonly str text
     """The log text.\n\n:returns: `str`"""
     cdef readonly long thread_id
@@ -111,14 +111,14 @@ cdef class LoggerAdapter:
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)
-    cpdef void verbose(self, str message, LogColour colour=*) except *
-    cpdef void debug(self, str message, LogColour colour=*) except *
-    cpdef void info(self, str message, LogColour colour=*) except *
+    cpdef void verbose(self, str message, LogColor color=*) except *
+    cpdef void debug(self, str message, LogColor color=*) except *
+    cpdef void info(self, str message, LogColor color=*) except *
     cpdef void warning(self, str message) except *
     cpdef void error(self, str message) except *
     cpdef void critical(self, str message) except *
     cpdef void exception(self, ex) except *
-    cdef inline void _send_to_logger(self, LogLevel level, LogColour colour, str message) except *
+    cdef inline void _send_to_logger(self, LogLevel level, LogColor color, str message) except *
     cdef inline str _format_message(self, str message)
 
 

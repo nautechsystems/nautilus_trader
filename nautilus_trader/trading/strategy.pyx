@@ -37,7 +37,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
-from nautilus_trader.common.logging cimport LogColour
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
@@ -441,8 +441,8 @@ cdef class TradingStrategy(Component):
         )
 
         self.order_factory.set_count(order_id_count)
-        colour = LogColour.BLUE if order_id_count > 0 else LogColour.NORMAL
-        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.", colour)
+        color = LogColor.BLUE if order_id_count > 0 else LogColor.NORMAL
+        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.", color)
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
         """
@@ -648,9 +648,9 @@ cdef class TradingStrategy(Component):
             self.log.debug("Saving state...")
             user_state = self.on_save()
             if len(user_state) > 0:
-                self.log.info(f"Saved state: {user_state}.", LogColour.BLUE)
+                self.log.info(f"Saved state: {user_state}.", LogColor.BLUE)
             else:
-                self.log.info("No user state to save.", LogColour.BLUE)
+                self.log.info("No user state to save.", LogColor.BLUE)
             return user_state
         except Exception as ex:
             self.log.exception(ex)
@@ -682,13 +682,13 @@ cdef class TradingStrategy(Component):
         self._check_trader_registered()
 
         if len(state) == 0:
-            self.log.info("No user state to load.", LogColour.BLUE)
+            self.log.info("No user state to load.", LogColor.BLUE)
             return
 
         try:
             self.log.debug(f"Loading state...")
             self.on_load(state)
-            self.log.info(f"Loaded state {state}.", LogColour.BLUE)
+            self.log.info(f"Loaded state {state}.", LogColor.BLUE)
         except Exception as ex:
             self.log.exception(ex)
             raise

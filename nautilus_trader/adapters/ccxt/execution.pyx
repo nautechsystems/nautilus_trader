@@ -28,7 +28,7 @@ from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderFillParse
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LogColour
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -140,7 +140,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info("Connecting...")
 
         if self._client.check_required_credentials():
-            self._log.info("API credentials validated.", LogColour.GREEN)
+            self._log.info("API credentials validated.", LogColor.GREEN)
         else:
             self._log.error("API credentials missing or invalid.")
             self._log.error(f"Required: {self._client.required_credentials()}.")
@@ -383,7 +383,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     event["symbol"] = event0["symbol"]  # Replace for symbol with '/'
                     event["timestamp"] = event0["timestamp"]
                     # TODO: Development
-                    # self._log.info("Raw: " + str(event), LogColour.BLUE)
+                    # self._log.info("Raw: " + str(event), LogColor.BLUE)
                     self._on_order_status(event)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
@@ -410,7 +410,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     event["symbol"] = event0["symbol"]  # Replace with `/` symbol
                     event["timestamp"] = event0["timestamp"]
                     # TODO: Development
-                    # self._log.info("Raw: " + str(event), LogColour.GREEN)
+                    # self._log.info("Raw: " + str(event), LogColor.GREEN)
                     self._on_exec_report(event)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)

@@ -19,7 +19,7 @@ The `ExecutionCache` provides an interface for querying on orders and positions.
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport LogColour
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_time
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
@@ -100,8 +100,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cached_accounts = self._database.load_accounts()
 
         cdef int count = len(self._cached_accounts)
-        cdef LogColour colour = LogColour.NORMAL if not self._cached_accounts else LogColour.BLUE
-        self._log.info(f"Cached {count} account{'' if count == 1 else 's'} from database.", colour)
+        cdef LogColor color = LogColor.NORMAL if not self._cached_accounts else LogColor.BLUE
+        self._log.info(f"Cached {count} account{'' if count == 1 else 's'} from database.", color)
 
     cpdef void cache_orders(self) except *:
         """
@@ -113,8 +113,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cached_orders = self._database.load_orders()
 
         cdef int count = len(self._cached_orders)
-        cdef LogColour colour = LogColour.NORMAL if not self._cached_orders else LogColour.BLUE
-        self._log.info(f"Cached {count} order{'' if count == 1 else 's'} from database.", colour)
+        cdef LogColor color = LogColor.NORMAL if not self._cached_orders else LogColor.BLUE
+        self._log.info(f"Cached {count} order{'' if count == 1 else 's'} from database.", color)
 
     cpdef void cache_positions(self) except *:
         """
@@ -126,8 +126,8 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self._cached_positions = self._database.load_positions()
 
         cdef int count = len(self._cached_positions)
-        cdef LogColour colour = LogColour.NORMAL if not self._cached_positions else LogColour.BLUE
-        self._log.info(f"Cached {count} position{'' if count == 1 else 's'} from database.", colour)
+        cdef LogColor color = LogColor.NORMAL if not self._cached_positions else LogColor.BLUE
+        self._log.info(f"Cached {count} position{'' if count == 1 else 's'} from database.", color)
 
     cpdef void build_index(self) except *:
         """
@@ -341,7 +341,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # Finally
         cdef long total_ns = round((unix_time() - ts) * 1000000)
         if error_count == 0:
-            self._log.info(f"Integrity check passed in {total_ns}μs.", LogColour.GREEN)
+            self._log.info(f"Integrity check passed in {total_ns}μs.", LogColor.GREEN)
             return True
         else:
             self._log.error(f"Integrity check failed with "

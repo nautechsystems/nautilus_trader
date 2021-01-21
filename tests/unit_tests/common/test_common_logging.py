@@ -20,7 +20,7 @@ from parameterized import parameterized
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogColour
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
@@ -107,7 +107,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
-        logger_adapter.info("This is a log message.", LogColour.BLUE)
+        logger_adapter.info("This is a log message.", LogColor.BLUE)
 
         # Assert
         self.assertTrue(True)  # No exception raised
@@ -118,7 +118,7 @@ class TestLoggerTests(unittest.TestCase):
         logger_adapter = LoggerAdapter("TEST_LOGGER", logger)
 
         # Act
-        logger_adapter.info("This is a log message.", LogColour.GREEN)
+        logger_adapter.info("This is a log message.", LogColor.GREEN)
 
         # Assert
         self.assertTrue(True)  # No exception raised
