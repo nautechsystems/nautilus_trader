@@ -15,20 +15,20 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-A utility script to remove cython and pytest artifact files from source code directories.
+A utility script to remove artifact files from source code directories.
 """
 
 import os
 import shutil
 
 
-FILES_TO_CLEAN = {
+FILES_TO_REMOVE = {
     ".coverage",
     "coverage.xml",
     "dump.rdb",
 }
 
-DIRS_TO_CLEAN = {
+DIRS_TO_REMOVE = {
     ".nox",
     ".profile",
     ".pytest_cache",
@@ -38,6 +38,12 @@ DIRS_TO_CLEAN = {
     "docs/build",
     "coverage.xml",
     "dump.rdb",
+}
+
+DIRS_TO_CLEAN = {
+    "/nautilus_trader/",
+    "/examples/",
+    "/tests/",
 }
 
 EXTENSIONS_TO_CLEAN = (
@@ -51,12 +57,13 @@ EXTENSIONS_TO_CLEAN = (
     ".so",
 )
 
+
 if __name__ == "__main__":
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     print(f"root_dir={root_dir}")
 
     # Remove specific files
-    for target in FILES_TO_CLEAN:
+    for target in FILES_TO_REMOVE:
         try:
             os.remove(os.path.join(root_dir, target))
             print(f"Removed: {target}")
@@ -64,22 +71,18 @@ if __name__ == "__main__":
             pass
 
     # Remove specific directories
-    for target in DIRS_TO_CLEAN:
+    for target in DIRS_TO_REMOVE:
         print(f"Removing dir: {target}")
         shutil.rmtree(os.path.join(root_dir, target), ignore_errors=True)
 
-    # Walk /nautilus_trader/ and remove files by extension
+    # Walk directories to clean and remove files by extension
     removed_count = 0
-    for root, _dirs, files in os.walk(root_dir + '/nautilus_trader/'):
-        for name in files:
-            path = os.path.join(root, name)
-            if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
-                os.remove(path)
-                removed_count += 1
-    for root, _dirs, files in os.walk(root_dir + '/examples/'):
-        for name in files:
-            path = os.path.join(root, name)
-            if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
-                os.remove(path)
-                removed_count += 1
+    for directory in DIRS_TO_CLEAN:
+        for root, _dirs, files in os.walk(root_dir + directory):
+            for name in files:
+                path = os.path.join(root, name)
+                if os.path.isfile(path) and path.endswith(EXTENSIONS_TO_CLEAN):
+                    os.remove(path)
+                    removed_count += 1
+
     print(f"Removed {removed_count} discrete files by extension.")

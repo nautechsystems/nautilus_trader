@@ -31,6 +31,7 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -102,14 +103,6 @@ class ExecutionCacheTests(unittest.TestCase):
         # Assert
         self.assertTrue(True)  # No exception raised
 
-    def test_check_integrity(self):
-        # Arrange
-        # Act
-        self.cache.check_integrity()
-
-        # Assert
-        # TODO: Implement functionality
-
     def test_add_account(self):
         # Arrange
         initial = TestStubs.event_account_state()
@@ -154,6 +147,14 @@ class ExecutionCacheTests(unittest.TestCase):
         # Arrange
         # Act
         result = self.cache.strategy_ids()
+
+        # Assert
+        self.assertEqual(set(), result)
+
+    def test_get_order_ids_with_no_ids_returns_empty_set(self):
+        # Arrange
+        # Act
+        result = self.cache.order_ids()
 
         # Assert
         self.assertEqual(set(), result)
@@ -223,6 +224,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertIn(order.cl_ord_id, self.cache.order_ids())
         self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol))
         self.assertIn(order.cl_ord_id, self.cache.order_ids(strategy_id=self.strategy.id))
+        self.assertNotIn(order.cl_ord_id, self.cache.order_ids(strategy_id=StrategyId("S", "ZX1")))
         self.assertIn(order.cl_ord_id, self.cache.order_ids(symbol=order.symbol, strategy_id=self.strategy.id))
         self.assertIn(order, self.cache.orders())
         self.assertEqual(OrderId.null(), self.cache.order_id(order.cl_ord_id))
@@ -672,7 +674,7 @@ class ExecutionCacheTests(unittest.TestCase):
         self.assertTrue(True)  # No exception raised
 
 
-class ExecutionCacheIntegrityCheckTest(unittest.TestCase):
+class ExecutionCacheIntegrityCheckTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup

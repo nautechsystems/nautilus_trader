@@ -25,6 +25,7 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.datetime cimport timedelta
+from cpython.datetime cimport total_seconds
 from cpython.unicode cimport PyUnicode_Contains
 
 from nautilus_trader.core.correctness cimport Condition
@@ -35,7 +36,7 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 cpdef long to_posix_ms(datetime timestamp) except *:
     """
-    Returns the POSIX timestamp for the given object.
+    Returns the POSIX millisecond timestamp from the given object.
 
     Parameters
     ----------
@@ -47,12 +48,12 @@ cpdef long to_posix_ms(datetime timestamp) except *:
     int
 
     """
-    return <long>((timestamp - UNIX_EPOCH).total_seconds() * 1000)
+    return <long>(total_seconds(timestamp - UNIX_EPOCH) * 1000)
 
 
 cpdef datetime from_posix_ms(long posix):
     """
-    Returns the datetime in UTC from the given POSIX milliseconds timestamp.
+    Returns the datetime in UTC from the given POSIX millisecond timestamp.
 
     Parameters
     ----------

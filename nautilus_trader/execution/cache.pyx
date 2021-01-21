@@ -17,12 +17,11 @@
 The `ExecutionCache` provides an interface for querying on orders and positions.
 """
 
-import time
-
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport LogColour
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.time cimport unix_time
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.identifiers cimport AccountId
@@ -137,13 +136,13 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         self.clear_index()
 
         self._log.debug(f"Building index...")
-        cdef double ts = time.time()
+        cdef double ts = unix_time()
 
         self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
-        self._log.debug(f"Index built in {time.time() - ts:.3f}s.")
+        self._log.debug(f"Index built in {unix_time() - ts:.3f}s.")
 
     cpdef bint check_integrity(self) except *:
         """
@@ -177,7 +176,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef double ts = time.time()
+        cdef double ts = unix_time()
         self._log.info("Checking data integrity...")
 
         # Check object caches
@@ -340,7 +339,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         # Finally
-        cdef long total_ns = round((time.time() - ts) * 1000000)
+        cdef long total_ns = round((unix_time() - ts) * 1000000)
         if error_count == 0:
             self._log.info(f"Integrity check passed in {total_ns}μs.", LogColour.GREEN)
             return True
@@ -951,7 +950,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         if symbol is not None:
             query = self._index_symbol_orders.get(symbol, set())
         if strategy_id is not None:
-            if not query:
+            if query is None:
                 query = self._index_strategy_orders.get(strategy_id, set())
             else:
                 query = query.intersection(self._index_strategy_orders.get(strategy_id, set()))
@@ -965,7 +964,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         if symbol is not None:
             query = self._index_symbol_positions.get(symbol, set())
         if strategy_id is not None:
-            if not query:
+            if query is None:
                 query = self._index_strategy_positions.get(strategy_id, set())
             else:
                 query = query.intersection(self._index_strategy_positions.get(strategy_id, set()))
@@ -990,7 +989,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_orders
         else:
             return self._index_orders.intersection(query)
@@ -1014,7 +1013,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_orders_working
         else:
             return self._index_orders_working.intersection(query)
@@ -1038,7 +1037,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_ord_query_filter_set(symbol, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_orders_completed
         else:
             return self._index_orders_completed.intersection(query)
@@ -1061,7 +1060,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_pos_query_filter_set(symbol, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_positions
         else:
             return self._index_positions.intersection(query)
@@ -1107,7 +1106,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
         """
         cdef set query = self._build_pos_query_filter_set(symbol, strategy_id)
 
-        if not query:
+        if query is None:
             return self._index_positions_closed
         else:
             return self._index_positions_closed.intersection(query)

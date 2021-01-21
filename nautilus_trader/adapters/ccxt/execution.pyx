@@ -449,8 +449,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
             order.cl_ord_id,
-            self._clock.utc_now(),
-            <long>c_round(order.init_event_c().timestamp.timestamp() * 1000000),
+            self._clock.utc_now_c(),
         )
 
         self._active_orders[order.cl_ord_id] = order
@@ -466,7 +465,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 params=params,
             )
         except CCXTError as ex:
-            self._generate_order_rejected(order.cl_ord_id, str(ex), self._clock.utc_now())
+            self._generate_order_rejected(order.cl_ord_id, str(ex), self._clock.utc_now_c())
             return
 
     async def _cancel_order(self, ClientOrderId cl_ord_id):
@@ -543,7 +542,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             balances_locked,
             {},
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
 
         self._handle_event(account_state)
@@ -624,14 +623,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             cl_ord_id,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
         self._handle_event(invalid)
 
     cdef inline void _generate_order_submitted(
         self, ClientOrderId cl_ord_id,
         datetime timestamp,
-        long init_ts,
     ) except *:
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
@@ -640,7 +638,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             timestamp,
             self._uuid_factory.generate(),
             timestamp,
-            latency=c_round(timestamp.timestamp() * 1000000) - init_ts
         )
         self._handle_event(submitted)
 
@@ -657,7 +654,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             timestamp,
             reason,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
         self._handle_event(rejected)
 
@@ -674,7 +671,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order_id,
             timestamp,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
         self._handle_event(accepted)
 
@@ -751,7 +748,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             event["liquidity_side"],
             from_posix_ms(timestamp),
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
 
         self._handle_event(filled)
@@ -769,7 +766,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order_id,
             timestamp,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
 
         self._handle_event(cancelled)
@@ -787,7 +784,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order_id,
             timestamp,
             self._uuid_factory.generate(),
-            self._clock.utc_now(),
+            self._clock.utc_now_c(),
         )
 
         self._handle_event(expired)

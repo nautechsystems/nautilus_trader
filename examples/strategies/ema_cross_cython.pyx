@@ -251,6 +251,11 @@ cdef class EMACross(TradingStrategy):
 
         Create and return a state dictionary of values to be saved.
 
+        Returns
+        -------
+        dict[str, bytes]
+            The strategy state dictionary.
+
         """
         return {}
 
@@ -262,7 +267,7 @@ cdef class EMACross(TradingStrategy):
 
         Parameters
         ----------
-        state : dict
+        state : dict[str, bytes]
             The strategy state dictionary.
 
         """

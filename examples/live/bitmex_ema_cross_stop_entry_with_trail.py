@@ -31,7 +31,7 @@ config = {
     "trader": {
         "name": "TESTER",              # Not sent beyond system boundary
         "id_tag": "001",               # Used to ensure orders are unique for this trader
-        "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
+        "check_residuals_delay": 2.0,  # How long to wait after stopping for residual events (secs)
     },
 
     "logging": {
@@ -72,7 +72,7 @@ config = {
 strategy = EMACrossStopEntryTrail(
     symbol=Symbol("BTC/USD", Venue("BITMEX")),
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("1000"),
+    trade_size=Decimal("100"),
     fast_ema_period=10,
     slow_ema_period=20,
     atr_period=20,

@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.generators cimport OrderIdGenerator
+from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -76,7 +76,7 @@ cdef class OrderFactory:
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
-        self._id_generator = OrderIdGenerator(
+        self._id_generator = ClientOrderIdGenerator(
             id_tag_trader=trader_id.tag,
             id_tag_strategy=strategy_id.tag,
             clock=clock,
@@ -162,7 +162,7 @@ cdef class OrderFactory:
             quantity,
             time_in_force,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now())
+            timestamp=self._clock.utc_now_c())
 
     cpdef LimitOrder limit(
         self,
@@ -230,7 +230,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now(),
+            timestamp=self._clock.utc_now_c(),
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden)
@@ -291,7 +291,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp=self._clock.utc_now(),
+            timestamp=self._clock.utc_now_c(),
             reduce_only=reduce_only,
         )
 

@@ -86,8 +86,6 @@ cdef class OrderSubmitted(OrderEvent):
     """The account identifier associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly datetime submitted_time
     """The order submitted time.\n\n:returns: `datetime`"""
-    cdef readonly unsigned long latency
-    """The latency from order initialization to submission.\n\n:returns: `long`"""
 
 
 cdef class OrderRejected(OrderEvent):

@@ -237,7 +237,7 @@ cdef class Logger:
         self._log_thread = log_thread
         self._log_to_file = log_to_file
         self._log_file_path = log_file_path
-        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.utc_now().date().isoformat()}.log"
+        self._log_file = f"{self._log_file_path}{self.name}-{self.clock.utc_now_c().date().isoformat()}.log"
         self._log_store = []
         self._logger = logging.getLogger(name)
         self._logger.setLevel(logging.DEBUG)
@@ -492,7 +492,7 @@ cdef class LoggerAdapter:
     ) except *:
         if not self.bypassed:
             self._logger.log(LogMessage(
-                self._logger.clock.utc_now(),
+                self._logger.clock.utc_now_c(),
                 level,
                 colour,
                 self._format_message(message),
@@ -743,7 +743,7 @@ cdef class LiveLogger(Logger):
             self._queue.put_nowait(message)
         except queue.Full:
             queue_full_msg = LogMessage(
-                timestamp=self.clock.utc_now(),
+                timestamp=self.clock.utc_now_c(),
                 level=LogLevel.WARNING,
                 text=f"LiveLogger: Blocking on `put` as queue full at {self._queue.qsize()} items.",
                 thread_id=threading.current_thread().ident,

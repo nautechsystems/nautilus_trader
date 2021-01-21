@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
@@ -70,6 +72,7 @@ cdef class SimulatedExchange:
 
     cdef readonly dict instruments
     cdef readonly dict data_ticks
+
     cdef dict _market_bids
     cdef dict _market_asks
     cdef dict _slippages

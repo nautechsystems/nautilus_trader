@@ -42,6 +42,7 @@ cdef class Clock:
     """The name of the next time event.\n\n:returns: `str`"""
 
     cpdef datetime utc_now(self)
+    cdef datetime utc_now_c(self)
     cpdef datetime local_now(self, tzinfo tz)
     cpdef timedelta delta(self, datetime time)
     cpdef list timer_names(self)

@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -24,9 +23,7 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -328,7 +325,6 @@ cdef class OrderSubmitted(OrderEvent):
         datetime submitted_time not None,
         UUID event_id not None,
         datetime event_timestamp not None,
-        long latency=0,
     ):
         """
         Initialize a new instance of the `OrderSubmitted` class.
@@ -345,8 +341,6 @@ cdef class OrderSubmitted(OrderEvent):
             The event identifier.
         event_timestamp : datetime
             The event timestamp.
-        latency : long
-            The latency from order initialization to submission.
 
         """
         super().__init__(
@@ -358,14 +352,12 @@ cdef class OrderSubmitted(OrderEvent):
 
         self.account_id = account_id
         self.submitted_time = submitted_time
-        self.latency = latency
 
     def __repr__(self) -> str:
-        cdef str latency_str = f", latency={self.latency}μs.)" if self.latency else ')'
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"id={self.id}{latency_str}")
+                f"id={self.id})")
 
 
 cdef class OrderRejected(OrderEvent):
@@ -429,6 +421,14 @@ cdef class OrderRejected(OrderEvent):
 cdef class OrderAccepted(OrderEvent):
     """
     Represents an event where an order has been accepted by the exchange/broker.
+
+    This event often corresponds to a `NEW` OrdStatus <39> field in FIX
+    execution reports.
+
+    References
+    ----------
+    https://www.onixs.biz/fix-dictionary/4.4/tagNum_39.html
+
     """
 
     def __init__(
