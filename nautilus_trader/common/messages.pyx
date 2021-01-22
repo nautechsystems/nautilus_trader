@@ -16,10 +16,10 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.commands cimport VenueCommand
+from nautilus_trader.model.commands cimport TradingCommand
 
 
-cdef class Subscribe(VenueCommand):
+cdef class Subscribe(TradingCommand):
     """
     Represents a command to subscribe to data.
     """
@@ -72,7 +72,7 @@ cdef class Subscribe(VenueCommand):
                 f"timestamp={self.timestamp})")
 
 
-cdef class Unsubscribe(VenueCommand):
+cdef class Unsubscribe(TradingCommand):
     """
     Represents a command to unsubscribe from data.
     """

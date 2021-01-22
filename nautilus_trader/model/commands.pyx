@@ -26,9 +26,9 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 
 
-cdef class VenueCommand(Command):
+cdef class TradingCommand(Command):
     """
-    The base class for all commands relating to a specific venue.
+    The base class for all trading related commands.
 
     This class should not be used directly, but through its concrete subclasses.
     """
@@ -40,7 +40,7 @@ cdef class VenueCommand(Command):
         datetime command_timestamp not None,
     ):
         """
-        Initialize a new instance of the `VenueCommand` class.
+        Initialize a new instance of the `TradingCommand` class.
 
         Parameters
         ----------
@@ -57,7 +57,7 @@ cdef class VenueCommand(Command):
         self.venue = venue
 
 
-cdef class SubmitOrder(VenueCommand):
+cdef class SubmitOrder(TradingCommand):
     """
     Represents a command to submit the given order.
     """
@@ -121,7 +121,7 @@ cdef class SubmitOrder(VenueCommand):
                 f"strategy_id={self.strategy_id.value})")
 
 
-cdef class SubmitBracketOrder(VenueCommand):
+cdef class SubmitBracketOrder(TradingCommand):
     """
     Represents a command to submit a bracket order consisting of parent and child orders.
     """
@@ -179,7 +179,7 @@ cdef class SubmitBracketOrder(VenueCommand):
                 f"id={self.bracket_order.id.value})")
 
 
-cdef class AmendOrder(VenueCommand):
+cdef class AmendOrder(TradingCommand):
     """
     Represents a command to change to parameters of an existing order.
 
@@ -241,7 +241,7 @@ cdef class AmendOrder(VenueCommand):
                 f"price={self.price})")
 
 
-cdef class CancelOrder(VenueCommand):
+cdef class CancelOrder(TradingCommand):
     """
     Represents a command to cancel an order.
     """

@@ -25,7 +25,7 @@ from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport VenueCommand
+from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Venue
@@ -112,7 +112,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-    cpdef void execute(self, VenueCommand command) except *:
+    cpdef void execute(self, TradingCommand command) except *:
         """
         Execute the given command.
 
@@ -121,7 +121,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         Parameters
         ----------
-        command : VenueCommand
+        command : TradingCommand
             The command to execute.
 
         Warnings

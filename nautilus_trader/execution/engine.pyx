@@ -67,6 +67,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -397,34 +398,47 @@ cdef class ExecutionEngine(Component):
     cpdef void resolve_state(self) except *:
         """
         Resolve the execution engines state with all execution clients.
+
+        The execution engine will collect all cached active orders and send
+        those to the relevant execution client(s) for a comparison with the
+        exchange(s) order states.
+
+        If a cached order does not match the exchanges order status then
+        the missing events will be generated. If there is not enough information
+        to resolve a state then errors will be logged.
+
         """
+        self._log.info("Resolving execution state...")
+
         cdef list active_orders = self.cache.orders_active()
 
-        # Prime order state map
+        # Initialize order state map
         cdef dict venue_orders = {}  # type: dict[Venue, list[Order]]
-
         cdef Venue venue
         for venue in self._clients.keys():
             venue_orders[venue] = []
 
-        # TODO: Refactor
         # Build order state map
         cdef Order order
-        cdef list order_list
         for order in active_orders:
             if order.symbol.venue in venue_orders:
                 venue_orders[order.symbol.venue].append(order)
+            else:
+                self._log.error(f"Cannot resolve state. No registered"
+                                f"execution client for active {order}.")
+                continue
 
+        # Send state map to each client to resolve
         for venue, client in self._clients.items():
             client.resolve_state(venue_orders[venue])
 
-    cpdef void execute(self, VenueCommand command) except *:
+    cpdef void execute(self, TradingCommand command) except *:
         """
         Execute the given command.
 
         Parameters
         ----------
-        command : VenueCommand
+        command : TradingCommand
             The command to execute.
 
         """
@@ -459,14 +473,14 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, VenueCommand command) except *:
+    cdef inline void _execute_command(self, TradingCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
         cdef ExecutionClient client = self._clients.get(command.venue)
         if client is None:
-            self._log.error(f"Cannot handle command, "
-                            f"no client registered for {command.venue}, {command}.")
+            self._log.error(f"Cannot handle command: "
+                            f"No client registered for {command.venue}, {command}.")
             return  # No client to handle command
 
         if isinstance(command, SubmitOrder):
@@ -478,15 +492,13 @@ cdef class ExecutionEngine(Component):
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
-            self._log.error(f"Cannot handle unrecognized command, {command}.")
+            self._log.error(f"Cannot handle unrecognized command: {command}.")
 
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         # Validate command
         if self.cache.order_exists(command.order.cl_ord_id):
-            self._invalidate_order(
-                command.order.cl_ord_id,
-                f"{repr(command.order.cl_ord_id)} already exists",
-            )
+            self._log.error(f"Cannot submit order: "
+                            f"{repr(command.order.cl_ord_id)} already exists.")
             return  # Invalid command
 
         # Cache order
@@ -495,7 +507,7 @@ cdef class ExecutionEngine(Component):
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(
                 command.order.cl_ord_id,
-                f"{repr(PositionId)} does not exist",
+                f"{repr(command.position_id)} does not exist",
             )
             return  # Invalid command
 
@@ -505,48 +517,13 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Validate command
         if self.cache.order_exists(command.bracket_order.entry.cl_ord_id):
-            self._invalidate_order(
-                command.bracket_order.entry.cl_ord_id,
-                f"{repr(command.bracket_order.entry.cl_ord_id)} already exists",
-            )
-            self._invalidate_order(
-                command.bracket_order.stop_loss.cl_ord_id,
-                f"parent {repr(command.bracket_order.entry.cl_ord_id)} already exists",
-            )
-            if command.bracket_order.take_profit is not None:
-                self._invalidate_order(
-                    command.bracket_order.take_profit.cl_ord_id,
-                    f"parent {repr(command.bracket_order.entry.cl_ord_id)} already exists",
-                )
+            self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
         if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
-            self._invalidate_order(
-                command.bracket_order.entry.cl_ord_id,
-                f"OCO {repr(command.bracket_order.stop_loss.cl_ord_id)} already exists",
-            )
-            self._invalidate_order(
-                command.bracket_order.stop_loss.cl_ord_id,
-                f"{repr(command.bracket_order.stop_loss.cl_ord_id)} already exists",
-            )
-            if command.bracket_order.take_profit is not None:
-                self._invalidate_order(
-                    command.bracket_order.take_profit.cl_ord_id,
-                    f"OCO {repr(command.bracket_order.stop_loss.cl_ord_id)} already exists",
-                )
+            self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
         if command.bracket_order.take_profit is not None and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
-            self._invalidate_order(
-                command.bracket_order.entry.cl_ord_id,
-                f"OCO {repr(command.bracket_order.take_profit.cl_ord_id)} already exists",
-            )
-            self._invalidate_order(
-                command.bracket_order.stop_loss.cl_ord_id,
-                f"OCO {repr(command.bracket_order.take_profit.cl_ord_id)} already exists",
-            )
-            self._invalidate_order(
-                command.bracket_order.take_profit.cl_ord_id,
-                f"{repr(command.bracket_order.take_profit.cl_ord_id)} already exists",
-            )
+            self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
 
         # Cache all orders
@@ -561,7 +538,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot amend order,  "
+            self._log.warning(f"Cannot amend order:  "
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
@@ -570,7 +547,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         # Validate command
         if self.cache.is_order_completed(command.cl_ord_id):
-            self._log.warning(f"Cannot cancel order, "
+            self._log.warning(f"Cannot cancel order: "
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
@@ -586,6 +563,41 @@ cdef class ExecutionEngine(Component):
         )
 
         self._handle_event(invalid)
+
+    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *:
+        cdef ClientOrderId entry_id = bracket_order.entry.cl_ord_id
+        cdef ClientOrderId stop_loss_id = bracket_order.stop_loss.cl_ord_id
+        cdef ClientOrderId take_profit_id
+        if bracket_order.take_profit:
+            take_profit_id = bracket_order.take_profit.cl_ord_id
+
+        # Check entry
+        if self.cache.order_exists(entry_id):
+            self._log.error(f"Cannot submit BracketOrder: "
+                            f"Duplicate {repr(entry_id)}.")
+        else:
+            self._invalidate_order(
+                bracket_order.entry,
+                "Duplicate ClientOrderId in bracket.",
+            )
+        # Check stop-loss
+        if self.cache.order_exists(stop_loss_id):
+            self._log.error(f"Cannot submit BracketOrder: "
+                            f"Duplicate {repr(stop_loss_id)}.")
+        else:
+            self._invalidate_order(
+                bracket_order.stop_loss,
+                "Duplicate ClientOrderId in bracket.",
+            )
+        # Check take-profit
+        if take_profit_id is not None and self.cache.order_exists(take_profit_id):
+            self._log.error(f"Cannot submit BracketOrder: "
+                            f"Duplicate {repr(take_profit_id)}.")
+        else:
+            self._invalidate_order(
+                bracket_order.take_profit,
+                "Duplicate ClientOrderId in bracket.",
+            )
 
     cdef inline void _deny_order(self, ClientOrderId cl_ord_id, str reason) except *:
         # Generate event
@@ -611,7 +623,7 @@ cdef class ExecutionEngine(Component):
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
-            self._log.error(f"Cannot handle unrecognized event, {event}.")
+            self._log.error(f"Cannot handle unrecognized event: {event}.")
 
     cdef inline void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.cache.account(event.account_id)

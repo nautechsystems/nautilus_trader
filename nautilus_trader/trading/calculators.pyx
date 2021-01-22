@@ -91,7 +91,7 @@ cdef class ExchangeRateCalculator:
                 s: (bid_quotes[s] + ask_quotes[s]) / Decimal(2) for s in bid_quotes
             }  # type: dict[str, Decimal]
         else:
-            raise ValueError(f"Cannot calculate exchange rate for price type "
+            raise ValueError(f"Cannot calculate exchange rate for PriceType."
                              f"{PriceTypeParser.to_str(price_type)}")
 
         cdef str symbol

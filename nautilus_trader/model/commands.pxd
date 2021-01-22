@@ -27,12 +27,12 @@ from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 
 
-cdef class VenueCommand(Command):
+cdef class TradingCommand(Command):
     cdef readonly Venue venue
     """The venue the command relates to.\n\n:returns: `Venue`"""
 
 
-cdef class SubmitOrder(VenueCommand):
+cdef class SubmitOrder(TradingCommand):
     cdef readonly TraderId trader_id
     """The trader identifier the command relates to.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id
@@ -45,7 +45,7 @@ cdef class SubmitOrder(VenueCommand):
     """The order for the command.\n\n:returns: `Order`"""
 
 
-cdef class SubmitBracketOrder(VenueCommand):
+cdef class SubmitBracketOrder(TradingCommand):
     cdef readonly TraderId trader_id
     """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id
@@ -56,7 +56,7 @@ cdef class SubmitBracketOrder(VenueCommand):
     """The bracket order to submit.\n\n:returns: `BracketOrder`"""
 
 
-cdef class CancelOrder(VenueCommand):
+cdef class CancelOrder(TradingCommand):
     cdef readonly TraderId trader_id
     """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id
@@ -67,7 +67,7 @@ cdef class CancelOrder(VenueCommand):
     """The order identifier associated with the command.\n\n:returns: `OrderId`"""
 
 
-cdef class AmendOrder(VenueCommand):
+cdef class AmendOrder(TradingCommand):
     cdef readonly TraderId trader_id
     """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id

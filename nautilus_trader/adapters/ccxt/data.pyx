@@ -103,6 +103,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
         # Subscriptions
         self._subscribed_instruments = set()   # type: set[Symbol]
+        self._subscribed_order_books = {}      # type: dict[Symbol, asyncio.Task]
         self._subscribed_quote_ticks = {}      # type: dict[Symbol, asyncio.Task]
         self._subscribed_trade_ticks = {}      # type: dict[Symbol, asyncio.Task]
         self._subscribed_bars = {}             # type: dict[BarType, asyncio.Task]
@@ -238,6 +239,7 @@ cdef class CCXTDataClient(LiveDataClient):
         self._subscribed_instruments = set()
 
         # Check all tasks have been popped and cancelled
+        assert len(self._subscribed_order_books) == 0
         assert len(self._subscribed_quote_ticks) == 0
         assert len(self._subscribed_trade_ticks) == 0
         assert len(self._subscribed_bars) == 0
@@ -600,7 +602,9 @@ cdef class CCXTDataClient(LiveDataClient):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
-        self._log.error(f"{type(ex).__name__}: {ex} in {method_name}")
+        self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
+
+# -- STREAMS ---------------------------------------------------------------------------------------
 
     async def _watch_quotes(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
@@ -701,6 +705,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._handle_quote_tick(tick)
 
+    #async def _watch_order_book(self, Symbol symbol)
     async def _watch_trades(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:

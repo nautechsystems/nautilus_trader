@@ -16,10 +16,10 @@
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.commands cimport VenueCommand
+from nautilus_trader.model.commands cimport TradingCommand
 
 
-cdef class Subscribe(VenueCommand):
+cdef class Subscribe(TradingCommand):
     cdef readonly type data_type
     """The subscription data type.\n\n:returns: `type`"""
     cdef readonly dict metadata
@@ -28,7 +28,7 @@ cdef class Subscribe(VenueCommand):
     """The handler for the subscription.\n\n:returns: `callable`"""
 
 
-cdef class Unsubscribe(VenueCommand):
+cdef class Unsubscribe(TradingCommand):
     cdef readonly type data_type
     """The subscription data type.\n\n:returns: `type`"""
     cdef readonly dict metadata
