@@ -16,31 +16,55 @@
 from datetime import timedelta
 import unittest
 
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-clock = TestClock()
+live_clock = LiveClock()
+test_clock = TestClock()
 
 
-class TestClockTests:
+class LiveClockPerformanceTests(unittest.TestCase):
+
+    @staticmethod
+    def test_utc_now():
+        PerformanceHarness.profile_function(live_clock.utc_now, 100000, 1)
+        # ~0.0ms / ~1.4μs / 1385ns minimum of 100,000 runs @ 1 iteration each run.
+
+    @staticmethod
+    def test_unix_time():
+        PerformanceHarness.profile_function(live_clock.unix_time, 100000, 1)
+        # ~0.0ms / ~0.1μs / 103ns minimum of 100,000 runs @ 1 iteration each run.
+
+
+class TestClockHarness:
 
     @staticmethod
     def advance_time():
+        test_clock.advance_time(UNIX_EPOCH)
+
+    @staticmethod
+    def iteratively_advance_time():
         test_time = UNIX_EPOCH
         for _i in range(100000):
             test_time += timedelta(seconds=1)
-        clock.advance_time(test_time)
+        test_clock.advance_time(test_time)
 
 
 class TestClockPerformanceTests(unittest.TestCase):
 
     @staticmethod
     def test_advance_time():
+        PerformanceHarness.profile_function(TestClockHarness.advance_time, 100000, 1)
+        # ~0.0ms / ~0.2μs / 175ns minimum of 100,000 runs @ 1 iteration each run.
+
+    @staticmethod
+    def test_iteratively_advance_time():
         store = []
-        clock.set_timer("test", timedelta(seconds=1), handler=store.append)
+        test_clock.set_timer("test", timedelta(seconds=1), handler=store.append)
 
         iterations = 1
-        PerformanceHarness.profile_function(TestClockTests.advance_time, 1, iterations)
-        # ~526ms (526952μs) minimum of 1 runs @ 1 iterations each run. (100000 advances)
+        PerformanceHarness.profile_function(TestClockHarness.iteratively_advance_time, 1, iterations)
+        # ~320.1ms minimum of 1 runs @ 1 iteration each run. (100000 advances)
