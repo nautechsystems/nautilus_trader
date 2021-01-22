@@ -170,9 +170,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
-        # Ensure this is set True so that below queues continue to process
-        self.is_running = True
-
+        self.is_running = True  # Queue will continue to process
         self._run_queue_task = self._loop.create_task(self._run())
 
         self._log.debug(f"Scheduled {self._run_queue_task}")
