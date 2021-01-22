@@ -85,7 +85,7 @@ cdef class SubmitOrder(TradingCommand):
         account_id : AccountId
             The account identifier for the order.
         strategy_id : StrategyId
-            The strategy identifier for the order.
+            The strategy identifier associated with the order.
         position_id : PositionId
             The position identifier for the order.
         order : Order
