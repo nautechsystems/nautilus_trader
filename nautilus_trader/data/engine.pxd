@@ -27,7 +27,7 @@ from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.commands cimport VenueCommand
+from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -76,14 +76,14 @@ cdef class DataEngine(Component):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void execute(self, VenueCommand command) except *
+    cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, data) except *
     cpdef void send(self, DataRequest request) except *
     cpdef void receive(self, DataResponse response) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, VenueCommand command) except *
+    cdef inline void _execute_command(self, TradingCommand command) except *
     cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
     cdef inline void _handle_subscribe_instrument(self, DataClient client, Symbol symbol, handler: callable) except *

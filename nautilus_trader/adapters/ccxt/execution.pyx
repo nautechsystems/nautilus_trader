@@ -411,7 +411,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *:
-        self._log.error(f"{type(ex).__name__}: {ex} in {method_name}")
+        self._log.warning(f"{type(ex).__name__}: {ex} in {method_name}")
 
     async def _run_after_delay(self, double delay, coro):
         await asyncio.sleep(delay)
@@ -431,10 +431,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._update_instruments_task = self._loop.create_task(update)
 
     async def _update_balances(self):
-        if not self._client.has["fetchBalance"]:
-            self._log.error("`fetch_balance` not available.")
-            return
-
         cdef dict params = {'type': 'spot'}  # TODO: Hard coded to spot account for now
         cdef dict response
         try:
@@ -451,10 +447,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     async def _watch_balances(self):
-        if not self._client.has.get("watchBalance", False):
-            self._log.error("`watch_balance` not available.")
-            return
-
         cdef dict params = {'type': 'spot'}  # TODO: Hard coded to spot account for now
         cdef dict event
         try:
@@ -471,10 +463,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.exception(ex)
 
     async def _watch_orders(self):
-        if not self._client.has.get("watchOrders", False):
-            self._log.error("`watch_orders` not available.")
-            return
-
         cdef dict event
         cdef dict event0
         try:
@@ -498,10 +486,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.exception(ex)
 
     async def _watch_exec_reports(self):
-        if not self._client.has.get("watchMyTrades", False):
-            self._log.error("`watch_my_trades` not available.")
-            return
-
         cdef dict event0
         cdef dict event
         try:
@@ -579,7 +563,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         if not order.is_working_c():
-            self._log.error(f"Cannot cancel order, OrderState={order.state_string_c()}.")
+            self._log.error(f"Cannot cancel order, state=OrderState.{order.state_string_c()}.")
             return  # Cannot cancel
 
         try:

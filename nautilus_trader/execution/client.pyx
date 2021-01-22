@@ -82,8 +82,29 @@ cdef class ExecutionClient:
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.venue}"
 
-    cpdef void _set_connected(self, bint value=True) except *:  # TODO: Temp
+    cpdef void _set_connected(self, bint value=True) except *:
+        """
+        Setter for pure Python implementations to change the readonly property.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set for is_connected.
+
+        """
         self.is_connected = value
+
+    cpdef void _set_resolved(self, bint value=True) except *:
+        """
+        Setter for pure Python implementations to change the readonly property.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set for is_resolved.
+
+        """
+        self.is_resolved = value
 
     cpdef void connect(self) except *:
         """Abstract method (implement in subclass)."""

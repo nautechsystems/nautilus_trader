@@ -104,6 +104,19 @@ cdef class CCXTClientsFactory:
             data_client = None
 
         if config.get("exec_client", True):
+            if not client.has.get("fetchBalance", False):
+                raise RuntimeError(f"CCXT `fetch_balance` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("watchBalance", False):
+                raise RuntimeError(f"CCXT `watch_balance` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("watchOrders", False):
+                raise RuntimeError(f"CCXT `watch_orders` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("watchMyTrades", False):
+                raise RuntimeError("CCXT `watch_my_trades` not available "
+                                   f"for {client.name}.")
+
             # Get account identifier env variable or set default
             account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 

@@ -27,6 +27,7 @@ cdef class CCXTDataClient(LiveDataClient):
     cdef CCXTInstrumentProvider _instrument_provider
 
     cdef set _subscribed_instruments
+    cdef dict _subscribed_order_books
     cdef dict _subscribed_quote_ticks
     cdef dict _subscribed_trade_ticks
     cdef dict _subscribed_bars

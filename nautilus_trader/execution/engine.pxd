@@ -21,7 +21,7 @@ from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport VenueCommand
+from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -78,18 +79,19 @@ cdef class ExecutionEngine(Component):
 
     cpdef void load_cache(self) except *
     cpdef void resolve_state(self) except *
-    cpdef void execute(self, VenueCommand command) except *
+    cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, Event event) except *
     cpdef void flush_db(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, VenueCommand command) except *
+    cdef inline void _execute_command(self, TradingCommand command) except *
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *
     cdef inline void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *
     cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *
     cdef inline void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *
     cdef inline void _invalidate_order(self, ClientOrderId cl_ord_id, str reason) except *
+    cdef inline void _invalidate_bracket_order(self, BracketOrder bracket_order) except *
     cdef inline void _deny_order(self, ClientOrderId cl_ord_id, str reason) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
