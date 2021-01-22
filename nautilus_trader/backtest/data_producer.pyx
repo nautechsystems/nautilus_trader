@@ -125,7 +125,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Process quote tick data
             # -----------------------
             if data.has_quote_data(symbol):
-                ts = unix_time()  # Time data processing
+                ts = self._clock.unix_time()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
                     data_quotes=self._data.quote_ticks.get(symbol),
@@ -139,13 +139,13 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
                 self._log.info(f"Prepared {len(quote_wrangler.processed_data):,} {symbol} quote tick rows in "
-                               f"{unix_time() - ts:.3f}s.")
+                               f"{self._clock.unix_time() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
 
             # Process trade tick data
             # -----------------------
             if data.has_trade_data(symbol):
-                ts = unix_time()  # Time data processing
+                ts = self._clock.unix_time()  # Time data processing
                 trade_wrangler = TradeTickDataWrangler(
                     instrument=instrument,
                     data=self._data.trade_ticks.get(symbol),
@@ -157,7 +157,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
                 execution_resolution = BarAggregationParser.to_str(BarAggregation.TICK)
                 self._log.info(f"Prepared {len(trade_wrangler.processed_data):,} {symbol} trade tick rows in "
-                               f"{unix_time() - ts:.3f}s.")
+                               f"{self._clock.unix_time() - ts:.3f}s.")
                 del trade_wrangler  # Dump processing artifact
 
             if execution_resolution is None:
@@ -221,7 +221,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         self.has_tick_data = False
 
         self._log.info(f"Prepared {len(self._quote_tick_data) + len(self._trade_tick_data):,} "
-                       f"total tick rows in {unix_time() - ts_total:.3f}s.")
+                       f"total tick rows in {self._clock.unix_time() - ts_total:.3f}s.")
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
