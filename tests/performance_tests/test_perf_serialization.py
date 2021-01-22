@@ -103,4 +103,4 @@ class SerializationPerformanceTests(unittest.TestCase):
 
     def test_make_builtin_uuid(self):
         PerformanceHarness.profile_function(self.serialize_submit_order, 10000, 1)
-        # ~0ms / ~5μs / 4037ns minimum of 10000 runs @ 1 iteration each run.
+        # ~0.0ms / ~4.1μs / 4105ns minimum of 10,000 runs @ 1 iteration each run.
