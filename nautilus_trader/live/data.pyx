@@ -234,8 +234,7 @@ cdef class LiveDataEngine(DataEngine):
         if not self._loop.is_running():
             self._log.warning("Started when loop is not running.")
 
-        # Ensure this is set True so that below queues continue to process
-        self.is_running = True
+        self.is_running = True  # Queues will continue to process
 
         # Run queues
         self._run_queues_task = asyncio.gather(

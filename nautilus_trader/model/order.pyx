@@ -431,7 +431,6 @@ cdef class Order:
         self.apply_c(event)
 
     cdef void apply_c(self, OrderEvent event) except *:
-        # Fast C method to avoid overhead of subclassing
         Condition.not_none(event, "event")
         Condition.equal(event.cl_ord_id, self.cl_ord_id, "event.cl_ord_id", "self.cl_ord_id")
 
@@ -545,7 +544,7 @@ cdef class PassiveOrder(Order):
         cl_ord_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
-            The order strategy identifier.
+            The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (Enum)
@@ -682,7 +681,7 @@ cdef class MarketOrder(Order):
         cl_ord_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
-            The order strategy identifier.
+            The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (Enum)
@@ -809,7 +808,7 @@ cdef class LimitOrder(PassiveOrder):
         cl_ord_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
-            The order strategy identifier.
+            The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (Enum)
@@ -946,7 +945,7 @@ cdef class StopMarketOrder(PassiveOrder):
         cl_ord_id : ClientOrderId
             The client order identifier.
         strategy_id : StrategyId
-            The order strategy identifier.
+            The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (Enum)

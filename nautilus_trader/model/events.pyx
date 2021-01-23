@@ -154,7 +154,7 @@ cdef class OrderInitialized(OrderEvent):
         cl_ord_id : ClientOrderId
             The client order identifier.
         strategy_id : ClientOrderId
-            The strategy identifier.
+            The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (Enum)
@@ -756,7 +756,7 @@ cdef class OrderFilled(OrderEvent):
         position_id : PositionId
             The exchange/broker position identifier.
         strategy_id : StrategyId
-            The strategy identifier.
+            The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
         order_side : OrderSide (Enum)
