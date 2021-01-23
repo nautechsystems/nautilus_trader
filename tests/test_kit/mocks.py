@@ -22,11 +22,20 @@ from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.database import ExecutionDatabase
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.order import Order
+from nautilus_trader.model.position import Position
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -440,3 +449,78 @@ class MockExecutionClient(ExecutionClient):
     def cancel_order(self, command):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
+
+
+class MockExecutionDatabase(ExecutionDatabase):
+    """
+    Provides a mock execution database for testing.
+
+    """
+
+    def __init__(self, trader_id: TraderId, logger: Logger):
+        """
+        Initialize a new instance of the `BypassExecutionDatabase` class.
+
+        Parameters
+        ----------
+        trader_id : TraderId
+            The trader identifier to associate with the database.
+        logger : Logger
+            The logger for the database.
+
+    """
+        super().__init__(trader_id, logger)
+
+        self.accounts = {}
+        self.orders = {}
+        self.positions = {}
+
+    def flush(self):
+        self.accounts = {}
+        self.orders = {}
+        self.positions = {}
+
+    def load_accounts(self):
+        return self.accounts.copy()
+
+    def load_orders(self):
+        return self.orders.copy()
+
+    def load_positions(self):
+        return self.positions.copy()
+
+    def load_account(self, account_id: AccountId):
+        return self.accounts.get(account_id)
+
+    def load_order(self, cl_ord_id: ClientOrderId):
+        return self.orders.get(cl_ord_id)
+
+    def load_position(self, position_id: PositionId):
+        return self.positions.get(position_id)
+
+    def load_strategy(self, strategy_id: StrategyId):
+        return {}
+
+    def delete_strategy(self, strategy_id: StrategyId):
+        pass
+
+    def add_account(self, account: Account):
+        self.accounts[account.id] = account
+
+    def add_order(self, order: Order):
+        self.orders[order.cl_ord_id] = order
+
+    def add_position(self, position: Position):
+        self.positions[position.id] = position
+
+    def update_account(self, event: Account):
+        pass  # Would persist the event
+
+    def update_order(self, order: Order):
+        pass  # Would persist the event
+
+    def update_position(self, position: Position):
+        pass  # Would persist the event
+
+    def update_strategy(self, strategy: TradingStrategy):
+        pass  # Would persist the user state dict
