@@ -334,6 +334,15 @@ class LiveClockTests(unittest.TestCase):
         self.assertTrue(result > timedelta(0))
         self.assertEqual(timedelta, type(result))
 
+    def test_unix_time(self):
+        # Arrange
+        # Act
+        result = self.clock.unix_time()
+
+        # Assert
+        self.assertEqual(float, type(result))
+        self.assertTrue(result > 0)
+
     def test_set_time_alert(self):
         # Arrange
         name = "TEST_ALERT"

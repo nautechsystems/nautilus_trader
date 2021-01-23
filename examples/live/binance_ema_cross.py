@@ -86,7 +86,7 @@ strategy = EMACross(
     bar_spec=time_bars,
     fast_ema_period=10,
     slow_ema_period=20,
-    trade_size=Decimal("0.02"),
+    trade_size=Decimal("0.05"),
     order_id_tag="001",
 )
 

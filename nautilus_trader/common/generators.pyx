@@ -190,7 +190,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         Parameters
         ----------
         strategy_id : StrategyId
-            The strategy identifier for the position.
+            The strategy identifier associated with the position.
         flipped : bool
             If the position is being flipped. If True then the generated id
             will be appended with 'F'.

@@ -45,6 +45,7 @@ cdef class Clock:
     cdef datetime utc_now_c(self)
     cpdef datetime local_now(self, tzinfo tz)
     cpdef timedelta delta(self, datetime time)
+    cpdef double unix_time(self)
     cpdef list timer_names(self)
     cpdef Timer timer(self, str name)
     cpdef void register_default_handler(self, handler: callable) except *

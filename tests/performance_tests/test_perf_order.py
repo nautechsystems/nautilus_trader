@@ -60,12 +60,12 @@ class OrderPerformanceTests(unittest.TestCase):
 
     def test_order_id_generator(self):
         PerformanceHarness.profile_function(self.generator.generate, 100000, 1)
-        # ~0ms / ~3μs / 2836ns minimum of 100000 runs @ 1 iteration each run.
+        # ~0.0ms / ~2.9μs / 2894ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_market_order_creation(self):
         PerformanceHarness.profile_function(self.create_market_order, 10000, 1)
-        # ~0ms / ~14μs / 13655ns minimum of 10000 runs @ 1 iteration each run.
+        # ~0.0ms / ~13.8μs / 13801ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_limit_order_creation(self):
         PerformanceHarness.profile_function(self.create_limit_order, 10000, 1)
-        # ~0ms / ~16μs / 15489ns minimum of 10000 runs @ 1 iteration each run.
+        # ~0.0ms / ~17.4μs / 17362ns minimum of 10,000 runs @ 1 iteration each run.

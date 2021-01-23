@@ -26,8 +26,10 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution import LiveExecutionEngine
+from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
@@ -102,6 +104,30 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
         )
 
         self.strategy.submit_order(order)
+
+    def test_execute_command(self):
+        order = self.strategy.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity("1.00000000"),
+        )
+
+        command = SubmitOrder(
+            order.symbol.venue,
+            self.trader_id,
+            self.account_id,
+            self.strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        def execute_command():
+            self.exec_engine.execute(command)
+
+        PerformanceHarness.profile_function(execute_command, 10000, 1)
+        # ~0.0ms / ~1.0μs / 1032ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order(self):
         self.exec_engine.start()

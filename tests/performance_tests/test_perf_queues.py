@@ -34,8 +34,8 @@ class PythonDequePerformanceTests(unittest.TestCase):
 
     def test_append(self):
         PerformanceHarness.profile_function(self.append, 100000, 1)
-        # ~0ms / 1μs / 162ns minimum of 100000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.2μs / 173ns minimum of 100,000 runs @ 1 iteration each run.
 
     def test_peek(self):
         PerformanceHarness.profile_function(self.peek, 100000, 1)
-        # ~0ms / 1μs / 147ns minimum of 100000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.1μs / 144ns minimum of 100,000 runs @ 1 iteration each run.

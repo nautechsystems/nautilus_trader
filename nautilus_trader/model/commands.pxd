@@ -34,13 +34,13 @@ cdef class TradingCommand(Command):
 
 cdef class SubmitOrder(TradingCommand):
     cdef readonly TraderId trader_id
-    """The trader identifier the command relates to.\n\n:returns: `TraderId`"""
+    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly AccountId account_id
-    """The account identifier the command relates to.\n\n:returns: `AccountId`"""
+    """The account identifier associated with the command.\n\n:returns: `AccountId`"""
     cdef readonly StrategyId strategy_id
-    """The strategy identifier the command relates to.\n\n:returns: `StrategyId`"""
+    """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly PositionId position_id
-    """The position identifier the command relates to.\n\n:returns: `PositionId`"""
+    """The position identifier associated with the command.\n\n:returns: `PositionId`"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 

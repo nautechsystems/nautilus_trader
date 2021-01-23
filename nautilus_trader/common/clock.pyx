@@ -20,14 +20,13 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-# from cpython.datetime cimport PyDateTimeAPI
 
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport UNIX_EPOCH
-# from nautilus_trader.core.time cimport unix_time
+from nautilus_trader.core.time cimport unix_time
 
 
 cdef class Clock:
@@ -65,12 +64,12 @@ cdef class Clock:
 
     cpdef datetime local_now(self, tzinfo tz):
         """
-        Calculate the current datetime of the clock in the given local timezone.
+        Return the current datetime of the clock in the given local timezone.
 
         Parameters
         ----------
         tz : tzinfo
-            The local timezone for the returned datetime.
+            The local timezone.
 
         Returns
         -------
@@ -82,7 +81,7 @@ cdef class Clock:
 
     cpdef timedelta delta(self, datetime time):
         """
-        Calculate the timedelta from the current time to the given time.
+        Return the timedelta from the current time to the given time.
 
         Parameters
         ----------
@@ -98,6 +97,17 @@ cdef class Clock:
         Condition.not_none(time, "time")
 
         return self.utc_now_c() - time
+
+    cpdef double unix_time(self):
+        """
+        Return the current Unix time in seconds from the system clock.
+
+        Returns
+        -------
+        double
+
+        """
+        return unix_time()
 
     cpdef list timer_names(self):
         """
@@ -504,8 +514,15 @@ cdef class LiveClock(Clock):
         return self.utc_now_c()
 
     cdef datetime utc_now_c(self):
-        # Still working on calling a datetime directly through the C API with a POSIX
-        # return PyDateTimeAPI.DateTime_FromTimestamp(PyDateTimeAPI.DateTimeType, unix_time(), NULL)
+        # Regarding the below call to pytz.utc
+        # From the pytz docs https://pythonhosted.org/pytz/
+        # -------------------------------------------------
+        # Unfortunately using the tzinfo argument of the standard datetime
+        # constructors ‘’does not work’’ with pytz for many timezones.
+        # It is safe for timezones without daylight saving transitions though,
+        # such as UTC. The preferred way of dealing with times is to always work
+        # in UTC, converting to localtime only when generating output to be read
+        # by humans.
         return datetime.now(tz=pytz.utc)
 
     cdef Timer _create_timer(

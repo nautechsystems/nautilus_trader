@@ -705,7 +705,6 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._handle_quote_tick(tick)
 
-    #async def _watch_order_book(self, Symbol symbol)
     async def _watch_trades(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:

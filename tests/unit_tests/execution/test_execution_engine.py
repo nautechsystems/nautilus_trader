@@ -20,25 +20,32 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import TradingCommand
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
+from tests.test_kit.mocks import MockExecutionDatabase
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+from tests.test_kit.stubs import UNIX_EPOCH
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
@@ -77,9 +84,9 @@ class ExecutionEngineTests(unittest.TestCase):
 
         self.analyzer = PerformanceAnalyzer()
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
+        self.database = MockExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = ExecutionEngine(
-            database=database,
+            database=self.database,
             portfolio=self.portfolio,
             clock=self.clock,
             logger=self.logger,
@@ -187,10 +194,10 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_check_disconnected_when_client_disconnected_returns_true(self):
         # Arrange
         # Act
-        result = self.exec_engine.check_connected()
+        result = self.exec_engine.check_disconnected()
 
         # Assert
-        self.assertFalse(result)
+        self.assertTrue(result)
 
     def test_check_disconnected_when_client_connected_returns_false(self):
         # Arrange
@@ -230,6 +237,56 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(result)  # No exceptions raised
+
+    def test_loading_account_from_cache_registers_with_portfolio(self):
+        # Arrange
+        event = AccountState(
+            AccountId("SIM", "001"),
+            [Money(1_000_000, USD)],
+            [Money(1_000_000, USD)],
+            [Money(0, USD)],
+            info={"default_currency": "USD"},  # Set the default currency
+            event_id=uuid4(),
+            event_timestamp=UNIX_EPOCH,
+        )
+
+        account = Account(event)
+        self.database.add_account(account)
+
+        # Act
+        self.exec_engine.load_cache()
+
+        # Assert
+        self.assertEqual(account, self.portfolio.account(self.venue))
+
+    def test_setting_of_position_id_counts(self):
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.symbol,
+            OrderSide.BUY,
+            Quantity("1.00000000"),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+
+        fill1 = TestStubs.event_order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-1-001"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("50000.00000000"),
+        )
+
+        order.apply(fill1)
+        position = Position(fill1)
+
+        self.database.add_order(order)
+        self.database.update_order(order)
+        self.database.add_position(position)
+
+        # Act
+        self.exec_engine.load_cache()
+        # TODO: Get position id count
 
     def test_given_random_command_logs_and_continues(self):
         # Arrange
