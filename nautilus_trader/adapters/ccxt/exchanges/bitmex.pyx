@@ -47,23 +47,20 @@ cdef class BitmexOrderRequestBuilder:
             "clOrdID": order.cl_ord_id.value,
         }
 
-        cdef str exec_inst = None
+        cdef list exec_instructions = []
         if order.type == OrderType.MARKET:
             params["type"] = "Market"
         elif order.type == OrderType.LIMIT:
             params["type"] = "Limit"
+            if order.is_hidden:
+                params["displayQty"] = 0
             # Execution instructions
             if order.is_post_only:
-                exec_inst = "ParticipateDoNotInitiate"
-            elif order.is_hidden:
-                params["displayQty"] = 0
+                exec_instructions.append("ParticipateDoNotInitiate")
             if order.is_reduce_only:
-                if exec_inst is not None:
-                    exec_inst += ",ReduceOnly"
-                else:
-                    exec_inst = "ReduceOnly"
-            if exec_inst is not None:
-                params["execInst"] = exec_inst
+                exec_instructions.append("ReduceOnly")
+            if exec_instructions:
+                params["execInst"] = ','.join(exec_instructions)
         elif order.type == OrderType.STOP_MARKET:
             params["type"] = "StopMarket"
             params["stopPx"] = str(order.price)

@@ -23,13 +23,17 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.commands import AmendOrder
+from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -37,6 +41,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order import BracketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
@@ -372,6 +377,149 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.INVALID, order.state)
 
+    def test_submit_bracket_order_with_all_duplicate_cl_ord_id_logs_does_not_submit(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        entry = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("0.50000")
+        )
+
+        take_profit = strategy.order_factory.limit(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("1.00000")
+        )
+
+        bracket = BracketOrder(
+            entry=entry,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+        )
+
+        submit_bracket = SubmitBracketOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            bracket,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_bracket)
+        self.exec_engine.execute(submit_bracket)  # Duplicate
+
+        # Assert
+        self.assertEqual(OrderState.INITIALIZED, entry.state)  # Did not invalidate original
+
+    def test_submit_bracket_order_with_duplicate_entry_cl_ord_id_logs_does_not_submit(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        entry1 = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        stop_loss1 = strategy.order_factory.stop_market(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("0.50000")
+        )
+
+        take_profit1 = strategy.order_factory.limit(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("1.00000")
+        )
+
+        bracket1 = BracketOrder(
+            entry=entry1,
+            stop_loss=stop_loss1,
+            take_profit=take_profit1,
+        )
+
+        submit_bracket1 = SubmitBracketOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            bracket1,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        entry2 = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        bracket2 = BracketOrder(
+            entry=entry2,
+            stop_loss=stop_loss1,
+            take_profit=take_profit1,
+        )
+
+        submit_bracket2 = SubmitBracketOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            bracket2,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_bracket1)
+        self.exec_engine.process(TestStubs.event_order_submitted(entry1))
+        self.exec_engine.process(TestStubs.event_order_accepted(entry1))
+        self.exec_engine.process(TestStubs.event_order_submitted(stop_loss1))
+        self.exec_engine.process(TestStubs.event_order_accepted(stop_loss1))
+        self.exec_engine.process(TestStubs.event_order_submitted(take_profit1))
+        self.exec_engine.process(TestStubs.event_order_accepted(take_profit1))
+        self.exec_engine.execute(submit_bracket2)  # SL and TP
+
+        # Assert
+        self.assertEqual(OrderState.INVALID, entry2.state)
+        self.assertEqual(OrderState.ACCEPTED, entry1.state)  # Did not invalidate original
+        self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)  # Did not invalidate original
+        self.assertEqual(OrderState.ACCEPTED, take_profit1.state)  # Did not invalidate original
+
     def test_submit_order(self):
         # Arrange
         self.exec_engine.start()
@@ -408,6 +556,188 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertIn(submit_order, self.exec_client.commands)
         self.assertTrue(self.cache.order_exists(order.cl_ord_id))
+
+    def test_submit_order_with_cleared_cache_logs_error(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.cache.clear_cache()
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+
+        # Assert
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+
+    def test_when_applying_event_to_order_with_invalid_state_trigger_logs(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act (event attempts to fill order before its submitted)
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+
+        # Assert
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+
+    def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        # Push order state to filled (completed)
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+
+        cancel_order = CancelOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            order.cl_ord_id,
+            OrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(cancel_order)
+
+        # Assert
+        self.assertEqual(OrderState.FILLED, order.state)
+
+    def test_amend_order_for_already_completed_order_logs_and_does_nothing(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        # Push order state to filled (completed)
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+            Price("0.85101"),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+
+        amend_order = AmendOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            order.cl_ord_id,
+            Quantity(200000),
+            order.price,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(amend_order)
+
+        # Assert
+        self.assertEqual(OrderState.FILLED, order.state)
+        self.assertEqual(Quantity(100000), order.quantity)
 
     def test_resolve_state_with_multiple_active_orders_resolved_correctly1(self):
         # Submitted orders
