@@ -109,7 +109,7 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "ccxt"
-version = "1.40.93"
+version = "1.40.94"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = false
@@ -507,7 +507,7 @@ requests = ">=2.19.0"
 
 [[package]]
 name = "parameterized"
-version = "0.7.5"
+version = "0.8.1"
 description = "Parameterized testing with any Python test framework"
 category = "dev"
 optional = false
@@ -983,7 +983,7 @@ docs = ["numpydoc"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "293138870c5196f04d7dbfe835b878fa46da1abd63781250afb316cf07e70f5d"
+content-hash = "fe19d28fbbfa0e55e8237b88dfe875299ea08e24c7c7dd590afe3c977036df07"
 
 [metadata.files]
 aiodns = [
@@ -1062,8 +1062,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 ccxt = [
-    {file = "ccxt-1.40.93-py2.py3-none-any.whl", hash = "sha256:da4ad76dc4553d04e2d27d8a69ed022f24e682288f8de7a3f13c416ebe082fa5"},
-    {file = "ccxt-1.40.93.tar.gz", hash = "sha256:b034ba4f6016666ece06729283becd719af8c5019eed3702661dbb9543cb24ab"},
+    {file = "ccxt-1.40.94-py2.py3-none-any.whl", hash = "sha256:c0749df3e8a6b805094c339b6b318debb768a225a68088c06f7b7d6b7dd60f4a"},
+    {file = "ccxt-1.40.94.tar.gz", hash = "sha256:85bfb1af76f21954ae256e50671f95341333643c3c1f7a4542522ef7c625472c"},
 ]
 certifi = [
     {file = "certifi-2020.12.5-py2.py3-none-any.whl", hash = "sha256:719a74fb9e33b9bd44cc7f3a8d94bc35e4049deebe19ba7d8e108280cfd59830"},
@@ -1494,8 +1494,8 @@ pandas-datareader = [
     {file = "pandas_datareader-0.9.0-py3-none-any.whl", hash = "sha256:fd9ce1238114dd199c32662a9d788271032580960bcf029e64b814d33d17477c"},
 ]
 parameterized = [
-    {file = "parameterized-0.7.5-py2.py3-none-any.whl", hash = "sha256:b36f709fcfd9e8c144c1374b16a40fc0b5984efe93e41d53e6d228ae2a1540c5"},
-    {file = "parameterized-0.7.5.tar.gz", hash = "sha256:b5e6af67b9e49485e30125b1c8f031ffa81a265ca08bfa73f31551bf03cf68c4"},
+    {file = "parameterized-0.8.1-py2.py3-none-any.whl", hash = "sha256:9cbb0b69a03e8695d68b3399a8a5825200976536fe1cb79db60ed6a4c8c9efe9"},
+    {file = "parameterized-0.8.1.tar.gz", hash = "sha256:41bbff37d6186430f77f900d777e5bb6a24928a1c46fb1de692f8b52b8833b5c"},
 ]
 pluggy = [
     {file = "pluggy-0.13.1-py2.py3-none-any.whl", hash = "sha256:966c145cd83c96502c3c3868f50408687b38434af77734af1e9ca461a4081d2d"},
