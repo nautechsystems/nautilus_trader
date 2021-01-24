@@ -33,7 +33,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-ccxt = "^1.40.93"
+ccxt = "^1.40.94"
 cython = "^3.0a6"
 empyrical = "^0.5.5"
 # `importlib.metadata` is in the Python stdlib from 3.8 onwards
@@ -55,15 +55,15 @@ uvloop = { version = "^0.14.0", markers = "sys_platform != 'win32'" }
 # - https://github.com/cython/cython/issues/3515
 coverage = "^4.5.4"
 flake8 = "^3.8.4"
-isort = "^5.6.4"
-nox = "^2020.8.22"
-parameterized = "^0.7.5"
-pre-commit = "^2.7.1"
+isort = "^5.7.0"
+nox = "^2020.12.31"
+parameterized = "^0.8.1"
+pre-commit = "^2.9.3"
 pytest = "^6.2.1"
 pytest-cov = "^2.10.1"
-pytest-xdist = { version = "^2.1.0", extras = ["psutil"] }
-sphinx = { version = "^3.2.1", optional = true }
-sphinx-rtd-theme = { version = "^0.5.0", optional = true }
+pytest-xdist = { version = "^2.2.0", extras = ["psutil"] }
+sphinx = { version = "^3.4.3", optional = true }
+sphinx-rtd-theme = { version = "^0.5.1", optional = true }
 
 [tool.poetry.extras]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
