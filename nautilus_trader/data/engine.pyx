@@ -34,10 +34,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.messages cimport DataRequest
-from nautilus_trader.common.messages cimport DataResponse
-from nautilus_trader.common.messages cimport Subscribe
-from nautilus_trader.common.messages cimport Unsubscribe
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
@@ -54,6 +50,11 @@ from nautilus_trader.data.aggregation cimport VolumeBarAggregator
 from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
 from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.messages cimport DataCommand
+from nautilus_trader.data.messages cimport DataRequest
+from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport Subscribe
+from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
@@ -329,14 +330,14 @@ cdef class DataEngine(Component):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void execute(self, TradingCommand command) except *:
+    cpdef void execute(self, DataCommand command) except *:
         """
-        Execute the given command for a specified venue.
+        Execute the given data command.
 
         Parameters
         ----------
-        command : TradingCommand
-            The venue to execute.
+        command : DataCommand
+            The command to execute.
 
         """
         Condition.not_none(command, "command")
@@ -387,7 +388,7 @@ cdef class DataEngine(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cdef inline void _execute_command(self, TradingCommand command) except *:
+    cdef inline void _execute_command(self, DataCommand command) except *:
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 

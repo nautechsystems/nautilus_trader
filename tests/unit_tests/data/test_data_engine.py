@@ -18,18 +18,18 @@ import unittest
 from nautilus_trader.backtest.data_client import BacktestDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
-from nautilus_trader.common.messages import DataRequest
-from nautilus_trader.common.messages import DataResponse
-from nautilus_trader.common.messages import Subscribe
-from nautilus_trader.common.messages import Unsubscribe
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.messages import DataCommand
+from nautilus_trader.data.messages import DataRequest
+from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.data.messages import Unsubscribe
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarData
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.commands import TradingCommand
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -211,8 +211,12 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
-        command = TradingCommand(
+        # Bogus message
+        command = DataCommand(
             venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={},
+            handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
         )

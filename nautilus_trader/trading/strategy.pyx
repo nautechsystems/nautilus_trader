@@ -42,12 +42,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.common.messages cimport DataRequest
-from nautilus_trader.common.messages cimport Subscribe
-from nautilus_trader.common.messages cimport Unsubscribe
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.messages cimport DataRequest
+from nautilus_trader.data.messages cimport Subscribe
+from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
