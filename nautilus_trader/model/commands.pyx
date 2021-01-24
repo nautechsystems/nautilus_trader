@@ -28,7 +28,7 @@ from nautilus_trader.model.order cimport Order
 
 cdef class TradingCommand(Command):
     """
-    The base class for all trading related commands.
+    The abstract base class for all trading related commands.
 
     This class should not be used directly, but through its concrete subclasses.
     """

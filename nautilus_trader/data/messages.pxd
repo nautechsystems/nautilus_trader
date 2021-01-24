@@ -13,28 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.commands cimport TradingCommand
 
 
-cdef class Subscribe(TradingCommand):
+cdef class DataCommand(Command):
+    cdef readonly Venue venue
+    """The venue for the command.\n\n:returns: `Venue`"""
     cdef readonly type data_type
-    """The subscription data type.\n\n:returns: `type`"""
+    """The command data type.\n\n:returns: `type`"""
     cdef readonly dict metadata
-    """The subscription metadata.\n\n:returns: `dict`"""
+    """The command metadata.\n\n:returns: `dict`"""
     cdef readonly object handler
-    """The handler for the subscription.\n\n:returns: `callable`"""
+    """The handler for the command.\n\n:returns: `callable`"""
 
 
-cdef class Unsubscribe(TradingCommand):
-    cdef readonly type data_type
-    """The subscription data type.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The subscription metadata.\n\n:returns: `dict`"""
-    cdef readonly object handler
-    """The handler for the subscription.\n\n:returns: `callable`"""
+cdef class Subscribe(DataCommand):
+    pass
+
+
+cdef class Unsubscribe(DataCommand):
+    pass
 
 
 cdef class DataRequest(Request):
