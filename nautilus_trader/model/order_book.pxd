@@ -29,3 +29,14 @@ cdef class OrderBook:
     """The asks in the order book snapshot.\n\n:returns: `list[(Price, Quantity)]`"""
     cdef readonly datetime timestamp
     """The order book snapshot timestamp (UTC).\n\n:returns: `datetime`"""
+
+    @staticmethod
+    cdef OrderBook from_floats(
+        Symbol symbol,
+        int level,
+        list bids,
+        list asks,
+        int price_precision,
+        int size_precision,
+        datetime timestamp,
+    )

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from decimal import Decimal
 
 
 cdef class OrderBook:
@@ -38,9 +39,9 @@ cdef class OrderBook:
             The order book symbol.
         level : int
             The order book data level (L2, L3).
-        bids : list[tuple(Price, Quantity)]
-            The bids in the order book snapshot.
-        asks : list[tuple(Price, Quantity)]
+        bids : list[(Decimal, Decimal)]
+            The bids for the order book snapshot.
+        asks : list[(Decimal, Decimal)]
             The asks in the order book snapshot.
         timestamp : datetime
             The order book snapshot timestamp (UTC).
@@ -59,3 +60,93 @@ cdef class OrderBook:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    @staticmethod
+    cdef OrderBook from_floats(
+        Symbol symbol,
+        int level,
+        list bids,
+        list asks,
+        int price_precision,
+        int size_precision,
+        datetime timestamp,
+    ):
+        """
+        Create an order book from the given parameters where bid/ask price,
+        quantities are expressed as floating point values.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The order book symbol.
+        level : int
+            The order book data level (L2, L3).
+        bids : list[[float, float]]
+            The bid values for the order book.
+        asks : list[[float, float]]
+            The ask values for the order book.
+        price_precision : int
+            The precision for the order book prices.
+        size_precision : int
+            The precision for the order book quantities.
+        timestamp : datetime
+            The order book snapshot timestamp (UTC).
+
+        Returns
+        -------
+        OrderBook
+
+        """
+        return OrderBook(
+            symbol,
+            level,
+            [(Decimal(f"{entry[0]:.{price_precision}f}"), Decimal(f"{entry[1]:.{size_precision}f}")) for entry in bids],
+            [(Decimal(f"{entry[0]:.{price_precision}f}"), Decimal(f"{entry[1]:.{size_precision}f}")) for entry in asks],
+            timestamp,
+        )
+
+    @staticmethod
+    def from_floats_py(
+        Symbol symbol,
+        int level,
+        list bids,
+        list asks,
+        int price_precision,
+        int size_precision,
+        datetime timestamp,
+    ):
+        """
+        Create an order book from the given parameters where bid/ask price,
+        quantities are expressed as floating point values.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The order book symbol.
+        level : int
+            The order book data level (L2, L3).
+        bids : list[[float, float]]
+            The bid values for the order book.
+        asks : list[[float, float]]
+            The ask values for the order book.
+        price_precision : int
+            The precision for the order book prices.
+        size_precision : int
+            The precision for the order book quantities.
+        timestamp : datetime
+            The order book snapshot timestamp (UTC).
+
+        Returns
+        -------
+        OrderBook
+
+        """
+        return OrderBook.from_floats(
+            symbol,
+            level,
+            bids,
+            asks,
+            price_precision,
+            size_precision,
+            timestamp,
+        )

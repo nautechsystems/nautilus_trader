@@ -628,6 +628,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
+    # TODO: Possibly combine this with _watch_quotes
     async def _watch_order_book(self, Symbol symbol, int level):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
@@ -635,8 +636,11 @@ cdef class CCXTDataClient(LiveDataClient):
             return
 
         # Setup precisions
+        cdef list bids
+        cdef list asks
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
+        cdef OrderBook order_book
         try:
             while True:
                 try:
@@ -645,15 +649,25 @@ cdef class CCXTDataClient(LiveDataClient):
                     if timestamp is None:  # Compiled to fast C check
                         # First quote timestamp often None
                         timestamp = self._client.milliseconds()
-                    self._on_order_book(
+
+                    bids = <list>lob.get("bids")
+                    asks = <list>lob.get("asks")
+                    if bids is None:
+                        continue
+                    if asks is None:
+                        continue
+
+                    order_book = OrderBook.from_floats(
                         symbol,
                         level,
-                        lob.get("bids"),
-                        lob.get("asks"),
+                        bids,
+                        asks,
                         price_precision,
                         size_precision,
-                        timestamp,
+                        from_posix_ms(timestamp),
                     )
+
+                    self._handle_order_book(order_book)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_order_book.__name__)
                     continue
@@ -661,32 +675,6 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.debug(f"Cancelled `_watch_order_book` for {symbol.code}.")
         except Exception as ex:
             self._log.exception(ex)
-
-    cdef inline void _on_order_book(
-        self,
-        Symbol symbol,
-        int level,
-        bids,         # Bids type
-        asks,         # Asks type
-        int price_p,  # Price precision
-        int size_p,   # Size precision
-        long timestamp,
-    ) except *:
-        # Validate data
-        if bids is None:
-            return
-        if asks is None:
-            return
-
-        cdef OrderBook order_book = OrderBook(
-            symbol,
-            level,
-            [(Price(p, price_p), Quantity(a, size_p)) for p, a in bids],
-            [(Price(p, price_p), Quantity(a, size_p)) for p, a in asks],
-            from_posix_ms(timestamp),
-        )
-
-        self._handle_order_book(order_book)
 
     async def _watch_quotes(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
@@ -698,6 +686,8 @@ cdef class CCXTDataClient(LiveDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
+        cdef list bids
+        cdef list asks
         cdef bint generate_tick = False
         cdef list last_best_bid = None
         cdef list last_best_ask = None
@@ -716,8 +706,8 @@ cdef class CCXTDataClient(LiveDataClient):
                     lob = self._client.watch_order_book
                     exiting = True
 
-                bids = lob.get("bids")
-                asks = lob.get("asks")
+                bids = <list>lob.get("bids")
+                asks = <list>lob.get("asks")
 
                 if bids:
                     best_bid = bids[0]
