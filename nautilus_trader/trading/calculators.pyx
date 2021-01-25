@@ -38,7 +38,7 @@ cdef class ExchangeRateCalculator:
         Currency to_currency,
         PriceType price_type,
         dict bid_quotes,
-        dict ask_quotes
+        dict ask_quotes,
     ):
         """
         Return the calculated exchange rate for the given price type using the
