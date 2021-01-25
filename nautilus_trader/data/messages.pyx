@@ -16,10 +16,60 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.commands cimport TradingCommand
 
 
-cdef class Subscribe(TradingCommand):
+cdef class DataCommand(Command):
+    """
+    The abstract base class for all data commands.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+        self,
+        Venue venue not None,
+        type data_type not None,
+        dict metadata not None,
+        handler not None: callable,
+        UUID command_id not None,
+        datetime command_timestamp not None,
+    ):
+        """
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the command.
+        data_type : type
+            The data type for the command.
+        metadata : type
+            The metadata for the command.
+        handler : callable
+            The handler for the command.
+        command_id : UUID
+            The command identifier.
+        command_timestamp : datetime
+            The command timestamp.
+
+        """
+        super().__init__(command_id, command_timestamp)
+
+        self.venue = venue
+        self.data_type = data_type
+        self.metadata = metadata
+        self.handler = handler
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"venue={self.venue}, "
+                f"data_type={self.data_type.__name__}, "
+                f"metadata={self.metadata}, "
+                f"handler={self.handler}, "
+                f"id={self.id}, "
+                f"timestamp={self.timestamp})")
+
+
+cdef class Subscribe(DataCommand):
     """
     Represents a command to subscribe to data.
     """
@@ -54,25 +104,15 @@ cdef class Subscribe(TradingCommand):
         """
         super().__init__(
             venue,
+            data_type,
+            metadata,
+            handler,
             command_id,
             command_timestamp,
         )
 
-        self.data_type = data_type
-        self.metadata = metadata
-        self.handler = handler
 
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"data_type={self.data_type.__name__}, "
-                f"metadata={self.metadata}, "
-                f"handler={self.handler}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
-
-
-cdef class Unsubscribe(TradingCommand):
+cdef class Unsubscribe(DataCommand):
     """
     Represents a command to unsubscribe from data.
     """
@@ -107,22 +147,12 @@ cdef class Unsubscribe(TradingCommand):
         """
         super().__init__(
             venue,
+            data_type,
+            metadata,
+            handler,
             command_id,
             command_timestamp,
         )
-
-        self.data_type = data_type
-        self.metadata = metadata
-        self.handler = handler
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"data_type={self.data_type.__name__}, "
-                f"metadata={self.metadata}, "
-                f"handler={self.handler}, "
-                f"id={self.id}, "
-                f"timestamp={self.timestamp})")
 
 
 cdef class DataRequest(Request):
@@ -176,6 +206,7 @@ cdef class DataRequest(Request):
                 f"callback={self.callback}, "
                 f"id={self.id}, "
                 f"timestamp={self.timestamp})")
+
 
 cdef class DataResponse(Response):
     """

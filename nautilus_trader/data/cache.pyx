@@ -64,9 +64,9 @@ cdef class DataCache(DataCacheFacade):
         self._xrate_calculator = ExchangeRateCalculator()
         self._xrate_symbols = {}
 
-        # Capacities
-        self.tick_capacity = config.get("tick_capacity", 1000)  # Per symbol
-        self.bar_capacity = config.get("bar_capacity", 1000)    # Per symbol
+        # Capacities (per symbol)
+        self.tick_capacity = config.get("tick_capacity", 1000)
+        self.bar_capacity = config.get("bar_capacity", 1000)
         Condition.positive_int(self.tick_capacity, "tick_capacity")
         Condition.positive_int(self.bar_capacity, "bar_capacity")
 
@@ -74,6 +74,7 @@ cdef class DataCache(DataCacheFacade):
         self._instruments = {}  # type: dict[Symbol, Instrument]
         self._quote_ticks = {}  # type: dict[Symbol, list[QuoteTick]]
         self._trade_ticks = {}  # type: dict[Symbol, list[TradeTick]]
+        self._order_books = {}  # type: dict[Symbol, OrderBook]
         self._bars = {}         # type: dict[BarType, list[Bar]]
 
         self._log.info("Initialized.")
@@ -112,6 +113,20 @@ cdef class DataCache(DataCacheFacade):
 
         self._log.debug(f"Updated instrument {instrument.symbol}")
 
+    cpdef void add_order_book(self, OrderBook order_book) except *:
+        """
+        Add the given order book to the cache.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book to add.
+
+        """
+        Condition.not_none(order_book, "order_book")
+
+        self._order_books[order_book.symbol] = order_book
+
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
         """
         Add the given tick to the cache.
@@ -119,7 +134,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         tick : QuoteTick
-            The tick to handle.
+            The tick to add.
 
         """
         Condition.not_none(tick, "tick")
@@ -141,7 +156,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         tick : TradeTick
-            The received tick to handle.
+            The received tick to add.
 
         """
         Condition.not_none(tick, "tick")
@@ -165,7 +180,7 @@ cdef class DataCache(DataCacheFacade):
         bar_type : BarType
             The bar type for the received bar.
         bar : Bar
-            The received bar to handle.
+            The received bar to add.
 
         """
         Condition.not_none(bar_type, "bar_type")
@@ -188,7 +203,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         ticks : list[QuoteTick]
-            The tick to handle.
+            The tick to add.
 
         """
         Condition.not_none(ticks, "ticks")
@@ -225,7 +240,7 @@ cdef class DataCache(DataCacheFacade):
         Parameters
         ----------
         ticks : list[TradeTick]
-            The received tick to handle.
+            The received tick to add.
 
         """
         Condition.not_none(ticks, "ticks")
@@ -264,7 +279,7 @@ cdef class DataCache(DataCacheFacade):
         bar_type : BarType
             The bar type for the received bar.
         bars : list[Bar]
-            The received bar to handle.
+            The received bars to add.
 
         """
         Condition.not_none(bar_type, "bar_type")
@@ -422,6 +437,21 @@ cdef class DataCache(DataCacheFacade):
             quote_tick = self.quote_tick(symbol)
             return quote_tick.extract_price(price_type) if quote_tick is not None else None
 
+    cpdef OrderBook order_book(self, Symbol symbol):
+        """
+        Return the latest order book snapshot for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+
+        Returns
+        -------
+        OrderBook or None
+
+        """
+        return self._order_books.get(symbol)
+
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """
         Return the quote tick for the given symbol at the given index.
@@ -577,6 +607,23 @@ cdef class DataCache(DataCacheFacade):
         Condition.not_none(bar_type, "bar_type")
 
         return len(self._bars.get(bar_type, []))
+
+    cpdef bint has_order_book(self, Symbol symbol) except *:
+        """
+        Return a value indicating whether the data engine has an order book
+        snapshot for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the order book snapshot.
+
+        Returns
+        -------
+        bool
+
+        """
+        return symbol in self._order_books
 
     cpdef bint has_quote_ticks(self, Symbol symbol) except *:
         """

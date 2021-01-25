@@ -17,8 +17,8 @@ import unittest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.messages import Subscribe
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId

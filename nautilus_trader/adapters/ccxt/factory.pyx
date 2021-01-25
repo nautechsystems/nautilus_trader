@@ -93,6 +93,24 @@ cdef class CCXTClientsFactory:
             client.set_sandbox_mode(True)
 
         if config.get("data_client", True):
+            # Check required CCXT methods are available
+            if not client.has.get("fetchTrades", False):
+                raise RuntimeError(f"CCXT `fetch_trades` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("fetchOHLCV", False):
+                raise RuntimeError(f"CCXT `fetch_ohlcv` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("watchOrderBook", False):
+                raise RuntimeError(f"CCXT `watch_order_book` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("watchTrades", False):
+                raise RuntimeError(f"CCXT `watch_trades` not available "
+                                   f"for {client.name}.")
+            if not client.has.get("watchOHLCV", False):
+                raise RuntimeError(f"CCXT `watch_ohlcv` not available "
+                                   f"for {client.name}.")
+
+            # Create client
             data_client = CCXTDataClient(
                 client=client,
                 engine=data_engine,
@@ -104,6 +122,7 @@ cdef class CCXTClientsFactory:
             data_client = None
 
         if config.get("exec_client", True):
+            # Check required CCXT methods are available
             if not client.has.get("fetchBalance", False):
                 raise RuntimeError(f"CCXT `fetch_balance` not available "
                                    f"for {client.name}.")
@@ -123,6 +142,7 @@ cdef class CCXTClientsFactory:
             # Set account identifier
             account_id = AccountId(client.name.upper(), account_id_env_var)
 
+            # Create client
             exec_client = CCXTExecutionClient(
                 client=client,
                 account_id=account_id,

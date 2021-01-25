@@ -537,7 +537,7 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_amend_order(self, ExecutionClient client, AmendOrder command) except *:
         # Validate command
         if not self.cache.is_order_working(command.cl_ord_id):
-            self._log.warning(f"Cannot amend order:  "
+            self._log.warning(f"Cannot amend order: "
                               f"{repr(command.cl_ord_id)} already completed.")
             return  # Invalid command
 
@@ -570,33 +570,41 @@ cdef class ExecutionEngine(Component):
         if bracket_order.take_profit:
             take_profit_id = bracket_order.take_profit.cl_ord_id
 
-        # Check entry
+        cdef list error_msgs = []
+
+        # Check entry ----------------------------------------------------------
         if self.cache.order_exists(entry_id):
-            self._log.error(f"Cannot submit BracketOrder: "
-                            f"Duplicate {repr(entry_id)}.")
+            error_msgs.append(f"Duplicate {repr(entry_id)}")
         else:
+            # Add to cache to be able to invalidate
+            self.cache.add_order(bracket_order.entry, PositionId.null_c())
             self._invalidate_order(
-                bracket_order.entry,
+                bracket_order.entry.cl_ord_id,
                 "Duplicate ClientOrderId in bracket.",
             )
-        # Check stop-loss
+        # Check stop-loss ------------------------------------------------------
         if self.cache.order_exists(stop_loss_id):
-            self._log.error(f"Cannot submit BracketOrder: "
-                            f"Duplicate {repr(stop_loss_id)}.")
+            error_msgs.append(f"Duplicate {repr(stop_loss_id)}")
         else:
+            # Add to cache to be able to invalidate
+            self.cache.add_order(bracket_order.stop_loss, PositionId.null_c())
             self._invalidate_order(
-                bracket_order.stop_loss,
+                bracket_order.stop_loss.cl_ord_id,
                 "Duplicate ClientOrderId in bracket.",
             )
-        # Check take-profit
+        # Check take-profit ----------------------------------------------------
         if take_profit_id is not None and self.cache.order_exists(take_profit_id):
-            self._log.error(f"Cannot submit BracketOrder: "
-                            f"Duplicate {repr(take_profit_id)}.")
+            error_msgs.append(f"Duplicate {repr(take_profit_id)}")
         else:
+            # Add to cache to be able to invalidate
+            self.cache.add_order(bracket_order.take_profit, PositionId.null_c())
             self._invalidate_order(
-                bracket_order.take_profit,
+                bracket_order.take_profit.cl_ord_id,
                 "Duplicate ClientOrderId in bracket.",
             )
+
+        # Finally log error
+        self._log.error(f"Cannot submit BracketOrder: {', '.join(error_msgs)}")
 
     cdef inline void _deny_order(self, ClientOrderId cl_ord_id, str reason) except *:
         # Generate event

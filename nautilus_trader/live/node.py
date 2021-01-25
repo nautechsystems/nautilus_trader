@@ -19,13 +19,12 @@ from datetime import timedelta
 import signal
 import sys
 import time
-import warnings
 from typing import Dict, List
+import warnings
 
 import msgpack
 import redis
 
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
 from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
@@ -36,6 +35,7 @@ from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data import LiveDataEngine
 from nautilus_trader.live.execution import LiveExecutionEngine
