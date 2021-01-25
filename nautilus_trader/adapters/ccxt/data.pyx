@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -276,6 +277,27 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._subscribed_instruments.add(symbol)
 
+    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+        """
+        Subscribe to `OrderBook` data for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The order book symbol to subscribe to.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        if symbol in self._subscribed_order_books:
+            self._log.warning(f"Already subscribed {symbol.code} <OrderBook> data.")
+            return
+
+        task = self._loop.create_task(self._watch_order_book(symbol, 2))
+        self._subscribed_order_books[symbol] = task
+
+        self._log.info(f"Subscribed to {symbol.code} <OrderBook> data.")
+
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
         Subscribe to `QuoteTick` data for the given symbol.
@@ -288,14 +310,8 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._client.has["watchOrderBook"]:
-            self._log.error("`subscribe_quote_ticks` was called "
-                            "when not supported by the exchange.")
-            return
-
         if symbol in self._subscribed_quote_ticks:
-            # TODO: Only call if not already subscribed
-            self._log.debug(f"Already subscribed {symbol.code} <TradeTick> data.")
+            self._log.warning(f"Already subscribed {symbol.code} <TradeTick> data.")
             return
 
         task = self._loop.create_task(self._watch_quotes(symbol))
@@ -315,14 +331,8 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(symbol, "symbol")
 
-        if not self._client.has["watchTrades"]:
-            self._log.error("`subscribe_trade_ticks` was called "
-                            "when not supported by the exchange.")
-            return
-
         if symbol in self._subscribed_trade_ticks:
-            # TODO: Only call if not already subscribed
-            self._log.debug(f"Already subscribed {symbol.code} <TradeTick> data.")
+            self._log.warning(f"Already subscribed {symbol.code} <TradeTick> data.")
             return
 
         task = self._loop.create_task(self._watch_trades(symbol))
@@ -342,11 +352,6 @@ cdef class CCXTDataClient(LiveDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        if not self._client.has["watchOHLCV"]:
-            self._log.error("`subscribe_bars` was called "
-                            "when not supported by the exchange.")
-            return
-
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.warning(f"`request_bars` was called with a `price_type` argument "
                               f"of `PriceType.{PriceTypeParser.to_str(bar_type.spec.price_type)}` "
@@ -354,8 +359,7 @@ cdef class CCXTDataClient(LiveDataClient):
             return
 
         if bar_type in self._subscribed_bars:
-            # TODO: Only call if not already subscribed
-            self._log.debug(f"Already subscribed {bar_type} <Bar> data.")
+            self._log.warning(f"Already subscribed {bar_type} <Bar> data.")
             return
 
         task = self._loop.create_task(self._watch_ohlcv(bar_type))
@@ -377,6 +381,27 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._subscribed_instruments.discard(symbol)
 
+    cpdef void unsubscribe_order_book(self, Symbol symbol) except *:
+        """
+        Unsubscribe from `OrderBook` data for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The order book symbol to unsubscribe from.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        if symbol not in self._subscribed_order_books:
+            self._log.debug(f"Not subscribed to {symbol.code} <OrderBook> data.")
+            return
+
+        task = self._subscribed_order_books.pop(symbol)
+        task.cancel()
+        self._log.debug(f"Cancelled {task}.")
+        self._log.info(f"Unsubscribed from {symbol.code} <OrderBook> data.")
+
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
         Unsubscribe from `QuoteTick` data for the given symbol.
@@ -390,7 +415,6 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
 
         if symbol not in self._subscribed_quote_ticks:
-            # TODO: Only call if subscribed
             self._log.debug(f"Not subscribed to {symbol.code} <QuoteTick> data.")
             return
 
@@ -412,7 +436,6 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_none(symbol, "symbol")
 
         if symbol not in self._subscribed_trade_ticks:
-            # TODO: Only call if subscribed
             self._log.debug(f"Not subscribed to {symbol.code} <TradeTick> data.")
             return
 
@@ -434,7 +457,6 @@ cdef class CCXTDataClient(LiveDataClient):
         Condition.not_none(bar_type, "bar_type")
 
         if bar_type not in self._subscribed_bars:
-            # TODO: Only call if subscribed
             self._log.debug(f"Not subscribed to {bar_type} <Bar> data.")
             return
 
@@ -606,6 +628,54 @@ cdef class CCXTDataClient(LiveDataClient):
 
 # -- STREAMS ---------------------------------------------------------------------------------------
 
+    # TODO: Possibly combine this with _watch_quotes
+    async def _watch_order_book(self, Symbol symbol, int level):
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe to order book (no instrument for {symbol.code}).")
+            return
+
+        # Setup precisions
+        cdef list bids
+        cdef list asks
+        cdef int price_precision = instrument.price_precision
+        cdef int size_precision = instrument.size_precision
+        cdef OrderBook order_book
+        try:
+            while True:
+                try:
+                    lob = await self._client.watch_order_book(symbol.code)
+                    timestamp = lob["timestamp"]
+                    if timestamp is None:  # Compiled to fast C check
+                        # First quote timestamp often None
+                        timestamp = self._client.milliseconds()
+
+                    bids = <list>lob.get("bids")
+                    asks = <list>lob.get("asks")
+                    if bids is None:
+                        continue
+                    if asks is None:
+                        continue
+
+                    order_book = OrderBook.from_floats(
+                        symbol,
+                        level,
+                        bids,
+                        asks,
+                        price_precision,
+                        size_precision,
+                        from_posix_ms(timestamp),
+                    )
+
+                    self._handle_order_book(order_book)
+                except CCXTError as ex:
+                    self._log_ccxt_error(ex, self._watch_order_book.__name__)
+                    continue
+        except asyncio.CancelledError as ex:
+            self._log.debug(f"Cancelled `_watch_order_book` for {symbol.code}.")
+        except Exception as ex:
+            self._log.exception(ex)
+
     async def _watch_quotes(self, Symbol symbol):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
@@ -616,6 +686,8 @@ cdef class CCXTDataClient(LiveDataClient):
         cdef int price_precision = instrument.price_precision
         cdef int size_precision = instrument.size_precision
 
+        cdef list bids
+        cdef list asks
         cdef bint generate_tick = False
         cdef list last_best_bid = None
         cdef list last_best_ask = None
@@ -625,17 +697,17 @@ cdef class CCXTDataClient(LiveDataClient):
         try:
             while True:
                 try:
-                    order_book = await self._client.watch_order_book(symbol.code)
+                    lob = await self._client.watch_order_book(symbol.code)
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_quotes.__name__)
                     continue
                 except TypeError:
                     # Temporary workaround for testing
-                    order_book = self._client.watch_order_book
+                    lob = self._client.watch_order_book
                     exiting = True
 
-                bids = order_book.get("bids")
-                asks = order_book.get("asks")
+                bids = <list>lob.get("bids")
+                asks = <list>lob.get("asks")
 
                 if bids:
                     best_bid = bids[0]
@@ -660,7 +732,7 @@ cdef class CCXTDataClient(LiveDataClient):
                 if not generate_tick:
                     continue
 
-                timestamp = order_book["timestamp"]
+                timestamp = lob["timestamp"]
                 if timestamp is None:  # Compiled to fast C check
                     # First quote timestamp often None
                     timestamp = self._client.milliseconds()

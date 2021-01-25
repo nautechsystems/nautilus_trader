@@ -24,6 +24,7 @@ from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order_book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -152,6 +153,18 @@ class EMACross(TradingStrategy):
         ----------
         tick : TradeTick
             The tick received.
+
+        """
+        pass
+
+    def on_order_book(self, order_book: OrderBook):
+        """
+        Actions to be performed when the strategy is running and receives an order book.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book received.
 
         """
         pass

@@ -60,6 +60,10 @@ cdef class DataCacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef OrderBook order_book(self, Symbol symbol):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef QuoteTick quote_tick(self, Symbol symbol, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -81,6 +85,10 @@ cdef class DataCacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int bar_count(self, BarType bar_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint has_order_book(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

@@ -134,6 +134,24 @@ cdef class BacktestDataClient(DataClient):
 
         # Do nothing else for backtest
 
+    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+        """
+        Subscribe to `OrderBook` data for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The order book symbol to subscribe to.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to order book for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
         Subscribe to `QuoteTick` data for the given symbol.
@@ -203,6 +221,24 @@ cdef class BacktestDataClient(DataClient):
 
         if not self.is_connected:  # Simulate connection behaviour
             self._log.error(f"Cannot unsubscribe from instrument for {symbol} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_order_book(self, Symbol symbol) except *:
+        """
+        Unsubscribe from `OrderBook` data for the given symbol.
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The order book symbol to unsubscribe from.
+
+        """
+        Condition.not_none(symbol, "symbol")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from order book for {symbol} (not connected).")
             return
 
         # Do nothing else for backtest
