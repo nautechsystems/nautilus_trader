@@ -23,6 +23,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order cimport MarketOrder
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -120,6 +121,19 @@ cdef class EMACross(TradingStrategy):
         """
         pass
 
+    cpdef void on_order_book(self, OrderBook order_book) except *:
+        """
+        Actions to be performed when the strategy is running and receives an order book.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book received.
+
+        """
+        # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
+        pass
+
     cpdef void on_quote_tick(self, QuoteTick tick) except *:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
@@ -130,6 +144,7 @@ cdef class EMACross(TradingStrategy):
             The tick received.
 
         """
+        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
         pass
 
     cpdef void on_trade_tick(self, TradeTick tick) except *:

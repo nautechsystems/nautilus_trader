@@ -35,6 +35,16 @@ cdef class CCXTDataClient(LiveDataClient):
     cdef object _update_instruments_task
 
     cdef inline void _log_ccxt_error(self, ex, str method_name) except *
+    cdef inline void _on_order_book(
+        self,
+        Symbol symbol,
+        int level,
+        bids,         # Bids type
+        asks,         # Asks type
+        int price_p,  # Price precision
+        int size_p,   # Size precision
+        long timestamp,
+    ) except *
     cdef inline void _on_quote_tick(
         self,
         Symbol symbol,

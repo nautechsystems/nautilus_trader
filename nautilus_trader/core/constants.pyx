@@ -69,6 +69,8 @@ MARGIN_BALANCE = "MarginBalance"
 MARGIN_AVAILABLE = "MarginAvailable"
 BAR = "Bar"
 BAR_TYPE = "BarType"
+INTERVAL = "Interval"
+DELAY = "Delay"
 
 BALANCES = "Balances"
 BALANCES_FREE = "BalancesFree"

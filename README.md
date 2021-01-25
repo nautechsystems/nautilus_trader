@@ -83,11 +83,77 @@ Alternatively, to install from source using pip, run:
 
     pip install .
 
+# Data Types
+
+The following data types can be requested, and also subscribed to as streams.
+
+`Instrument`
+`OrderBook` (L2 and L3 if available. Streaming or interval snapshots)
+`QuoteTick`
+`TradeTick`
+`Bar`
+
+The following `PriceType`s can be used for bar aggregations;
+`BID`
+`ASK`
+`MID`
+`LAST`
+
+The following `BarAggregation`s are possible;
+`SECOND`
+`MINUTE`
+`HOUR`
+`DAY`
+`TICK`
+`VOLUME`
+`VALUE` (a.k.a Dollar bars)
+`TICK_IMBALANCE` (TBA)
+`TICK_RUNS` (TBA)
+`VOLUME_IMBALANCE` (TBA)
+`VOLUME_RUNS` (TBA)
+`VALUE_IMBALANCE` (TBA)
+`VALUE_RUNS` (TBA)
+
+The price types and bar aggregations can be combined with step sizes > 1 in any
+way through `BarSpecification`s, if the data is available from the data provider.
+This enables maximum flexibility and now allows alternative bars to be produced for
+live trading.
+
+Bars can be either internally or externally aggregated. Alternative bar types are
+only available by internal aggregation. External aggregation is normally for
+standard bar periods as available from the provider through the adapter integration.
+
+Custom data types can also be requested through a users custom handler, and fed
+back to the strategies `on_data` method.
+
+# Order Types
+
+The following order types are available (when possible on an exchange);
+
+`Market`
+`Limit`
+`StopMarket`
+
+More will be added in due course including `StopLimit`, `MarketIfTouched`,
+`LimitIfTouched` and icebergs. Users are invited to open discussion issues to
+request specific order types or features.
+
 ## Integrations
 An integration adapter for CCXT Pro is currently under active development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
 
 See https://ccxt.pro for more information.
+
+Currently there are **beta** versions of integrations for **Binance** and **BitMEX** available
+for early testing. These include advanced order options such as `post_only`, `hidden`
+`reduce_only`, and all the `TimeInForce` options. These integrations will be incrementally
+ added to.
+
+The other exchanges will be available through CCXTs unified API with a more
+limited feature set. The intent here is to specify other data clients for
+arbitrage or market making strategies. Execution clients will be possible if a
+user only requires simple vanilla MARKET and LIMIT orders for trading on those
+exchanges.
 
 ## Development
 
