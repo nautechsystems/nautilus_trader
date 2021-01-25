@@ -30,6 +30,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -43,6 +44,7 @@ cdef class DataEngine(Component):
     cdef dict _instrument_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
+    cdef dict _order_book_handlers
     cdef dict _bar_handlers
     cdef dict _bar_aggregators
 
@@ -86,10 +88,12 @@ cdef class DataEngine(Component):
     cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *
     cdef inline void _handle_subscribe_instrument(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_subscribe_order_book(self, DataClient client, Symbol symbol, dict metadata, handler: callable) except *
     cdef inline void _handle_subscribe_quote_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
     cdef inline void _handle_subscribe_trade_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
     cdef inline void _handle_subscribe_bars(self, DataClient client, BarType bar_type, handler: callable) except *
     cdef inline void _handle_unsubscribe_instrument(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _handle_unsubscribe_order_book(self, DataClient client, Symbol symbol, dict metadata, handler: callable) except *
     cdef inline void _handle_unsubscribe_quote_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
     cdef inline void _handle_unsubscribe_trade_ticks(self, DataClient client, Symbol symbol, handler: callable) except *
     cdef inline void _handle_unsubscribe_bars(self, DataClient client, BarType bar_type, handler: callable) except *
@@ -99,6 +103,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_data(self, data) except *
     cdef inline void _handle_instrument(self, Instrument instrument) except *
+    cdef inline void _handle_order_book(self, OrderBook order_book) except *
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
@@ -128,11 +133,13 @@ cdef class DataEngine(Component):
 
 # -- HANDLERS --------------------------------------------------------------------------------------
 
-    cdef inline void _add_instrument_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _add_quote_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _add_trade_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _add_bar_handler(self, BarType bar_type, handler: callable) except *
-    cdef inline void _remove_instrument_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_quote_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_trade_tick_handler(self, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_bar_handler(self, BarType bar_type, handler: callable) except *
+    cdef inline void _add_instrument_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _add_order_book_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _add_quote_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _add_trade_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _add_bar_handler(self, DataClient client, BarType bar_type, handler: callable) except *
+    cdef inline void _remove_instrument_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_order_book_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_quote_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_trade_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
+    cdef inline void _remove_bar_handler(self, DataClient client, BarType bar_type, handler: callable) except *

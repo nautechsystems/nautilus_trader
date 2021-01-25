@@ -36,6 +36,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -121,6 +122,10 @@ cdef class DataClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -134,6 +139,10 @@ cdef class DataClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_order_book(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -197,6 +206,9 @@ cdef class DataClient:
     def _handle_instrument_py(self, Instrument instrument):
         self._engine.process(instrument)
 
+    def _handle_order_book_py(self, OrderBook order_book):
+        self._engine.process(order_book)
+
     def _handle_quote_tick_py(self, QuoteTick tick):
         self._engine.process(tick)
 
@@ -222,6 +234,9 @@ cdef class DataClient:
 
     cdef void _handle_instrument(self, Instrument instrument) except *:
         self._engine.process(instrument)
+
+    cdef void _handle_order_book(self, OrderBook order_book) except *:
+        self._engine.process(order_book)
 
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:
         self._engine.process(tick)

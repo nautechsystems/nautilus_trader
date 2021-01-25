@@ -61,7 +61,7 @@ cdef class Bar:
     cdef readonly Quantity volume
     """The volume of the bar.\n\n:returns: `Quantity`"""
     cdef readonly datetime timestamp
-    """The timestamp the bar closed at.\n\n:returns: `datetime`"""
+    """The timestamp the bar closed at (UTC).\n\n:returns: `datetime`"""
     cdef readonly bint checked
     """If the input values were integrity checked.\n\n:returns: `bool`"""
 

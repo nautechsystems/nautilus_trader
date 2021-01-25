@@ -69,6 +69,8 @@ cdef str MARGIN_BALANCE
 cdef str MARGIN_AVAILABLE
 cdef str BAR
 cdef str BAR_TYPE
+cdef str INTERVAL
+cdef str DELAY
 
 cdef str BALANCES
 cdef str BALANCES_FREE

@@ -24,6 +24,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.order import MarketOrder
+from nautilus_trader.model.order_book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -94,6 +95,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
+        self.subscribe_order_book(self.symbol)  # For debugging
         # self.subscribe_quote_ticks(self.symbol)  # For debugging
         # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
@@ -109,6 +111,18 @@ class EMACross(TradingStrategy):
 
         """
         pass
+
+    def on_order_book(self, order_book: OrderBook):
+        """
+        Actions to be performed when the strategy is running and receives an order book.
+
+        Parameters
+        ----------
+        order_book : OrderBook
+            The order book received.
+
+        """
+        self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
 
     def on_quote_tick(self, tick: QuoteTick):
         """

@@ -25,6 +25,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
@@ -51,11 +52,13 @@ cdef class DataClient:
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *
+    cpdef void subscribe_order_book(self, Symbol symbol) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
+    cpdef void unsubscribe_order_book(self, Symbol symbol) except *
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
@@ -92,6 +95,7 @@ cdef class DataClient:
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_instrument(self, Instrument instrument) except *
+    cdef void _handle_order_book(self, OrderBook order_book) except *
     cdef void _handle_quote_tick(self, QuoteTick tick) except *
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, BarType bar_type, Bar bar) except *

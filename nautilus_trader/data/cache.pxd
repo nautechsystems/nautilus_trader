@@ -20,6 +20,7 @@ from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
@@ -31,6 +32,7 @@ cdef class DataCache(DataCacheFacade):
     cdef dict _instruments
     cdef dict _quote_ticks
     cdef dict _trade_ticks
+    cdef dict _order_books
     cdef dict _bars
     cdef ExchangeRateCalculator _xrate_calculator
 
@@ -42,6 +44,7 @@ cdef class DataCache(DataCacheFacade):
     cpdef void reset(self) except *
 
     cpdef void add_instrument(self, Instrument instrument) except *
+    cpdef void add_order_book(self, OrderBook order_book) except *
     cpdef void add_quote_tick(self, QuoteTick tick) except *
     cpdef void add_trade_tick(self, TradeTick tick) except *
     cpdef void add_bar(self, BarType bar_type, Bar bar) except *

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -39,6 +40,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport BracketOrder
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
@@ -87,6 +89,7 @@ cdef class TradingStrategy(Component):
     cpdef void on_load(self, dict state) except *
     cpdef void on_dispose(self) except *
     cpdef void on_instrument(self, Instrument instrument) except *
+    cpdef void on_order_book(self, OrderBook order_book) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, BarType bar_type, Bar bar) except *
@@ -117,10 +120,12 @@ cdef class TradingStrategy(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *
+    cpdef void subscribe_order_book(self, Symbol symbol, timedelta interval=*, timedelta delay=*) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
+    cpdef void unsubscribe_order_book(self, Symbol symbol, timedelta interval=*) except *
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
@@ -159,6 +164,7 @@ cdef class TradingStrategy(Component):
 # -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *
+    cpdef void handle_order_book(self, OrderBook order_book) except *
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *

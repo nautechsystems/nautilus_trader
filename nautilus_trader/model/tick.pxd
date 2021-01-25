@@ -27,7 +27,7 @@ cdef class Tick:
     cdef readonly Symbol symbol
     """The ticks symbol.\n\n:returns: `Symbol`"""
     cdef readonly datetime timestamp
-    """The ticks timestamp.\n\n:returns: `datetime`"""
+    """The ticks timestamp (UTC).\n\n:returns: `datetime`"""
 
 
 cdef class QuoteTick(Tick):
