@@ -130,16 +130,3 @@ cdef class DataEngine(Component):
         int limit,
         callback: callable,
     ) except *
-
-# -- HANDLERS --------------------------------------------------------------------------------------
-
-    cdef inline void _add_instrument_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _add_order_book_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _add_quote_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _add_trade_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _add_bar_handler(self, DataClient client, BarType bar_type, handler: callable) except *
-    cdef inline void _remove_instrument_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_order_book_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_quote_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_trade_tick_handler(self, DataClient client, Symbol symbol, handler: callable) except *
-    cdef inline void _remove_bar_handler(self, DataClient client, BarType bar_type, handler: callable) except *

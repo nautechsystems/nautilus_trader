@@ -106,6 +106,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.symbol)
+        # self.subscribe_order_book(self.symbol)
         # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
@@ -132,6 +133,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         """
         # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
+        pass
 
     def on_quote_tick(self, tick: QuoteTick):
         """
