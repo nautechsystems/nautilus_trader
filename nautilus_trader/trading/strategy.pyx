@@ -77,7 +77,12 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
-cdef tuple _WARNING_EVENTS = (OrderInvalid, OrderDenied, OrderRejected, OrderCancelReject)
+cdef tuple _WARNING_EVENTS = (
+    OrderInvalid,
+    OrderDenied,
+    OrderRejected,
+    OrderCancelReject,
+)
 
 
 cdef class TradingStrategy(Component):
