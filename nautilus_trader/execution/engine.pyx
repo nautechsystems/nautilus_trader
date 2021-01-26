@@ -16,18 +16,18 @@
 """
 The `ExecutionEngine` is the central component of the entire execution stack.
 
-Its primary responsibility is to orchestrate interactions between the individual
-`ExecutionClient` instances, and the rest of the platform. This includes
-sending commands to and receiving events from particular venue endpoints.
-Beneath it sits the `ExecutionCache` layer which presents a read-only facade
-for consumers.
+The execution engines primary responsibility is to orchestrate interactions
+between the `ExecutionClient` instances, and the rest of the platform. This
+includes sending commands to, and receiving events from, the particular venue
+endpoints via its registered execution clients.
 
-The engine employs a simple fan-in fan-out messaging pattern to receive events
-from the `ExecutionClient` instances, and sending those to the registered
-handlers, namely `TradingStrategy` instances.
+Beneath it sits an `ExecutionCache` which presents a read-only facade for
+consumers. The engine employs a simple fan-in fan-out messaging pattern to execute
+`TradingCommand` messages, and process `AccountState` or `OrderEvent` type
+messages.
 
-Alternative implementations can be written on top which just need to override
-the engines `execute` and `process` methods.
+Alternative implementations can be written on top of the generic engine - which
+just need to override the `execute` and `process` methods.
 """
 
 from nautilus_trader.common.clock cimport Clock

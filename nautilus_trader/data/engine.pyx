@@ -16,17 +16,18 @@
 """
 The `DataEngine` is the central component of the entire data stack.
 
-Its primary responsibility is to orchestrate interactions between the individual
-`DataClient` instances, and the rest of the platform. This includes consumers
-subscribing to specific data types, as well as hydrating a `DataCache` layer
-which presents a read-only facade for consumers.
+The data engines primary responsibility is to orchestrate interactions between
+the `DataClient` instances, and the rest of the platform. This includes sending
+requests to, and receiving responses from, the particular data provider endpoints
+via its registered data clients.
 
-The engine employs a simple fan-in fan-out messaging pattern to receive data
-from the `DataClient` instances, and sending those to the registered
-handlers.
+Beneath it sits a `DataCache` which presents a read-only facade for consumers.
+The engine employs a simple fan-in fan-out messaging pattern to execute
+`DataCommand` type messages, and process `DataResponse` messages or market data
+objects.
 
-Alternative implementations can be written on top which just need to override
-the engines `execute`, `process`, `send` and `receive` methods.
+Alternative implementations can be written on top of the generic engine - which
+just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from cpython.datetime cimport datetime
