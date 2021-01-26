@@ -52,7 +52,7 @@ cdef class DataClient:
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *
-    cpdef void subscribe_order_book(self, Symbol symbol) except *
+    cpdef void subscribe_order_book(self, Symbol symbol, int level, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
