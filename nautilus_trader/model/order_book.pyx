@@ -54,9 +54,10 @@ cdef class OrderBook:
         self.timestamp = timestamp
 
     def __str__(self) -> str:
-        return (f"{self.symbol},"
-                f"bids={self.bids},"
-                f"asks={self.asks}")
+        return (f"{self.symbol}, "
+                f"bids={self.bids}, "
+                f"asks={self.asks}, "
+                f"timestamp={self.timestamp}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -80,7 +81,7 @@ cdef class OrderBook:
         symbol : Symbol
             The order book symbol.
         level : int
-            The order book data level (L2, L3).
+            The order book data level (L1, L2, L3).
         bids : list[[float, float]]
             The bid values for the order book.
         asks : list[[float, float]]

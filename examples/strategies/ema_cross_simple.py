@@ -95,7 +95,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        self.subscribe_order_book(self.symbol)  # For debugging
+        self.subscribe_order_book(self.symbol, level=2, depth=10, interval=10)  # For debugging
         # self.subscribe_quote_ticks(self.symbol)  # For debugging
         # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
@@ -122,7 +122,7 @@ class EMACross(TradingStrategy):
             The order book received.
 
         """
-        self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
+        self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
 
     def on_quote_tick(self, tick: QuoteTick):
         """
@@ -134,7 +134,7 @@ class EMACross(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -147,7 +147,7 @@ class EMACross(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -171,20 +171,20 @@ class EMACross(TradingStrategy):
             return  # Wait for indicators to warm up...
 
         # BUY LOGIC
-        if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
-                self.buy()
-            elif self.portfolio.is_net_short(self.symbol):
-                self.flatten_all_positions(self.symbol)
-                self.buy()
-
-        # SELL LOGIC
-        elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.symbol):
-                self.sell()
-            elif self.portfolio.is_net_long(self.symbol):
-                self.flatten_all_positions(self.symbol)
-                self.sell()
+        # if self.fast_ema.value >= self.slow_ema.value:
+        #     if self.portfolio.is_flat(self.symbol):
+        #         self.buy()
+        #     elif self.portfolio.is_net_short(self.symbol):
+        #         self.flatten_all_positions(self.symbol)
+        #         self.buy()
+        #
+        # # SELL LOGIC
+        # elif self.fast_ema.value < self.slow_ema.value:
+        #     if self.portfolio.is_flat(self.symbol):
+        #         self.sell()
+        #     elif self.portfolio.is_net_long(self.symbol):
+        #         self.flatten_all_positions(self.symbol)
+        #         self.sell()
 
     def buy(self):
         """
@@ -245,6 +245,7 @@ class EMACross(TradingStrategy):
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_order_book(self.symbol, interval=10)
         # self.unsubscribe_quote_ticks(self.symbol)
         # self.unsubscribe_trade_ticks(self.symbol)
 

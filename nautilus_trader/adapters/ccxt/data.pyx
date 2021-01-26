@@ -277,7 +277,13 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._subscribed_instruments.add(symbol)
 
-    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+    cpdef void subscribe_order_book(
+        self,
+        Symbol symbol,
+        int level,
+        int depth=0,
+        dict kwargs=None,
+    ) except *:
         """
         Subscribe to `OrderBook` data for the given symbol.
 
@@ -285,15 +291,28 @@ cdef class CCXTDataClient(LiveDataClient):
         ----------
         symbol : Symbol
             The order book symbol to subscribe to.
+        level : int
+            The order book data level (L1, L2, L3).
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
 
         """
+        if kwargs is None:
+            kwargs = {}
         Condition.not_none(symbol, "symbol")
 
         if symbol in self._subscribed_order_books:
             self._log.warning(f"Already subscribed {symbol.code} <OrderBook> data.")
             return
 
-        task = self._loop.create_task(self._watch_order_book(symbol, 2))
+        task = self._loop.create_task(self._watch_order_book(
+            symbol=symbol,
+            level=level,
+            depth=depth,
+            kwargs=kwargs,
+        ))
         self._subscribed_order_books[symbol] = task
 
         self._log.info(f"Subscribed to {symbol.code} <OrderBook> data.")
@@ -629,7 +648,7 @@ cdef class CCXTDataClient(LiveDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, Symbol symbol, int level):
+    async def _watch_order_book(self, Symbol symbol, int level, int depth, dict kwargs):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {symbol.code}).")
@@ -644,7 +663,11 @@ cdef class CCXTDataClient(LiveDataClient):
         try:
             while True:
                 try:
-                    lob = await self._client.watch_order_book(symbol.code)
+                    lob = await self._client.watch_order_book(
+                        symbol=symbol.code,
+                        limit=None if depth == 0 else depth,
+                        params=kwargs,
+                    )
                     timestamp = lob["timestamp"]
                     if timestamp is None:  # Compiled to fast C check
                         # First quote timestamp often None

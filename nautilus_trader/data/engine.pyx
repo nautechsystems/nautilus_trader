@@ -110,13 +110,16 @@ cdef class DataEngine(Component):
 
         # Handlers
         self._instrument_handlers = {}  # type: dict[Symbol, list[callable]]
+        self._order_book_handlers = {}  # type: dict[Symbol, list[callable]]
         self._quote_tick_handlers = {}  # type: dict[Symbol, list[callable]]
         self._trade_tick_handlers = {}  # type: dict[Symbol, list[callable]]
-        self._order_book_handlers = {}  # type: dict[Symbol, list[callable]]
         self._bar_handlers = {}         # type: dict[BarType, list[callable]]
 
         # Aggregators
         self._bar_aggregators = {}      # type: dict[BarType, BarAggregator]
+
+        # Snapshot providers
+        self._order_book_intervals = {}  # type: dict[(Symbol, int), list[callable]]
 
         # Public components
         self.portfolio = portfolio
@@ -314,9 +317,9 @@ cdef class DataEngine(Component):
         self.cache.reset()
         self._correlation_index.clear()
         self._instrument_handlers.clear()
+        self._order_book_handlers.clear()
         self._quote_tick_handlers.clear()
         self._trade_tick_handlers.clear()
-        self._order_book_handlers.clear()
         self._bar_handlers.clear()
         self._bar_aggregators.clear()
         self._clock.cancel_timers()
@@ -513,14 +516,37 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
-        cdef timedelta interval = metadata.get(INTERVAL)
-        cdef timedelta delay = metadata.get(DELAY)
-        # TODO: Implement interval snapshots
+        # Always re-subscribe to override previous settings
+        client.subscribe_order_book(
+            symbol=symbol,
+            level=metadata.get(LEVEL),
+            depth=metadata.get(DEPTH),
+            kwargs=metadata.get(KWARGS),
+        )
+
+        cdef int interval = metadata[INTERVAL]
+        if interval > 0:
+            key = (symbol, interval)
+            if key not in self._order_book_intervals:
+                self._order_book_intervals[key] = []
+                now = self._clock.utc_now()
+                start_time = now - timedelta(seconds=now.second % interval, microseconds=now.microsecond)
+                timer_name = f"OrderBookSnapshot-{symbol}-{interval}"
+                self._clock.set_timer(
+                    name=timer_name,
+                    interval=timedelta(seconds=interval),
+                    start_time=start_time,
+                    stop_time=None,
+                    handler=self._snapshot_order_book,
+                )
+                self._log.debug(f"Set timer {timer_name}.")
+
+            self._order_book_intervals[key].append(handler)
+            return
 
         if symbol not in self._order_book_handlers:
             # Setup handlers
             self._order_book_handlers[symbol] = []  # type: list[callable]
-            client.subscribe_order_book(symbol)
             self._log.info(f"Subscribed to {symbol} <OrderBook> data.")
 
         # Add handler for subscriber
@@ -640,13 +666,31 @@ cdef class DataEngine(Component):
         handler: callable,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(metadata, "metadata")
         Condition.not_none(symbol, "symbol")
+        Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
-        cdef timedelta interval = metadata.get(INTERVAL)
-        cdef timedelta delay = metadata.get(DELAY)
-        # TODO: Implement interval snapshots
+        cdef int interval = metadata.get(INTERVAL)
+        if interval > 0:
+            # Remove interval subscribers handler
+            key = (symbol, interval)
+            handlers = self._order_book_intervals.get(key)
+            if not handlers:
+                self._log.warning(f"No order book snapshot handlers for {symbol}"
+                                  f"at {interval} second intervals.")
+                return
+
+            if handler not in handlers:
+                self._log.warning(f"Handler {handler} not subscribed to {symbol} "
+                                  f"<OrderBook> data at {interval} second intervals.")
+                return
+
+            handlers.remove(handler)
+            if len(handlers) == 0:
+                timer_name = f"OrderBookSnapshot-{symbol}-{interval}"
+                self._clock.cancel_timer(timer_name)
+                self._log.debug(f"Cancelled timer {timer_name}.")
+            return
 
         if symbol not in self._order_book_handlers:
             self._log.warning(f"Handler {handler} not subscribed to {symbol} <OrderBook> data.")
@@ -957,6 +1001,20 @@ cdef class DataEngine(Component):
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
+
+    cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
+        cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
+        cdef Symbol symbol = Symbol.from_str_c(pieces[0])
+        cdef int interval = int(pieces[2])
+        cdef list handlers = self._order_book_intervals.get((symbol, interval))
+        if handlers is None:
+            self._log.error("No handlers")
+            return
+
+        cdef OrderBook order_book = self.cache.order_book(symbol)
+        if order_book:
+            for handler in handlers:
+                handler(order_book)
 
     cdef inline void _start_bar_aggregator(self, DataClient client, BarType bar_type) except *:
         if bar_type.spec.is_time_aggregated():

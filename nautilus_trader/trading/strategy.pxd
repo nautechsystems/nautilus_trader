@@ -120,12 +120,19 @@ cdef class TradingStrategy(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *
-    cpdef void subscribe_order_book(self, Symbol symbol, timedelta interval=*, timedelta delay=*) except *
+    cpdef void subscribe_order_book(
+        self,
+        Symbol symbol,
+        int level=*,
+        int depth=*,
+        int interval=*,
+        dict kwargs=*,
+    ) except *
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *
-    cpdef void unsubscribe_order_book(self, Symbol symbol, timedelta interval=*) except *
+    cpdef void unsubscribe_order_book(self, Symbol symbol, int interval=*) except *
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *

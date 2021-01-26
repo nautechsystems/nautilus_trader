@@ -64,8 +64,8 @@ class OrderBookTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("AUD/USD.SIM,bids=[[1550.15, 0.51], [1580.0, 1.2]],asks=[[1552.15, 1.51], [1582.0, 2.2]]", str(order_book))
-        self.assertEqual("OrderBook(AUD/USD.SIM,bids=[[1550.15, 0.51], [1580.0, 1.2]],asks=[[1552.15, 1.51], [1582.0, 2.2]])", repr(order_book))
+        self.assertEqual("AUD/USD.SIM, bids=[[1550.15, 0.51], [1580.0, 1.2]], asks=[[1552.15, 1.51], [1582.0, 2.2]], timestamp=1970-01-01 00:00:00+00:00", str(order_book))
+        self.assertEqual("OrderBook(AUD/USD.SIM, bids=[[1550.15, 0.51], [1580.0, 1.2]], asks=[[1552.15, 1.51], [1582.0, 2.2]], timestamp=1970-01-01 00:00:00+00:00)", repr(order_book))
 
     def test_from_floats_given_valid_data_returns_order_book(self):
         # Arrange
