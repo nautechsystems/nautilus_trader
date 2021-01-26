@@ -265,7 +265,7 @@ class TestStubs:
         liquidity_side=LiquiditySide.TAKER,
     ) -> OrderFilled:
         if position_id is None:
-            position_id = PositionId(order.cl_ord_id.value.replace("P", "T"))
+            position_id = PositionId.null()
         if strategy_id is None:
             strategy_id = StrategyId.null()
         if fill_price is None:
