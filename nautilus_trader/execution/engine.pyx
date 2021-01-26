@@ -51,7 +51,6 @@ from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelReject
-from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
@@ -606,17 +605,6 @@ cdef class ExecutionEngine(Component):
         # Finally log error
         self._log.error(f"Cannot submit BracketOrder: {', '.join(error_msgs)}")
 
-    cdef inline void _deny_order(self, ClientOrderId cl_ord_id, str reason) except *:
-        # Generate event
-        cdef OrderDenied denied = OrderDenied(
-            cl_ord_id,
-            reason,
-            self._uuid_factory.generate(),
-            self._clock.utc_now_c(),
-        )
-
-        self._handle_event(denied)
-
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef inline void _handle_event(self, Event event) except *:
@@ -663,14 +651,15 @@ cdef class ExecutionEngine(Component):
             # Search cache for ClientOrderId matching the OrderId
             cl_ord_id = self.cache.cl_ord_id(event.order_id)
             if cl_ord_id is None:
-                self._log.error(f"Cannot apply event to any order, "
-                                f"no matching ClientOrderId found in cache.")
+                self._log.error(f"Cannot apply event to any order: "
+                                f"{repr(event.cl_ord_id)} and {repr(event.order_id)} "
+                                f"not found in cache.")
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
             order = self.cache.order(cl_ord_id)
             if order is None:
-                self._log.error(f"Cannot apply event to any order, "
+                self._log.error(f"Cannot apply event to any order: "
                                 f"order for {repr(cl_ord_id)} not found in cache.")
                 return  # Cannot process event further
 
@@ -704,8 +693,8 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process event "
-                            f"(strategy identifier not found), {event}.")
+            self._log.error(f"Cannot process event: "
+                            f"StrategyId not found for {event}.")
             return  # Cannot process event further
 
         self._send_to_strategy(event, strategy_id)
@@ -720,9 +709,9 @@ cdef class ExecutionEngine(Component):
         if strategy_id is None and fill.position_id.not_null():
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
-            self._log.error(f"Cannot process event (StrategyId for "
+            self._log.error(f"Cannot process event: StrategyId for "
                             f"{repr(fill.cl_ord_id)} or"
-                            f"{repr(fill.position_id)} not found), {fill}.")
+                            f"{repr(fill.position_id)} not found for {fill}.")
             return  # Cannot process event further
 
         if fill.position_id.is_null():  # Exchange not assigning position_ids
@@ -770,8 +759,8 @@ cdef class ExecutionEngine(Component):
         cdef Position position = self.cache.position(fill.position_id)
         if position is None:
             self._log.error(f"Cannot update position for "
-                            f"{repr(fill.position_id)} "
-                            f"(no position found in cache).")
+                            f"{repr(fill.position_id)}: "
+                            f"no position found in cache.")
             return  # Cannot process event further
 
         # Check for flip
@@ -891,14 +880,14 @@ cdef class ExecutionEngine(Component):
 
     cdef inline void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
         if strategy_id is None:
-            self._log.error(f"Cannot send event to strategy "
-                            f"({repr(strategy_id)} not found), {event}.")
+            self._log.error(f"Cannot send event to strategy: "
+                            f"{repr(strategy_id)} not found for {event}.")
             return  # Cannot send to strategy
 
         cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
-            self._log.error(f"Cannot send event to strategy "
-                            f"({repr(strategy_id)} not registered), {event}.")
+            self._log.error(f"Cannot send event to strategy: "
+                            f"{repr(strategy_id)} not registered for {event}.")
             return  # Cannot send to strategy
 
         strategy.handle_event_c(event)
