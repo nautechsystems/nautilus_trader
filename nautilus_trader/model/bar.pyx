@@ -28,32 +28,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-# Aggregation methods which are time driven
-cdef list _TIME_AGGREGATION = [
-    BarAggregation.SECOND,
-    BarAggregation.MINUTE,
-    BarAggregation.HOUR,
-    BarAggregation.DAY,
-]
-
-# Aggregation methods which are threshold-driven
-cdef list _THRESHOLD_AGGREGATION = [
-    BarAggregation.TICK,
-    BarAggregation.TICK_IMBALANCE,
-    BarAggregation.VOLUME,
-    BarAggregation.VOLUME_IMBALANCE,
-    BarAggregation.VALUE,
-    BarAggregation.VALUE_IMBALANCE,
-]
-
-# Aggregation methods which are information driven
-cdef list _INFORMATION_AGGREGATION = [
-    BarAggregation.TICK_RUNS,
-    BarAggregation.VOLUME_RUNS,
-    BarAggregation.VALUE_RUNS,
-]
-
-
 cdef class BarSpecification:
     """
     Represents an aggregation specification for generating bars.
@@ -95,8 +69,8 @@ cdef class BarSpecification:
         self.price_type = price_type
 
     def __eq__(self, BarSpecification other) -> bool:
-        return self.step == other.step \
-            and self.aggregation == other.aggregation \
+        return self.step == other.step\
+            and self.aggregation == other.aggregation\
             and self.price_type == other.price_type
 
     def __ne__(self, BarSpecification other) -> bool:
@@ -156,36 +130,62 @@ cdef class BarSpecification:
         """
         Return a value indicating whether the aggregation method is time-driven.
 
+        - BarAggregation.SECOND
+        - BarAggregation.MINUTE
+        - BarAggregation.HOUR
+        - BarAggregation.DAY
+
         Returns
         -------
         bool
 
         """
-        return self.aggregation in _TIME_AGGREGATION
+        return self.aggregation == BarAggregation.SECOND\
+            or self.aggregation == BarAggregation.MINUTE\
+            or self.aggregation == BarAggregation.HOUR\
+            or self.aggregation == BarAggregation.DAY
 
     cpdef bint is_threshold_aggregated(self) except *:
         """
         Return a value indicating whether the aggregation method is
         threshold-driven.
 
+        - BarAggregation.TICK
+        - BarAggregation.TICK_IMBALANCE
+        - BarAggregation.VOLUME
+        - BarAggregation.VOLUME_IMBALANCE
+        - BarAggregation.VALUE
+        - BarAggregation.VALUE_IMBALANCE
+
         Returns
         -------
         bool
 
         """
-        return self.aggregation in _THRESHOLD_AGGREGATION
+        return self.aggregation == BarAggregation.TICK\
+            or self.aggregation == BarAggregation.TICK_IMBALANCE\
+            or self.aggregation == BarAggregation.VOLUME\
+            or self.aggregation == BarAggregation.VOLUME_IMBALANCE\
+            or self.aggregation == BarAggregation.VALUE\
+            or self.aggregation == BarAggregation.VALUE_IMBALANCE
 
     cpdef bint is_information_aggregated(self) except *:
         """
         Return a value indicating whether the aggregation method is
         information-driven.
 
+        - BarAggregation.TICK_RUNS
+        - BarAggregation.VOLUME_RUNS
+        - BarAggregation.VALUE_RUNS
+
         Returns
         -------
         bool
 
         """
-        return self.aggregation in _INFORMATION_AGGREGATION
+        return self.aggregation == BarAggregation.TICK_RUNS\
+            or self.aggregation == BarAggregation.VOLUME_RUNS\
+            or self.aggregation == BarAggregation.VALUE_RUNS
 
 
 cdef class BarType:
