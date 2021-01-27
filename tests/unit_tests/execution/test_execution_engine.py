@@ -423,9 +423,9 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         bracket = BracketOrder(
-            entry=entry,              # Duplicate
-            stop_loss=stop_loss,      # Duplicate
-            take_profit=take_profit,  # Duplicate
+            entry=entry,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
         )
 
         submit_bracket = SubmitBracketOrder(
@@ -440,97 +440,12 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.exec_engine.execute(submit_bracket)
-        self.exec_engine.execute(submit_bracket)  # Duplicate
+        self.exec_engine.execute(submit_bracket)  # Duplicate command
 
         # Assert
-        self.assertEqual(OrderState.INITIALIZED, entry.state)  # Did not invalidate original
-
-    def test_submit_bracket_order_with_duplicate_stop_loss_cl_ord_id_logs_does_not_submit(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)
-
-        entry1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        stop_loss1 = strategy.order_factory.stop_market(
-            AUDUSD_SIM.symbol,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("0.50000")
-        )
-
-        take_profit1 = strategy.order_factory.limit(
-            AUDUSD_SIM.symbol,
-            OrderSide.SELL,
-            Quantity(100000),
-            Price("1.00000")
-        )
-
-        bracket1 = BracketOrder(
-            entry=entry1,
-            stop_loss=stop_loss1,
-            take_profit=take_profit1,
-        )
-
-        submit_bracket1 = SubmitBracketOrder(
-            self.venue,
-            self.trader_id,
-            self.account_id,
-            strategy.id,
-            bracket1,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
-        )
-
-        entry2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        bracket2 = BracketOrder(
-            entry=entry2,
-            stop_loss=stop_loss1,      # Duplicate
-            take_profit=take_profit1,  # Duplicate
-        )
-
-        submit_bracket2 = SubmitBracketOrder(
-            self.venue,
-            self.trader_id,
-            self.account_id,
-            strategy.id,
-            bracket2,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
-        )
-
-        # Act
-        self.exec_engine.execute(submit_bracket1)
-        self.exec_engine.process(TestStubs.event_order_submitted(entry1))
-        self.exec_engine.process(TestStubs.event_order_accepted(entry1))
-        self.exec_engine.process(TestStubs.event_order_submitted(stop_loss1))
-        self.exec_engine.process(TestStubs.event_order_accepted(stop_loss1))
-        self.exec_engine.process(TestStubs.event_order_submitted(take_profit1))
-        self.exec_engine.process(TestStubs.event_order_accepted(take_profit1))
-        self.exec_engine.execute(submit_bracket2)  # SL and TP
-
-        # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
-        self.assertEqual(OrderState.ACCEPTED, entry1.state)  # Did not invalidate original
-        self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)  # Did not invalidate original
-        self.assertEqual(OrderState.ACCEPTED, take_profit1.state)  # Did not invalidate original
+        self.assertEqual(OrderState.INITIALIZED, entry.state)  # Did not invalidate originals
+        self.assertEqual(OrderState.INITIALIZED, stop_loss.state)  # Did not invalidate originals
+        self.assertEqual(OrderState.INITIALIZED, take_profit.state)  # Did not invalidate originals
 
     def test_submit_bracket_order_with_duplicate_take_profit_cl_ord_id_logs_does_not_submit(self):
         # Arrange
@@ -622,9 +537,104 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.INVALID, entry2.state)
+        self.assertEqual(OrderState.ACCEPTED, entry1.state)
+        self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)
+        self.assertEqual(OrderState.ACCEPTED, take_profit1.state)  # Did not invalidate original
+
+    def test_submit_bracket_order_with_duplicate_stop_loss_cl_ord_id_logs_does_not_submit(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        entry1 = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        stop_loss1 = strategy.order_factory.stop_market(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("0.50000")
+        )
+
+        take_profit1 = strategy.order_factory.limit(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("1.00000")
+        )
+
+        bracket1 = BracketOrder(
+            entry=entry1,
+            stop_loss=stop_loss1,
+            take_profit=take_profit1,
+        )
+
+        submit_bracket1 = SubmitBracketOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            bracket1,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        entry2 = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        take_profit2 = strategy.order_factory.limit(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+            Price("1.00000")
+        )
+
+        bracket2 = BracketOrder(
+            entry=entry2,
+            stop_loss=stop_loss1,  # Duplicate
+            take_profit=take_profit2,
+        )
+
+        submit_bracket2 = SubmitBracketOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            bracket2,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_bracket1)
+        self.exec_engine.process(TestStubs.event_order_submitted(entry1))
+        self.exec_engine.process(TestStubs.event_order_accepted(entry1))
+        self.exec_engine.process(TestStubs.event_order_submitted(stop_loss1))
+        self.exec_engine.process(TestStubs.event_order_accepted(stop_loss1))
+        self.exec_engine.process(TestStubs.event_order_submitted(take_profit1))
+        self.exec_engine.process(TestStubs.event_order_accepted(take_profit1))
+        self.exec_engine.execute(submit_bracket2)  # SL and TP
+
+        # Assert
+        self.assertEqual(OrderState.INVALID, entry2.state)
         self.assertEqual(OrderState.ACCEPTED, entry1.state)  # Did not invalidate original
         self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)  # Did not invalidate original
         self.assertEqual(OrderState.ACCEPTED, take_profit1.state)  # Did not invalidate original
+        self.assertEqual(OrderState.INVALID, take_profit2.state)
 
     def test_submit_order(self):
         # Arrange

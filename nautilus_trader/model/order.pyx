@@ -169,15 +169,15 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_working_c(self) except *:
-        return self._fsm.state == OrderState.ACCEPTED \
+        return self._fsm.state == OrderState.ACCEPTED\
             or self._fsm.state == OrderState.PARTIALLY_FILLED
 
     cdef bint is_completed_c(self) except *:
-        return self._fsm.state == OrderState.INVALID \
-            or self._fsm.state == OrderState.DENIED \
-            or self._fsm.state == OrderState.REJECTED \
-            or self._fsm.state == OrderState.CANCELLED \
-            or self._fsm.state == OrderState.EXPIRED \
+        return self._fsm.state == OrderState.INVALID\
+            or self._fsm.state == OrderState.DENIED\
+            or self._fsm.state == OrderState.REJECTED\
+            or self._fsm.state == OrderState.CANCELLED\
+            or self._fsm.state == OrderState.EXPIRED\
             or self._fsm.state == OrderState.FILLED
 
     cdef bint is_active_c(self) except *:

@@ -16,6 +16,7 @@
 from decimal import Decimal
 import unittest
 
+import numpy as np
 from parameterized import parameterized
 
 from nautilus_trader.common.clock import TestClock
@@ -32,6 +33,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order_book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestInstrumentProvider
@@ -42,6 +44,7 @@ from tests.test_kit.stubs import UNIX_EPOCH
 SIM = Venue("SIM")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class DataCacheTests(unittest.TestCase):
@@ -97,6 +100,12 @@ class DataCacheTests(unittest.TestCase):
         # Assert
         self.assertIsNone(self.cache.instrument(AUDUSD_SIM.symbol))
 
+    def test_order_book_for_unknown_symbol_returns_none(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertIsNone(self.cache.order_book(AUDUSD_SIM.symbol))
+
     def test_quote_tick_when_no_ticks_returns_none(self):
         # Arrange
         # Act
@@ -126,6 +135,12 @@ class DataCacheTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_SIM.symbol))
+
+    def test_has_order_book_for_unknown_symbol_returns_false(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertFalse(self.cache.has_order_book(AUDUSD_SIM.symbol))
 
     def test_has_quote_ticks_for_unknown_symbol_returns_false(self):
         # Arrange
@@ -297,6 +312,7 @@ class DataCacheTests(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_instrument_when_instrument_exists_returns_expected(self):
+        # Arrange
         self.cache.add_instrument(AUDUSD_SIM)
 
         # Act
@@ -304,6 +320,26 @@ class DataCacheTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(AUDUSD_SIM, result)
+
+    def test_order_book_when_order_book_exists_returns_expected(self):
+        # Arrange
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            price_precision=2,
+            size_precision=2,
+            bids=np.asarray([[1550.15, 0.51], [1580.00, 1.20]]),
+            asks=np.asarray([[1552.15, 1.51], [1582.00, 2.20]]),
+            timestamp=0,
+        )
+
+        self.cache.add_order_book(order_book)
+
+        # Act
+        result = self.cache.order_book(ETHUSDT_BINANCE.symbol)
+
+        # Assert
+        self.assertEqual(order_book, result)
 
     def test_price_when_no_ticks_returns_none(self):
         # Act

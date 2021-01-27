@@ -233,6 +233,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(None, order.filled_timestamp)
         self.assertEqual(UNIX_EPOCH, order.last_event.timestamp)
         self.assertEqual(OrderInitialized, type(order.init_event))
+        self.assertTrue(order == order)
+        self.assertFalse(order != order)
 
     def test_initialize_sell_market_order(self):
         # Arrange
@@ -256,6 +258,19 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_sell)
         self.assertEqual(None, order.filled_timestamp)
         self.assertEqual(OrderInitialized, type(order.init_event))
+
+    def test_order_equality(self):
+        # Arrange
+        # Act
+        order = self.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        # Assert
+        self.assertTrue(order == order)
+        self.assertFalse(order != order)
 
     def test_order_str_and_repr(self):
         # Arrange

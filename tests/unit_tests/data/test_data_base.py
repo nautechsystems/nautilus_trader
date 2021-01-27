@@ -16,6 +16,7 @@
 import unittest
 
 from nautilus_trader.data.base import DataCacheFacade
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.providers import TestInstrumentProvider
@@ -51,6 +52,12 @@ class DataCacheFacadeTests(unittest.TestCase):
     def test_instrument_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.instrument, AUDUSD_SIM.symbol)
 
+    def test_price_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.price, AUDUSD_SIM.symbol, PriceType.MID)
+
+    def test_order_book_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.order_book, AUDUSD_SIM.symbol)
+
     def test_quote_tick_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.quote_tick, AUDUSD_SIM.symbol)
 
@@ -68,6 +75,9 @@ class DataCacheFacadeTests(unittest.TestCase):
 
     def test_bar_count_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.bar_count, TestStubs.bartype_gbpusd_1sec_mid())
+
+    def test_has_order_book_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.has_order_book, AUDUSD_SIM.symbol)
 
     def test_has_quote_ticks_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.has_quote_ticks, AUDUSD_SIM.symbol)

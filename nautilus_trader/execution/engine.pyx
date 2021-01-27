@@ -673,10 +673,6 @@ cdef class ExecutionEngine(Component):
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
-        except ValueError as ex:
-            # Catches order identifier validations
-            self._log.exception(ex)
-            return  # Not re-raising to avoid crashing engine
 
         self.cache.update_order(order)
 
