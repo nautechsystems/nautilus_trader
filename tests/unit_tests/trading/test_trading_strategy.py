@@ -179,6 +179,18 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertTrue(ComponentState.INITIALIZED, strategy.state)
         self.assertFalse(strategy.indicators_initialized())
 
+    def test_handle_event(self):
+        # Arrange
+        strategy = TradingStrategy("000")
+
+        event = TestStubs.event_account_state()
+
+        # Act
+        strategy.handle_event(event)
+
+        # Assert
+        self.assertTrue(True)  # Exception not raised
+
     def test_on_start_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = TradingStrategy("000")
