@@ -14,51 +14,18 @@
 # -------------------------------------------------------------------------------------------------
 
 import unittest
-import uuid
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.commands import AmendOrder
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderAmended
-from nautilus_trader.model.events import OrderCancelReject
-from nautilus_trader.model.events import OrderCancelled
-from nautilus_trader.model.events import OrderDenied
-from nautilus_trader.model.events import OrderExpired
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderRejected
-from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order import LimitOrder
-from nautilus_trader.model.order import StopMarketOrder
-from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers import MsgPackEventSerializer
-from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
 from tests.test_kit.performance import PerformanceHarness
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 

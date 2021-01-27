@@ -159,6 +159,19 @@ cdef class DataEngine(Component):
         return sorted(list(self._instrument_handlers.keys()))
 
     @property
+    def subscribed_order_books(self):
+        """
+        The order books subscribed to.
+
+        Returns
+        -------
+        list[Symbol]
+
+        """
+        cdef list interval_symbols = [k[0] for k in self._order_book_intervals.keys()]
+        return sorted(list(self._order_book_handlers.keys()) + interval_symbols)
+
+    @property
     def subscribed_quote_ticks(self):
         """
         The quote tick symbols subscribed to.
@@ -543,6 +556,8 @@ cdef class DataEngine(Component):
                 self._log.debug(f"Set timer {timer_name}.")
 
             self._order_book_intervals[key].append(handler)
+            self._log.info(f"Subscribed to {symbol} <OrderBook> "
+                           f"{interval} second intervals data.")
             return
 
         if symbol not in self._order_book_handlers:
@@ -691,6 +706,9 @@ cdef class DataEngine(Component):
                 timer_name = f"OrderBookSnapshot-{symbol}-{interval}"
                 self._clock.cancel_timer(timer_name)
                 self._log.debug(f"Cancelled timer {timer_name}.")
+                del self._order_book_intervals[key]
+                self._log.info(f"Unsubscribed from {symbol} <OrderBook> "
+                               f"{interval} second intervals data.")
             return
 
         if symbol not in self._order_book_handlers:

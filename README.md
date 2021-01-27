@@ -15,15 +15,6 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**BETA**
-
-- **The API is under heavy construction with constant breaking changes**
-- **There is currently a large effort to develop improved documentation**
-
-![WIP](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/under-construction.png?raw=true "")
-
-## Introduction
-
 _NautilusTrader_ is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
