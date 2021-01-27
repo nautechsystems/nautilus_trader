@@ -351,14 +351,18 @@ class PositionTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_SIM)
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
+        )
 
         position = Position(fill1)
 
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00001"),
             fill_qty=Quantity(50000),
@@ -367,7 +371,7 @@ class PositionTests(unittest.TestCase):
         fill3 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00003"),
             fill_qty=Quantity(50000),
@@ -397,7 +401,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-8.000, USD), position.total_pnl(last))
         self.assertEqual([Money(6.00, USD)], position.commissions())
         self.assertEqual(Money(6.00, USD), position.commission)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
+        self.assertEqual("Position(id=P-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
 
     def test_position_filled_with_no_change_returns_expected_attributes(self):
         # Arrange
@@ -413,14 +417,18 @@ class PositionTests(unittest.TestCase):
             Quantity(100000),
         )
 
-        fill1 = TestStubs.event_order_filled(order1, instrument=AUDUSD_SIM)
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
+        )
 
         position = Position(fill1)
 
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00000"),
         )
@@ -456,7 +464,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Money(-4.00, USD), position.total_pnl(last))
         self.assertEqual([Money(4.00, USD)], position.commissions())
         self.assertEqual(Money(4.00, USD), position.commission)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
+        self.assertEqual("Position(id=P-19700101-000000-000-001-1, FLAT AUD/USD.SIM)", repr(position))
 
     def test_position_long_with_multiple_filled_orders_returns_expected_attributes(self):
         # Arrange
@@ -566,6 +574,7 @@ class PositionTests(unittest.TestCase):
         fill1 = TestStubs.event_order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             fill_price=Price(100),
         )
 
@@ -574,6 +583,7 @@ class PositionTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             fill_price=Price(99),
         )
 
@@ -585,7 +595,7 @@ class PositionTests(unittest.TestCase):
         fill3 = TestStubs.event_order_filled(
             order3,
             instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price(101),
         )
@@ -598,7 +608,7 @@ class PositionTests(unittest.TestCase):
         fill4 = TestStubs.event_order_filled(
             order4,
             instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price(105),
         )
@@ -611,7 +621,7 @@ class PositionTests(unittest.TestCase):
         fill5 = TestStubs.event_order_filled(
             order5,
             instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price(103),
         )
@@ -620,7 +630,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money("32.09968966", USDT), position.realized_pnl)
         self.assertEqual(Decimal("99.98003629764065335753176042"), position.avg_open)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)", repr(position))
+        self.assertEqual("Position(id=P-19700101-000000-000-001-1, LONG 19 ETH/USDT.BINANCE)", repr(position))
 
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
@@ -658,6 +668,7 @@ class PositionTests(unittest.TestCase):
         fill1 = TestStubs.event_order_filled(
             order1,
             instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             fill_price=Price("10000.00"),
         )
 
@@ -666,6 +677,7 @@ class PositionTests(unittest.TestCase):
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             fill_price=Price("9999.00"),
         )
 
@@ -677,7 +689,7 @@ class PositionTests(unittest.TestCase):
         fill3 = TestStubs.event_order_filled(
             order3,
             instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("10001.00"),
         )
@@ -690,7 +702,7 @@ class PositionTests(unittest.TestCase):
         fill4 = TestStubs.event_order_filled(
             order4,
             instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("10003.00"),
         )
@@ -703,7 +715,7 @@ class PositionTests(unittest.TestCase):
         fill5 = TestStubs.event_order_filled(
             order5,
             instrument=BTCUSDT_BINANCE,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-19700101-000000-000-001-1"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("10005"),
         )
@@ -712,7 +724,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity(19), position.quantity)
         self.assertEqual(Money("-415.27137481", USDT), position.realized_pnl)
         self.assertEqual(Decimal("9999.881559220389805097451274"), position.avg_open)
-        self.assertEqual("Position(id=O-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
+        self.assertEqual("Position(id=P-19700101-000000-000-001-1, LONG 19.000000 BTC/USDT.BINANCE)", repr(position))
 
     def test_calculate_pnl_when_given_position_side_flat_returns_zero(self):
         # Arrange

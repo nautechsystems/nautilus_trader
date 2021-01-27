@@ -77,7 +77,12 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
-cdef tuple _WARNING_EVENTS = (OrderInvalid, OrderDenied, OrderRejected, OrderCancelReject)
+cdef tuple _WARNING_EVENTS = (
+    OrderInvalid,
+    OrderDenied,
+    OrderRejected,
+    OrderCancelReject,
+)
 
 
 cdef class TradingStrategy(Component):
@@ -714,7 +719,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
-        Subscribe to `Instrument` data for the given symbol.
+        Subscribe to update `Instrument` data for the given symbol.
 
         Parameters
         ----------
@@ -741,44 +746,61 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         Symbol symbol,
-        timedelta interval=None,
-        timedelta delay=None,
+        int level=2,
+        int depth=0,
+        int interval=0,
+        dict kwargs=None,
     ) except *:
         """
         Subscribe to streaming `OrderBook` data for the given symbol.
 
+        The `DataEngine` will only maintain one order book stream for each
+        symbol. Because of this the level, depth and kwargs for the stream will
+        be as per the last subscription request (this will also affect all
+        subscribers).
+
         If interval is not specified then will receive every order book update.
-        Alternatively specify periodic snapshot intervals, with an optional
-        start delay.
+        Alternatively specify periodic snapshot intervals in seconds.
 
         Parameters
         ----------
         symbol : Symbol
             The order book symbol to subscribe to.
-        interval : timedelta, optional
-            The order book snapshot interval to subscribe to.
-        delay : timedelta, optional
-            The order book snapshot interval to subscribe to.
+        level : int
+            The order book data level (L1, L2, L3).
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        interval : int, optional
+            The order book snapshot interval in seconds.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        Raises
+        ------
+        ValueError
+            If level is not in range 1-3.
+        ValueError
+            If depth is negative.
+        ValueError
+            If delay is not None and interval is None.
 
         """
         Condition.not_none(self._data_engine, "data_client")
         Condition.not_none(symbol, "symbol")
-        if delay is not None:
-            Condition.not_none(interval, "interval")
-
-        cdef dict metadata = {
-            SYMBOL: symbol,
-        }
-
-        if interval:
-            metadata[INTERVAL] = interval
-        if delay:
-            metadata[DELAY] = delay
+        Condition.in_range_int(level, 1, 3, "level")
+        Condition.not_negative(depth, "depth")
+        Condition.not_negative(interval, "interval")
 
         cdef Subscribe subscribe = Subscribe(
             venue=symbol.venue,
             data_type=OrderBook,
-            metadata=metadata,
+            metadata={
+                SYMBOL: symbol,
+                LEVEL: level,
+                DEPTH: depth,
+                INTERVAL: interval,
+                KWARGS: kwargs,
+            },
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -790,7 +812,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to `QuoteTick` data for the given symbol.
+        Subscribe to streaming `QuoteTick` data for the given symbol.
 
         Parameters
         ----------
@@ -816,7 +838,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
-        Subscribe to `TradeTick` data for the given symbol.
+        Subscribe to streaming `TradeTick` data for the given symbol.
 
         Parameters
         ----------
@@ -842,7 +864,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
-        Subscribe to `Bar` data for the given bar type.
+        Subscribe to streaming `Bar` data for the given bar type.
 
         Parameters
         ----------
@@ -868,7 +890,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
-        Unsubscribe from `Instrument` data for the given symbol.
+        Unsubscribe from update `Instrument` data for the given symbol.
 
         Parameters
         ----------
@@ -892,34 +914,31 @@ cdef class TradingStrategy(Component):
 
         self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
 
-    cpdef void unsubscribe_order_book(self, Symbol symbol, timedelta interval=None) except *:
+    cpdef void unsubscribe_order_book(self, Symbol symbol, int interval=0) except *:
         """
-        Unsubscribe from `OrderBook` data for the given symbol.
+        Unsubscribe from streaming `OrderBook` data for the given symbol.
 
-        The interval must match the previously defined interval.
+        The interval must match the previously defined interval if unsubscribing
+        from snapshots.
 
         Parameters
         ----------
         symbol : Symbol
             The order book symbol to subscribe to.
-        interval : timedelta, optional
-            The order book snapshot interval to subscribe to.
+        interval : int, optional
+            The order book snapshot interval in seconds.
 
         """
         Condition.not_none(self._data_engine, "data_client")
         Condition.not_none(symbol, "symbol")
 
-        cdef dict metadata = {
-            SYMBOL: symbol,
-        }
-
-        if interval:
-            metadata[INTERVAL] = interval
-
         cdef Unsubscribe unsubscribe = Unsubscribe(
             venue=symbol.venue,
             data_type=OrderBook,
-            metadata=metadata,
+            metadata={
+                SYMBOL: symbol,
+                INTERVAL: interval,
+            },
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -931,7 +950,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given symbol.
+        Unsubscribe from streaming `QuoteTick` data for the given symbol.
 
         Parameters
         ----------
@@ -957,7 +976,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
-        Unsubscribe from `TradeTick` data for the given symbol.
+        Unsubscribe from streaming `TradeTick` data for the given symbol.
 
         Parameters
         ----------
@@ -983,7 +1002,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
-        Unsubscribe from `Bar` data for the given bar type.
+        Unsubscribe from streaming `Bar` data for the given bar type.
 
         Parameters
         ----------

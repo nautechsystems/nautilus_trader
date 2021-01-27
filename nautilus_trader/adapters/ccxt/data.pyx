@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from cpython.datetime cimport datetime
+import numpy as np
 
+from cpython.datetime cimport datetime
 from ccxt.base.errors import BaseError as CCXTError
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
@@ -277,7 +278,13 @@ cdef class CCXTDataClient(LiveDataClient):
 
         self._subscribed_instruments.add(symbol)
 
-    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+    cpdef void subscribe_order_book(
+        self,
+        Symbol symbol,
+        int level,
+        int depth=0,
+        dict kwargs=None,
+    ) except *:
         """
         Subscribe to `OrderBook` data for the given symbol.
 
@@ -285,15 +292,28 @@ cdef class CCXTDataClient(LiveDataClient):
         ----------
         symbol : Symbol
             The order book symbol to subscribe to.
+        level : int
+            The order book data level (L1, L2, L3).
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
 
         """
+        if kwargs is None:
+            kwargs = {}
         Condition.not_none(symbol, "symbol")
 
         if symbol in self._subscribed_order_books:
             self._log.warning(f"Already subscribed {symbol.code} <OrderBook> data.")
             return
 
-        task = self._loop.create_task(self._watch_order_book(symbol, 2))
+        task = self._loop.create_task(self._watch_order_book(
+            symbol=symbol,
+            level=level,
+            depth=depth,
+            kwargs=kwargs,
+        ))
         self._subscribed_order_books[symbol] = task
 
         self._log.info(f"Subscribed to {symbol.code} <OrderBook> data.")
@@ -629,43 +649,47 @@ cdef class CCXTDataClient(LiveDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, Symbol symbol, int level):
+    async def _watch_order_book(self, Symbol symbol, int level, int depth, dict kwargs):
         cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {symbol.code}).")
             return
 
-        # Setup precisions
-        cdef list bids
-        cdef list asks
-        cdef int price_precision = instrument.price_precision
-        cdef int size_precision = instrument.size_precision
-        cdef OrderBook order_book
+        cdef double[:, :] bids
+        cdef double[:, :] asks
+        cdef OrderBook order_book = None
         try:
             while True:
                 try:
-                    lob = await self._client.watch_order_book(symbol.code)
+                    lob = await self._client.watch_order_book(
+                        symbol=symbol.code,
+                        limit=None if depth == 0 else depth,
+                        params=kwargs,
+                    )
                     timestamp = lob["timestamp"]
                     if timestamp is None:  # Compiled to fast C check
                         # First quote timestamp often None
                         timestamp = self._client.milliseconds()
 
-                    bids = <list>lob.get("bids")
-                    asks = <list>lob.get("asks")
+                    bids = np.asarray(lob.get("bids"), dtype=np.float64)
+                    asks = np.asarray(lob.get("asks"), dtype=np.float64)
                     if bids is None:
                         continue
                     if asks is None:
                         continue
 
-                    order_book = OrderBook.from_floats(
-                        symbol,
-                        level,
-                        bids,
-                        asks,
-                        price_precision,
-                        size_precision,
-                        from_posix_ms(timestamp),
-                    )
+                    if order_book is None:  # Fast C-level check
+                        order_book = OrderBook(
+                            symbol,
+                            level,
+                            instrument.price_precision,
+                            instrument.size_precision,
+                            bids,
+                            asks,
+                            timestamp,
+                        )
+                    else:
+                        order_book.update(bids, asks, timestamp)
 
                     self._handle_order_book(order_book)
                 except CCXTError as ex:

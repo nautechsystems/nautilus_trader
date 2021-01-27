@@ -134,7 +134,13 @@ cdef class BacktestDataClient(DataClient):
 
         # Do nothing else for backtest
 
-    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+    cpdef void subscribe_order_book(
+        self,
+        Symbol symbol,
+        int level,
+        int depth=0,
+        dict kwargs=None,
+    ) except *:
         """
         Subscribe to `OrderBook` data for the given symbol.
 
@@ -142,6 +148,12 @@ cdef class BacktestDataClient(DataClient):
         ----------
         symbol : Symbol
             The order book symbol to subscribe to.
+        level : int
+            The order book data level (L1, L2, L3).
+        depth : int, optional
+            The maximum depth for the order book. A depth of 0 is maximum depth.
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
 
         """
         Condition.not_none(symbol, "symbol")

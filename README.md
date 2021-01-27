@@ -88,7 +88,7 @@ Alternatively, to install from source using pip, run:
 The following data types can be requested, and also subscribed to as streams.
 
 - `Instrument`
-- `OrderBook` (L2 and L3 if available. Streaming or interval snapshots)
+- `OrderBook` (L1, L2 and L3 if available. Streaming or interval snapshots)
 - `QuoteTick`
 - `TradeTick`
 - `Bar`
