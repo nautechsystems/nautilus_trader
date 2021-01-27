@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from cpython.datetime cimport datetime
+import numpy as np
 
+from cpython.datetime cimport datetime
 from ccxt.base.errors import BaseError as CCXTError
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
@@ -654,12 +655,9 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.error(f"Cannot subscribe to order book (no instrument for {symbol.code}).")
             return
 
-        # Setup precisions
-        cdef list bids
-        cdef list asks
-        cdef int price_precision = instrument.price_precision
-        cdef int size_precision = instrument.size_precision
-        cdef OrderBook order_book
+        cdef double[:, :] bids
+        cdef double[:, :] asks
+        cdef OrderBook order_book = None
         try:
             while True:
                 try:
@@ -673,22 +671,25 @@ cdef class CCXTDataClient(LiveDataClient):
                         # First quote timestamp often None
                         timestamp = self._client.milliseconds()
 
-                    bids = <list>lob.get("bids")
-                    asks = <list>lob.get("asks")
+                    bids = np.asarray(lob.get("bids"), dtype=np.float64)
+                    asks = np.asarray(lob.get("asks"), dtype=np.float64)
                     if bids is None:
                         continue
                     if asks is None:
                         continue
 
-                    order_book = OrderBook.from_floats(
-                        symbol,
-                        level,
-                        bids,
-                        asks,
-                        price_precision,
-                        size_precision,
-                        from_posix_ms(timestamp),
-                    )
+                    if order_book is None:  # Fast C-level check
+                        order_book = OrderBook(
+                            symbol,
+                            level,
+                            instrument.price_precision,
+                            instrument.size_precision,
+                            bids,
+                            asks,
+                            timestamp,
+                        )
+                    else:
+                        order_book.update(bids, asks, timestamp)
 
                     self._handle_order_book(order_book)
                 except CCXTError as ex:
