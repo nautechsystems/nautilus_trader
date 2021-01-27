@@ -13,22 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from decimal import Decimal
+
+from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class OrderBook:
     """
-    Represents an order book snapshot.
+    Represents an order book.
     """
 
     def __init__(
         self,
         Symbol symbol not None,
         int level,
-        list bids not None,
-        list asks not None,
-        datetime timestamp,
+        int price_precision,
+        int size_precision,
+        double[:, :] bids not None,
+        double[:, :] asks not None,
+        long timestamp,
     ):
         """
         Initialize a new instance of the `OrderBook` class.
@@ -38,116 +41,139 @@ cdef class OrderBook:
         symbol : Symbol
             The order book symbol.
         level : int
-            The order book data level (L2, L3).
-        bids : list[(Decimal, Decimal)]
-            The bids for the order book snapshot.
-        asks : list[(Decimal, Decimal)]
-            The asks in the order book snapshot.
-        timestamp : datetime
-            The order book snapshot timestamp (UTC).
+            The order book data level (L1, L2, L3).
+        bids : double[:, :]
+            The initial bids for the order book.
+        asks : double[:, :]
+            The initial asks for the order book.
+        price_precision : int
+            The precision for the order book prices.
+        size_precision : int
+            The precision for the order book quantities.
+        timestamp : long
+            The initial order book update timestamp (Unix time).
+
+        Raises
+        ------
+        ValueError
+            If level is not in range 1-3.
 
         """
+        Condition.in_range_int(level, 1, 3, "level")
+        Condition.not_negative(price_precision, "price_precision")
+        Condition.not_negative(size_precision, "size_precision")
+
+        self._bids = bids
+        self._asks = asks
+
         self.symbol = symbol
         self.level = level
-        self.bids = bids
-        self.asks = asks
+        self.price_precision = price_precision
+        self.size_precision = size_precision
         self.timestamp = timestamp
 
     def __str__(self) -> str:
         return (f"{self.symbol}, "
-                f"bids={self.bids}, "
-                f"asks={self.asks}, "
+                f"bids_len={len(self._bids)}, "
+                f"asks_len={len(self._asks)}, "
                 f"timestamp={self.timestamp}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    @staticmethod
-    cdef OrderBook from_floats(
-        Symbol symbol,
-        int level,
-        list bids,
-        list asks,
-        int price_precision,
-        int size_precision,
-        datetime timestamp,
-    ):
+    cpdef void update(
+        self,
+        double[:, :] bids,
+        double[:, :] asks,
+        long timestamp,
+    ) except *:
         """
-        Create an order book from the given parameters where bid/ask price,
-        quantities are expressed as floating point values.
+        Update the order book with the given bids, asks and timestamp.
 
         Parameters
         ----------
-        symbol : Symbol
-            The order book symbol.
-        level : int
-            The order book data level (L1, L2, L3).
-        bids : list[[float, float]]
-            The bid values for the order book.
-        asks : list[[float, float]]
-            The ask values for the order book.
-        price_precision : int
-            The precision for the order book prices.
-        size_precision : int
-            The precision for the order book quantities.
-        timestamp : datetime
-            The order book snapshot timestamp (UTC).
+        bids : double[:, :]
+            The updated bids.
+        asks : double[:, :]
+            The updated asks.
+        timestamp : long
+            The update timestamp (Unix time)
+
+        """
+        self._bids = bids
+        self._asks = asks
+        self.timestamp = timestamp
+
+    cdef double[:, :] bids_c(self):
+        """
+        Returns the order book bids.
 
         Returns
         -------
-        OrderBook
+        double[:, :]
 
         """
-        return OrderBook(
-            symbol,
-            level,
-            [(Decimal(f"{entry[0]:.{price_precision}f}"), Decimal(f"{entry[1]:.{size_precision}f}")) for entry in bids],
-            [(Decimal(f"{entry[0]:.{price_precision}f}"), Decimal(f"{entry[1]:.{size_precision}f}")) for entry in asks],
-            timestamp,
-        )
+        return self._bids
 
-    @staticmethod
-    def from_floats_py(
-        Symbol symbol,
-        int level,
-        list bids,
-        list asks,
-        int price_precision,
-        int size_precision,
-        datetime timestamp,
-    ):
+    cdef double[:, :] asks_c(self):
         """
-        Create an order book from the given parameters where bid/ask price,
-        quantities are expressed as floating point values.
-
-        Parameters
-        ----------
-        symbol : Symbol
-            The order book symbol.
-        level : int
-            The order book data level (L2, L3).
-        bids : list[[float, float]]
-            The bid values for the order book.
-        asks : list[[float, float]]
-            The ask values for the order book.
-        price_precision : int
-            The precision for the order book prices.
-        size_precision : int
-            The precision for the order book quantities.
-        timestamp : datetime
-            The order book snapshot timestamp (UTC).
+        Returns the order book asks.
 
         Returns
         -------
-        OrderBook
+        double[:, :]
 
         """
-        return OrderBook.from_floats(
-            symbol,
-            level,
-            bids,
-            asks,
-            price_precision,
-            size_precision,
-            timestamp,
-        )
+        return self._asks
+
+    cpdef list bids(self):
+        """
+        Returns the order book bids.
+
+        Returns
+        -------
+        double[:, :]
+
+        """
+        cdef double[:] entry
+        return [[entry[0], entry[1]] for entry in self.bids_c()]
+
+    cpdef list asks(self):
+        """
+        Returns the order book asks.
+
+        Returns
+        -------
+        list[list[double]]
+
+        """
+        cdef double[:] entry
+        return [[entry[0], entry[1]] for entry in self.asks_c()]
+
+    cpdef list bids_as_decimals(self):
+        """
+        Returns the bids with prices and quantities as decimals.
+
+        Decimal type is the built-in `decimal.Decimal`.
+
+        Returns
+        -------
+        list[list[Decimal, Decimal]]
+
+        """
+        cdef double[:] entry
+        return [[Decimal(f"{entry[0]:.{self.price_precision}f}"), Decimal(f"{entry[1]:.{self.size_precision}f}")] for entry in self._bids]
+
+    cpdef list asks_as_decimals(self):
+        """
+        Returns the asks with prices and quantities as decimals.
+
+        Decimal type is the built-in `decimal.Decimal`.
+
+        Returns
+        -------
+        list[list[Decimal, Decimal]]
+
+        """
+        cdef double[:] entry
+        return [[Decimal(f"{entry[0]:.{self.price_precision}f}"), Decimal(f"{entry[1]:.{self.size_precision}f}")] for entry in self._asks]
