@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -42,11 +43,12 @@ cdef class DataEngine(Component):
     cdef dict _clients
     cdef dict _correlation_index
     cdef dict _instrument_handlers
+    cdef dict _order_book_handlers
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
-    cdef dict _order_book_handlers
     cdef dict _bar_handlers
     cdef dict _bar_aggregators
+    cdef dict _order_book_intervals
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
@@ -119,6 +121,7 @@ cdef class DataEngine(Component):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef void _internal_update_instruments(self, list instruments) except *
+    cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *
     cdef inline void _start_bar_aggregator(self, DataClient client, BarType bar_type) except *
     cdef inline void _hydrate_aggregator(self, DataClient client, TimeBarAggregator aggregator, BarType bar_type) except *
     cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *

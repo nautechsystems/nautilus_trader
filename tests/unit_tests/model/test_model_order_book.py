@@ -16,77 +16,129 @@
 from decimal import Decimal
 import unittest
 
+import numpy as np
+
 from nautilus_trader.model.order_book import OrderBook
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import TestStubs
-from tests.test_kit.stubs import UNIX_EPOCH
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class OrderBookTests(unittest.TestCase):
 
     def test_instantiation(self):
         # Arrange
-        bids = [[1550.15, 0.51], [1580.00, 1.20]]
-        asks = [[1552.15, 1.51], [1582.00, 2.20]]
+        bids = np.asarray([[1550.15, 0.51], [1580.00, 1.20]])
+        asks = np.asarray([[1552.15, 1.51], [1582.00, 2.20]])
 
         # Act
         order_book = OrderBook(
-            symbol=AUDUSD_SIM.symbol,
+            symbol=ETHUSDT_BINANCE.symbol,
             level=2,
+            price_precision=2,
+            size_precision=5,
             bids=bids,
             asks=asks,
-            timestamp=UNIX_EPOCH,
+            timestamp=0,
         )
 
         # Assert
-        self.assertEqual(AUDUSD_SIM.symbol, order_book.symbol)
-        self.assertEqual(UNIX_EPOCH, order_book.timestamp)
-        self.assertEqual([1550.15, 0.51], order_book.bids[0])
-        self.assertEqual([1552.15, 1.51], order_book.asks[0])
-        self.assertEqual([1580.00, 1.20], order_book.bids[1])
-        self.assertEqual([1582.00, 2.20], order_book.asks[1])
+        self.assertEqual(ETHUSDT_BINANCE.symbol, order_book.symbol)
+        self.assertEqual(2, order_book.level)
+        self.assertEqual(2, order_book.price_precision)
+        self.assertEqual(5, order_book.size_precision)
+        self.assertEqual(0, order_book.timestamp)
 
     def test_str_and_repr(self):
         # Arrange
-        bids = [[1550.15, 0.51], [1580.00, 1.20]]
-        asks = [[1552.15, 1.51], [1582.00, 2.20]]
+        bids = np.asarray([[1550.15, 0.51], [1580.00, 1.20]])
+        asks = np.asarray([[1552.15, 1.51], [1582.00, 2.20]])
 
         # Act
         order_book = OrderBook(
-            symbol=AUDUSD_SIM.symbol,
+            symbol=ETHUSDT_BINANCE.symbol,
             level=2,
-            bids=bids,
-            asks=asks,
-            timestamp=UNIX_EPOCH,
-        )
-
-        # Assert
-        self.assertEqual("AUD/USD.SIM,bids=[[1550.15, 0.51], [1580.0, 1.2]],asks=[[1552.15, 1.51], [1582.0, 2.2]]", str(order_book))
-        self.assertEqual("OrderBook(AUD/USD.SIM,bids=[[1550.15, 0.51], [1580.0, 1.2]],asks=[[1552.15, 1.51], [1582.0, 2.2]])", repr(order_book))
-
-    def test_from_floats_given_valid_data_returns_order_book(self):
-        # Arrange
-        bids = [[1550.15, 0.51], [1580.00, 1.20]]
-        asks = [[1552.15, 1.51], [1582.00, 2.20]]
-
-        # Act
-        order_book = OrderBook.from_floats_py(
-            symbol=AUDUSD_SIM.symbol,
-            level=2,
-            bids=bids,
-            asks=asks,
             price_precision=2,
             size_precision=2,
-            timestamp=UNIX_EPOCH,
+            bids=bids,
+            asks=asks,
+            timestamp=0,
         )
 
         # Assert
-        self.assertEqual(AUDUSD_SIM.symbol, order_book.symbol)
-        self.assertEqual(UNIX_EPOCH, order_book.timestamp)
-        self.assertEqual((Decimal('1550.15'), Decimal('0.51')), order_book.bids[0])
-        self.assertEqual((Decimal('1552.15'), Decimal('1.51')), order_book.asks[0])
-        self.assertEqual((Decimal('1580.00'), Decimal('1.20')), order_book.bids[1])
-        self.assertEqual((Decimal('1582.00'), Decimal('2.20')), order_book.asks[1])
+        self.assertEqual("ETH/USDT.BINANCE, bids_len=2, asks_len=2, timestamp=0", str(order_book))
+        self.assertEqual("OrderBook(ETH/USDT.BINANCE, bids_len=2, asks_len=2, timestamp=0)", repr(order_book))
+
+    def test_bids_and_asks(self):
+        # Arrange
+        bids = np.asarray([[1550.15, 0.51], [1580.00, 1.20]])
+        asks = np.asarray([[1552.15, 1.51], [1582.00, 2.20]])
+
+        # Act
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            price_precision=2,
+            size_precision=2,
+            bids=bids,
+            asks=asks,
+            timestamp=0,
+        )
+
+        # Assert
+        self.assertEqual(ETHUSDT_BINANCE.symbol, order_book.symbol)
+        self.assertEqual(0, order_book.timestamp)
+        self.assertEqual([[1550.15, 0.51], [1580.00, 1.20]], order_book.bids())
+        self.assertEqual([[1552.15, 1.51], [1582.00, 2.20]], order_book.asks())
+
+    def test_update(self):
+        # Arrange
+        bids1 = np.asarray([[1550.15, 0.51], [1580.00, 1.20]])
+        asks1 = np.asarray([[1552.15, 1.51], [1582.00, 2.20]])
+
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            price_precision=2,
+            size_precision=2,
+            bids=bids1,
+            asks=asks1,
+            timestamp=0,
+        )
+
+        bids2 = np.asarray([[1551.00, 1.00], [1581.00, 2.00]])
+        asks2 = np.asarray([[1553.00, 1.00], [1583.00, 2.00]])
+
+        # Act
+        order_book.update(bids2, asks2, 1)
+
+        # Assert
+        self.assertEqual(ETHUSDT_BINANCE.symbol, order_book.symbol)
+        self.assertEqual(1, order_book.timestamp)
+        self.assertEqual([[1551.00, 1.00], [1581.00, 2.00]], order_book.bids())
+        self.assertEqual([[1553.00, 1.00], [1583.00, 2.00]], order_book.asks())
+
+    def test_bids_and_asks_as_decimals(self):
+        # Arrange
+        bids = np.asarray([[1550.15, 0.51], [1580.00, 1.20]])
+        asks = np.asarray([[1552.15, 1.51], [1582.00, 2.20]])
+
+        # Act
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            price_precision=2,
+            size_precision=2,
+            bids=bids,
+            asks=asks,
+            timestamp=0,
+        )
+
+        # Assert
+        self.assertEqual(ETHUSDT_BINANCE.symbol, order_book.symbol)
+        self.assertEqual(0, order_book.timestamp)
+        self.assertEqual([Decimal('1550.15'), Decimal('0.51')], order_book.bids_as_decimals()[0])
+        self.assertEqual([Decimal('1580.00'), Decimal('1.20')], order_book.bids_as_decimals()[1])
+        self.assertEqual([Decimal('1552.15'), Decimal('1.51')], order_book.asks_as_decimals()[0])
+        self.assertEqual([Decimal('1582.00'), Decimal('2.20')], order_book.asks_as_decimals()[1])

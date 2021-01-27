@@ -122,7 +122,7 @@ cdef class DataClient:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, Symbol symbol) except *:
+    cpdef void subscribe_order_book(self, Symbol symbol, int level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

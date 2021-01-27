@@ -106,7 +106,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.symbol)
-        # self.subscribe_order_book(self.symbol)
+        # self.subscribe_order_book(self.symbol, level=2, depth=5, interval=5)  # For debugging
         # self.subscribe_trade_ticks(self.symbol)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
@@ -132,7 +132,9 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book received.
 
         """
-        # self.log.info(f"Received {order_book}")  # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
+        # self.log.info(str(order_book.asks()))
+        # self.log.info(str(order_book.bids()))
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -145,7 +147,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The quote tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
     def on_trade_tick(self, tick: TradeTick):
@@ -158,7 +160,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The tick received.
 
         """
-        # self.log.info(f"Received {tick}")  # For debugging (must add a subscription)
+        # self.log.info(f"Received {repr(tick)}")  # For debugging (must add a subscription)
         pass
 
     def on_bar(self, bar_type: BarType, bar: Bar):
@@ -278,6 +280,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.symbol)
+        # self.unsubscribe_order_book(self.symbol, interval=5)
         # self.unsubscribe_trade_ticks(self.symbol)
 
     def on_reset(self):

@@ -13,30 +13,33 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.model.identifiers cimport Symbol
 
 
 cdef class OrderBook:
+    cdef double[:, :] _bids
+    cdef double[:, :] _asks
+
     cdef readonly Symbol symbol
     """The order book symbol.\n\n:returns: `Symbol`"""
     cdef readonly int level
     """The order book data level (L2, L3).\n\n:returns: `int`"""
-    cdef readonly list bids
-    """The bids in the order book snapshot.\n\n:returns: `list[(Price, Quantity)]`"""
-    cdef readonly list asks
-    """The asks in the order book snapshot.\n\n:returns: `list[(Price, Quantity)]`"""
-    cdef readonly datetime timestamp
-    """The order book snapshot timestamp (UTC).\n\n:returns: `datetime`"""
+    cdef readonly int price_precision
+    """The precision for the order book prices.\n\n:returns: `int`"""
+    cdef readonly int size_precision
+    """The precision for the order book quantities.\n\n:returns: `int`"""
+    cdef readonly long timestamp
+    """The last update timestamp (Unix time).\n\n:returns: `long`"""
 
-    @staticmethod
-    cdef OrderBook from_floats(
-        Symbol symbol,
-        int level,
-        list bids,
-        list asks,
-        int price_precision,
-        int size_precision,
-        datetime timestamp,
-    )
+    cpdef void update(
+        self,
+        double[:, :] bids,
+        double[:, :] asks,
+        long timestamp,
+    ) except *
+    cdef double[:, :] bids_c(self)
+    cdef double[:, :] asks_c(self)
+    cpdef list bids(self)
+    cpdef list asks(self)
+    cpdef list bids_as_decimals(self)
+    cpdef list asks_as_decimals(self)

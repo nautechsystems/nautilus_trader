@@ -399,12 +399,6 @@ cdef class Price(BaseDecimal):
 cdef class Money(BaseDecimal):
     """
     Represents an amount of money including currency type.
-
-    Attributes
-    ----------
-    currency : Currency
-        The currency of the money.
-
     """
 
     def __init__(
