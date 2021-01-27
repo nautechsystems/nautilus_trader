@@ -79,7 +79,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Connect the client.
         """
-        self._log.debug(f"Connecting...")
+        self._log.info(f"Connecting...")
 
         self.is_connected = True
         self._log.info(f"Connected.")
@@ -88,7 +88,7 @@ cdef class BacktestDataClient(DataClient):
         """
         Disconnect the client.
         """
-        self._log.debug(f"Disconnecting...")
+        self._log.info(f"Disconnecting...")
 
         self.is_connected = False
         self._log.info(f"Disconnected.")

@@ -214,7 +214,7 @@ class TestStubs:
             account_id,
             [Money(1_000_000, USD)],
             [Money(1_000_000, USD)],
-            [Money(1_000_000, USD)],
+            [Money(0, USD)],
             {"default_currency": "USD"},
             uuid4(),
             UNIX_EPOCH,

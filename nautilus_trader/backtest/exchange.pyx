@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 from decimal import Decimal
 
 from nautilus_trader.backtest.execution cimport BacktestExecClient
@@ -592,7 +591,7 @@ cdef class SimulatedExchange:
 
     cdef inline void _reject_order(self, Order order, str reason) except *:
         if order.state_c() != OrderState.SUBMITTED:
-            self._log.error(f"Cannot reject order, state was {order.state_string_c()}.")
+            self._log.error(f"Cannot reject order: state was {order.state_string_c()}.")
             return
 
         # Generate event
@@ -860,7 +859,7 @@ cdef class SimulatedExchange:
         # Calculate commission
         cdef Instrument instrument = self.instruments.get(order.symbol)
         if instrument is None:
-            raise RuntimeError(f"Cannot run backtest, no instrument data for {order.symbol}")
+            raise RuntimeError(f"Cannot run backtest: no instrument data for {order.symbol}")
 
         cdef Money commission = instrument.calculate_commission(
             order.quantity,
@@ -987,7 +986,7 @@ cdef class SimulatedExchange:
         # order is the OCO order to reject
         # other_oco is the linked ClientOrderId
         if order.is_completed_c():
-            self._log.debug(f"Cannot reject order, state was already {order.state_string_c()}.")
+            self._log.debug(f"Cannot reject order: state was already {order.state_string_c()}.")
             return
 
         # Generate event
@@ -1005,7 +1004,7 @@ cdef class SimulatedExchange:
     cdef inline void _cancel_oco_order(self, PassiveOrder order) except *:
         # order is the OCO order to cancel
         if order.is_completed_c():
-            self._log.debug(f"Cannot cancel order, state was already {order.state_string_c()}.")
+            self._log.debug(f"Cannot cancel order: state was already {order.state_string_c()}.")
             return
 
         # Generate event
