@@ -15,6 +15,8 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
+## Introduction
+
 _NautilusTrader_ is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
@@ -84,13 +86,13 @@ The following data types can be requested, and also subscribed to as streams.
 - `TradeTick`
 - `Bar`
 
-The following `PriceType`s can be used for bar aggregations;
+The following `PriceType` options can be used for bar aggregations;
 - `BID`
 - `ASK`
 - `MID`
 - `LAST`
 
-The following `BarAggregation`s are possible;
+The following `BarAggregation` options are possible;
 - `SECOND`
 - `MINUTE`
 - `HOUR`
@@ -106,13 +108,13 @@ The following `BarAggregation`s are possible;
 - `VALUE_RUNS` (TBA)
 
 The price types and bar aggregations can be combined with step sizes > 1 in any
-way through `BarSpecification`s, if the data is available from the data provider.
-This enables maximum flexibility and now allows alternative bars to be produced for
-live trading.
+way through `BarSpecification` objects. This enables maximum flexibility and now
+allows alternative bars to be produced for live trading.
 
-Bars can be either internally or externally aggregated. Alternative bar types are
-only available by internal aggregation. External aggregation is normally for
-standard bar periods as available from the provider through the adapter integration.
+Bars can be either internally or externally aggregated (alternative bar types are
+only available by internal aggregation). External aggregation is normally for
+standard bar periods as available from the provider through the adapter
+integration.
 
 Custom data types can also be requested through a users custom handler, and fed
 back to the strategies `on_data` method.
