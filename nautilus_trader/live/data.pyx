@@ -64,6 +64,8 @@ cdef class LiveDataEngine(DataEngine):
             The configuration options.
 
         """
+        if config is None:
+            config = {}
         super().__init__(
             portfolio,
             clock,
@@ -72,9 +74,19 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = Queue(maxsize=10000)
-        self._message_queue = Queue(maxsize=10000)
+        self._data_queue = Queue(maxsize=config.get("qsize", 10000))
+        self._message_queue = Queue(maxsize=config.get("qsize", 10000))
+
+        self._run_queues_task = None
         self.is_running = False
+
+    cpdef void kill(self) except *:
+        """
+        Kill the engine by abruptly cancelling the queue tasks and calling stop.
+        """
+        if self._run_queues_task:
+            self._run_queues_task.cancel()
+        self.stop()
 
     cpdef object get_event_loop(self):
         """
@@ -144,7 +156,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(command)
         except QueueFull:
-            self._log.warning(f"Blocking on `put` as message_queue full at "
+            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(command)  # Block until qsize reduces below maxsize
 
@@ -172,8 +184,8 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._data_queue.put_nowait(data)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `put` as data_queue full at "
-                              f"{self._message_queue.qsize()} items.")
+            self._log.warning(f"Blocking on `_data_queue.put` as data_queue full at "
+                              f"{self._data_queue.qsize()} items.")
             self._data_queue.put(data)  # Block until qsize reduces below maxsize
 
     cpdef void send(self, DataRequest request) except *:
@@ -200,7 +212,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(request)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `put` as message_queue full at "
+            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(request)  # Block until qsize reduces below maxsize
 
@@ -228,7 +240,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(response)
         except QueueFull:
-            self._log.warning(f"Blocking on `put` as message_queue full at "
+            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(response)  # Block until qsize reduces below maxsize
 

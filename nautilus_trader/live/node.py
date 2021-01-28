@@ -144,6 +144,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
+            config={"qsize": 10000},
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
@@ -172,6 +173,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
+            config={"qsize": 10000},
         )
 
         self._exec_engine.load_cache()
