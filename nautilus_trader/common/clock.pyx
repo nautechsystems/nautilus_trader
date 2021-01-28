@@ -513,6 +513,7 @@ cdef class LiveClock(Clock):
         """
         super().__init__()
         self._loop = loop
+        self._utc = pytz.utc
 
     cpdef datetime utc_now(self):
         """
@@ -534,7 +535,7 @@ cdef class LiveClock(Clock):
         # such as UTC. The preferred way of dealing with times is to always work
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
-        return datetime.now(tz=pytz.utc)
+        return datetime.now(tz=self._utc)
 
     cdef Timer _create_timer(
         self,
