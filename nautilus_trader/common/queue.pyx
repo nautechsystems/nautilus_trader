@@ -15,6 +15,7 @@
 
 import asyncio
 import collections
+import types
 
 
 cdef class Queue:
@@ -36,8 +37,9 @@ cdef class Queue:
 
     def __init__(self, maxsize=0):
         self.maxsize = maxsize
-        self._queue = collections.deque(maxlen=maxsize)
-        self._count = 0
+        self.count = 0
+
+        self._queue = collections.deque()
 
     cpdef int qsize(self) except *:
         """
@@ -93,7 +95,8 @@ cdef class Queue:
 
         """
         while self._full():
-            await asyncio.sleep(0)  # Immediately yields
+            # Wait for free slot
+            await self._sleep0()
             continue
 
         self._put_nowait(item)
@@ -122,7 +125,8 @@ cdef class Queue:
 
         """
         while self._empty():
-            await asyncio.sleep(0)  # Immediately yields
+            # Wait for item to become available
+            await self._sleep0()
             continue
 
         return self._get_nowait()
@@ -139,27 +143,31 @@ cdef class Queue:
         """
         return self._get_nowait()
 
+    @types.coroutine
+    def _sleep0(self):
+        yield  # Skip one event loop run cycle
+
     cdef inline int _qsize(self) except *:
-        return self._count
+        return self.count
 
     cdef inline bint _empty(self) except *:
-        return self._count == 0
+        return self.count == 0
 
     cdef inline bint _full(self) except *:
         if self.maxsize <= 0:
             return False
         else:
-            return self._count >= self.maxsize
+            return self.count >= self.maxsize
 
     cdef inline void _put_nowait(self, item) except *:
         if self._full():
             raise asyncio.QueueFull()
         self._queue.append(item)
-        self._count += 1
+        self.count += 1
 
     cdef inline object _get_nowait(self):
         if self.empty():
             raise asyncio.QueueEmpty()
         item = self._queue.popleft()
-        self._count -= 1
+        self.count -= 1
         return item

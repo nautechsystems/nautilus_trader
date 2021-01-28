@@ -97,12 +97,13 @@ class TradingNode:
         config_strategy = config.get("strategy", {})
         config_adapters = config.get("adapters", {})
 
-        self._clock = LiveClock()
-        self.created_time = self._clock.utc_now()
         self._uuid_factory = UUIDFactory()
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
+        self._clock = LiveClock(loop=self._loop)
+
+        self.created_time = self._clock.utc_now()
         self._is_running = False
 
         # Uncomment for debugging
