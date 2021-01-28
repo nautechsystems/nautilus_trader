@@ -518,38 +518,30 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef datetime now = self._clock.utc_now_c()
         cdef int step = self.bar_type.spec.step
         if self.bar_type.spec.aggregation == BarAggregation.SECOND:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                hour=now.hour,
-                minute=now.minute,
-                second=now.second - (now.second % step),
-                tzinfo=now.tzinfo,
+            return now - timedelta(
+                seconds=now.second % step,
+                microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                hour=now.hour,
-                minute=now.minute - (now.minute % step),
-                tzinfo=now.tzinfo,
+            return now - timedelta(
+                minutes=now.minute % step,
+                seconds=now.second,
+                microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day,
-                hour=now.hour - (now.hour % step),
-                tzinfo=now.tzinfo,
+            return now - timedelta(
+                hours=now.hour % step,
+                minutes=now.minute,
+                seconds=now.second,
+                microseconds=now.microsecond,
             )
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
-            return datetime(
-                year=now.year,
-                month=now.month,
-                day=now.day - (now.day % step),
-                tzinfo=now.tzinfo,
+            return now - timedelta(
+                days=now.day % step,
+                hours=now.hour,
+                minutes=now.minute,
+                seconds=now.second,
+                microseconds=now.microsecond,
             )
         else:
             # Design time error

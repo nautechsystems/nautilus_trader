@@ -197,7 +197,7 @@ cdef class BarType:
         self,
         Symbol symbol not None,
         BarSpecification bar_spec not None,
-        is_internal_aggregation=True,
+        internal_aggregation=True,
     ):
         """
         Initialize a new instance of the `BarType` class.
@@ -208,7 +208,7 @@ cdef class BarType:
             The bar symbol.
         bar_spec : BarSpecification
             The bar specification.
-        is_internal_aggregation : bool
+        internal_aggregation : bool
             If bars are aggregated internally by the platform. If True the
             `DataEngine` will subscribe to the necessary ticks and aggregate
             bars accordingly. Else if False then bars will be subscribed to
@@ -222,7 +222,7 @@ cdef class BarType:
         """
         self.symbol = symbol
         self.spec = bar_spec
-        self.is_internal_aggregation = is_internal_aggregation
+        self.is_internal_aggregation = internal_aggregation
 
     def __eq__(self, BarType other) -> bool:
         return self.symbol == other.symbol \
@@ -239,10 +239,10 @@ cdef class BarType:
         return f"{self.symbol}-{self.spec}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self}, is_internal_aggregation={self.is_internal_aggregation})"
+        return f"{type(self).__name__}({self}, internal_aggregation={self.is_internal_aggregation})"
 
     @staticmethod
-    cdef BarType from_str_c(str value, bint is_internal_aggregation=True):
+    cdef BarType from_str_c(str value, bint internal_aggregation=True):
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.split('-', maxsplit=3)
@@ -257,10 +257,10 @@ cdef class BarType:
             PriceTypeParser.from_str(pieces[3]),
         )
 
-        return BarType(symbol, bar_spec, is_internal_aggregation)
+        return BarType(symbol, bar_spec, internal_aggregation)
 
     @staticmethod
-    def from_str(str value, bint is_internal_aggregation=False) -> BarType:
+    def from_str(str value, bint internal_aggregation=False) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -268,7 +268,7 @@ cdef class BarType:
         ----------
         value : str
             The bar type string to parse.
-        is_internal_aggregation : bool
+        internal_aggregation : bool
             If bars were aggregated internally by the platform.
 
         Returns
@@ -281,7 +281,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_str_c(value, is_internal_aggregation)
+        return BarType.from_str_c(value, internal_aggregation)
 
 
 cdef class Bar:
