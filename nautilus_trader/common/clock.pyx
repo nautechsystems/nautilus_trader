@@ -23,6 +23,8 @@ from cpython.datetime cimport tzinfo
 
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEventHandler
+from nautilus_trader.common.timer cimport ThreadTimer
+from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport UNIX_EPOCH
@@ -497,11 +499,20 @@ cdef class LiveClock(Clock):
     Provides a clock for live trading. All times are timezone aware UTC.
     """
 
-    def __init__(self):
+    def __init__(self, loop=None):
         """
         Initialize a new instance of the `LiveClock` class.
+
+        If loop is None then threads will be used for timers.
+
+        Parameters
+        ----------
+        loop : AbstractEventLoop
+            The event loop for the clocks timers.
+
         """
         super().__init__()
+        self._loop = loop
 
     cpdef datetime utc_now(self):
         """
@@ -534,14 +545,25 @@ cdef class LiveClock(Clock):
         datetime start_time,
         datetime stop_time,
     ):
-        return LiveTimer(
-            name=name,
-            callback=self._raise_time_event,
-            interval=interval,
-            now=now,
-            start_time=start_time,
-            stop_time=stop_time,
-        )
+        if self._loop is not None:
+            return LoopTimer(
+                loop=self._loop,
+                name=name,
+                callback=self._raise_time_event,
+                interval=interval,
+                now=now,
+                start_time=start_time,
+                stop_time=stop_time,
+            )
+        else:
+            return ThreadTimer(
+                name=name,
+                callback=self._raise_time_event,
+                interval=interval,
+                now=now,
+                start_time=start_time,
+                stop_time=stop_time,
+            )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
         cdef datetime now = self.utc_now_c()

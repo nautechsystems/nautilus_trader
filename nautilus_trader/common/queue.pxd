@@ -16,9 +16,9 @@
 
 cdef class Queue:
     cdef object _queue
-    cdef int _count
 
     cdef readonly int maxsize
+    cdef readonly int count
 
     cpdef int qsize(self) except *
     cpdef bint empty(self) except *

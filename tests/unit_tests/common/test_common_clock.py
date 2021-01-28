@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from datetime import datetime
 from datetime import timedelta
 import time
@@ -286,7 +287,7 @@ class TestClockTests(unittest.TestCase):
         self.assertEqual(2, clock.timer_count)
 
 
-class LiveClockTests(unittest.TestCase):
+class LiveClockWithThreadTimerTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         self.handler = []
@@ -533,3 +534,46 @@ class LiveClockTests(unittest.TestCase):
 
         # Assert
         self.assertTrue(len(self.handler) >= 8)
+
+
+class LiveClockWithLoopTimerTests(unittest.TestCase):
+    def setUp(self):
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        # Fixture Setup
+        self.handler = []
+        self.clock = LiveClock(loop=self.loop)
+        self.clock.register_default_handler(self.handler.append)
+
+    def test_set_two_repeating_timers(self):
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        async def run_test():
+            # Arrange
+            interval = timedelta(milliseconds=100)
+            start_time = self.clock.utc_now() + timedelta(milliseconds=100)
+
+            # Act
+            self.clock.set_timer(
+                name="TEST_TIMER1",
+                interval=interval,
+                start_time=start_time,
+                stop_time=None,
+            )
+
+            self.clock.set_timer(
+                name="TEST_TIMER2",
+                interval=interval,
+                start_time=start_time,
+                stop_time=None,
+            )
+
+            time.sleep(0.9)
+
+            # Assert
+            self.assertTrue(len(self.handler) >= 8)
+            self.loop.run_until_complete(run_test())

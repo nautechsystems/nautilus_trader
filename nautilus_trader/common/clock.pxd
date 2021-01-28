@@ -85,6 +85,7 @@ cdef class TestClock(Clock):
 
 
 cdef class LiveClock(Clock):
+    cdef object _loop
     cpdef void _raise_time_event(self, LiveTimer timer) except *
 
     cdef inline void _handle_time_event(self, TimeEvent event) except *

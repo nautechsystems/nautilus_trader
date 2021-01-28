@@ -351,6 +351,51 @@ cdef class LiveTimer(Timer):
         self._internal.cancel()
 
     cdef object _start_timer(self, datetime now):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+
+cdef class ThreadTimer(LiveTimer):
+    """
+    Provides a thread based timer for live trading.
+    """
+
+    def __init__(
+        self,
+        str name not None,
+        callback not None: callable,
+        timedelta interval not None,
+        datetime now not None,
+        datetime start_time not None,
+        datetime stop_time=None,
+    ):
+        """
+        Initialize a new instance of the `LiveTimer` class.
+
+        Parameters
+        ----------
+        name : str
+            The name for the timer.
+        callback : callable
+            The function to call at the next time.
+        interval : timedelta
+            The time interval for the timer.
+        now : datetime
+            The datetime now (UTC).
+        start_time : datetime
+            The start datetime for the timer (UTC).
+        stop_time : datetime, optional
+            The stop datetime for the timer (UTC) (if None then timer repeats).
+
+        Raises
+        ------
+        TypeError
+            If callback is not of type callable.
+
+        """
+        super().__init__(name, callback, interval, now, start_time, stop_time)
+
+    cdef object _start_timer(self, datetime now):
         timer = TimerThread(
             interval=(self.next_time - now).total_seconds(),
             function=self.callback,
@@ -360,3 +405,57 @@ cdef class LiveTimer(Timer):
         timer.start()
 
         return timer
+
+
+cdef class LoopTimer(LiveTimer):
+    """
+    Provides an event loop based timer for live trading.
+    """
+
+    def __init__(
+        self,
+        loop not None,
+        str name not None,
+        callback not None: callable,
+        timedelta interval not None,
+        datetime now not None,
+        datetime start_time not None,
+        datetime stop_time=None,
+    ):
+        """
+        Initialize a new instance of the `LoopTimer` class.
+
+        Parameters
+        ----------
+        loop : AbstractEventLoop
+            The event loop to run the timer on.
+        name : str
+            The name for the timer.
+        callback : callable
+            The function to call at the next time.
+        interval : timedelta
+            The time interval for the timer.
+        now : datetime
+            The datetime now (UTC).
+        start_time : datetime
+            The start datetime for the timer (UTC).
+        stop_time : datetime, optional
+            The stop datetime for the timer (UTC) (if None then timer repeats).
+
+        Raises
+        ------
+        TypeError
+            If callback is not of type callable.
+
+        """
+        Condition.valid_string(name, "name")
+
+        self._loop = loop
+        super().__init__(name, callback, interval, now, start_time, stop_time)
+
+    cdef object _start_timer(self, datetime now):
+        return self._loop.call_later(
+            (self.next_time - now).total_seconds(),
+            self.callback,
+            self,
+        )
