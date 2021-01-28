@@ -87,7 +87,7 @@ cdef class ForexSessionFilter:
 
     cpdef datetime next_start(self, session: ForexSession, datetime time_now):
         """
-        Returns the next session start.
+        Return the next session start.
 
         All FX sessions run Monday to Friday local time.
 
@@ -145,7 +145,7 @@ cdef class ForexSessionFilter:
 
     cpdef datetime prev_start(self, session: ForexSession, datetime time_now):
         """
-        Returns the previous session start.
+        Return the previous session start.
 
         All FX sessions run Monday to Friday local time.
 
@@ -203,7 +203,7 @@ cdef class ForexSessionFilter:
 
     cpdef datetime next_end(self, session: ForexSession, datetime time_now):
         """
-        Returns the next session end.
+        Return the next session end.
 
         All FX sessions run Monday to Friday local time.
 
@@ -261,7 +261,7 @@ cdef class ForexSessionFilter:
 
     cpdef datetime prev_end(self, session: ForexSession, datetime time_now):
         """
-        Returns the previous sessions end.
+        Return the previous sessions end.
 
         All FX sessions run Monday to Friday local time.
 
@@ -442,7 +442,7 @@ cdef class EconomicNewsEventFilter:
 
     cpdef NewsEvent next_event(self, datetime time_now):
         """
-        Returns the next news event matching the filter conditions.
+        Return the next news event matching the filter conditions.
         Will return None if no news events match the filter conditions.
 
         Parameters
@@ -485,7 +485,7 @@ cdef class EconomicNewsEventFilter:
 
     cpdef NewsEvent prev_event(self, datetime time_now):
         """
-        Returns the previous news event matching the initial filter conditions.
+        Return the previous news event matching the initial filter conditions.
         Will return None if no news events match the filter conditions.
 
         Parameters

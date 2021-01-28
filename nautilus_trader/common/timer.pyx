@@ -167,12 +167,16 @@ cdef class Timer:
 
     cpdef TimeEvent pop_event(self, UUID event_id):
         """
-        Returns a generated time event with the given identifier.
+        Return a generated time event with the given identifier.
 
         Parameters
         ----------
         event_id : UUID
             The identifier for the time event.
+
+        Returns
+        -------
+        TimeEvent
 
         """
         Condition.not_none(event_id, "event_id")
@@ -289,7 +293,9 @@ cdef class TestTimer(Timer):
 
 cdef class LiveTimer(Timer):
     """
-    Provides a timer for live trading.
+    The abstract base class for all live timers.
+
+    This class should not be used directly, but through its concrete subclasses.
     """
 
     def __init__(
