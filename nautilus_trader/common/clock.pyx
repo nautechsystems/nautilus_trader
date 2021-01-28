@@ -507,7 +507,7 @@ cdef class LiveClock(Clock):
 
         Parameters
         ----------
-        loop : AbstractEventLoop
+        loop : asyncio.AbstractEventLoop
             The event loop for the clocks timers.
 
         """

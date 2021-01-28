@@ -52,7 +52,7 @@ cdef class LiveDataEngine(DataEngine):
 
         Parameters
         ----------
-        loop : AbstractEventLoop
+        loop : asyncio.AbstractEventLoop
             The event loop for the engine.
         portfolio : int
             The portfolio to register.
