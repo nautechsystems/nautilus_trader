@@ -127,7 +127,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
             self.exec_engine.execute(command)
 
         PerformanceHarness.profile_function(execute_command, 10000, 1)
-        # ~0.0ms / ~1.0μs / 1032ns minimum of 10,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.3μs / 253ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order(self):
         self.exec_engine.start()
@@ -145,7 +145,7 @@ class LiveExecutionPerformanceTests(unittest.TestCase):
 
             PerformanceHarness.profile_function(submit_order, 10000, 1)
         self.loop.run_until_complete(run_test())
-        # ~0.0ms / ~34.8μs / 34811ns minimum of 10,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~32.3μs / 32260ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order_end_to_end(self):
         self.exec_engine.start()

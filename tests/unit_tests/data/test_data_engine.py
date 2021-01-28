@@ -1055,7 +1055,7 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, internal_aggregation=True)
 
         handler = ObjectStorer()
         subscribe = Subscribe(
@@ -1079,7 +1079,7 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, internal_aggregation=True)
 
         handler = ObjectStorer()
         subscribe = Subscribe(
@@ -1114,7 +1114,7 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, internal_aggregation=True)
 
         handler = ObjectStorer()
         subscribe = Subscribe(
@@ -1151,7 +1151,7 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, is_internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.symbol, bar_spec, internal_aggregation=True)
 
         handler1 = ObjectStorer()
         subscribe1 = Subscribe(

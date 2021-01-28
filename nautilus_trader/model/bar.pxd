@@ -46,7 +46,7 @@ cdef class BarType:
     """If bar aggregation is internal to the platform.\n\n:returns: `bint`"""
 
     @staticmethod
-    cdef BarType from_str_c(str value, bint is_internal_aggregation=*)
+    cdef BarType from_str_c(str value, bint internal_aggregation=*)
 
 
 cdef class Bar:
