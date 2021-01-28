@@ -13,12 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
-import asyncio
+from asyncio import QueueFull
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
@@ -70,8 +72,8 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = asyncio.Queue(maxsize=10000)
-        self._message_queue = asyncio.Queue(maxsize=10000)
+        self._data_queue = Queue(maxsize=10000)
+        self._message_queue = Queue(maxsize=10000)
         self.is_running = False
 
     cpdef object get_event_loop(self):
@@ -141,7 +143,7 @@ cdef class LiveDataEngine(DataEngine):
 
         try:
             self._message_queue.put_nowait(command)
-        except asyncio.QueueFull:
+        except QueueFull:
             self._log.warning(f"Blocking on `put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(command)  # Block until qsize reduces below maxsize
@@ -225,7 +227,7 @@ cdef class LiveDataEngine(DataEngine):
 
         try:
             self._message_queue.put_nowait(response)
-        except asyncio.QueueFull:
+        except QueueFull:
             self._log.warning(f"Blocking on `put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(response)  # Block until qsize reduces below maxsize

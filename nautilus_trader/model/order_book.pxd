@@ -23,7 +23,7 @@ cdef class OrderBook:
     cdef readonly Symbol symbol
     """The order book symbol.\n\n:returns: `Symbol`"""
     cdef readonly int level
-    """The order book data level (L2, L3).\n\n:returns: `int`"""
+    """The order book data level (L1, L2, L3).\n\n:returns: `int`"""
     cdef readonly int price_precision
     """The precision for the order book prices.\n\n:returns: `int`"""
     cdef readonly int size_precision

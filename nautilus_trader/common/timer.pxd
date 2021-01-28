@@ -67,3 +67,14 @@ cdef class LiveTimer(Timer):
 
     cpdef void repeat(self, datetime now) except *
     cdef object _start_timer(self, datetime now)
+
+
+cdef class ThreadTimer(LiveTimer):
+    pass
+
+
+cdef class LoopTimer(LiveTimer):
+    cdef object _loop
+
+    cpdef void repeat(self, datetime now) except *
+    cdef object _start_timer(self, datetime now)

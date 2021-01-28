@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
-import asyncio
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
@@ -76,7 +77,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = asyncio.Queue(maxsize=10000)
+        self._queue = Queue(maxsize=10000)
         self.is_running = True
 
     cpdef object get_event_loop(self):
