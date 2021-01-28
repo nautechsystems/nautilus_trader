@@ -433,7 +433,7 @@ cdef class LoopTimer(LiveTimer):
 
         Parameters
         ----------
-        loop : AbstractEventLoop
+        loop : asyncio.AbstractEventLoop
             The event loop to run the timer on.
         name : str
             The name for the timer.

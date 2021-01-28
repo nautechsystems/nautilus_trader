@@ -52,7 +52,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         Parameters
         ----------
-        loop : AbstractEventLoop
+        loop : asyncio.AbstractEventLoop
             The event loop for the engine.
         database : ExecutionDatabase
             The execution database for the engine.
