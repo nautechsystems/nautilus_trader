@@ -77,7 +77,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=10000)
+        self._queue = Queue(maxsize=config.get("qsize", 10000))
+
+        self._run_queue_task = None
         self.is_running = True
 
     cpdef object get_event_loop(self):
@@ -113,6 +115,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
+    cpdef void kill(self) except *:
+        """
+        Kill the engine by abruptly cancelling the queue task and calling stop.
+        """
+        if self._run_queue_task:
+            self._run_queue_task.cancel()
+        self.stop()
+
     cpdef void execute(self, TradingCommand command) except *:
         """
         Execute the given command.
@@ -137,7 +147,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             self._queue.put_nowait(command)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `put` as queue full at {self._queue.qsize()} items.")
+            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
             self._queue.put(command)  # Block until qsize reduces below maxsize
 
     cpdef void process(self, Event event) except *:
@@ -164,7 +174,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `put` as queue full at {self._queue.qsize()} items.")
+            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
             self._queue.put(event)  # Block until qsize reduces below maxsize
 
     cpdef void _on_start(self) except *:
