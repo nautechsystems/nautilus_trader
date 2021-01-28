@@ -37,7 +37,7 @@ from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport LogMessage
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_iso8601_us
 
 
 cdef str _HEADER = "\033[95m"
@@ -161,7 +161,7 @@ cdef class LogMessage:
         str
 
         """
-        return f"{format_iso8601(self.timestamp)} [{self.thread_id}][{LogLevelParser.to_str(self.level)}] {self.text}"
+        return f"{format_iso8601_us(self.timestamp)} [{self.thread_id}][{LogLevelParser.to_str(self.level)}] {self.text}"
 
 
 cdef class Logger:
@@ -301,7 +301,7 @@ cdef class Logger:
 
     cdef str _format_output(self, LogMessage message):
         # Return the formatted log message from the given arguments
-        cdef str time = format_iso8601(message.timestamp)
+        cdef str time = format_iso8601_us(message.timestamp)
         cdef str thread = "" if self._log_thread is False else f"[{message.thread_id}]"
         cdef str colour_cmd
 

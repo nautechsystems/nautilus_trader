@@ -13,17 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
 
-cdef datetime UNIX_EPOCH
+cdef class Queue:
+    cdef object _queue
+    cdef int _count
 
+    cdef readonly int maxsize
 
-cpdef long to_posix_ms(datetime timestamp) except *
-cpdef datetime from_posix_ms(long posix)
-cpdef bint is_datetime_utc(datetime timestamp) except *
-cpdef bint is_tz_aware(time_object) except *
-cpdef bint is_tz_naive(time_object) except *
-cpdef datetime as_utc_timestamp(datetime timestamp)
-cpdef object as_utc_index(time_object)
-cpdef str format_iso8601(datetime dt)
-cpdef str format_iso8601_us(datetime dt)
+    cpdef int qsize(self) except *
+    cpdef bint empty(self) except *
+    cpdef bint full(self) except *
+    cpdef void put_nowait(self, item) except *
+    cpdef object get_nowait(self)
+
+    cdef inline int _qsize(self) except *
+    cdef inline bint _empty(self) except *
+    cdef inline bint _full(self) except *
+    cdef inline void _put_nowait(self, item) except *
+    cdef inline object _get_nowait(self)

@@ -214,3 +214,35 @@ cpdef str format_iso8601(datetime dt):
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
     return f"{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z"
+
+
+cpdef str format_iso8601_us(datetime dt):
+    """
+    Format the given string to the ISO 8601 specification with "Z" zulu.
+
+    Parameters
+    ----------
+    dt : datetime
+        The input datetime to format.
+
+    Notes
+    -----
+    Unit accuracy is millisecond.
+
+    Returns
+    -------
+    str
+        The formatted string.
+
+    """
+    Condition.not_none(datetime, "datetime")
+
+    # Note the below is faster than .isoformat() or string formatting by 25%
+    # Have not tried char* manipulation
+    cdef str tz_stripped = str(dt).replace(' ', 'T', 1).rpartition('+')[0]
+
+    if not PyUnicode_Contains(tz_stripped, '.'):
+        return f"{tz_stripped}.000000Z"
+
+    cdef tuple dt_partitioned = tz_stripped.rpartition('.')
+    return f"{dt_partitioned[0]}.{dt_partitioned[2].rjust(6)}Z"
