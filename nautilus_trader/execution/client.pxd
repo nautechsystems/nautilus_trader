@@ -39,13 +39,9 @@ cdef class ExecutionClient:
     """The clients account identifier.\n\n:returns: `AccountId`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
-    cdef readonly bint is_resolved
-    """If the client state is resolved with the execution engines.\n\n:returns: `bool`"""
 
     cpdef void _set_connected(self, bint value=*) except *
-    cpdef void _set_resolved(self, bint value=*) except *
     cpdef void connect(self) except *
-    cpdef void resolve_state(self, list active_orders) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *

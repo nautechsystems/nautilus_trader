@@ -24,8 +24,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.live.data import LiveDataClient
-from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.live.data_client import LiveDataClient
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick

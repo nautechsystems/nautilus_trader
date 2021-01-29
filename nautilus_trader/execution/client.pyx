@@ -75,7 +75,6 @@ cdef class ExecutionClient:
         self.venue = venue
         self.account_id = account_id
         self.is_connected = False
-        self.is_resolved = False
 
         self._log.info(f"Initialized.")
 
@@ -94,23 +93,7 @@ cdef class ExecutionClient:
         """
         self.is_connected = value
 
-    cpdef void _set_resolved(self, bint value=True) except *:
-        """
-        Setter for pure Python implementations to change the readonly property.
-
-        Parameters
-        ----------
-        value : bool
-            The value to set for is_resolved.
-
-        """
-        self.is_resolved = value
-
     cpdef void connect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void resolve_state(self, list active_orders) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

@@ -18,7 +18,7 @@ import threading
 
 from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.live.data_client cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType

@@ -17,20 +17,27 @@ import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
+
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.execution.reports cimport ExecutionStateReport
+from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.live.execution_client cimport LiveExecutionClient
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):
@@ -114,6 +121,86 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._queue.qsize()
+
+    async def resolve_state(self) -> bool:
+        """
+        Resolve the execution engines state with all execution clients.
+
+        The execution engine will collect all cached active orders and send
+        those to the relevant execution client(s) for a comparison with the
+        exchange(s) order states.
+
+        If a cached order does not match the exchanges order status then
+        the missing events will be generated. If there is not enough information
+        to resolve a state then errors will be logged.
+
+        Returns
+        -------
+        bool
+            True if states resolve within timeout, else False.
+
+        """
+        self._log.info("Resolving states...")
+
+        cdef list active_orders = self.cache.orders_active()
+
+        # Initialize order state map
+        cdef dict venue_orders = {}   # type: dict[Venue, list[Order]]
+        cdef Venue venue
+        for venue in self._clients.keys():
+            venue_orders[venue] = []
+
+        # Build order state map
+        cdef Order order
+        for order in active_orders:
+            if not order.is_active_c():
+                self._log.error(f"Order was not active, "
+                                f"was OrderState.{order.state_string_c()}.")
+                # This would only occur if the cache was in error
+                continue
+            if order.id.is_null():
+                self._log.error(f"OrderId was not assigned for {repr(order.cl_ord_id)}, "
+                                f"state is lost.")
+                continue
+            if order.symbol.venue in venue_orders:
+                venue_orders[order.symbol.venue].append(order)
+            else:
+                self._log.error(f"Cannot resolve state. No registered"
+                                f"execution client for active {order}.")
+                continue
+
+        cdef dict venue_reports = {}  # type: dict[Venue, ExecutionStateReport]
+
+        cdef LiveExecutionClient client
+        # Get state report from each client
+        for venue, client in self._clients.items():
+            venue_reports[venue] = await client.state_report(venue_orders[venue])
+
+        cdef int seconds = 5  # Hard coded for now
+        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
+        cdef OrderState target_state
+        cdef bint resolved
+        while True:
+            if self._clock.utc_now() >= timeout:
+                self._log.error(f"Timed out ({seconds}s) waiting for "
+                                f"execution states to resolve.")
+                return False
+
+            resolved = True
+            for order in active_orders:
+                target_state = venue_reports[order.symbol.venue].order_states[order.id]
+                if order.state_c() != target_state:
+                    resolved = False  # Incorrect state
+                if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
+                    filled_qty = venue_reports[order.symbol.venue].order_filled[order.id]
+                    if order.filled_qty != filled_qty:
+                        resolved = False  # Incorrect filled quantity
+            if resolved:
+                break
+            await asyncio.sleep(0.001)  # One millisecond sleep
+
+        self._log.info(f"State resolved.", LogColor.GREEN)
+        return True  # Execution states resolved
 
     cpdef void kill(self) except *:
         """
@@ -211,50 +298,3 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
-
-
-cdef class LiveExecutionClient(ExecutionClient):
-    """
-    The abstract base class for all live execution clients.
-
-    This class should not be used directly, but through its concrete subclasses.
-    """
-
-    def __init__(
-        self,
-        Venue venue not None,
-        AccountId account_id not None,
-        LiveExecutionEngine engine not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict config=None,
-    ):
-        """
-        Initialize a new instance of the `LiveExecutionClient` class.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the client.
-        account_id : AccountId
-            The account identifier for the client.
-        engine : LiveDataEngine
-            The data engine for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration options.
-
-        """
-        super().__init__(
-            venue,
-            account_id,
-            engine,
-            clock,
-            logger,
-            config,
-        )
-
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

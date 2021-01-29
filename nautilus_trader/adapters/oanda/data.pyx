@@ -29,8 +29,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.live.data cimport LiveDataClient
-from nautilus_trader.live.data cimport LiveDataEngine
+from nautilus_trader.live.data_client cimport LiveDataClient
+from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType

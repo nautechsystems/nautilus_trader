@@ -24,7 +24,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.live.execution import LiveExecutionEngine
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId

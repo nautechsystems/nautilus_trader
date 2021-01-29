@@ -15,7 +15,6 @@
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -67,7 +66,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._exchange = exchange
         self.is_connected = False
-        self.is_resolved = False
 
     cpdef void connect(self) except *:
         """
@@ -77,22 +75,6 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self.is_connected = True
         self._log.info("Connected.")
-
-    cpdef void resolve_state(self, list active_orders) except *:
-        """
-        Resolve the execution state by comparing the given active orders from
-        the execution cache with the order state from the exchange.
-
-        Parameters
-        ----------
-        active_orders : list[Order]
-            The orders which are active.
-
-        """
-        self._log.info("Resolving state...")
-
-        self.is_resolved = True
-        self._log.info("State resolved.", LogColor.GREEN)
 
     cpdef void disconnect(self) except *:
         """
