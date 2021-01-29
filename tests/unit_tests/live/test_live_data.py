@@ -24,8 +24,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.live.data import LiveDataClient
-from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.live.data_client import LiveDataClient
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import QuoteTick
@@ -70,6 +70,108 @@ class LiveDataEngineTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
+    def test_message_qsize_at_max_blocks_on_put_data_command(self):
+        self.data_engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+            config={"qsize": 1}
+        )
+
+        subscribe = Subscribe(
+            venue=BINANCE,
+            data_type=QuoteTick,
+            metadata={},
+            handler=[].append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.message_qsize())
+        self.assertEqual(0, self.data_engine.command_count)
+
+    def test_message_qsize_at_max_blocks_on_send_request(self):
+        self.data_engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+            config={"qsize": 1}
+        )
+
+        handler = []
+        request = DataRequest(
+            venue=Venue("RANDOM"),
+            data_type=QuoteTick,
+            metadata={
+                "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
+                "FromDateTime": None,
+                "ToDateTime": None,
+                "Limit": 1000,
+            },
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            request_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.send(request)
+        self.data_engine.send(request)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.message_qsize())
+        self.assertEqual(0, self.data_engine.command_count)
+
+    def test_message_qsize_at_max_blocks_on_receive_response(self):
+        self.data_engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+            config={"qsize": 1}
+        )
+
+        response = DataResponse(
+            venue=Venue("BINANCE"),
+            data_type=QuoteTick,
+            metadata={},
+            data=[],
+            correlation_id=self.uuid_factory.generate(),
+            response_id=self.uuid_factory.generate(),
+            response_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.receive(response)
+        self.data_engine.receive(response)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.message_qsize())
+        self.assertEqual(0, self.data_engine.command_count)
+
+    def test_data_qsize_at_max_blocks_on_put_data(self):
+        self.data_engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+            config={"qsize": 1}
+        )
+
+        # Act
+        self.data_engine.process("some_data")
+        self.data_engine.process("some_data")
+
+        # Assert
+        self.assertEqual(1, self.data_engine.data_qsize())
+        self.assertEqual(0, self.data_engine.data_count)
+
     def test_get_event_loop_returns_expected_loop(self):
         # Arrange
         # Act
@@ -90,6 +192,19 @@ class LiveDataEngineTests(unittest.TestCase):
 
             # Tear Down
             self.data_engine.stop()
+
+        self.loop.run_until_complete(run_test())
+
+    def test_kill(self):
+        async def run_test():
+            # Arrange
+            # Act
+            self.data_engine.start()
+            await asyncio.sleep(0)
+            self.data_engine.kill()
+
+            # Assert
+            self.assertEqual(ComponentState.STOPPED, self.data_engine.state)
 
         self.loop.run_until_complete(run_test())
 

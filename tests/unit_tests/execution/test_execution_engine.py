@@ -217,27 +217,6 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertFalse(result)
 
-    def test_check_resolved_when_client_state_not_resolved_returns_false(self):
-        # Arrange
-        self.exec_client.connect()
-
-        # Act
-        result = self.exec_engine.check_resolved()
-
-        # Assert
-        self.assertFalse(result)
-
-    def test_check_resolved_when_client_state_resolved_returns_true(self):
-        # Arrange
-        self.exec_client.connect()
-        self.exec_client.resolve_state([])
-
-        # Act
-        result = self.exec_engine.check_resolved()
-
-        # Assert
-        self.assertTrue(result)
-
     def test_check_integrity_calls_check_on_cache(self):
         # Arrange
         # Act
@@ -854,71 +833,6 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.FILLED, order.state)
         self.assertEqual(Quantity(100000), order.quantity)
-
-    def test_resolve_state_with_multiple_active_orders_resolved_correctly1(self):
-        # Submitted orders
-
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER", "000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)
-
-        order1 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        order2 = strategy.order_factory.market(
-            AUDUSD_SIM.symbol,
-            OrderSide.BUY,
-            Quantity(100000),
-        )
-
-        random = self.random_order_factory.market(
-            BTCUSDT_BINANCE.symbol,
-            OrderSide.BUY,
-            Quantity(1),
-        )
-
-        self.exec_engine.cache.add_order(random, PositionId.null())
-
-        submit_order1 = SubmitOrder(
-            self.venue,
-            self.trader_id,
-            self.account_id,
-            strategy.id,
-            PositionId.null(),
-            order1,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
-        )
-
-        submit_order2 = SubmitOrder(
-            self.venue,
-            self.trader_id,
-            self.account_id,
-            strategy.id,
-            PositionId.null(),
-            order2,
-            self.uuid_factory.generate(),
-            self.clock.utc_now(),
-        )
-
-        self.exec_engine.execute(submit_order1)
-        self.exec_engine.execute(submit_order2)
-        self.exec_engine.process(TestStubs.event_order_submitted(order1))
-        self.exec_engine.process(TestStubs.event_order_submitted(order2))
-
-        # Act
-        self.exec_engine.resolve_state()
 
     def test_handle_order_event_with_random_cl_ord_id_and_order_id_cached(self):
         # Arrange

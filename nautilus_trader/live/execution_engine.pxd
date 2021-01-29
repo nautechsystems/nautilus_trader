@@ -13,24 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.execution.engine cimport ExecutionEngine
 
 
-cdef class LiveDataEngine(DataEngine):
-    cdef dict _config
+cdef class LiveExecutionEngine(ExecutionEngine):
     cdef object _loop
-    cdef object _data_queue
-    cdef object _message_queue
-    cdef object _run_queues_task
+    cdef object _queue
+    cdef object _run_queue_task
 
     cdef readonly bint is_running
 
+    cpdef void kill(self) except *
     cpdef object get_event_loop(self)
     cpdef object get_run_queue_task(self)
-    cpdef int data_qsize(self) except *
-    cpdef int message_qsize(self) except *
-
-
-cdef class LiveDataClient(DataClient):
-    cdef object _loop
+    cpdef int qsize(self) except *

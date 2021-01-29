@@ -37,8 +37,8 @@ from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.live.data import LiveDataEngine
-from nautilus_trader.live.execution import LiveExecutionEngine
+from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.redis.execution import RedisExecutionDatabase
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
@@ -144,6 +144,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
+            config={"qsize": 10000},
         )
 
         self.portfolio.register_cache(self._data_engine.cache)
@@ -172,6 +173,7 @@ class TradingNode:
             portfolio=self.portfolio,
             clock=self._clock,
             logger=self._logger,
+            config={"qsize": 10000},
         )
 
         self._exec_engine.load_cache()
@@ -398,9 +400,7 @@ class TradingNode:
             if not result:
                 return
 
-            self._exec_engine.resolve_state()
-
-            result: bool = await self._await_state_resolved()
+            result: bool = await self._exec_engine.resolve_state()
             if not result:
                 return
 
@@ -440,23 +440,6 @@ class TradingNode:
             break
 
         return True  # Engines initialized
-
-    async def _await_state_resolved(self) -> bool:
-        self._log.info("Waiting for execution states to resolve...")
-
-        seconds = 5  # Hard coded for now
-        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
-        while True:
-            await asyncio.sleep(0.1)
-            if self._clock.utc_now() >= timeout:
-                self._log.error(f"Timed out ({seconds}s) waiting for "
-                                f"execution states to resolve.")
-                return False
-            if not self._exec_engine.check_resolved():
-                continue
-            break
-
-        return True  # Execution states resolved
 
     async def _stop(self) -> None:
         self._is_stopping = True

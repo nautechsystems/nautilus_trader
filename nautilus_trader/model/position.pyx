@@ -350,7 +350,7 @@ cdef class Position:
 
     cpdef Money notional_value(self, Price last):
         """
-        Returns the current notional value of the position.
+        Return the current notional value of the position.
 
         Parameters
         ----------

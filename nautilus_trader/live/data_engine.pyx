@@ -25,12 +25,10 @@ from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -52,7 +50,7 @@ cdef class LiveDataEngine(DataEngine):
 
         Parameters
         ----------
-        loop : AbstractEventLoop
+        loop : asyncio.AbstractEventLoop
             The event loop for the engine.
         portfolio : int
             The portfolio to register.
@@ -64,6 +62,8 @@ cdef class LiveDataEngine(DataEngine):
             The configuration options.
 
         """
+        if config is None:
+            config = {}
         super().__init__(
             portfolio,
             clock,
@@ -72,9 +72,19 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = Queue(maxsize=10000)
-        self._message_queue = Queue(maxsize=10000)
+        self._data_queue = Queue(maxsize=config.get("qsize", 10000))
+        self._message_queue = Queue(maxsize=config.get("qsize", 10000))
+
+        self._run_queues_task = None
         self.is_running = False
+
+    cpdef void kill(self) except *:
+        """
+        Kill the engine by abruptly cancelling the queue tasks and calling stop.
+        """
+        if self._run_queues_task:
+            self._run_queues_task.cancel()
+        self.stop()
 
     cpdef object get_event_loop(self):
         """
@@ -144,7 +154,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(command)
         except QueueFull:
-            self._log.warning(f"Blocking on `put` as message_queue full at "
+            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(command)  # Block until qsize reduces below maxsize
 
@@ -172,8 +182,8 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._data_queue.put_nowait(data)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `put` as data_queue full at "
-                              f"{self._message_queue.qsize()} items.")
+            self._log.warning(f"Blocking on `_data_queue.put` as data_queue full at "
+                              f"{self._data_queue.qsize()} items.")
             self._data_queue.put(data)  # Block until qsize reduces below maxsize
 
     cpdef void send(self, DataRequest request) except *:
@@ -200,7 +210,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(request)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `put` as message_queue full at "
+            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(request)  # Block until qsize reduces below maxsize
 
@@ -228,7 +238,7 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(response)
         except QueueFull:
-            self._log.warning(f"Blocking on `put` as message_queue full at "
+            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
                               f"{self._message_queue.qsize()} items.")
             self._message_queue.put(response)  # Block until qsize reduces below maxsize
 
@@ -290,46 +300,3 @@ cdef class LiveDataEngine(DataEngine):
                                   f"with {self.message_qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
-
-
-cdef class LiveDataClient(DataClient):
-    """
-    The abstract base class for all live data clients.
-
-    This class should not be used directly, but through its concrete subclasses.
-    """
-
-    def __init__(
-        self,
-        Venue venue not None,
-        LiveDataEngine engine not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict config=None,
-    ):
-        """
-        Initialize a new instance of the `LiveDataClient` class.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the client.
-        engine : LiveDataEngine
-            The data engine for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration options.
-
-        """
-        super().__init__(
-            venue,
-            engine,
-            clock,
-            logger,
-            config,
-        )
-
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
