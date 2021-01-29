@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
-from nautilus_trader.live.data cimport LiveDataClient
+from nautilus_trader.live.data_client cimport LiveDataClient
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
 from nautilus_trader.model.bar cimport BarType

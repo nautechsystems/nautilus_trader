@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
-from nautilus_trader.live.execution cimport LiveExecutionClient
+from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
 

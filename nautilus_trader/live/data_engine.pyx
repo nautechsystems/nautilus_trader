@@ -25,12 +25,10 @@ from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
@@ -302,46 +300,3 @@ cdef class LiveDataEngine(DataEngine):
                                   f"with {self.message_qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
-
-
-cdef class LiveDataClient(DataClient):
-    """
-    The abstract base class for all live data clients.
-
-    This class should not be used directly, but through its concrete subclasses.
-    """
-
-    def __init__(
-        self,
-        Venue venue not None,
-        LiveDataEngine engine not None,
-        LiveClock clock not None,
-        Logger logger not None,
-        dict config=None,
-    ):
-        """
-        Initialize a new instance of the `LiveDataClient` class.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue for the client.
-        engine : LiveDataEngine
-            The data engine for the client.
-        clock : LiveClock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-        config : dict[str, object], optional
-            The configuration options.
-
-        """
-        super().__init__(
-            venue,
-            engine,
-            clock,
-            logger,
-            config,
-        )
-
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

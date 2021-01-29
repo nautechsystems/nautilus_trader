@@ -59,7 +59,6 @@ cdef class ExecutionEngine(Component):
     cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *
     cpdef bint check_integrity(self) except *
     cpdef bint check_connected(self) except *
-    cpdef bint check_resolved(self) except *
     cpdef bint check_disconnected(self) except *
     cpdef bint check_residuals(self) except *
 
@@ -78,7 +77,6 @@ cdef class ExecutionEngine(Component):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void load_cache(self) except *
-    cpdef void resolve_state(self) except *
     cpdef void execute(self, TradingCommand command) except *
     cpdef void process(self, Event event) except *
     cpdef void flush_db(self) except *
@@ -99,10 +97,9 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_account_event(self, AccountState event) except *
     cdef inline void _handle_position_event(self, PositionEvent event) except *
     cdef inline void _handle_order_event(self, OrderEvent event) except *
+    cdef inline void _confirm_identifiers(self, OrderFilled fill) except *
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef inline void _handle_order_fill(self, OrderFilled event) except *
-    cdef inline void _fill_with_no_position_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
-    cdef inline void _fill_with_assigned_position_id(self, PositionId position_id, OrderFilled fill, StrategyId strategy_id) except *
     cdef inline void _open_position(self, OrderFilled event) except *
     cdef inline void _update_position(self, OrderFilled event) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *

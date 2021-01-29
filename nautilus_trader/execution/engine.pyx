@@ -191,26 +191,6 @@ cdef class ExecutionEngine(Component):
                 return False
         return True
 
-    cpdef bint check_resolved(self) except *:
-        """
-        Check all of the engines client states are resolved with the engine
-        state.
-
-        Returns
-        -------
-        bool
-            True if all clients resolved, else False.
-
-        """
-        if not self._clients:
-            return True
-
-        cdef ExecutionClient client
-        for client in self._clients.values():
-            if client.is_resolved:
-                return True
-        return False
-
     cpdef bint check_disconnected(self) except *:
         """
         Check all of the engines clients are disconnected.
@@ -392,43 +372,6 @@ cdef class ExecutionEngine(Component):
         # Update portfolio
         for account in self.cache.accounts():
             self._portfolio.register_account(account)
-
-    cpdef void resolve_state(self) except *:
-        """
-        Resolve the execution engines state with all execution clients.
-
-        The execution engine will collect all cached active orders and send
-        those to the relevant execution client(s) for a comparison with the
-        exchange(s) order states.
-
-        If a cached order does not match the exchanges order status then
-        the missing events will be generated. If there is not enough information
-        to resolve a state then errors will be logged.
-
-        """
-        self._log.info("Resolving execution state...")
-
-        cdef list active_orders = self.cache.orders_active()
-
-        # Initialize order state map
-        cdef dict venue_orders = {}  # type: dict[Venue, list[Order]]
-        cdef Venue venue
-        for venue in self._clients.keys():
-            venue_orders[venue] = []
-
-        # Build order state map
-        cdef Order order
-        for order in active_orders:
-            if order.symbol.venue in venue_orders:
-                venue_orders[order.symbol.venue].append(order)
-            else:
-                self._log.error(f"Cannot resolve state. No registered"
-                                f"execution client for active {order}.")
-                continue
-
-        # Send state map to each client to resolve
-        for venue, client in self._clients.items():
-            client.resolve_state(venue_orders[venue])
 
     cpdef void execute(self, TradingCommand command) except *:
         """
@@ -668,6 +611,9 @@ cdef class ExecutionEngine(Component):
             self._log.warning(f"{repr(cl_ord_id)} was found in cache and "
                               f"applying event to order with {repr(order.id)}.")
 
+        if isinstance(event, OrderFilled):
+            self._confirm_identifiers(event)
+
         try:
             order.apply_c(event)
         except InvalidStateTrigger as ex:
@@ -686,6 +632,26 @@ cdef class ExecutionEngine(Component):
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(cl_ord_id))
 
+    cdef inline void _confirm_identifiers(self, OrderFilled fill) except *:
+        # Get StrategyId corresponding to fill
+        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
+        if strategy_id is None and fill.position_id.not_null():
+            strategy_id = self.cache.strategy_id_for_position(fill.position_id)
+        if strategy_id is None:
+            self._log.error(f"Cannot find StrategyId for "
+                            f"{repr(fill.cl_ord_id)} and"
+                            f"{repr(fill.position_id)} not found for {fill}.")
+        else:
+            fill.strategy_id = strategy_id
+
+        cdef PositionId position_id
+        if fill.position_id.is_null():
+            position_id = self.cache.position_id(fill.cl_ord_id)
+            if position_id is None:
+                fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+            else:
+                fill.position_id = position_id
+
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
         if strategy_id is None:
@@ -696,50 +662,8 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(event, strategy_id)
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
-        # Get PositionId corresponding to fill
         cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
-        # --- position_id could be None here (position not opened yet) ---
-
-        # Get StrategyId corresponding to fill
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
-        if strategy_id is None and fill.position_id.not_null():
-            strategy_id = self.cache.strategy_id_for_position(fill.position_id)
-        if strategy_id is None:
-            self._log.error(f"Cannot process event: StrategyId for "
-                            f"{repr(fill.cl_ord_id)} or"
-                            f"{repr(fill.position_id)} not found for {fill}.")
-            return  # Cannot process event further
-
-        if fill.position_id.is_null():  # Exchange not assigning position_ids
-            self._fill_with_no_position_id(position_id, fill, strategy_id)
-        else:
-            self._fill_with_assigned_position_id(position_id, fill, strategy_id)
-
-    cdef inline void _fill_with_no_position_id(
-        self,
-        PositionId position_id,
-        OrderFilled fill,
-        StrategyId strategy_id,
-    ) except *:
-        if position_id is None:  # No position yet
-            # Generate identifier and assign
-            fill.position_id = self._pos_id_generator.generate(strategy_id)
-
-            # Create new position
-            self._open_position(fill)
-        else:  # Position exists
-            fill.position_id = position_id
-            fill.strategy_id = strategy_id
-            self._update_position(fill)
-
-    cdef inline void _fill_with_assigned_position_id(
-        self,
-        PositionId position_id,
-        OrderFilled fill,
-        StrategyId strategy_id,
-    ) except *:
-        fill.strategy_id = strategy_id
-        if position_id is None:  # No position
+        if position_id is None:
             self._open_position(fill)
         else:
             self._update_position(fill)
