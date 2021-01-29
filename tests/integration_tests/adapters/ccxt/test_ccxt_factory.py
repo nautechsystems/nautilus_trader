@@ -24,8 +24,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.live.data import LiveDataEngine
-from nautilus_trader.live.execution import LiveExecutionEngine
+from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 

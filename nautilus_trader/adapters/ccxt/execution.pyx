@@ -31,6 +31,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
+from nautilus_trader.execution.reports cimport ExecutionStateReport
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -51,6 +52,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
@@ -59,8 +61,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.live.execution cimport LiveExecutionClient
-from nautilus_trader.live.execution cimport LiveExecutionEngine
+from nautilus_trader.live.execution_client cimport LiveExecutionClient
+from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 cdef tuple _INTEGRATED_VENUES = ("BINANCE", "BITMEX")
@@ -119,7 +121,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         )
 
         self.is_connected = False
-        self.is_resolved = False
 
         self._account_last_free = {}
         self._account_last_used = {}
@@ -172,9 +173,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void resolve_state(self, list active_orders) except *:
+    async def state_report(self, list active_orders) -> ExecutionStateReport:
         """
-        Return a state replay stream based on the given list of accepted orders
+        Return a execution state report based on the given list of active orders
         and open positions.
 
         Parameters
@@ -184,48 +185,35 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        list[Event]
+        ExecutionStateReport
 
         """
         Condition.not_none(active_orders, "active_orders")
 
-        self._loop.create_task(self._resolve_state(active_orders))
+        cdef dict order_states = {}
+        cdef dict order_filled = {}
+        cdef dict position_states = {}
 
-    async def _resolve_state(self, list active_orders) -> None:
-        """
-        Resolve the execution state by comparing the given active orders from
-        the execution cache with the order state from the exchange.
-
-        Parameters
-        ----------
-        active_orders : list[Order]
-            The orders which are active.
-
-        """
         if not active_orders:
-            self.is_resolved = True
-            self._log.info("State resolved.", LogColor.GREEN)
-            return  # Nothing to resolve
+            # Nothing to resolve
+            return ExecutionStateReport(
+                venue=self.venue,
+                account_id=self.account_id,
+                order_states=order_states,
+                order_filled=order_filled,
+                position_states=position_states,
+            )
 
         cdef int count = len(active_orders)
-        self._log.info(f"Resolving states for {count} "
-                       f"active order{'s' if count > 1 else ''}...")
-
-        cdef dict target_states = {}  # type: dict[ClientOrderId, OrderState]
-
-        # TODO: Fetch open orders and compare to active_orders
+        self._log.info(
+            f"Resolving states for {count} "
+            f"active order{'s' if count > 1 else ''}...",
+            LogColor.BLUE,
+        )
 
         cdef Order order
         cdef str status
         for order in active_orders:
-            if not order.is_active_c():
-                self._log.warning(f"Order was not active, "
-                                  f"was OrderState.{order.state_string_c()}.")
-                continue
-            if order.id.is_null():
-                self._log.error(f"OrderId was not assigned for {repr(order.cl_ord_id)}, "
-                                f"state is lost.")
-                continue
             try:
                 response = await self._client.fetch_order(order.id.value, order.symbol.code)
             except CCXTError as ex:
@@ -234,14 +222,16 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             if response is None:
                 self._log.error(f"No order found for {order.id.value}.")
                 continue
-            self._log.info(str(response), LogColor.BLUE)
-            # TODO: Refactor below
+            self._log.info(str(response), LogColor.BLUE)  # TODO: Development
+
             status = response["status"]
             if status == "canceled":
+                order_states[order.id] = OrderState.CANCELLED
                 timestamp = from_posix_ms(<long>response["timestamp"])
                 self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
-                target_states[order.cl_ord_id] = OrderState.CANCELLED
             elif status == "closed":
+                order_states[order.id] = OrderState.FILLED
+                order_filled[order.id] = response["filled"]
                 filled_event = {
                     "exec_id": str(response["timestamp"]),  # TODO: Transaction time for now
                     "symbol": response["symbol"],
@@ -254,23 +244,17 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     "timestamp": response["timestamp"],
                 }
                 self._generate_order_filled(order.cl_ord_id, order.id, filled_event)
-                target_states[order.cl_ord_id] = OrderState.FILLED
             elif status == "expired":
+                order_states[order.id] = OrderState.EXPIRED
                 self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
-                target_states[order.cl_ord_id] = OrderState.EXPIRED
 
-        while True:
-            await asyncio.sleep(0.1)
-            for order in active_orders:
-                order_state = target_states.get(order.cl_ord_id)
-                if order_state is None:
-                    continue
-                if not order.state_c() != target_states[order.cl_ord_id]:
-                    continue
-            break
-
-        self._log.info("State resolved.", LogColor.GREEN)
-        self.is_resolved = True
+        return ExecutionStateReport(
+            venue=self.venue,
+            account_id=self.account_id,
+            order_states=order_states,
+            order_filled=order_filled,
+            position_states=position_states,
+        )
 
     cpdef void disconnect(self) except *:
         """
@@ -311,7 +295,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         await self._client.close()
 
         self.is_connected = False
-        self.is_resolved = False
         self._log.info("Disconnected.")
 
     cpdef void reset(self) except *:
@@ -784,6 +767,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 self._log.error(f"Cannot fill order for {repr(cl_ord_id)}, "
                                 f"{repr(order_id)} not found in cache.")
                 return  # Cannot fill order
+            else:
+                # Cache order
+                self._active_orders[order.cl_ord_id] = order
 
         # Determine commission
         cdef str currency_str = event["commission_currency"]
@@ -800,17 +786,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             else:
                 commission = Money(event["commission"], currency)
 
-        # Determine position identifier
-        cdef PositionId position_id = self._engine.cache.position_id(order.cl_ord_id)
-        if position_id is None:
-            position_id = PositionId.null_c()
-
         # Determine quantities (we have to do it per exchange for now)
         cdef Quantity fill_qty = Quantity(event["fill_qty"], instrument.size_precision)
         cdef Quantity cum_qty = Quantity(event["cum_qty"], instrument.size_precision)
         cdef Quantity leaves_qty = Quantity(order.quantity - cum_qty, instrument.size_precision)
         if leaves_qty == 0:
-            self._active_orders.pop(cl_ord_id, None)
+            self._active_orders.pop(cl_ord_id, None)  # TODO: Warning if not active
 
         # POSIX timestamp in milliseconds
         cdef long timestamp = <long>event["timestamp"]
@@ -821,8 +802,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             order.cl_ord_id,
             order_id,
             ExecutionId(event["exec_id"]),
-            position_id,
-            order.strategy_id,
+            PositionId.null_c(),  # Assigned in engine
+            StrategyId.null_c(),  # Assigned in engine
             order.symbol,
             order.side,
             fill_qty,

@@ -35,7 +35,7 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 cpdef long to_posix_ms(datetime timestamp) except *:
     """
-    Returns the POSIX millisecond timestamp from the given object.
+    Return the POSIX millisecond timestamp from the given object.
 
     Parameters
     ----------
@@ -52,7 +52,7 @@ cpdef long to_posix_ms(datetime timestamp) except *:
 
 cpdef datetime from_posix_ms(long posix):
     """
-    Returns the datetime in UTC from the given POSIX millisecond timestamp.
+    Return the datetime in UTC from the given POSIX millisecond timestamp.
 
     Parameters
     ----------

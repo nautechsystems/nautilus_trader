@@ -26,7 +26,7 @@ from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.messages import DataRequest
-from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType

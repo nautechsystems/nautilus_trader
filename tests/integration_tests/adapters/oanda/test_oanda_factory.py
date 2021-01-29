@@ -21,7 +21,7 @@ from nautilus_trader.adapters.oanda.factory import OandaDataClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.live.data import LiveDataEngine
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 

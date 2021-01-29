@@ -106,7 +106,7 @@ cdef class OrderBook:
 
     cdef double[:, :] bids_c(self):
         """
-        Returns the order book bids.
+        Return the order book bids.
 
         Returns
         -------
@@ -117,7 +117,7 @@ cdef class OrderBook:
 
     cdef double[:, :] asks_c(self):
         """
-        Returns the order book asks.
+        Return the order book asks.
 
         Returns
         -------
@@ -128,7 +128,7 @@ cdef class OrderBook:
 
     cpdef list bids(self):
         """
-        Returns the order book bids.
+        Return the order book bids.
 
         Returns
         -------
@@ -140,7 +140,7 @@ cdef class OrderBook:
 
     cpdef list asks(self):
         """
-        Returns the order book asks.
+        Return the order book asks.
 
         Returns
         -------
@@ -152,7 +152,7 @@ cdef class OrderBook:
 
     cpdef list bids_as_decimals(self):
         """
-        Returns the bids with prices and quantities as decimals.
+        Return the bids with prices and quantities as decimals.
 
         Decimal type is the built-in `decimal.Decimal`.
 
@@ -166,7 +166,7 @@ cdef class OrderBook:
 
     cpdef list asks_as_decimals(self):
         """
-        Returns the asks with prices and quantities as decimals.
+        Return the asks with prices and quantities as decimals.
 
         Decimal type is the built-in `decimal.Decimal`.
 
