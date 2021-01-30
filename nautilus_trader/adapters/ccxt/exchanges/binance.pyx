@@ -116,7 +116,7 @@ cdef class BinanceOrderFillParser:
         Condition.not_none(report, "report")
 
         return {
-            "exec_id": str(report["T"]),         # TODO: Transaction time for now
+            "exec_id": str(report["t"]),         # Execution id
             "symbol": report["symbol"],
             "fill_qty": report["l"],             # Last executed quantity
             "cum_qty": report["z"],              # Cumulative filled quantity
