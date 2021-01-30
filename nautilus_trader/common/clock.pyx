@@ -355,9 +355,9 @@ cdef class Clock:
         self.timer_count = len(self._timers)
 
         if self.timer_count > 0:
-            # The call to np.asarray here looks inefficient, however the intention
-            # is that its only called when a timer is added or removed only.
-            # This then allows the construction of an efficient Timer[:] memory view.
+            # The call to np.asarray here looks inefficient, however its only
+            # called when a timer is added or removed. This then allows the
+            # construction of an efficient Timer[:] memoryview.
             self._stack = np.asarray(list(self._timers.values()))
         else:
             self._stack = None
