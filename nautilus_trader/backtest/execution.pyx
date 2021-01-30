@@ -19,8 +19,8 @@ from nautilus_trader.common.logging cimport TestLogger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
+from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.identifiers cimport AccountId

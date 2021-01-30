@@ -18,6 +18,7 @@ Defines various order types used for trading.
 """
 
 from decimal import Decimal
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.constants cimport *  # str constants only
@@ -34,6 +35,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
@@ -41,7 +43,6 @@ from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.identifiers cimport ClientOrderId

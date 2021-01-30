@@ -14,23 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+
 from decimal import Decimal
 
 import pandas as pd
 import pytz
 
+from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport pad_string
-from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 

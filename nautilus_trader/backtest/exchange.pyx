@@ -30,17 +30,17 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
+from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderCancelled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderAmended
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -57,8 +57,8 @@ from nautilus_trader.model.order cimport LimitOrder
 from nautilus_trader.model.order cimport MarketOrder
 from nautilus_trader.model.order cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 
 

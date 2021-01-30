@@ -21,7 +21,6 @@ backtest related data - which can be passed to one or more `BacktestDataEngine`(
 """
 
 import pandas as pd
-
 from pandas import DatetimeIndex
 
 from nautilus_trader.core.correctness cimport Condition

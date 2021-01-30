@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.fsm cimport FiniteStateMachine
 
 
 cdef class ComponentFSMFactory:

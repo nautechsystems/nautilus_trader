@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
