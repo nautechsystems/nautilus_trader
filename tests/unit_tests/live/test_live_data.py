@@ -70,7 +70,17 @@ class LiveDataEngineTests(unittest.TestCase):
         self.loop.stop()
         self.loop.close()
 
+    def test_start_when_loop_not_running_logs(self):
+        # Arrange
+        # Act
+        self.data_engine.start()
+
+        # Assert
+        self.assertTrue(True)  # No exceptions raised
+        self.data_engine.stop()
+
     def test_message_qsize_at_max_blocks_on_put_data_command(self):
+        # Arrange
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
@@ -97,6 +107,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.assertEqual(0, self.data_engine.command_count)
 
     def test_message_qsize_at_max_blocks_on_send_request(self):
+        # Arrange
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
@@ -129,6 +140,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.assertEqual(0, self.data_engine.command_count)
 
     def test_message_qsize_at_max_blocks_on_receive_response(self):
+        # Arrange
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
@@ -149,13 +161,14 @@ class LiveDataEngineTests(unittest.TestCase):
 
         # Act
         self.data_engine.receive(response)
-        self.data_engine.receive(response)
+        self.data_engine.receive(response)  # Add over max size
 
         # Assert
         self.assertEqual(1, self.data_engine.message_qsize())
         self.assertEqual(0, self.data_engine.command_count)
 
     def test_data_qsize_at_max_blocks_on_put_data(self):
+        # Arrange
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
@@ -166,7 +179,7 @@ class LiveDataEngineTests(unittest.TestCase):
 
         # Act
         self.data_engine.process("some_data")
-        self.data_engine.process("some_data")
+        self.data_engine.process("some_data")  # Add over max size
 
         # Assert
         self.assertEqual(1, self.data_engine.data_qsize())
@@ -195,16 +208,26 @@ class LiveDataEngineTests(unittest.TestCase):
 
         self.loop.run_until_complete(run_test())
 
-    def test_kill(self):
+    def test_kill_when_running_and_no_messages_on_queues(self):
         async def run_test():
             # Arrange
             # Act
             self.data_engine.start()
-            await asyncio.sleep(0)
             self.data_engine.kill()
 
             # Assert
             self.assertEqual(ComponentState.STOPPED, self.data_engine.state)
+
+        self.loop.run_until_complete(run_test())
+
+    def test_kill_when_not_running_with_messages_on_queue(self):
+        async def run_test():
+            # Arrange
+            # Act
+            self.data_engine.kill()
+
+            # Assert
+            self.assertEqual(0, self.data_engine.data_qsize())
 
         self.loop.run_until_complete(run_test())
 

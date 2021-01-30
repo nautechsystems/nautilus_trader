@@ -547,11 +547,203 @@ class LiveClockWithLoopTimerTests(unittest.TestCase):
         self.clock = LiveClock(loop=self.loop)
         self.clock.register_default_handler(self.handler.append)
 
-    def test_set_two_repeating_timers(self):
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+    def tearDown(self):
+        self.clock.cancel_timers()
 
+    def test_set_time_alert(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_ALERT"
+            interval = timedelta(milliseconds=100)
+            alert_time = self.clock.utc_now() + interval
+
+            # Act
+            self.clock.set_time_alert(name, alert_time)
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertEqual(1, len(self.handler))
+            self.assertTrue(isinstance(self.handler[0], TimeEvent))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_cancel_time_alert(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_ALERT"
+            interval = timedelta(milliseconds=300)
+            alert_time = self.clock.utc_now() + interval
+
+            self.clock.set_time_alert(name, alert_time)
+
+            # Act
+            self.clock.cancel_timer(name)
+
+            # Assert
+            self.assertEqual([], self.clock.timer_names())
+            self.assertEqual(0, len(self.handler))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_set_multiple_time_alerts(self):
+        async def run_test():
+            # Arrange
+            alert_time1 = self.clock.utc_now() + timedelta(milliseconds=200)
+            alert_time2 = self.clock.utc_now() + timedelta(milliseconds=300)
+
+            # Act
+            self.clock.set_time_alert("TEST_ALERT1", alert_time1)
+            self.clock.set_time_alert("TEST_ALERT2", alert_time2)
+            await asyncio.sleep(0.7)
+
+            # Assert
+            self.assertEqual([], self.clock.timer_names())
+            self.assertTrue(len(self.handler) >= 2)  # Often 3??
+            self.assertTrue(isinstance(self.handler[0], TimeEvent))
+            self.assertTrue(isinstance(self.handler[1], TimeEvent))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_set_timer_with_immediate_start_time(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_TIMER"
+
+            # Act
+            self.clock.set_timer(
+                name=name,
+                interval=timedelta(milliseconds=100),
+                start_time=None,
+                stop_time=None,
+            )
+
+            await asyncio.sleep(0.5)
+
+            # Assert
+            self.assertEqual([name], self.clock.timer_names())
+            self.assertTrue(isinstance(self.handler[0], TimeEvent))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_set_timer(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_TIMER"
+            interval = timedelta(milliseconds=100)
+            start_time = self.clock.utc_now() + interval
+
+            # Act
+            self.clock.set_timer(
+                name=name,
+                interval=interval,
+                start_time=start_time,
+                stop_time=None,
+            )
+
+            await asyncio.sleep(0.5)
+
+            # Assert
+            self.assertEqual([name], self.clock.timer_names())
+            self.assertTrue(len(self.handler) >= 2)
+            self.assertTrue(isinstance(self.handler[0], TimeEvent))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_set_timer_with_stop_time(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_TIMER"
+            interval = timedelta(milliseconds=100)
+            start_time = self.clock.utc_now()
+            stop_time = start_time + interval
+
+            # Act
+            self.clock.set_timer(
+                name=name,
+                interval=interval,
+                start_time=start_time,
+                stop_time=stop_time,
+            )
+
+            await asyncio.sleep(0.5)
+
+            # Assert
+            self.assertEqual([], self.clock.timer_names())
+            self.assertTrue(len(self.handler) >= 1)
+            self.assertTrue(isinstance(self.handler[0], TimeEvent))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_cancel_timer(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_TIMER"
+            interval = timedelta(milliseconds=100)
+
+            self.clock.set_timer(name=name, interval=interval)
+
+            # Act
+            await asyncio.sleep(0.3)
+            self.clock.cancel_timer(name)
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertEqual([], self.clock.timer_names())
+            self.assertTrue(len(self.handler) <= 4)
+
+        self.loop.run_until_complete(run_test())
+
+    def test_set_repeating_timer(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_TIMER"
+            interval = timedelta(milliseconds=100)
+            start_time = self.clock.utc_now()
+
+            # Act
+            self.clock.set_timer(
+                name=name,
+                interval=interval,
+                start_time=start_time,
+                stop_time=None,
+            )
+
+            await asyncio.sleep(0.5)
+
+            # Assert
+            self.assertTrue(len(self.handler) >= 3)
+            self.assertTrue(isinstance(self.handler[0], TimeEvent))
+            self.assertTrue(isinstance(self.handler[1], TimeEvent))
+            self.assertTrue(isinstance(self.handler[2], TimeEvent))
+
+        self.loop.run_until_complete(run_test())
+
+    def test_cancel_repeating_timer(self):
+        async def run_test():
+            # Arrange
+            name = "TEST_TIMER"
+            interval = timedelta(milliseconds=100)
+            start_time = self.clock.utc_now()
+            stop_time = start_time + timedelta(seconds=5)
+
+            self.clock.set_timer(
+                name=name,
+                interval=interval,
+                start_time=start_time,
+                stop_time=stop_time,
+            )
+
+            # Act
+            await asyncio.sleep(0.3)
+            self.clock.cancel_timer(name)
+            await asyncio.sleep(0.3)
+
+            # Assert
+            self.assertTrue(len(self.handler) <= 5)
+
+        self.loop.run_until_complete(run_test())
+
+    def test_set_two_repeating_timers(self):
         async def run_test():
             # Arrange
             interval = timedelta(milliseconds=100)
@@ -572,8 +764,9 @@ class LiveClockWithLoopTimerTests(unittest.TestCase):
                 stop_time=None,
             )
 
-            time.sleep(0.9)
+            await asyncio.sleep(0.9)
 
             # Assert
             self.assertTrue(len(self.handler) >= 8)
-            self.loop.run_until_complete(run_test())
+
+        self.loop.run_until_complete(run_test())

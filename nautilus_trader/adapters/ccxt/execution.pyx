@@ -31,6 +31,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_posix_ms
+from nautilus_trader.core.datetime cimport to_posix_ms
 from nautilus_trader.execution.reports cimport ExecutionStateReport
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -206,44 +207,75 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef int count = len(active_orders)
         self._log.info(
-            f"Resolving states for {count} "
-            f"active order{'s' if count > 1 else ''}...",
+            f"Resolving state: {count} active order{'s' if count > 1 else ''}...",
             LogColor.BLUE,
         )
 
+        cdef Instrument instrument
         cdef Order order
         cdef str status
+        cdef dict response
+        cdef list trades
+        cdef list order_trades
         for order in active_orders:
+            if order.id.is_null():
+                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                                f"OrderId was NULL.")
+                continue  # Cannot resolve order
+            instrument = self._instrument_provider.get(order.symbol)
+            if instrument is None:
+                self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
+                                f"instrument for {order.symbol} not found.")
+                continue  # Cannot resolve order
+
             try:
                 response = await self._client.fetch_order(order.id.value, order.symbol.code)
+                trades = await self._client.fetch_my_trades(
+                    symbol=order.symbol.code,
+                    since=to_posix_ms(order.timestamp),
+                )
+                order_trades = [trade for trade in trades if trade["order"] == order.id.value]
+
             except CCXTError as ex:
                 self._log_ccxt_error(ex, self._update_balances.__name__)
                 continue
             if response is None:
                 self._log.error(f"No order found for {order.id.value}.")
                 continue
-            self._log.info(str(response), LogColor.BLUE)  # TODO: Development
+            # self._log.info(str(response), LogColor.BLUE)  # TODO: Development
+
+            cum_qty = order.filled_qty.as_decimal()
+            for trade in order_trades:
+                execution_id = ExecutionId(str(response["id"]))
+                if execution_id in order.execution_ids_c():
+                    continue  # Trade already applied
+                fill_qty = Decimal(f"{trade['amount']:.{instrument.size_precision}}")
+                cum_qty += fill_qty
+                filled_event = {
+                    "exec_id": str(trade["id"]),
+                    "symbol": trade["symbol"],
+                    "fill_qty": fill_qty,
+                    "cum_qty": cum_qty,
+                    "avg_px": trade["price"],
+                    "liquidity_side": LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
+                    "commission": trade["fee"]["cost"],
+                    "commission_currency": trade["fee"]["currency"],
+                    "timestamp": trade["timestamp"],
+                }
+                self._generate_order_filled(order.cl_ord_id, order.id, filled_event)
 
             status = response["status"]
-            if status == "canceled":
+            if status == "open":
+                if cum_qty > 0:
+                    order_states[order.id] = OrderState.PARTIALLY_FILLED
+                    order_filled[order.id] = cum_qty
+            elif status == "closed":
+                order_states[order.id] = OrderState.FILLED
+                order_filled[order.id] = cum_qty
+            elif status == "canceled":
                 order_states[order.id] = OrderState.CANCELLED
                 timestamp = from_posix_ms(<long>response["timestamp"])
                 self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
-            elif status == "closed":
-                order_states[order.id] = OrderState.FILLED
-                order_filled[order.id] = response["filled"]
-                filled_event = {
-                    "exec_id": str(response["timestamp"]),  # TODO: Transaction time for now
-                    "symbol": response["symbol"],
-                    "fill_qty": Decimal(response["filled"]) - order.filled_qty,
-                    "cum_qty": response["filled"],
-                    "avg_px": response["average"],
-                    "liquidity_side": LiquiditySide.TAKER,  # TODO: Implement
-                    "commission": None,
-                    "commission_currency": None,
-                    "timestamp": response["timestamp"],
-                }
-                self._generate_order_filled(order.cl_ord_id, order.id, filled_event)
             elif status == "expired":
                 order_states[order.id] = OrderState.EXPIRED
                 self._generate_order_expired(order.cl_ord_id, order.id, timestamp)
@@ -453,13 +485,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_orders()
-                    event0 = events[0]
-                    event = event0["info"]
-                    event["symbol"] = event0["symbol"]  # Replace for symbol with '/'
-                    event["timestamp"] = event0["timestamp"]
-                    # TODO: Development
-                    # self._log.info("Raw: " + str(event), LogColor.BLUE)
-                    self._on_order_status(event)
+                    self._on_order_status(events[0])  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_orders.__name__)
                     continue
@@ -476,13 +502,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 try:
                     # events type is ArrayCacheBySymbolById
                     events = await self._client.watch_my_trades()
-                    event0 = events[0]
-                    event = event0["info"]
-                    event["symbol"] = event0["symbol"]  # Replace with `/` symbol
-                    event["timestamp"] = event0["timestamp"]
-                    # TODO: Development
-                    # self._log.info("Raw: " + str(event), LogColor.GREEN)
-                    self._on_exec_report(event)
+                    self._on_exec_report(events[0])  # Only caching 1 event
                 except CCXTError as ex:
                     self._log_ccxt_error(ex, self._watch_balances.__name__)
                     continue
@@ -620,15 +640,31 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     cdef inline void _on_order_status(self, dict event) except *:
         if self.venue.value == "BINANCE":
-            self._on_binance_order_status(event)
+            event_info = event["info"]
+            event_info["symbol"] = event["symbol"]
+            event_info["timestamp"] = event["timestamp"]
+            self._on_binance_order_status(event_info)
         elif self.venue.value == "BITMEX":
-            self._on_bitmex_order_status(event)
+            event_info = event["info"]
+            event_info["symbol"] = event["symbol"]
+            event_info["timestamp"] = event["timestamp"]
+            self._on_bitmex_order_status(event_info)
+        else:
+            pass  # Unified API
 
     cdef inline void _on_exec_report(self, dict event) except *:
         if self.venue.value == "BINANCE":
-            self._on_binance_exec_report(event)
+            event_info = event["info"]
+            event_info["symbol"] = event["symbol"]
+            event_info["timestamp"] = event["timestamp"]
+            self._on_binance_exec_report(event_info)
         elif self.venue.value == "BITMEX":
-            self._on_bitmex_exec_report(event)
+            event_info = event["info"]
+            event_info["symbol"] = event["symbol"]
+            event_info["timestamp"] = event["timestamp"]
+            self._on_bitmex_exec_report(event_info)
+        else:
+            pass  # Unified API
 
     cdef inline void _on_binance_order_status(self, dict event) except *:
         cdef OrderId order_id = OrderId(str(event["i"]))
