@@ -81,17 +81,6 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
         """
         return self._instruments.copy()
 
-    cpdef Instrument get(self, Symbol symbol):
-        """
-        Return the instrument for the given symbol (if found).
-
-        Returns
-        -------
-        Instrument or None
-
-        """
-        return self._instruments.get(symbol.code)
-
     cpdef Currency currency(self, str code):
         """
         Return the currency with the given code (if found).
