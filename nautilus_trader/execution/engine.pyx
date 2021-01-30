@@ -665,19 +665,13 @@ cdef class ExecutionEngine(Component):
                 fill.position_id = positions_open[0].id
             else:
                 self._log.error(f"Cannot assign PositionId: "
-                                    f"{len(positions_open)} open positions")
+                                f"{len(positions_open)} open positions")
         else:
             # Assign identifier to fill
             fill.position_id = position_id
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
-        if strategy_id is None:
-            self._log.error(f"Cannot process event: "
-                            f"StrategyId not found for {event}.")
-            return  # Cannot process event further
-
-        self._send_to_strategy(event, strategy_id)
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)
