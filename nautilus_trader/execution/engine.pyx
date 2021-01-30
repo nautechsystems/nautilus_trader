@@ -612,7 +612,8 @@ cdef class ExecutionEngine(Component):
                               f"applying event to order with {repr(order.id)}.")
 
         if isinstance(event, OrderFilled):
-            self._confirm_identifiers(event)
+            self._confirm_strategy_id(event)
+            self._confirm_position_id(event)
 
         try:
             order.apply_c(event)
@@ -632,25 +633,42 @@ cdef class ExecutionEngine(Component):
 
         self._send_to_strategy(event, self.cache.strategy_id_for_order(cl_ord_id))
 
-    cdef inline void _confirm_identifiers(self, OrderFilled fill) except *:
-        # Get StrategyId corresponding to fill
+    cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *:
+        if fill.strategy_id.not_null():
+            return  # Already assigned to fill
+
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
         if strategy_id is None and fill.position_id.not_null():
+            # Check if strategy identifier assigned for position
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot find StrategyId for "
-                            f"{repr(fill.cl_ord_id)} and"
+                            f"{repr(fill.cl_ord_id)} and "
                             f"{repr(fill.position_id)} not found for {fill}.")
         else:
+            # Assign identifier to fill
             fill.strategy_id = strategy_id
 
-        cdef PositionId position_id
-        if fill.position_id.is_null():
-            position_id = self.cache.position_id(fill.cl_ord_id)
-            if position_id is None:
+    cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
+        if fill.position_id.not_null():
+            return  # Already assigned to fill
+
+        cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
+        if position_id is None:
+            # Check for open positions
+            positions_open = self.cache.positions_open(symbol=fill.symbol)
+            if len(positions_open) == 0:
+                # Assign new identifier to fill
                 fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+            elif len(positions_open) == 1:
+                # Assign existing identifier to fill
+                fill.position_id = positions_open[0].id
             else:
-                fill.position_id = position_id
+                self._log.error(f"Cannot assign PositionId: "
+                                    f"{len(positions_open)} open positions")
+        else:
+            # Assign identifier to fill
+            fill.position_id = position_id
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
@@ -662,11 +680,11 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(event, strategy_id)
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
-        cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
-        if position_id is None:
+        cdef Position position = self.cache.position(fill.position_id)
+        if position is None:  # No position open
             self._open_position(fill)
         else:
-            self._update_position(fill)
+            self._update_position(position, fill)
 
     cdef inline void _open_position(self, OrderFilled fill) except *:
         cdef Position position = Position(fill)
@@ -675,14 +693,7 @@ cdef class ExecutionEngine(Component):
         self._send_to_strategy(fill, fill.strategy_id)
         self.process(self._pos_opened_event(position, fill))
 
-    cdef inline void _update_position(self, OrderFilled fill) except *:
-        cdef Position position = self.cache.position(fill.position_id)
-        if position is None:
-            self._log.error(f"Cannot update position for "
-                            f"{repr(fill.position_id)}: "
-                            f"no position found in cache.")
-            return  # Cannot process event further
-
+    cdef inline void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
         if fill.order_side != position.entry and fill.fill_qty > position.quantity:
             self._flip_position(position, fill)

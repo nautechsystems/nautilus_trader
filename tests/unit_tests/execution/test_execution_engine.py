@@ -78,12 +78,6 @@ class ExecutionEngineTests(unittest.TestCase):
             clock=TestClock(),
         )
 
-        self.random_order_factory = OrderFactory(
-            trader_id=TraderId("RANDOM", "042"),
-            strategy_id=StrategyId("S", "042"),
-            clock=TestClock(),
-        )
-
         self.portfolio = Portfolio(
             clock=self.clock,
             logger=self.logger,

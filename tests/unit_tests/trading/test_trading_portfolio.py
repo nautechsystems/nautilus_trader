@@ -373,6 +373,7 @@ class PortfolioTests(unittest.TestCase):
         filled3 = TestStubs.event_order_filled(
             order3,
             instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "1"),
             fill_price=Price("25000.00"),
         )

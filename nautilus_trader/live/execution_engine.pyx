@@ -34,7 +34,6 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
@@ -87,7 +86,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._queue = Queue(maxsize=config.get("qsize", 10000))
 
         self._run_queue_task = None
-        self.is_running = True
+        self.is_running = False
 
     cpdef object get_event_loop(self):
         """
@@ -158,10 +157,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                                 f"was OrderState.{order.state_string_c()}.")
                 # This would only occur if the cache was in error
                 continue
-            if order.id.is_null():
-                self._log.error(f"OrderId was not assigned for {repr(order.cl_ord_id)}, "
-                                f"state is lost.")
-                continue
             if order.symbol.venue in venue_orders:
                 venue_orders[order.symbol.venue].append(order)
             else:
@@ -176,7 +171,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for venue, client in self._clients.items():
             venue_reports[venue] = await client.state_report(venue_orders[venue])
 
-        cdef int seconds = 5  # Hard coded for now
+        cdef int seconds = 10  # Hard coded for now
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
         cdef OrderState target_state
         cdef bint resolved
@@ -188,7 +183,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
             resolved = True
             for order in active_orders:
-                target_state = venue_reports[order.symbol.venue].order_states[order.id]
+                target_state = venue_reports[order.symbol.venue].order_states.get(order.id, 0)
                 if order.state_c() != target_state:
                     resolved = False  # Incorrect state
                 if target_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
@@ -206,9 +201,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Kill the engine by abruptly cancelling the queue task and calling stop.
         """
+        self._log.warning("Killing engine...")
         if self._run_queue_task:
+            self._log.debug("Cancelling run_queue_task...")
             self._run_queue_task.cancel()
-        self.stop()
+        if self.is_running:
+            self.is_running = False  # Avoids sentinel messages for queues
+            self.stop()
 
     cpdef void execute(self, TradingCommand command) except *:
         """
@@ -274,9 +273,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Scheduled {self._run_queue_task}")
 
     cpdef void _on_stop(self) except *:
-        self.is_running = False
-        self._queue.put_nowait(None)  # Sentinel message pattern
-        self._log.debug(f"Sentinel message placed on message queue.")
+        if self.is_running:
+            self.is_running = False
+            self._queue.put_nowait(None)  # Sentinel message pattern
+            self._log.debug(f"Sentinel message placed on message queue.")
 
     async def _run(self):
         self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")

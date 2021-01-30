@@ -473,7 +473,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 self._index_order_ids[order.id] = order.cl_ord_id
 
             # 2: Build _index_order_position -> {ClientOrderId, PositionId}
-            if order.position_id is not None:
+            if order.position_id.not_null():
                 self._index_order_position[cl_ord_id] = order.position_id
 
             # 3: Build _index_order_strategy -> {ClientOrderId, StrategyId}
@@ -531,7 +531,7 @@ cdef class ExecutionCache(ExecutionCacheFacade):
             self._index_symbol_positions[position.symbol].add(position_id)
 
             # 4: Build _index_strategy_positions -> {StrategyId, {PositionId}}
-            if position.strategy_id is not None and position.strategy_id not in self._index_strategy_positions:
+            if position.strategy_id.not_null() and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
             self._index_strategy_positions[position.strategy_id].add(position.id)
 
