@@ -26,6 +26,7 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.providers import InstrumentProvider
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
@@ -441,10 +442,12 @@ class LiveExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        instrument_provider = InstrumentProvider(venue=SIM, load_all=False)
         self.client = LiveExecutionClient(
             venue=SIM,
             account_id=self.account_id,
             engine=self.engine,
+            instrument_provider=instrument_provider,
             clock=self.clock,
             logger=self.logger,
         )
