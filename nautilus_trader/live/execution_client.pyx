@@ -18,7 +18,6 @@ import asyncio
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.reports cimport ExecutionStateReport
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -70,6 +69,6 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
 
-    async def state_report(self, list active_orders) -> ExecutionStateReport:
+    async def state_report(self, list active_orders):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
