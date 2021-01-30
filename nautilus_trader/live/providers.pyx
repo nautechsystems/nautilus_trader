@@ -60,8 +60,20 @@ cdef class InstrumentProvider:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Instrument get(self, Symbol symbol):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        """
+        Get the instrument for the given symbol (if found).
+
+        Parameters
+        ----------
+        symbol : Symbol
+            The symbol for the instrument
+
+        Returns
+        -------
+        Instrument or None
+
+        """
+        return self.get_c(symbol.code)
 
     cpdef Currency currency(self, str code):
         """Abstract method (implement in subclass)."""
