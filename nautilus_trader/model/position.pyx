@@ -39,7 +39,17 @@ cdef class Position:
         event : OrderFilled
             The order fill event which opened the position.
 
+        Raises
+        ------
+        ValueError
+            If event.position_id is NULL
+        ValueError
+            If event.strategy_id is NULL
+
         """
+        Condition.true(event.position_id.not_null(), "event.position_id.not_null()")
+        Condition.true(event.strategy_id.not_null(), "event.strategy_id.not_null()")
+
         self._events = []  # type: list[OrderFilled]
         self._buy_quantity = Decimal()
         self._sell_quantity = Decimal()
@@ -53,16 +63,16 @@ cdef class Position:
         # Properties
         self.symbol = event.symbol
         self.entry = event.order_side
-        self.side = PositionSide.UNDEFINED
-        self.relative_quantity = Decimal()
-        self.quantity = Quantity()
-        self.peak_quantity = Quantity()
+        self.side = Position.side_from_order_side(event.order_side)
+        self.relative_quantity = Decimal()  # Initialized in apply()
+        self.quantity = Quantity()          # Initialized in apply()
+        self.peak_quantity = Quantity()     # Initialized in apply()
         self.timestamp = event.execution_time
         self.opened_time = event.execution_time
         self.closed_time = None    # Can be None
         self.open_duration = None  # Can be None
         self.avg_open = event.fill_price.as_decimal()
-        self.avg_close = Decimal()
+        self.avg_close = None      # Can be None
         self.quote_currency = event.currency
         self.is_inverse = event.is_inverse
         self.realized_points = Decimal()
