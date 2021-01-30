@@ -39,6 +39,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -326,6 +327,43 @@ class ExecutionEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.SUBMITTED, order.state)
 
+    def test_submit_order_for_random_venue_logs(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            Symbol("AAPL", Venue("NYSE")),
+            OrderSide.BUY,
+            Quantity(1000),
+        )
+
+        submit_order = SubmitOrder(
+            Venue("NYSE"),
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_order)
+
+        # Assert
+        self.assertEqual(1, self.exec_engine.command_count)
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+
     def test_submit_order_for_none_existent_position_id_invalidates_order(self):
         # Arrange
         self.exec_engine.start()
@@ -361,6 +399,48 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(OrderState.INVALID, order.state)
+
+    def test_order_filled_with_unrecognized_strategy_id(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        # Act
+        self.exec_engine.execute(submit_order)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(
+            order,
+            AUDUSD_SIM,
+            strategy_id=StrategyId("RANDOM", "001"),
+        ))
+
+        # Assert (does not send to strategy)
+        self.assertEqual(OrderState.FILLED, order.state)
 
     def test_submit_bracket_order_with_all_duplicate_cl_ord_id_logs_does_not_submit(self):
         # Arrange
@@ -719,6 +799,32 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         # Assert
+        self.assertEqual(OrderState.INITIALIZED, order.state)
+
+    def test_order_filled_event_when_order_not_found_in_cache_logs(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        # Act (event attempts to fill order before its submitted)
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+
+        # Assert
+        self.assertEqual(2, self.exec_engine.event_count)
         self.assertEqual(OrderState.INITIALIZED, order.state)
 
     def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):

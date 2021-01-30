@@ -13,28 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class CCXTInstrumentProvider:
+cdef class CCXTInstrumentProvider(InstrumentProvider):
     cdef object _client
-    cdef dict _currencies
-    cdef dict _instruments
-
-    cdef readonly Venue venue
-    """The venue of the provider.\n\n:returns: `Venue`"""
-    cdef readonly int count
-    """The count of instruments held by the provider.\n\n:returns: `int`"""
-
-    cpdef void load_all(self) except *
-    cpdef dict get_all(self)
-    cpdef Currency currency(self, str code)
-    cpdef Instrument get(self, Symbol symbol)
-    cdef Instrument get_c(self, str symbol_code)
 
     cdef void _load_instruments(self) except *
     cdef void _load_currencies(self) except *

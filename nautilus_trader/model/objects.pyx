@@ -42,6 +42,7 @@ from cpython.object cimport Py_NE
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 
+
 cdef str ROUND_HALF_EVEN = decimal.ROUND_HALF_EVEN
 
 

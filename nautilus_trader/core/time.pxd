@@ -4,6 +4,7 @@ Cython implementation of (parts of) the standard library time module.
 
 from libc.stdint cimport int64_t
 
+
 cdef extern from "pytime.h":
     ctypedef int64_t _PyTime_t
     _PyTime_t _PyTime_GetSystemClock() nogil

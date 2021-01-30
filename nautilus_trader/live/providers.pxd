@@ -13,22 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.average.moving_average cimport MovingAverage
-from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class MovingAverageConvergenceDivergence(Indicator):
-    cdef MovingAverage _fast_ma
-    cdef MovingAverage _slow_ma
+cdef class InstrumentProvider:
+    cdef dict _currencies
+    cdef dict _instruments
 
-    cdef readonly PriceType price_type
-    """The specified price type for extracting values from quote ticks.\n\n:returns: `PriceType` (Enum)"""
-    cdef readonly int fast_period
-    """The fast moving average window period.\n\n:returns: `int`"""
-    cdef readonly int slow_period
-    """The slow moving average window period.\n\n:returns: `int`"""
-    cdef readonly double value
-    """The current value.\n\n:returns: `double`"""
+    cdef readonly Venue venue
+    """The venue of the provider.\n\n:returns: `Venue`"""
+    cdef readonly int count
+    """The count of instruments held by the provider.\n\n:returns: `int`"""
 
-    cpdef void update_raw(self, double close) except *
+    cpdef void load_all(self) except *
+    cpdef dict get_all(self)
+    cpdef Currency currency(self, str code)
+    cpdef Instrument get(self, Symbol symbol)
+    cdef Instrument get_c(self, str symbol_code)

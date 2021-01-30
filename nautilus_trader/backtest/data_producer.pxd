@@ -19,8 +19,8 @@ from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 
 

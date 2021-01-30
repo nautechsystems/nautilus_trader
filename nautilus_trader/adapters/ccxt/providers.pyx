@@ -29,9 +29,10 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.live.providers cimport InstrumentProvider
 
 
-cdef class CCXTInstrumentProvider:
+cdef class CCXTInstrumentProvider(InstrumentProvider):
     """
     Provides a means of loading `Instrument` objects from a unified CCXT exchange.
     """
@@ -48,16 +49,8 @@ cdef class CCXTInstrumentProvider:
             If all instruments should be loaded at instantiation.
 
         """
-        self.venue = Venue(client.name.upper())
-        self.count = 0
-
-        self._client = client
-
-        self._currencies = {}   # type: dict[str, Currency]
-        self._instruments = {}  # type: dict[str, Instrument]
-
-        if load_all:
-            self.load_all()
+        self._client = client  # Assign first as `load_all` will call it
+        super().__init__(venue=Venue(client.name.upper()), load_all=load_all)
 
     async def load_all_async(self):
         """

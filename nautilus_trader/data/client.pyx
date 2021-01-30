@@ -22,12 +22,12 @@ as all abstract methods are implemented.
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport Bar

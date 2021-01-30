@@ -17,6 +17,7 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
+from nautilus_trader.backtest.data_producer cimport DataProducerFacade
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
@@ -28,7 +29,6 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.trader cimport Trader
-from nautilus_trader.backtest.data_producer cimport DataProducerFacade
 
 
 cdef class BacktestEngine:

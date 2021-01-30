@@ -19,8 +19,8 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.live.data_engine cimport LiveDataEngine
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class LiveDataClient(DataClient):

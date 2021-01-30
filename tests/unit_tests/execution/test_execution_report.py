@@ -13,22 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.indicators.average.moving_average cimport MovingAverage
-from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.price_type cimport PriceType
+import unittest
+
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.execution.reports import ExecutionStateReport
+from tests.test_kit.stubs import TestStubs
 
 
-cdef class MovingAverageConvergenceDivergence(Indicator):
-    cdef MovingAverage _fast_ma
-    cdef MovingAverage _slow_ma
+class ExecutionCacheFacadeTests(unittest.TestCase):
 
-    cdef readonly PriceType price_type
-    """The specified price type for extracting values from quote ticks.\n\n:returns: `PriceType` (Enum)"""
-    cdef readonly int fast_period
-    """The fast moving average window period.\n\n:returns: `int`"""
-    cdef readonly int slow_period
-    """The slow moving average window period.\n\n:returns: `int`"""
-    cdef readonly double value
-    """The current value.\n\n:returns: `double`"""
+    def test_empty_execution_state_report(self):
+        # Arrange
+        venue = Venue("SIM")
+        account_id = TestStubs.account_id()
 
-    cpdef void update_raw(self, double close) except *
+        # Act
+        report = ExecutionStateReport(
+            venue=venue,
+            account_id=account_id,
+            order_states={},
+            order_filled={},
+            position_states={},
+        )
+
+        # Assert
+        self.assertEqual(venue, report.venue)
+        self.assertEqual(account_id, report.account_id)
+        self.assertEqual({}, report.order_states)
+        self.assertEqual({}, report.order_filled)
+        self.assertEqual({}, report.position_states)

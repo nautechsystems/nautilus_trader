@@ -17,11 +17,11 @@
 This module provides a data producer for backtesting.
 """
 
+from bisect import bisect_left
 import gc
 
 import numpy as np
 import pandas as pd
-from bisect import bisect_left
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
