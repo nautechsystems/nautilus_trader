@@ -31,13 +31,13 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            AccountId account_id not None,
-            LiveExecutionEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        Venue venue not None,
+        AccountId account_id not None,
+        LiveExecutionEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveExecutionClient` class.
