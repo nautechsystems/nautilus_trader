@@ -18,6 +18,7 @@ import unittest
 from nautilus_trader.execution.base import ExecutionCacheFacade
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -74,8 +75,11 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
     def test_order_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.order, ClientOrderId("O-123456"))
 
+    def test_cld_ord_id_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.cl_ord_id, OrderId("1"))
+
     def test_order_id_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.facade.order, ClientOrderId("O-123456"))
+        self.assertRaises(NotImplementedError, self.facade.order_id, ClientOrderId("O-123456"))
 
     def test_orders_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.orders)
@@ -115,6 +119,9 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
 
     def test_position_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.position, PositionId("P-123456"))
+
+    def test_position_id_when_not_implemented_raises_exception(self):
+        self.assertRaises(NotImplementedError, self.facade.position_id, ClientOrderId("O-123456"))
 
     def test_positions_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.positions)

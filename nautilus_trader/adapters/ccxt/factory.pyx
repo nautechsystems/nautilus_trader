@@ -20,9 +20,9 @@ from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
-from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.identifiers cimport AccountId
 
 try:
     import ccxtpro

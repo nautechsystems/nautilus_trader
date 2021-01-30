@@ -44,8 +44,8 @@ from nautilus_trader.execution.cache cimport ExecutionCache
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
-from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport AmendOrder
+from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.events cimport AccountState
@@ -54,9 +54,9 @@ from nautilus_trader.model.events cimport OrderCancelReject
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionChanged
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -64,8 +64,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport Order
 from nautilus_trader.model.order cimport BracketOrder
+from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -665,19 +665,13 @@ cdef class ExecutionEngine(Component):
                 fill.position_id = positions_open[0].id
             else:
                 self._log.error(f"Cannot assign PositionId: "
-                                    f"{len(positions_open)} open positions")
+                                f"{len(positions_open)} open positions")
         else:
             # Assign identifier to fill
             fill.position_id = position_id
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(event.cl_ord_id)
-        if strategy_id is None:
-            self._log.error(f"Cannot process event: "
-                            f"StrategyId not found for {event}.")
-            return  # Cannot process event further
-
-        self._send_to_strategy(event, strategy_id)
+        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
 
     cdef inline void _handle_order_fill(self, OrderFilled fill) except *:
         cdef Position position = self.cache.position(fill.position_id)

@@ -39,18 +39,18 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
-from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport REQ
+from nautilus_trader.common.logging cimport RES
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
+from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
+from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
-from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
-from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
@@ -69,8 +69,8 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.trading.strategy cimport TradingStrategy
 from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class DataEngine(Component):

@@ -15,13 +15,14 @@
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
+
 from decimal import Decimal
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.common.timer cimport TestTimer
+from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData

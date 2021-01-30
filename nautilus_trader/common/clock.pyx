@@ -21,10 +21,10 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 
-from nautilus_trader.common.timer cimport TestTimer
-from nautilus_trader.common.timer cimport TimeEventHandler
-from nautilus_trader.common.timer cimport ThreadTimer
 from nautilus_trader.common.timer cimport LoopTimer
+from nautilus_trader.common.timer cimport TestTimer
+from nautilus_trader.common.timer cimport ThreadTimer
+from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport UNIX_EPOCH

@@ -15,6 +15,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 
+
 # C Standard Library
 cdef extern from "stdlib.h":
     double drand48()  # Returns a double in range [0,1)

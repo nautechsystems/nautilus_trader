@@ -21,8 +21,8 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LogColor
+from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
@@ -30,13 +30,13 @@ from nautilus_trader.core.message cimport MessageType
 from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.reports cimport ExecutionStateReport
+from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.order cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
 
 
 cdef class LiveExecutionEngine(ExecutionEngine):

@@ -26,6 +26,7 @@ from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
+from nautilus_trader.live.providers import InstrumentProvider
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
@@ -403,6 +404,10 @@ class LiveExecutionClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = TestLogger(self.clock)
@@ -437,16 +442,24 @@ class LiveExecutionClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
+        instrument_provider = InstrumentProvider(venue=SIM, load_all=False)
         self.client = LiveExecutionClient(
             venue=SIM,
             account_id=self.account_id,
             engine=self.engine,
+            instrument_provider=instrument_provider,
             clock=self.clock,
             logger=self.logger,
         )
 
-    def test_dummy_test(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertTrue(True)
+    def test_state_report_when_not_implemented_raises_exception(self):
+        async def run_test():
+            # Arrange
+            # Act
+            # Assert
+            try:
+                await self.client.state_report([])
+            except NotImplementedError as ex:
+                self.assertEqual(NotImplementedError, type(ex))
+
+        self.loop.run_until_complete(run_test())
