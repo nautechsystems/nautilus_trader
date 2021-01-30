@@ -213,6 +213,7 @@ class LiveDataEngineTests(unittest.TestCase):
             # Arrange
             # Act
             self.data_engine.start()
+            await asyncio.sleep(0)
             self.data_engine.kill()
 
             # Assert
