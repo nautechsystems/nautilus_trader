@@ -107,28 +107,62 @@ class AnalyzerTests(unittest.TestCase):
             Quantity(100000),
         )
 
+        order3 = self.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        order4 = self.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.SELL,
+            Quantity(100000),
+        )
+
         fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00010"),
+        )
+
+        fill3 = TestStubs.event_order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-2"),
             strategy_id=StrategyId("S", "001"),
             fill_price=Price("1.00000"),
+        )
+
+        fill4 = TestStubs.event_order_filled(
+            order4,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-2"),
+            strategy_id=StrategyId("S", "001"),
+            fill_price=Price("1.00020"),
         )
 
         position1 = Position(fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill1)
-        position2.apply(fill2)
+        position2 = Position(fill3)
+        position2.apply(fill4)
 
         self.analyzer.add_positions([position1, position2])
 
         # Act
+        result = self.analyzer.get_realized_pnls()
 
         # Assert
-        self.assertTrue(all(self.analyzer.get_realized_pnls()))
+        self.assertEqual(2, len(result))
+        self.assertEqual(6.0, result['P-1'])
+        self.assertEqual(16.0, result['P-2'])

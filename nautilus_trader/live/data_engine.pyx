@@ -78,14 +78,6 @@ cdef class LiveDataEngine(DataEngine):
         self._run_queues_task = None
         self.is_running = False
 
-    cpdef void kill(self) except *:
-        """
-        Kill the engine by abruptly cancelling the queue tasks and calling stop.
-        """
-        if self._run_queues_task:
-            self._run_queues_task.cancel()
-        self.stop()
-
     cpdef object get_event_loop(self):
         """
         Return the internal event loop for the engine.
@@ -129,6 +121,18 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         return self._message_queue.qsize()
+
+    cpdef void kill(self) except *:
+        """
+        Kill the engine by abruptly cancelling the queue tasks and calling stop.
+        """
+        self._log.warning("Killing engine...")
+        if self._run_queues_task:
+            self._log.debug("Cancelling run_queues_task...")
+            self._run_queues_task.cancel()
+        if self.is_running:
+            self.is_running = False  # Avoids sentinel messages for queues
+            self.stop()
 
     cpdef void execute(self, DataCommand command) except *:
         """
@@ -257,11 +261,12 @@ cdef class LiveDataEngine(DataEngine):
         self._log.debug(f"Scheduled {self._run_queues_task}")
 
     cpdef void _on_stop(self) except *:
-        self.is_running = False
-        self._data_queue.put_nowait(None)     # Sentinel message pattern
-        self._message_queue.put_nowait(None)  # Sentinel message pattern
-        self._log.debug(f"Sentinel message placed on data queue.")
-        self._log.debug(f"Sentinel message placed on message queue.")
+        if self.is_running:
+            self.is_running = False
+            self._data_queue.put_nowait(None)     # Sentinel message pattern
+            self._message_queue.put_nowait(None)  # Sentinel message pattern
+            self._log.debug(f"Sentinel message placed on data queue.")
+            self._log.debug(f"Sentinel message placed on message queue.")
 
     async def _run_data_queue(self):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
