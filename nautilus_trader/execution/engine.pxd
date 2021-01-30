@@ -97,11 +97,12 @@ cdef class ExecutionEngine(Component):
     cdef inline void _handle_account_event(self, AccountState event) except *
     cdef inline void _handle_position_event(self, PositionEvent event) except *
     cdef inline void _handle_order_event(self, OrderEvent event) except *
-    cdef inline void _confirm_identifiers(self, OrderFilled fill) except *
+    cdef inline void _confirm_strategy_id(self, OrderFilled fill) except *
+    cdef inline void _confirm_position_id(self, OrderFilled fill) except *
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *
     cdef inline void _handle_order_fill(self, OrderFilled event) except *
     cdef inline void _open_position(self, OrderFilled event) except *
-    cdef inline void _update_position(self, OrderFilled event) except *
+    cdef inline void _update_position(self, Position position, OrderFilled event) except *
     cdef inline void _flip_position(self, Position position, OrderFilled fill) except *
     cdef inline PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
     cdef inline PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)

@@ -201,6 +201,7 @@ class BinanceOrderFillParserTests(unittest.TestCase):
         # Arrange
         info = {
             "symbol": "ETH/USDT",
+            "t": 2127212345,
             "l": "0.02",
             "z": "0.02",
             "L": "2350.10000",
@@ -218,7 +219,7 @@ class BinanceOrderFillParserTests(unittest.TestCase):
             'commission': '0.026304',
             'commission_currency': 'USDT',
             'cum_qty': '0.02',
-            'exec_id': '1611033130693',
+            'exec_id': '2127212345',
             'fill_qty': '0.02',
             'liquidity_side': 2,
             'symbol': 'ETH/USDT',

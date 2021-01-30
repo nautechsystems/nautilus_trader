@@ -87,7 +87,13 @@ cdef class Order:
         event : OrderInitialized
             The order initialized event.
 
+        Raises
+        ------
+        ValueError
+            If event.strategy_id is NULL
         """
+        Condition.true(event.strategy_id.not_null(), "event.strategy_id.not_null()")
+
         self._events = [event]    # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
