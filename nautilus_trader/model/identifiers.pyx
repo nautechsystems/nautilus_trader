@@ -343,10 +343,10 @@ cdef class StrategyId(Identifier):
         return _NULL_STRATEGY_ID
 
     cdef inline bint is_null(self) except *:
-        return self.value == _NULL_ID
+        return self.value == "NULL-NULL"
 
     cdef inline bint not_null(self) except *:
-        return self.value != _NULL_ID
+        return self.value != "NULL-NULL"
 
     @staticmethod
     cdef StrategyId from_str_c(str value):
