@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
+
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock

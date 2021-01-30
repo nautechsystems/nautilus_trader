@@ -19,9 +19,9 @@ from decimal import Decimal
 import oandapyV20
 from oandapyV20.endpoints.accounts import AccountInstruments
 
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport Symbol

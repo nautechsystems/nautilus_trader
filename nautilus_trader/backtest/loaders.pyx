@@ -15,8 +15,9 @@
 
 import pandas as pd
 
-from nautilus_trader.core.correctness cimport Condition
 from cpython.datetime cimport datetime
+
+from nautilus_trader.core.correctness cimport Condition
 
 
 cdef class CSVTickDataLoader:

@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 
 

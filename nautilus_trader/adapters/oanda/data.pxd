@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+
 import threading
 
 from nautilus_trader.adapters.oanda.providers cimport OandaInstrumentProvider

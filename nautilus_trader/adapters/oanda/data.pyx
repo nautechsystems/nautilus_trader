@@ -14,36 +14,40 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+
 from cpython.datetime cimport datetime
+
 import threading
 
-import pandas as pd
 import oandapyV20
 from oandapyV20.endpoints.instruments import InstrumentsCandles
 from oandapyV20.endpoints.pricing import PricingStream
+import pandas as pd
 
 from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
+
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
+from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.bar cimport BarData
+from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarData
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
+
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
 

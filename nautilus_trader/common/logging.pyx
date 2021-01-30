@@ -14,14 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
+import multiprocessing
 import os
 import platform
 from platform import python_version
-import sys
 import queue
+import sys
 import threading
 import traceback
-import multiprocessing
+
 import numpy as np
 import pandas as pd
 import psutil

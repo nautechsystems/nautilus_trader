@@ -19,11 +19,11 @@ This module provides a data producer for backtesting.
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol

@@ -18,9 +18,9 @@ import asyncio
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 
 
 cdef class LiveExecutionClient(ExecutionClient):
