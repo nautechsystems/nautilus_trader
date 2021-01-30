@@ -92,6 +92,7 @@ cdef class Order:
         ------
         ValueError
             If event.strategy_id is NULL
+
         """
         Condition.true(event.strategy_id.not_null(), "event.strategy_id.not_null()")
 
