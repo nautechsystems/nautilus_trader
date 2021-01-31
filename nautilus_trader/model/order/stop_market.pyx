@@ -89,10 +89,6 @@ cdef class StopMarketOrder(PassiveOrder):
             If time_in_force is GTD and the expire_time is None.
 
         """
-        cdef dict options = {
-            REDUCE_ONLY: reduce_only,
-        }
-
         super().__init__(
             cl_ord_id,
             strategy_id,
@@ -105,7 +101,7 @@ cdef class StopMarketOrder(PassiveOrder):
             expire_time,
             init_id,
             timestamp,
-            options=options,
+            options={REDUCE_ONLY: reduce_only},
         )
 
         self.is_reduce_only = reduce_only

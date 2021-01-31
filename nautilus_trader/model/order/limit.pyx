@@ -107,12 +107,6 @@ cdef class LimitOrder(PassiveOrder):
         if hidden:
             Condition.false(post_only, "A hidden order is not post-only")
 
-        cdef dict options = {
-            POST_ONLY: post_only,
-            REDUCE_ONLY: reduce_only,
-            HIDDEN: hidden,
-        }
-
         super().__init__(
             cl_ord_id,
             strategy_id,
@@ -125,7 +119,11 @@ cdef class LimitOrder(PassiveOrder):
             expire_time,
             init_id,
             timestamp,
-            options,
+            options={
+                POST_ONLY: post_only,
+                REDUCE_ONLY: reduce_only,
+                HIDDEN: hidden,
+            },
         )
 
         self.is_post_only = post_only
