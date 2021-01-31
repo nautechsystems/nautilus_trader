@@ -153,7 +153,7 @@ cdef class OrderInitialized(OrderEvent):
         ----------
         cl_ord_id : ClientOrderId
             The client order identifier.
-        strategy_id : ClientOrderId
+        strategy_id : StrategyId
             The strategy identifier associated with the order.
         symbol : Symbol
             The order symbol.
@@ -203,7 +203,10 @@ cdef class OrderInitialized(OrderEvent):
         self.options = options
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(cl_ord_id={self.cl_ord_id}, id={self.id})"
+        return (f"{type(self).__name__}("
+                f"cl_ord_id={self.cl_ord_id}, "
+                f"strategy_id={self.strategy_id}, "
+                f"id={self.id})")
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -754,7 +757,7 @@ cdef class OrderFilled(OrderEvent):
         execution_id : ExecutionId
             The execution identifier.
         position_id : PositionId
-            The exchange/broker position identifier.
+            The position identifier associated with the order.
         strategy_id : StrategyId
             The strategy identifier associated with the order.
         symbol : Symbol

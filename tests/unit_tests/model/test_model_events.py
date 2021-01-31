@@ -93,8 +93,8 @@ class EventTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, id={uuid})", str(event))
-        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, id={uuid})", repr(event))
+        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, id={uuid})", str(event))
+        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, id={uuid})", repr(event))
 
     def test_order_invalid(self):
         # Arrange
