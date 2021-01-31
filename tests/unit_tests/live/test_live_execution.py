@@ -235,6 +235,7 @@ class ExecutionEngineTests(unittest.TestCase):
             # Arrange
             # Act
             self.exec_engine.start()
+            await asyncio.sleep(0)
             self.exec_engine.kill()
 
             # Assert
