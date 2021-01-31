@@ -20,9 +20,3 @@ cdef class BinanceOrderRequestBuilder:
 
     @staticmethod
     cdef dict build(Order order)
-
-
-cdef class BinanceOrderFillParser:
-
-    @staticmethod
-    cdef dict parse(dict report)

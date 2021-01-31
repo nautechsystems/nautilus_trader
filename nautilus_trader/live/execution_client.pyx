@@ -14,13 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.live.providers cimport InstrumentProvider
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelled
@@ -35,12 +37,12 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order.base cimport Order
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -97,9 +99,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._account_last_used = {}
         self._account_last_total = {}
 
-        # Hot cache
-        self._active_orders = {}  # type: dict[ClientOrderId, Order]
-
     cpdef void reset(self) except *:
         """
         Reset the client.
@@ -113,7 +112,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._account_last_free.clear()
         self._account_last_used.clear()
         self._account_last_total.clear()
-        self._active_orders.clear()
 
         self._log.info("Reset.")
 
@@ -133,26 +131,6 @@ cdef class LiveExecutionClient(ExecutionClient):
     async def state_report(self, list active_orders):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
-
-    cdef inline Order _hot_cache_get(self, ClientOrderId cl_ord_id):
-        # Fetch order from hot cache
-        cdef Order order = self._active_orders.get(cl_ord_id)
-        if order is None:
-            # Fetch order from execution engines cache
-            order = self._engine.cache.order(cl_ord_id)
-            if order is None:
-                self._log.error(f"{repr(cl_ord_id)} not found in cache.")
-            else:
-                # Cache order
-                self._active_orders[order.cl_ord_id] = order
-
-        return order
-
-    cdef inline Order _hot_cache_pop(self, ClientOrderId cl_ord_id):
-        # Pop order from hot cache
-        cdef Order order = self._active_orders.pop(cl_ord_id, None)
-        if order is None:
-            self._log.warning(f"{repr(cl_ord_id)} not in cache to pop.")
 
     cdef inline void _generate_order_invalid(
         self,
@@ -220,81 +198,62 @@ cdef class LiveExecutionClient(ExecutionClient):
         self,
         ClientOrderId cl_ord_id,
         OrderId order_id,
-        dict event,
+        ExecutionId execution_id,
+        Symbol symbol,
+        OrderSide order_side,
+        fill_qty: Decimal,
+        cum_qty: Decimal,
+        leaves_qty: Decimal,
+        avg_px: Decimal,
+        commission_amount: Decimal,
+        str commission_currency,
+        LiquiditySide liquidity_side,
+        datetime timestamp
     ) except *:
-        cdef Instrument instrument = self._instrument_provider.get_c(event["symbol"])
+        cdef Instrument instrument = self._instrument_provider.get(symbol)
         if instrument is None:
             self._log.error(f"Cannot fill order with {repr(order_id)}, "
-                            f"instrument for {event['symbol']} not found.")
-            return  # Cannot fill order
-
-        # Fetch order from hot cache
-        cdef Order order = self._hot_cache_get(cl_ord_id)
-        if order is None:
-            self._log.error(f"Cannot fill order for {repr(cl_ord_id)}, "
-                            f"{repr(order_id)} not found in cache.")
+                            f"instrument for {symbol} not found.")
             return  # Cannot fill order
 
         # Determine commission
-        cdef Money commission = self._calculate_commission(instrument, order_id, event)
-
-        # Determine quantities (we have to do it per exchange for now)
-        cdef Quantity fill_qty = Quantity(event["fill_qty"], instrument.size_precision)
-        cdef Quantity cum_qty = Quantity(event["cum_qty"], instrument.size_precision)
-        cdef Quantity leaves_qty = Quantity(order.quantity - cum_qty, instrument.size_precision)
-        if leaves_qty == 0:
-            # Order completed
-            self._hot_cache_pop(cl_ord_id)
-
-        # POSIX timestamp in milliseconds
-        cdef long timestamp = <long>event["timestamp"]
+        cdef Money commission
+        cdef Currency currency
+        if commission_currency is None:
+            commission = Money(0, instrument.quote_currency)
+        else:
+            currency = self._instrument_provider.currency(commission_currency)
+            if currency is None:
+                self._log.error(f"Cannot determine commission for {repr(order_id)}, "
+                                f"currency for {commission_currency} not found.")
+                commission = Money(0, instrument.quote_currency)
+            else:
+                commission = Money(commission_amount, currency)
 
         # Generate event
         cdef OrderFilled filled = OrderFilled(
             self.account_id,
-            order.cl_ord_id,
+            cl_ord_id,
             order_id,
-            ExecutionId(event["exec_id"]),
+            execution_id,
             PositionId.null_c(),  # Assigned in engine
             StrategyId.null_c(),  # Assigned in engine
-            order.symbol,
-            order.side,
-            fill_qty,
-            cum_qty,
-            leaves_qty,
-            Price(event["avg_px"], instrument.price_precision),
+            symbol,
+            order_side,
+            Quantity(fill_qty, instrument.size_precision),
+            Quantity(cum_qty, instrument.size_precision),
+            Quantity(leaves_qty, instrument.size_precision),
+            Price(avg_px, instrument.price_precision),
             instrument.quote_currency,
             instrument.is_inverse,
             commission,
-            event["liquidity_side"],
-            from_posix_ms(timestamp),
+            liquidity_side,
+            timestamp,
             self._uuid_factory.generate(),
             self._clock.utc_now_c(),
         )
 
         self._handle_event(filled)
-
-    cdef inline Money _calculate_commission(
-        self,
-        Instrument instrument,
-        OrderId order_id,
-        dict event,
-    ):
-        cdef str currency_str = event["commission_currency"]
-        cdef Money commission = None
-        cdef Currency currency = None
-        if currency_str is None:
-            commission = Money(0, instrument.quote_currency)
-        else:
-            currency = self._instrument_provider.currency(currency_str)
-            if currency is None:
-                self._log.error(f"Cannot determine commission for {repr(order_id)}, "
-                                f"currency for {currency_str} not found.")
-                commission = Money(0, instrument.quote_currency)
-            else:
-                commission = Money(event["commission"], currency)
-
-        return commission
 
     cdef inline void _generate_order_cancelled(
         self,

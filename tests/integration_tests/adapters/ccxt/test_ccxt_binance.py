@@ -16,7 +16,6 @@
 from datetime import timedelta
 import unittest
 
-from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderFillParser
 from nautilus_trader.adapters.ccxt.exchanges.binance import BinanceOrderRequestBuilder
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -191,38 +190,5 @@ class BinanceOrderRequestBuilderTests(unittest.TestCase):
             'recvWindow': 10000,
             'stopPrice': '100000',
             'type': 'TAKE_PROFIT',
-        }
-        self.assertEqual(expected, result)
-
-
-class BinanceOrderFillParserTests(unittest.TestCase):
-
-    def test_given_symbol_info_and_fee_returns_expected_fill_info(self):
-        # Arrange
-        info = {
-            "symbol": "ETH/USDT",
-            "t": 2127212345,
-            "l": "0.02",
-            "z": "0.02",
-            "L": "2350.10000",
-            "T": 1611033130693,
-            "n": "0.026304",
-            "N": "USDT",
-        }
-
-        # Act
-        result = BinanceOrderFillParser.parse_py(info)
-
-        # Assert
-        expected = {
-            'avg_px': '2350.10000',
-            'commission': '0.026304',
-            'commission_currency': 'USDT',
-            'cum_qty': '0.02',
-            'exec_id': '2127212345',
-            'fill_qty': '0.02',
-            'liquidity_side': 2,
-            'symbol': 'ETH/USDT',
-            'timestamp': 1611033130693,
         }
         self.assertEqual(expected, result)

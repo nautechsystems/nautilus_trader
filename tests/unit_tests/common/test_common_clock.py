@@ -447,7 +447,7 @@ class LiveClockWithThreadTimerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual([], self.clock.timer_names())
-        self.assertEqual(1, len(self.handler))
+        self.assertTrue(len(self.handler) >= 1)
         self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
     def test_cancel_timer(self):
@@ -562,7 +562,7 @@ class LiveClockWithLoopTimerTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertEqual(1, len(self.handler))
+            self.assertTrue(len(self.handler) >= 1)
             self.assertTrue(isinstance(self.handler[0], TimeEvent))
 
         self.loop.run_until_complete(run_test())
@@ -598,7 +598,7 @@ class LiveClockWithLoopTimerTests(unittest.TestCase):
 
             # Assert
             self.assertEqual([], self.clock.timer_names())
-            self.assertTrue(len(self.handler) >= 2)  # Often 3??
+            self.assertTrue(len(self.handler) >= 2)
             self.assertTrue(isinstance(self.handler[0], TimeEvent))
             self.assertTrue(isinstance(self.handler[1], TimeEvent))
 
