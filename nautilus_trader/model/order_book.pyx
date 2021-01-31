@@ -51,7 +51,7 @@ cdef class OrderBook:
         size_precision : int
             The precision for the order book quantities.
         timestamp : long
-            The initial order book update timestamp (Unix time).
+            The initial order book update timestamp (UNIX time).
 
         Raises
         ------
@@ -97,7 +97,7 @@ cdef class OrderBook:
         asks : double[:, :]
             The updated asks.
         timestamp : long
-            The update timestamp (Unix time)
+            The update timestamp (UNIX time)
 
         """
         self._bids = bids
