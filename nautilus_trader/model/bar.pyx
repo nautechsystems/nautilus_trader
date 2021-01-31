@@ -330,9 +330,9 @@ cdef class Bar:
 
         """
         if check:
-            Condition.true(high_price >= low_price, 'high_price >= low_price')
-            Condition.true(high_price >= close_price, 'high_price >= close_price')
-            Condition.true(low_price <= close_price, 'low_price <= close_price')
+            Condition.true(high_price >= low_price, 'high_price was < low_price')
+            Condition.true(high_price >= close_price, 'high_price was < close_price')
+            Condition.true(low_price <= close_price, 'low_price was > close_price')
 
         self.open = open_price
         self.high = high_price

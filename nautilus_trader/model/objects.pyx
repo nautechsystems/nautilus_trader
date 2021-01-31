@@ -336,7 +336,7 @@ cdef class Quantity(BaseDecimal):
         super().__init__(value, precision, rounding)
 
         # Post-condition
-        Condition.true(self._value >= 0, f"quantity not negative, was {self._value}")
+        Condition.true(self._value >= 0, f"quantity negative, was {self._value}")
 
     cpdef str to_str(self):
         """

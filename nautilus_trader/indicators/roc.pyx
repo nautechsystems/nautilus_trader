@@ -44,7 +44,7 @@ cdef class RateOfChange(Indicator):
             If period is not > 1.
 
         """
-        Condition.true(period > 1, "period > 1")
+        Condition.true(period > 1, "period was <= 1")
 
         super().__init__(params=[period])
         self.period = period

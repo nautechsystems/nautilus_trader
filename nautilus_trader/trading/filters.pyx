@@ -71,7 +71,7 @@ cdef class ForexSessionFilter:
 
         """
         Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if session == ForexSession.SYDNEY:
             return time_now.astimezone(self._tz_sydney)
@@ -117,7 +117,7 @@ cdef class ForexSessionFilter:
 
         """
         Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime next_start
@@ -175,7 +175,7 @@ cdef class ForexSessionFilter:
 
         """
         Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime prev_start
@@ -233,7 +233,7 @@ cdef class ForexSessionFilter:
 
         """
         Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime next_end
@@ -291,7 +291,7 @@ cdef class ForexSessionFilter:
 
         """
         Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         cdef datetime local_now = self.local_from_utc(session, time_now)
         cdef datetime prev_end
@@ -464,7 +464,7 @@ cdef class EconomicNewsEventFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if time_now < self._unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
@@ -507,7 +507,7 @@ cdef class EconomicNewsEventFilter:
             If time_now is not tz aware UTC.
 
         """
-        Condition.true(is_datetime_utc(time_now), "time_now is tz aware UTC")
+        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if time_now < self._unfiltered_data_start:
             raise ValueError(f"The given time_now at {time_now} was prior to the "
