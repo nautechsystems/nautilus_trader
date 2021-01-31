@@ -35,7 +35,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 

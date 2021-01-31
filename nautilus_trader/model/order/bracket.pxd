@@ -13,16 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
+from nautilus_trader.model.identifiers cimport BracketOrderId
 from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
-cdef class BitmexOrderRequestBuilder:
-
-    @staticmethod
-    cdef dict build(Order order)
-
-
-cdef class BitmexOrderFillParser:
-
-    @staticmethod
-    cdef dict parse(dict report)
+cdef class BracketOrder:
+    cdef readonly BracketOrderId id
+    """The bracket order identifier.\n\n:returns: `BracketOrderId`"""
+    cdef readonly Order entry
+    """The entry order.\n\n:returns: `Order`"""
+    cdef readonly StopMarketOrder stop_loss
+    """The stop-loss order.\n\n:returns: `StopMarketOrder`"""
+    cdef readonly PassiveOrder take_profit
+    """The take-profit order (optional).\n\n:returns: `PassiveOrder` or `None`"""
+    cdef readonly datetime timestamp
+    """If the bracket order has a take-profit.\n\n:returns: `datetime`"""

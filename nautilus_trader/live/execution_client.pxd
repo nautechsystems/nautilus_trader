@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 
 
 cdef class LiveExecutionClient(ExecutionClient):

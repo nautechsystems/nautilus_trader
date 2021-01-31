@@ -20,7 +20,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 

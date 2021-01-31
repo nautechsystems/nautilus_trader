@@ -12,17 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.model.order.base cimport Order
-
-
-cdef class BitmexOrderRequestBuilder:
-
-    @staticmethod
-    cdef dict build(Order order)
-
-
-cdef class BitmexOrderFillParser:
-
-    @staticmethod
-    cdef dict parse(dict report)

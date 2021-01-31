@@ -13,16 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.order.base cimport Order
 
 
-cdef class BitmexOrderRequestBuilder:
-
+cdef class MarketOrder(Order):
     @staticmethod
-    cdef dict build(Order order)
-
-
-cdef class BitmexOrderFillParser:
-
-    @staticmethod
-    cdef dict parse(dict report)
+    cdef MarketOrder create(OrderInitialized event)

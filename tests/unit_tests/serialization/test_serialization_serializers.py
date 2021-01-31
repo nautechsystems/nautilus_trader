@@ -51,8 +51,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order import LimitOrder
-from nautilus_trader.model.order import StopMarketOrder
+from nautilus_trader.model.order.limit import LimitOrder
+from nautilus_trader.model.order.stop_market import StopMarketOrder
 from nautilus_trader.serialization.base import Serializer
 from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
 from nautilus_trader.serialization.serializers import MsgPackEventSerializer
