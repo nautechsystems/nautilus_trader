@@ -189,10 +189,6 @@ cdef class ExecutionCache(ExecutionCacheFacade):
                 error_count += 1
 
         for cl_ord_id, order in self._cached_orders.items():
-            if cl_ord_id not in self._index_order_position:
-                self._log.error(f"{failure} in _cached_orders: "
-                                f"{repr(cl_ord_id)} not found in self._index_order_position")
-                error_count += 1
             if cl_ord_id not in self._index_order_strategy:
                 self._log.error(f"{failure} in _cached_orders: "
                                 f"{repr(cl_ord_id)} not found in self._index_order_strategy")
