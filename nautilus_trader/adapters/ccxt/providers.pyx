@@ -18,6 +18,7 @@ from decimal import Decimal
 
 import ccxt
 
+from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
@@ -29,7 +30,6 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.live.providers cimport InstrumentProvider
 
 
 cdef class CCXTInstrumentProvider(InstrumentProvider):

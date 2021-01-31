@@ -143,7 +143,7 @@ cdef class BacktestDataContainer:
         """
         Condition.not_none(symbol, "symbol")
         Condition.not_none(data, "data")
-        Condition.true(price_type != PriceType.LAST, "price_type != PriceType.LAST")
+        Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
 
         self.symbols.add(symbol)
 
@@ -173,7 +173,7 @@ cdef class BacktestDataContainer:
         """
         # Check there is the needed instrument for each data symbol
         for symbol in self.symbols:
-            Condition.true(symbol in self.instruments, f"symbol in self.instruments")
+            Condition.true(symbol in self.instruments, f"symbol not in self.instruments")
 
         # Check that all bar DataFrames for each symbol are of the same shape and index
         cdef dict shapes = {}  # type: dict[BarAggregation, tuple]

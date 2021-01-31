@@ -112,7 +112,7 @@ cdef class WindowedMinMaxPrices:
             The price to add.
 
         """
-        Condition.true(is_datetime_utc(ts), "`ts` is a tz-aware UTC")
+        Condition.true(is_datetime_utc(ts), "ts was not tz-aware UTC")
 
         # Expire old prices
         cdef datetime cutoff = ts - self.lookback

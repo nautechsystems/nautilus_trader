@@ -47,8 +47,8 @@ cdef class Position:
             If event.strategy_id is NULL
 
         """
-        Condition.true(event.position_id.not_null(), "event.position_id.not_null()")
-        Condition.true(event.strategy_id.not_null(), "event.strategy_id.not_null()")
+        Condition.true(event.position_id.not_null(), "event.position_id was NULL")
+        Condition.true(event.strategy_id.not_null(), "event.strategy_id was NULL")
 
         self._events = []  # type: list[OrderFilled]
         self._buy_quantity = Decimal()

@@ -53,9 +53,9 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport LimitOrder
-from nautilus_trader.model.order cimport MarketOrder
-from nautilus_trader.model.order cimport PassiveOrder
+from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.order.limit cimport LimitOrder
+from nautilus_trader.model.order.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick

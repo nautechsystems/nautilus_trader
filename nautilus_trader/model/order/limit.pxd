@@ -13,7 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# isort:skip_file
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.order.base cimport PassiveOrder
 
 
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection  # noqa F401 (being used)
+cdef class LimitOrder(PassiveOrder):
+    cdef readonly bint is_post_only
+    """If the order will only make liquidity.\n\n:returns: `bool`"""
+    cdef readonly bint is_reduce_only
+    """If the order will only reduce an option position.\n\n:returns: `bool`"""
+    cdef readonly bint is_hidden
+    """If the order is hidden from the public book.\n\n:returns: `bool`"""
+
+    @staticmethod
+    cdef LimitOrder create(OrderInitialized event)

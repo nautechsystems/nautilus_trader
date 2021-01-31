@@ -23,7 +23,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instrument import Instrument
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.order import MarketOrder
+from nautilus_trader.model.order.market import MarketOrder
 from nautilus_trader.model.order_book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick

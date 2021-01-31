@@ -25,11 +25,11 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport BracketOrder
-from nautilus_trader.model.order cimport LimitOrder
-from nautilus_trader.model.order cimport MarketOrder
-from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport StopMarketOrder
+from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.order.bracket cimport BracketOrder
+from nautilus_trader.model.order.limit cimport LimitOrder
+from nautilus_trader.model.order.market cimport MarketOrder
+from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
 cdef class OrderFactory:

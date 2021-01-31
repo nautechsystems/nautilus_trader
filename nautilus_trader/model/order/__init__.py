@@ -12,8 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-# isort:skip_file
-
-
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection  # noqa F401 (being used)

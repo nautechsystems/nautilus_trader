@@ -40,7 +40,7 @@ from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 
 
 cdef class LiveExecutionClient(ExecutionClient):

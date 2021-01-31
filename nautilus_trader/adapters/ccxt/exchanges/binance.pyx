@@ -19,7 +19,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 
 
 cdef class BinanceOrderRequestBuilder:

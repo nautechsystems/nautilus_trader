@@ -30,7 +30,7 @@ cdef class Condition:
     """
 
     @staticmethod
-    cdef void true(bint predicate, str description, ex_type=None) except *:
+    cdef void true(bint predicate, str fail_msg, ex_type=None) except *:
         """
         Check the condition predicate is True.
 
@@ -38,8 +38,8 @@ cdef class Condition:
         ----------
         predicate : bool
             The condition predicate to check.
-        description : str
-            The description of the condition predicate.
+        fail_msg : str
+            The failure message when the predicate is False.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
@@ -55,11 +55,11 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The condition predicate \'{description}\' was False",
+            msg=fail_msg,
         )
 
     @staticmethod
-    cdef void false(bint predicate, str description, ex_type=None) except *:
+    cdef void false(bint predicate, str fail_msg, ex_type=None) except *:
         """
         Check the condition predicate is False.
 
@@ -67,8 +67,8 @@ cdef class Condition:
         ----------
         predicate : bool
             The condition predicate to check.
-        description : str
-            The description of the condition predicate.
+        fail_msg : str
+            The failure message when the predicate is True.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
@@ -84,7 +84,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The condition predicate \'{description}\' was True",
+            msg=fail_msg,
         )
 
     @staticmethod
@@ -822,7 +822,7 @@ cdef class Condition:
 class PyCondition:
 
     @staticmethod
-    def true(predicate, description, ex_type=None):
+    def true(bint predicate, str fail_msg, ex_type=None):
         """
         Check the condition predicate is True.
 
@@ -830,8 +830,8 @@ class PyCondition:
         ----------
         predicate : bool
             The condition predicate to check.
-        description : str
-            The description of the condition predicate.
+        fail_msg : str
+            The failure message when the predicate is False.
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
@@ -841,10 +841,10 @@ class PyCondition:
             If condition predicate is False.
 
         """
-        Condition.true(predicate, description, ex_type)
+        Condition.true(predicate, fail_msg, ex_type)
 
     @staticmethod
-    def false(predicate, description, ex_type=None):
+    def false(bint predicate, str fail_msg, ex_type=None):
         """
         Check the condition predicate is False.
 
@@ -852,8 +852,8 @@ class PyCondition:
         ----------
         predicate : bool
             The condition predicate to check.
-        description : str
-            The description of the condition predicate.
+        fail_msg : str
+            The failure message when the predicate is True
         ex_type : Exception, optional
             The custom exception type to be raised on a failed check.
 
@@ -863,10 +863,10 @@ class PyCondition:
             If condition predicate is True.
 
         """
-        Condition.false(predicate, description, ex_type)
+        Condition.false(predicate, fail_msg, ex_type)
 
     @staticmethod
-    def none(argument, param, ex_type=None):
+    def none(argument, str param, ex_type=None):
         """
         Check the argument is None.
 
@@ -888,7 +888,7 @@ class PyCondition:
         Condition.none(argument, param, ex_type)
 
     @staticmethod
-    def not_none(argument, param, ex_type=None):
+    def not_none(argument, str param, ex_type=None):
         """
         Check the argument is not None.
 
@@ -910,7 +910,7 @@ class PyCondition:
         Condition.not_none(argument, param, ex_type)
 
     @staticmethod
-    def type(argument, expected, param, ex_type=None):
+    def type(argument, expected, str param, ex_type=None):
         """
         Check the argument is of the specified type.
 
@@ -934,7 +934,7 @@ class PyCondition:
         Condition.type(argument, expected, param, ex_type)
 
     @staticmethod
-    def type_or_none(argument, expected, param, ex_type=None):
+    def type_or_none(argument, expected, str param, ex_type=None):
         """
         Check the argument is of the specified type, or is None.
 
@@ -958,7 +958,7 @@ class PyCondition:
         Condition.type_or_none(argument, expected, param, ex_type)
 
     @staticmethod
-    def callable(argument, param, ex_type=None):
+    def callable(argument, str param, ex_type=None):
         """
         Check the object is callable.
 
@@ -980,7 +980,7 @@ class PyCondition:
         Condition.callable(argument, param, ex_type)
 
     @staticmethod
-    def callable_or_none(argument, param, ex_type=None):
+    def callable_or_none(argument, str param, ex_type=None):
         """
         Check the object is callable or None.
 
@@ -1002,7 +1002,7 @@ class PyCondition:
         Condition.callable_or_none(argument, param, ex_type)
 
     @staticmethod
-    def equal(argument1, argument2, param1, param2, ex_type=None):
+    def equal(argument1, argument2, str param1, str param2, ex_type=None):
         """
         Check the objects are equal.
 
@@ -1028,7 +1028,7 @@ class PyCondition:
         Condition.equal(argument1, argument2, param1, param2, ex_type)
 
     @staticmethod
-    def not_equal(argument1, argument2, param1, param2, ex_type=None):
+    def not_equal(argument1, argument2, str param1, str param2, ex_type=None):
         """
         Check the objects are not equal.
 
@@ -1054,7 +1054,7 @@ class PyCondition:
         Condition.not_equal(argument1, argument2, param1, param2, ex_type)
 
     @staticmethod
-    def list_type(argument, expected_type, param, ex_type=None):
+    def list_type(argument, expected_type, str param, ex_type=None):
         """
         Check the list only contains types of the given expected type.
 
@@ -1078,7 +1078,7 @@ class PyCondition:
         Condition.list_type(argument, expected_type, param, ex_type)
 
     @staticmethod
-    def dict_types(argument, key_type, value_type, param, ex_type=None):
+    def dict_types(argument, key_type, value_type, str param, ex_type=None):
         """
         Check the dictionary only contains types of the given key and value types to contain.
 
@@ -1157,7 +1157,7 @@ class PyCondition:
         Condition.not_in(element, collection, param1, param2, ex_type)
 
     @staticmethod
-    def not_empty(argument, param, ex_type=None):
+    def not_empty(argument, str param, ex_type=None):
         """
         Check the collection is not empty.
 
@@ -1179,7 +1179,7 @@ class PyCondition:
         Condition.not_empty(argument, param, ex_type)
 
     @staticmethod
-    def empty(argument, param, ex_type=None):
+    def empty(argument, str param, ex_type=None):
         """
         Check the collection is empty.
 
@@ -1201,7 +1201,7 @@ class PyCondition:
         Condition.empty(argument, param, ex_type)
 
     @staticmethod
-    def positive(value, param, ex_type=None):
+    def positive(double value, str param, ex_type=None):
         """
         Check the real number value is positive (> 0).
 
@@ -1223,7 +1223,7 @@ class PyCondition:
         Condition.positive(value, param, ex_type)
 
     @staticmethod
-    def positive_int(value, param, ex_type=None):
+    def positive_int(int value, str param, ex_type=None):
         """
         Check the integer value is a positive integer (> 0).
 
@@ -1245,7 +1245,7 @@ class PyCondition:
         Condition.positive_int(value, param, ex_type)
 
     @staticmethod
-    def not_negative(value, param, ex_type=None):
+    def not_negative(double value, str param, ex_type=None):
         """
         Check the real number value is not negative (< 0).
 
@@ -1267,7 +1267,7 @@ class PyCondition:
         Condition.not_negative(value, param, ex_type)
 
     @staticmethod
-    def not_negative_int(value, param, ex_type=None):
+    def not_negative_int(int value, str param, ex_type=None):
         """
         Check the integer value is not negative (< 0).
 
@@ -1289,7 +1289,7 @@ class PyCondition:
         Condition.not_negative_int(value, param, ex_type)
 
     @staticmethod
-    def in_range(value, start, end, param, ex_type=None):
+    def in_range(double value, double start, double end, str param, ex_type=None):
         """
         Check the real number value is within the specified range (inclusive).
 
@@ -1315,7 +1315,7 @@ class PyCondition:
         Condition.in_range(value, start, end, param, ex_type)
 
     @staticmethod
-    def in_range_int(value, start, end, param, ex_type=None):
+    def in_range_int(int value, int start, int end, param, ex_type=None):
         """
         Check the integer value is within the specified range (inclusive).
 
@@ -1341,7 +1341,7 @@ class PyCondition:
         Condition.in_range_int(value, start, end, param, ex_type)
 
     @staticmethod
-    def valid_string(argument, param, ex_type=None):
+    def valid_string(str argument, str param, ex_type=None):
         """
         Check the string argument is valid (not None, empty or whitespace).
 
@@ -1363,7 +1363,7 @@ class PyCondition:
         Condition.valid_string(argument, param, ex_type)
 
     @staticmethod
-    def valid_port(int value, param, ex_type=None):
+    def valid_port(int value, str param, ex_type=None):
         """
         Check the port integer value is valid in range [49152, 65535].
 

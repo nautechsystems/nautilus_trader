@@ -13,7 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# isort:skip_file
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.order.base cimport PassiveOrder
 
 
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection  # noqa F401 (being used)
+cdef class StopMarketOrder(PassiveOrder):
+    cdef readonly bint is_reduce_only
+    """If the order will only reduce an option position.\n\n:returns: `bool`"""
+
+    @staticmethod
+    cdef StopMarketOrder create(OrderInitialized event)

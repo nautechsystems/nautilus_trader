@@ -42,7 +42,7 @@ cdef class EfficiencyRatio(Indicator):
             If period is not >= 2.
 
         """
-        Condition.true(period >= 2, "period >= 2")
+        Condition.true(period >= 2, "period was < 2")
         super().__init__(params=[period])
 
         self.period = period

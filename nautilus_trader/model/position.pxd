@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -103,17 +104,17 @@ cdef class Position:
     cdef void apply_c(self, OrderFilled event) except *
 
     cpdef Money notional_value(self, Price last)
-    cpdef Money calculate_pnl(self, avg_open, avg_close, quantity)
+    cpdef Money calculate_pnl(self, avg_open: Decimal, avg_close: Decimal, quantity: Decimal)
     cpdef Money unrealized_pnl(self, Price last)
     cpdef Money total_pnl(self, Price last)
     cpdef list commissions(self)
 
     cdef inline void _handle_buy_order_fill(self, OrderFilled event) except *
     cdef inline void _handle_sell_order_fill(self, OrderFilled event) except *
-    cdef inline object _calculate_avg_price(self, avg_price, quantity, OrderFilled event)
+    cdef inline object _calculate_avg_price(self, avg_price: Decimal, quantity: Decimal, OrderFilled event)
     cdef inline object _calculate_avg_open_price(self, OrderFilled event)
     cdef inline object _calculate_avg_close_price(self, OrderFilled event)
-    cdef inline object _calculate_points(self, avg_open, avg_close)
-    cdef inline object _calculate_points_inverse(self, avg_open, avg_close)
-    cdef inline object _calculate_return(self, avg_open, avg_close)
-    cdef inline object _calculate_pnl(self, avg_open, avg_close, quantity)
+    cdef inline object _calculate_points(self, avg_open: Decimal, avg_close: Decimal)
+    cdef inline object _calculate_points_inverse(self, avg_open: Decimal, avg_close: Decimal)
+    cdef inline object _calculate_return(self, avg_open: Decimal, avg_close: Decimal)
+    cdef inline object _calculate_pnl(self, avg_open: Decimal, avg_close: Decimal, quantity: Decimal)
