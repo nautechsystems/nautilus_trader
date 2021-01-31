@@ -128,10 +128,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Nothing to dispose yet
         self._log.info("Disposed.")
 
-    async def state_report(self, list active_orders):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cdef inline void _generate_order_invalid(
         self,
         ClientOrderId cl_ord_id,
