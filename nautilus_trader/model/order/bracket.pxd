@@ -13,7 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# isort:skip_file
+from cpython.datetime cimport datetime
+
+from nautilus_trader.model.identifiers cimport BracketOrderId
+from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection  # noqa F401 (being used)
+cdef class BracketOrder:
+    cdef readonly BracketOrderId id
+    """The bracket order identifier.\n\n:returns: `BracketOrderId`"""
+    cdef readonly Order entry
+    """The entry order.\n\n:returns: `Order`"""
+    cdef readonly StopMarketOrder stop_loss
+    """The stop-loss order.\n\n:returns: `StopMarketOrder`"""
+    cdef readonly PassiveOrder take_profit
+    """The take-profit order (optional).\n\n:returns: `PassiveOrder` or `None`"""
+    cdef readonly datetime timestamp
+    """If the bracket order has a take-profit.\n\n:returns: `datetime`"""

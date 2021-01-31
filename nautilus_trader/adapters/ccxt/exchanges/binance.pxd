@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 
 
 cdef class BinanceOrderRequestBuilder:

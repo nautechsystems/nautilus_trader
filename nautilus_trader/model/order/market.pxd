@@ -13,7 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# isort:skip_file
+from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.order.base cimport Order
 
 
-from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection  # noqa F401 (being used)
+cdef class MarketOrder(Order):
+    @staticmethod
+    cdef MarketOrder create(OrderInitialized event)

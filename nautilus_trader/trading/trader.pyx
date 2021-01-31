@@ -84,7 +84,7 @@ cdef class Trader(Component):
 
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
-        Condition.true(exec_engine.check_portfolio_equal(portfolio), "exec_engine.check_portfolio_equal(portfolio)")
+        Condition.true(exec_engine.check_portfolio_equal(portfolio), "portfolio != exec_engine._portfolio")
         super().__init__(clock, logger)
 
         self._strategies = []
@@ -191,7 +191,7 @@ cdef class Trader(Component):
 
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() != RUNNING")
+            Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() was RUNNING")
 
         # Dispose of current strategies
         for strategy in self._strategies:

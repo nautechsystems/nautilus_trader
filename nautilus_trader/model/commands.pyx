@@ -22,8 +22,8 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.order cimport BracketOrder
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.order.bracket cimport BracketOrder
 
 
 cdef class TradingCommand(Command):

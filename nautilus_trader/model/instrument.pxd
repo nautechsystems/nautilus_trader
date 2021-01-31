@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -91,8 +92,8 @@ cdef class Instrument:
         Currency settlement_currency,
     ) except *
 
-    cpdef Money market_value(self, Quantity quantity, close_price)
-    cpdef Money notional_value(self, Quantity quantity, close_price)
+    cpdef Money market_value(self, Quantity quantity, close_price: Decimal)
+    cpdef Money notional_value(self, Quantity quantity, close_price: Decimal)
     cpdef Money calculate_initial_margin(self, Quantity quantity, Price price)
     cpdef Money calculate_maint_margin(
         self,
@@ -104,6 +105,6 @@ cdef class Instrument:
     cpdef Money calculate_commission(
         self,
         Quantity quantity,
-        avg_price,
+        avg_price: Decimal,
         LiquiditySide liquidity_side,
     )

@@ -147,8 +147,8 @@ cdef class QuoteTickDataWrangler:
         Condition.not_none(bars_ask, "bars_ask")
         Condition.false(bars_bid.empty, "bars_bid.empty")
         Condition.false(bars_ask.empty, "bars_ask.empty")
-        Condition.true(all(bars_bid.index) == all(bars_ask.index), "bars_bid.index == bars_ask.index")
-        Condition.true(bars_bid.shape == bars_ask.shape, "bars_bid.shape == bars_ask.shape")
+        Condition.true(all(bars_bid.index) == all(bars_ask.index), "bars_bid.index was != bars_ask.index")
+        Condition.true(bars_bid.shape == bars_ask.shape, "bars_bid.shape was != bars_ask.shape")
 
         # Ensure index is tz-aware UTC
         bars_bid = as_utc_index(bars_bid)
@@ -280,7 +280,7 @@ cdef class TradeTickDataWrangler:
         """
         Condition.not_none(data, "data")
         Condition.type_or_none(data, pd.DataFrame, "data")
-        Condition.true(not data.empty, "not data.empty")
+        Condition.false(data.empty, "data was empty")
 
         self.instrument = instrument
         self._data_trades = as_utc_index(data)

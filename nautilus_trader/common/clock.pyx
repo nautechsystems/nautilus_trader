@@ -205,7 +205,7 @@ cdef class Clock:
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
         cdef datetime now = self.utc_now_c()
-        Condition.true(alert_time >= now, "alert_time >= time_now()")
+        Condition.true(alert_time >= now, "alert_time was < now")
         Condition.callable(handler, "handler")
 
         cdef Timer timer = self._create_timer(
@@ -270,15 +270,15 @@ cdef class Clock:
             handler = self._default_handler
         Condition.not_in(name, self._timers, "name", "timers")
         Condition.not_in(name, self._handlers, "name", "timers")
-        Condition.true(interval.total_seconds() > 0, "interval positive")
+        Condition.true(interval.total_seconds() > 0, f"interval was {interval.total_seconds()}")
         Condition.callable(handler, "handler")
 
         cdef datetime now = self.utc_now_c()
         if start_time is None:
             start_time = now
         if stop_time is not None:
-            Condition.true(stop_time > now, "stop_time > now")
-            Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
+            Condition.true(stop_time > now, "stop_time was < now")
+            Condition.true(start_time + interval <= stop_time, "start_time + interval was > stop_time")
 
         cdef Timer timer = self._create_timer(
             name=name,
@@ -452,7 +452,7 @@ cdef class TestClock(Clock):
 
         """
         Condition.not_none(to_time, "to_time")
-        Condition.true(to_time >= self._time, "to_time >= self._time")  # Ensure monotonic
+        Condition.true(to_time >= self._time, "to_time was < self._time")  # Ensure monotonic
 
         cdef list event_handlers = []
 

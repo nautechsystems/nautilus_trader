@@ -36,7 +36,7 @@ class ConditionTests(unittest.TestCase):
     def test_true_when_predicate_true_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.true(True, "this should be true")
+        PyCondition.true(True, "this should be True")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised
@@ -50,7 +50,7 @@ class ConditionTests(unittest.TestCase):
     def test_false_when_predicate_false_does_nothing(self):
         # Arrange
         # Act
-        PyCondition.false(False, "this should be false")
+        PyCondition.false(False, "this should be False")
 
         # Assert
         self.assertTrue(True)  # ValueError not raised

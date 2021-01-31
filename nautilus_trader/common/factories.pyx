@@ -26,10 +26,10 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.order cimport BracketOrder
-from nautilus_trader.model.order cimport Order
-from nautilus_trader.model.order cimport PassiveOrder
-from nautilus_trader.model.order cimport StopMarketOrder
+from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.order.base cimport PassiveOrder
+from nautilus_trader.model.order.bracket cimport BracketOrder
+from nautilus_trader.model.order.stop_market cimport StopMarketOrder
 
 
 cdef class OrderFactory:
@@ -331,12 +331,12 @@ cdef class OrderFactory:
         """
         # Validate prices
         if entry_order.side == OrderSide.BUY:
-            Condition.true(take_profit is None or stop_loss < take_profit, "stop_loss < take_profit")
+            Condition.true(take_profit is None or stop_loss < take_profit, "stop_loss was >= take_profit")
             if isinstance(entry_order, PassiveOrder):
-                Condition.true(entry_order.price > stop_loss, "entry_order.price > stop_loss")
-                Condition.true(take_profit is None or entry_order.price < take_profit, "entry_order.price < take_profit")
+                Condition.true(entry_order.price > stop_loss, "entry_order.price was <= stop_loss")
+                Condition.true(take_profit is None or entry_order.price < take_profit, "entry_order.price was > take_profit")
         else:  # entry_order.side == OrderSide.SELL
-            Condition.true(take_profit is None or stop_loss > take_profit, "stop_loss > take_profit")
+            Condition.true(take_profit is None or stop_loss > take_profit, "stop_loss was <= take_profit")
             if isinstance(entry_order, PassiveOrder):
                 Condition.true(entry_order.price < stop_loss, "entry_order.price < stop_loss")
                 Condition.true(take_profit is None or entry_order.price > take_profit, "entry_order.price > take_profit")

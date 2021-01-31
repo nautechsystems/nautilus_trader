@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# isort:skip_file
+
 """
 Provides the C Enums as Python Enums for external use.
-
-isort:skip_file
 """
 
 from nautilus_trader.common.c_enums.component_state import ComponentState      # noqa F401 (being used)

@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport OrderId
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.order cimport Order
+from nautilus_trader.model.order.base cimport Order
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -44,8 +44,8 @@ cdef class LiveExecutionClient(ExecutionClient):
     cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline Money _calculate_commission(
-            self,
-            Instrument instrument,
-            OrderId order_id,
-            dict event,
+        self,
+        Instrument instrument,
+        OrderId order_id,
+        dict event,
     )
