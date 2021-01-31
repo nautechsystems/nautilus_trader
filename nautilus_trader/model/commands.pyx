@@ -87,7 +87,7 @@ cdef class SubmitOrder(TradingCommand):
         strategy_id : StrategyId
             The strategy identifier associated with the order.
         position_id : PositionId
-            The position identifier for the order.
+            The position identifier associated with the order.
         order : Order
             The order to submit.
         command_id : UUID
