@@ -21,9 +21,7 @@ from cpython.datetime cimport datetime
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
-from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceOrderFillParser
 from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceOrderRequestBuilder
-from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderFillParser
 from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderRequestBuilder
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
@@ -49,6 +47,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -234,20 +233,21 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 execution_id = ExecutionId(str(response["id"]))
                 if execution_id in order.execution_ids_c():
                     continue  # Trade already applied
-                fill_qty = Decimal(f"{trade['amount']:.{instrument.size_precision}}")
-                cum_qty += fill_qty
-                filled_event = {
-                    "exec_id": str(trade["id"]),
-                    "symbol": trade["symbol"],
-                    "fill_qty": fill_qty,
-                    "cum_qty": cum_qty,
-                    "avg_px": trade["price"],
-                    "liquidity_side": LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                    "commission": trade["fee"]["cost"],
-                    "commission_currency": trade["fee"]["currency"],
-                    "timestamp": trade["timestamp"],
-                }
-                self._generate_order_filled(order.cl_ord_id, order.id, filled_event)
+                self._generate_order_filled(
+                    cl_ord_id=order.cl_ord_id,
+                    order_id=order.id,
+                    execution_id=ExecutionId(str(response["id"])),
+                    symbol=order.symbol,
+                    order_side=order.side,
+                    fill_qty=Decimal(f"{trade['amount']:.{instrument.size_precision}}"),
+                    cum_qty=cum_qty,
+                    leaves_qty=order.quantity - cum_qty,
+                    avg_px=Decimal(trade["price"]),
+                    commission_amount=trade["fee"]["cost"],
+                    commission_currency=trade["fee"]["currency"],
+                    liquidity_side=LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
+                    timestamp=from_posix_ms(trade["timestamp"]),
+                )
 
             status = response["status"]
             if status == "open":
@@ -428,8 +428,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.exception(ex)
 
     async def _watch_orders(self):
-        cdef dict event
-        cdef dict event0
         try:
             while True:
                 try:
@@ -445,8 +443,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._log.exception(ex)
 
     async def _watch_exec_reports(self):
-        cdef dict event0
-        cdef dict event
         try:
             while True:
                 try:
@@ -489,11 +485,9 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
-            order.cl_ord_id,
-            self._clock.utc_now_c(),
+            cl_ord_id=order.cl_ord_id,
+            timestamp=self._clock.utc_now_c(),
         )
-
-        self._active_orders[order.cl_ord_id] = order
 
         try:
             # Submit order and await response
@@ -506,8 +500,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 params=params,
             )
         except CCXTError as ex:
-            self._generate_order_rejected(order.cl_ord_id, str(ex), self._clock.utc_now_c())
-            return
+            self._generate_order_rejected(
+                cl_ord_id=order.cl_ord_id,
+                reason=str(ex),
+                timestamp=self._clock.utc_now_c(),
+            )
 
     async def _cancel_order(self, ClientOrderId cl_ord_id):
         cdef Order order = self._engine.cache.order(cl_ord_id)
@@ -600,7 +597,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             event_info["timestamp"] = event["timestamp"]
             self._on_bitmex_order_status(event_info)
         else:
-            pass  # Unified API
+            raise NotImplementedError("Unified API to be implemented")
 
     cdef inline void _on_exec_report(self, dict event) except *:
         if self.venue.value == "BINANCE":
@@ -614,7 +611,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             event_info["timestamp"] = event["timestamp"]
             self._on_bitmex_exec_report(event_info)
         else:
-            pass  # Unified API
+            raise NotImplementedError("Unified API to be implemented")
 
     cdef inline void _on_binance_order_status(self, dict event) except *:
         cdef OrderId order_id = OrderId(str(event["i"]))
@@ -626,20 +623,31 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         elif exec_type == "CANCELED":
             cl_ord_id = ClientOrderId(event["C"])  # Original ClientOrderId
             self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-            self._active_orders.pop(cl_ord_id)
         elif exec_type == "EXPIRED":
             cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
             self._generate_order_expired(cl_ord_id, order_id, timestamp)
-            self._active_orders.pop(cl_ord_id)
 
     cdef inline void _on_binance_exec_report(self, dict event) except *:
-        cdef OrderId order_id = OrderId(str(event["i"]))
-        cdef datetime timestamp = from_posix_ms(event["E"])  # Event time (generic for now)
         cdef str exec_type = event["x"]
         if exec_type == "TRADE":
-            cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
-            fill_info = BinanceOrderFillParser.parse(event)
-            self._generate_order_filled(cl_ord_id, order_id, fill_info)
+            fill_qty = Decimal(event["l"])
+            cum_qty = Decimal(event["z"])
+            leaves_qty = Decimal(event["q"]) - cum_qty
+            self._generate_order_filled(
+                cl_ord_id=ClientOrderId(event["c"]),
+                order_id=OrderId(str(event["i"])),
+                execution_id=ExecutionId(str(event["t"])),
+                symbol=Symbol(event["symbol"], self.venue),
+                order_side=OrderSideParser.from_str(event["S"]),
+                fill_qty=fill_qty,
+                cum_qty=cum_qty,
+                leaves_qty=leaves_qty,
+                avg_px=Decimal(str(event["L"])),
+                commission_amount=Decimal(event["n"]),
+                commission_currency=event["N"],
+                liquidity_side=LiquiditySide.TAKER,
+                timestamp=from_posix_ms(event["T"])
+            )
 
     cdef inline void _on_bitmex_order_status(self, dict event) except *:
         cdef str cl_ord_id_str = event["clOrdID"]
@@ -653,19 +661,30 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             self._generate_order_accepted(cl_ord_id, order_id, timestamp)
         elif ord_status == "Canceled":
             self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-            self._active_orders.pop(cl_ord_id, None)
         elif ord_status == "Rejected":
             self._generate_order_rejected(cl_ord_id, order_id, timestamp)
-            self._active_orders.pop(cl_ord_id, None)
 
     cdef inline void _on_bitmex_exec_report(self, dict event) except *:
         cdef str cl_ord_id_str = event["clOrdID"]
         if cl_ord_id_str == '':  # Sent from website or otherwise not supplied
             cl_ord_id_str = "NULL"
-        cdef ClientOrderId cl_ord_id = ClientOrderId(cl_ord_id_str)
-        cdef OrderId order_id = OrderId(event["orderID"])
-        cdef datetime timestamp = from_posix_ms(event["timestamp"])  # Event time (generic for now)
+
         if event["execType"] == "Trade":
-            fill_info = BitmexOrderFillParser.parse(event)
-            self._generate_order_filled(cl_ord_id, order_id, fill_info)
-            self._active_orders.pop(cl_ord_id, None)
+            fill_qty = Decimal(event["lastQty"])
+            cum_qty = Decimal(event["cumQty"])
+            leaves_qty = Decimal(event["leavesQty"])
+            self._generate_order_filled(
+                cl_ord_id=ClientOrderId(cl_ord_id_str),
+                order_id=OrderId(event["orderID"]),
+                execution_id=ExecutionId(event["execID"]),
+                symbol=Symbol(event["symbol"], self.venue),
+                order_side=OrderSideParser.from_str(event["side"].upper()),
+                fill_qty=fill_qty,
+                cum_qty=cum_qty,
+                leaves_qty=leaves_qty,
+                avg_px=Decimal(event["lastPx"]),
+                commission_amount=Decimal(str(event.get("execComm", 0) / 0.00000001)),  # Commission in XBt (Satoshi)
+                commission_currency="BTC",
+                liquidity_side=LiquiditySide.TAKER if event["lastLiquidityInd"] == "RemovedLiquidity" else LiquiditySide.MAKER,
+                timestamp=from_posix_ms(event["timestamp"]),
+            )
