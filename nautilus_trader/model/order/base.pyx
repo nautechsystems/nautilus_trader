@@ -47,6 +47,7 @@ from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
