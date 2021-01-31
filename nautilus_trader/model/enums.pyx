@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+# isort:skip_file
+
 """
 Provides the C Enums as Python Enums for external use.
-
-isort:skip_file
 """
 
 from nautilus_trader.model.c_enums.asset_class import AssetClass              # noqa F401 (being used)
