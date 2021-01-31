@@ -102,7 +102,7 @@ cdef class Clock:
 
     cpdef double unix_time(self):
         """
-        Return the current Unix time in seconds from the system clock.
+        Return the current UNIX time in seconds from the system clock.
 
         Returns
         -------
