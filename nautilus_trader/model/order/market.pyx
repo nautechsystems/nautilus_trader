@@ -94,7 +94,7 @@ cdef class MarketOrder(Order):
 
         """
         Condition.positive(quantity, "quantity")
-        Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force is GTC, IOC or FOK")
+        Condition.true(time_in_force in _MARKET_ORDER_VALID_TIF, "time_in_force was != GTC, IOC or FOK")
 
         cdef OrderInitialized init_event = OrderInitialized(
             cl_ord_id=cl_ord_id,

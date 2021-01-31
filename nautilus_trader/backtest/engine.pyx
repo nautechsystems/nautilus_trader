@@ -500,9 +500,9 @@ cdef class BacktestEngine:
 
         Condition.equal(start.tz, pytz.utc, "start.tz", "UTC")
         Condition.equal(stop.tz, pytz.utc, "stop.tz", "UTC")
-        Condition.true(start >= self._data_producer.min_timestamp, "start >= data_client.min_timestamp")
-        Condition.true(start <= self._data_producer.max_timestamp, "stop <= data_client.max_timestamp")
-        Condition.true(start < stop, "start < stop")
+        Condition.true(start >= self._data_producer.min_timestamp, "start was < data_client.min_timestamp")
+        Condition.true(start <= self._data_producer.max_timestamp, "stop was > data_client.max_timestamp")
+        Condition.true(start < stop, "start was >= stop")
         if strategies:
             Condition.not_empty(strategies, "strategies")
             Condition.list_type(strategies, TradingStrategy, "strategies")

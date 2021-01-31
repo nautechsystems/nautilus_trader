@@ -103,9 +103,9 @@ cdef class LimitOrder(PassiveOrder):
 
         """
         if post_only:
-            Condition.true(not hidden, "A post-only order is not hidden")
+            Condition.false(hidden, "A post-only order is not hidden")
         if hidden:
-            Condition.true(not post_only, "A hidden order is not post-only")
+            Condition.false(post_only, "A hidden order is not post-only")
 
         cdef dict options = {
             POST_ONLY: post_only,

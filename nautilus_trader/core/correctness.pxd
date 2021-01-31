@@ -24,10 +24,10 @@ cdef inline Exception make_exception(ex_default, ex_type, str msg):
 cdef class Condition:
 
     @staticmethod
-    cdef void true(bint predicate, str description, ex_type=*) except *
+    cdef void true(bint predicate, str fail_msg, ex_type=*) except *
 
     @staticmethod
-    cdef void false(bint predicate, str description, ex_type=*) except *
+    cdef void false(bint predicate, str fail_msg, ex_type=*) except *
 
     @staticmethod
     cdef void none(object argument, str param, ex_type=*) except *

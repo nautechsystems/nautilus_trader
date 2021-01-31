@@ -1058,7 +1058,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
+            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
             venue=symbol.venue,
@@ -1105,7 +1105,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
+            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
             venue=symbol.venue,
@@ -1152,7 +1152,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
-            Condition.true(from_datetime < to_datetime, "from_datetime < to_datetime")
+            Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
             venue=bar_type.symbol.venue,

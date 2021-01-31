@@ -94,7 +94,7 @@ cdef class Order:
             If event.strategy_id is NULL
 
         """
-        Condition.true(event.strategy_id.not_null(), "event.strategy_id.not_null()")
+        Condition.true(event.strategy_id.not_null(), f"event.strategy_id was NULL")
 
         self._events = [event]    # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
@@ -463,7 +463,7 @@ cdef class Order:
             self._accepted(event)
         elif isinstance(event, OrderAmended):
             # TODO: Implement
-            Condition.true(self._fsm.state == OrderState.ACCEPTED, "state == OrderState.ACCEPTED")
+            Condition.true(self._fsm.state == OrderState.ACCEPTED, "state was != OrderState.ACCEPTED")
             self._amended(event)
         elif isinstance(event, OrderCancelled):
             # OrderId should have been assigned

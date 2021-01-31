@@ -138,7 +138,7 @@ cdef class Timer:
         Condition.callable(callback, "function")
         Condition.positive(interval.total_seconds(), "interval")
         if stop_time:
-            Condition.true(start_time + interval <= stop_time, "start_time + interval <= stop_time")
+            Condition.true(start_time + interval <= stop_time, "start_time + interval was > stop_time")
 
         self.name = name
         self.callback = callback
