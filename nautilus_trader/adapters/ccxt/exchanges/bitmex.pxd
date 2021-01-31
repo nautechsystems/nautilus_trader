@@ -20,9 +20,3 @@ cdef class BitmexOrderRequestBuilder:
 
     @staticmethod
     cdef dict build(Order order)
-
-
-cdef class BitmexOrderFillParser:
-
-    @staticmethod
-    cdef dict parse(dict report)
