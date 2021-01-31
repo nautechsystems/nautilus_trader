@@ -13,16 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.order.base cimport PassiveOrder
 
 
-cdef class BitmexOrderRequestBuilder:
-
-    @staticmethod
-    cdef dict build(Order order)
-
-
-cdef class BitmexOrderFillParser:
+cdef class StopMarketOrder(PassiveOrder):
+    cdef readonly bint is_reduce_only
+    """If the order will only reduce an option position.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef dict parse(dict report)
+    cdef StopMarketOrder create(OrderInitialized event)

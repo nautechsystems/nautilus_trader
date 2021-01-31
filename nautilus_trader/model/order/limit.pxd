@@ -13,16 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.order.base cimport PassiveOrder
 
 
-cdef class BitmexOrderRequestBuilder:
+cdef class LimitOrder(PassiveOrder):
+    cdef readonly bint is_post_only
+    """If the order will only make liquidity.\n\n:returns: `bool`"""
+    cdef readonly bint is_reduce_only
+    """If the order will only reduce an option position.\n\n:returns: `bool`"""
+    cdef readonly bint is_hidden
+    """If the order is hidden from the public book.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef dict build(Order order)
-
-
-cdef class BitmexOrderFillParser:
-
-    @staticmethod
-    cdef dict parse(dict report)
+    cdef LimitOrder create(OrderInitialized event)
