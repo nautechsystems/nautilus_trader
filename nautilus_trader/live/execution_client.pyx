@@ -142,10 +142,11 @@ cdef class LiveExecutionClient(ExecutionClient):
             order = self._engine.cache.order(cl_ord_id)
             if order is None:
                 self._log.error(f"{repr(cl_ord_id)} not found in cache.")
-                return None
             else:
                 # Cache order
                 self._active_orders[order.cl_ord_id] = order
+
+        return order
 
     cdef inline Order _hot_cache_pop(self, ClientOrderId cl_ord_id):
         # Pop order from hot cache
