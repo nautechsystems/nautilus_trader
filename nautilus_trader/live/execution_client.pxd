@@ -44,8 +44,8 @@ cdef class LiveExecutionClient(ExecutionClient):
     cdef inline void _generate_order_cancelled(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline void _generate_order_expired(self, ClientOrderId cl_ord_id, OrderId order_id, datetime timestamp) except *
     cdef inline Money _calculate_commission(
-            self,
-            Instrument instrument,
-            OrderId order_id,
-            dict event,
+        self,
+        Instrument instrument,
+        OrderId order_id,
+        dict event,
     )
