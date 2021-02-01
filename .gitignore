@@ -31,4 +31,7 @@ dist/
 env/
 log/
 logs/
+*target/
 venv*/
+
+Cargo.lock
