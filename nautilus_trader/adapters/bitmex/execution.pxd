@@ -13,10 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 
 
-cdef class BinanceOrderRequestBuilder:
-
-    @staticmethod
-    cdef dict build(Order order)
+cdef class BitmexExecutionClient(CCXTExecutionClient):
+    pass

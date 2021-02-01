@@ -18,7 +18,7 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
-from nautilus_trader.adapters.ccxt.execution import CCXTExecutionClient
+from nautilus_trader.adapters.bitmex.execution import BitmexExecutionClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
@@ -35,9 +35,9 @@ from tests import PACKAGE_ROOT
 
 TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
-BINANCE = Venue("BINANCE")
-BTCUSDT = Symbol("BTC/USDT", BINANCE)
-ETHUSDT = Symbol("ETH/USDT", BINANCE)
+BITMEX = Venue("BITMEX")
+BTCUSDT = Symbol("BTC/USD", BITMEX)
+ETHUSDT = Symbol("ETH/USD", BITMEX)
 
 
 # Monkey patch magic mock
@@ -50,14 +50,14 @@ async def async_magic():
     return
 
 
-class CCXTExecutionClientTests(unittest.TestCase):
+class BitmexExecutionClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.trader_id = TraderId("TESTER", "001")
-        self.account_id = AccountId("BINANCE", "001")
+        self.account_id = AccountId("BITMEX", "001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -102,7 +102,7 @@ class CCXTExecutionClientTests(unittest.TestCase):
             watch_balance = json.load(response)
 
         self.mock_ccxt = MagicMock()
-        self.mock_ccxt.name = "Binance"
+        self.mock_ccxt.name = "Bitmex"
         self.mock_ccxt.precisionMode = 2
         self.mock_ccxt.has = {
             "fetchBalance": True,
@@ -114,7 +114,7 @@ class CCXTExecutionClientTests(unittest.TestCase):
         self.mock_ccxt.fetch_balance = fetch_balance
         self.mock_ccxt.watch_balance = watch_balance
 
-        self.client = CCXTExecutionClient(
+        self.client = BitmexExecutionClient(
             client=self.mock_ccxt,
             account_id=self.account_id,
             engine=self.exec_engine,
