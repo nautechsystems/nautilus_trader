@@ -13,5 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod model;
-pub mod order_book;
+pub mod entry;
+pub mod book;
