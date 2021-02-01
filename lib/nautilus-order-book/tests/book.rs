@@ -102,6 +102,7 @@ mod tests {
         assert_eq!(10.0, order_book.best_bid_amount());
         assert_eq!(1001.0, order_book.best_ask_price());
         assert_eq!(11.0, order_book.best_ask_amount());
+        assert_eq!(1.0, order_book.spread());
         assert_eq!(1610000000000, order_book.timestamp);
         assert_eq!(1, order_book.last_update_id);
     }
