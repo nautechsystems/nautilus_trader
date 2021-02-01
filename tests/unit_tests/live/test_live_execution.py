@@ -452,15 +452,3 @@ class LiveExecutionClientTests(unittest.TestCase):
             clock=self.clock,
             logger=self.logger,
         )
-
-    def test_state_report_when_not_implemented_raises_exception(self):
-        async def run_test():
-            # Arrange
-            # Act
-            # Assert
-            try:
-                await self.client.state_report([])
-            except NotImplementedError as ex:
-                self.assertEqual(NotImplementedError, type(ex))
-
-        self.loop.run_until_complete(run_test())
