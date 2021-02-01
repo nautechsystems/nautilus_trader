@@ -13,25 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.order.base cimport Order
+from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 
 
-cdef class CCXTExecutionClient(LiveExecutionClient):
-    cdef object _client
-
-    cdef object _update_instruments_task
-    cdef object _watch_balances_task
-    cdef object _watch_orders_task
-    cdef object _watch_exec_reports_task
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _log_ccxt_error(self, ex, str method_name) except *
-
-# -- EVENTS ----------------------------------------------------------------------------------------
-
-    cdef void _on_account_state(self, dict event) except *
-    cdef void _on_order_status(self, dict event) except *
-    cdef void _on_exec_report(self, dict event) except *
+cdef class BinanceExecutionClient(CCXTExecutionClient):
+    pass
