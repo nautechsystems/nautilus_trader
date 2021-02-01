@@ -1,0 +1,7 @@
+[package]
+name = "nautilus_order_book"
+version = "0.1.0"
+authors = ["Nautech Systems <info@nautechsystems.io>"]
+edition = "2018"
+
+[dependencies]
