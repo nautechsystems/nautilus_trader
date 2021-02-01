@@ -16,13 +16,9 @@
 import asyncio
 from decimal import Decimal
 
-from cpython.datetime cimport datetime
-
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
-from nautilus_trader.adapters.ccxt.exchanges.binance cimport BinanceOrderRequestBuilder
-from nautilus_trader.adapters.ccxt.exchanges.bitmex cimport BitmexOrderRequestBuilder
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
@@ -37,6 +33,7 @@ from nautilus_trader.live.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.commands cimport AmendOrder
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -46,8 +43,6 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -56,7 +51,6 @@ from nautilus_trader.model.order.base cimport PassiveOrder
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
-cdef tuple _INTEGRATED_VENUES = ("BINANCE", "BITMEX")
 
 
 cdef class CCXTExecutionClient(LiveExecutionClient):
@@ -89,18 +83,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             The logger for the client.
 
         """
-        venue_code = client.name.upper()
-        # Ensure only integrated exchanges for execution
-        if venue_code not in _INTEGRATED_VENUES:
-            raise RuntimeError(f"{venue_code} has not been integrated in this version.")
-
         cdef InstrumentProvider instrument_provider = CCXTInstrumentProvider(
             client=client,
             load_all=False,
         )
 
         super().__init__(
-            Venue(venue_code),
+            Venue(client.name.upper()),
             account_id,
             engine,
             instrument_provider,
@@ -460,28 +449,6 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     async def _submit_order(self, Order order):
-        # Common arguments
-        cdef str symbol = order.symbol.code
-        cdef str order_type  # Assign for specific API
-        cdef str order_side  # Assign for specific API
-        cdef str quantity = str(order.quantity)
-        cdef str price = str(order.price) if isinstance(order, PassiveOrder) else None
-        cdef dict params     # Assign for specific API
-        try:
-            # Exchange specific arguments
-            # Eventually refactor the below into separate classes
-            if self.venue.value == "BINANCE":
-                params = BinanceOrderRequestBuilder.build(order)
-                order_type = params["type"]
-                order_side = OrderSideParser.to_str(order.side)
-            elif self.venue.value == "BITMEX":
-                params = BitmexOrderRequestBuilder.build(order)
-                order_type = params["type"]
-                order_side = OrderSideParser.to_str(order.side).capitalize()
-        except ValueError as ex:
-            self._generate_order_invalid(order.cl_ord_id, str(ex))
-            return
-
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
@@ -492,12 +459,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         try:
             # Submit order and await response
             await self._client.create_order(
-                symbol=symbol,
-                type=order_type,
-                side=order_side,
-                amount=quantity,
-                price=price,
-                params=params,
+                symbol=order.symbol.code,
+                type=OrderTypeParser.to_str(order.type).lower(),
+                side=OrderSideParser.to_str(order.side).lower(),
+                amount=str(order.quantity),
+                price=str(order.price) if isinstance(order, PassiveOrder) else None,
             )
         except CCXTError as ex:
             self._generate_order_rejected(
@@ -524,7 +490,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef inline void _on_account_state(self, dict event) except *:
+    cdef void _on_account_state(self, dict event) except *:
         cdef list balances = []
         cdef list balances_free = []
         cdef list balances_locked = []
@@ -585,106 +551,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._handle_event(account_state)
 
-    cdef inline void _on_order_status(self, dict event) except *:
-        if self.venue.value == "BINANCE":
-            event_info = event["info"]
-            event_info["symbol"] = event["symbol"]
-            event_info["timestamp"] = event["timestamp"]
-            self._on_binance_order_status(event_info)
-        elif self.venue.value == "BITMEX":
-            event_info = event["info"]
-            event_info["symbol"] = event["symbol"]
-            event_info["timestamp"] = event["timestamp"]
-            self._on_bitmex_order_status(event_info)
-        else:
-            raise NotImplementedError("Unified API to be implemented")
+    cdef void _on_order_status(self, dict event) except *:
+        # TODO: Implement
+        self._log.info(str(event), LogColor.BLUE)
 
-    cdef inline void _on_exec_report(self, dict event) except *:
-        if self.venue.value == "BINANCE":
-            event_info = event["info"]
-            event_info["symbol"] = event["symbol"]
-            event_info["timestamp"] = event["timestamp"]
-            self._on_binance_exec_report(event_info)
-        elif self.venue.value == "BITMEX":
-            event_info = event["info"]
-            event_info["symbol"] = event["symbol"]
-            event_info["timestamp"] = event["timestamp"]
-            self._on_bitmex_exec_report(event_info)
-        else:
-            raise NotImplementedError("Unified API to be implemented")
-
-    cdef inline void _on_binance_order_status(self, dict event) except *:
-        cdef OrderId order_id = OrderId(str(event["i"]))
-        cdef datetime timestamp = from_posix_ms(event["E"])  # Event time (generic for now)
-        cdef str exec_type = event["x"]
-        if exec_type == "NEW":
-            cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
-            self._generate_order_accepted(cl_ord_id, order_id, timestamp)
-        elif exec_type == "CANCELED":
-            cl_ord_id = ClientOrderId(event["C"])  # Original ClientOrderId
-            self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-        elif exec_type == "EXPIRED":
-            cl_ord_id = ClientOrderId(event["c"])  # ClientOrderId
-            self._generate_order_expired(cl_ord_id, order_id, timestamp)
-
-    cdef inline void _on_binance_exec_report(self, dict event) except *:
-        cdef str exec_type = event["x"]
-        if exec_type == "TRADE":
-            fill_qty = Decimal(event["l"])
-            cum_qty = Decimal(event["z"])
-            leaves_qty = Decimal(event["q"]) - cum_qty
-            self._generate_order_filled(
-                cl_ord_id=ClientOrderId(event["c"]),
-                order_id=OrderId(str(event["i"])),
-                execution_id=ExecutionId(str(event["t"])),
-                symbol=Symbol(event["symbol"], self.venue),
-                order_side=OrderSideParser.from_str(event["S"]),
-                fill_qty=fill_qty,
-                cum_qty=cum_qty,
-                leaves_qty=leaves_qty,
-                avg_px=Decimal(str(event["L"])),
-                commission_amount=Decimal(event["n"]),
-                commission_currency=event["N"],
-                liquidity_side=LiquiditySide.TAKER,
-                timestamp=from_posix_ms(event["T"])
-            )
-
-    cdef inline void _on_bitmex_order_status(self, dict event) except *:
-        cdef str cl_ord_id_str = event["clOrdID"]
-        if cl_ord_id_str == '':  # Sent from website or otherwise not supplied
-            cl_ord_id_str = "NULL"
-        cdef ClientOrderId cl_ord_id = ClientOrderId(cl_ord_id_str)
-        cdef OrderId order_id = OrderId(event["orderID"])
-        cdef datetime timestamp = from_posix_ms(event["timestamp"])  # Event time (generic for now)
-        cdef str ord_status = event["ordStatus"]
-        if ord_status == "New":
-            self._generate_order_accepted(cl_ord_id, order_id, timestamp)
-        elif ord_status == "Canceled":
-            self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-        elif ord_status == "Rejected":
-            self._generate_order_rejected(cl_ord_id, order_id, timestamp)
-
-    cdef inline void _on_bitmex_exec_report(self, dict event) except *:
-        cdef str cl_ord_id_str = event["clOrdID"]
-        if cl_ord_id_str == '':  # Sent from website or otherwise not supplied
-            cl_ord_id_str = "NULL"
-
-        if event["execType"] == "Trade":
-            fill_qty = Decimal(event["lastQty"])
-            cum_qty = Decimal(event["cumQty"])
-            leaves_qty = Decimal(event["leavesQty"])
-            self._generate_order_filled(
-                cl_ord_id=ClientOrderId(cl_ord_id_str),
-                order_id=OrderId(event["orderID"]),
-                execution_id=ExecutionId(event["execID"]),
-                symbol=Symbol(event["symbol"], self.venue),
-                order_side=OrderSideParser.from_str(event["side"].upper()),
-                fill_qty=fill_qty,
-                cum_qty=cum_qty,
-                leaves_qty=leaves_qty,
-                avg_px=Decimal(event["lastPx"]),
-                commission_amount=Decimal(str(event.get("execComm", 0) / 0.00000001)),  # Commission in XBt (Satoshi)
-                commission_currency="BTC",
-                liquidity_side=LiquiditySide.TAKER if event["lastLiquidityInd"] == "RemovedLiquidity" else LiquiditySide.MAKER,
-                timestamp=from_posix_ms(event["timestamp"]),
-            )
+    cdef void _on_exec_report(self, dict event) except *:
+        # TODO: Implement
+        self._log.info(str(event), LogColor.BLUE)

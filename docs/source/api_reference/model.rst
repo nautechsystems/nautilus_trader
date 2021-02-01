@@ -85,10 +85,37 @@ Objects
    :members:
    :member-order: bysource
 
-Order
------
+Market Order
+------------
 
-.. automodule:: nautilus_trader.model.order
+.. automodule:: nautilus_trader.model.order.market_order
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Limit Order
+-----------
+
+.. automodule:: nautilus_trader.model.order.limit_order
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Stop-Market Order
+-----------------
+
+.. automodule:: nautilus_trader.model.order.stop_market
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Bracket Order
+-------------
+
+.. automodule:: nautilus_trader.model.order.bracket
    :show-inheritance:
    :inherited-members:
    :members:

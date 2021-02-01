@@ -18,8 +18,8 @@ import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
-from nautilus_trader.adapters.ccxt.execution import CCXTExecutionClient
-from nautilus_trader.adapters.ccxt.factory import CCXTClientsFactory
+from nautilus_trader.adapters.binance.execution import BinanceExecutionClient
+from nautilus_trader.adapters.binance.factory import BinanceClientsFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 
 
-class CCXTClientFactoryTests(unittest.TestCase):
+class BinanceClientFactoryTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -77,14 +77,14 @@ class CCXTClientFactoryTests(unittest.TestCase):
 
         # Mock client
         mock_bitmex = MagicMock()
-        mock_bitmex.name = "bitmex"
+        mock_bitmex.name = "binance"
 
         # Mock constructor method to return the mock client
         client_cls = MagicMock()
         client_cls.return_value = mock_bitmex
 
         # Act
-        data_client, exec_client = CCXTClientsFactory.create(
+        data_client, exec_client = BinanceClientsFactory.create(
             client_cls=client_cls,
             config=config,
             data_engine=self.data_engine,
@@ -95,4 +95,4 @@ class CCXTClientFactoryTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(CCXTDataClient, type(data_client))
-        self.assertEqual(CCXTExecutionClient, type(exec_client))
+        self.assertEqual(BinanceExecutionClient, type(exec_client))
