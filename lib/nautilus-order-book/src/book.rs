@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::model::OrderBookEntry;
+use crate::entry::OrderBookEntry;
 
 
 /// Represents a limit order book
@@ -51,6 +51,35 @@ impl OrderBook
         };
     }
 
+    pub fn apply_float_diffs(
+        &mut self,
+        bids: Vec<[f64; 2]>,
+        asks: Vec<[f64; 2]>,
+        timestamp: u64,
+        update_id: u64,
+    ) {
+        // TODO: WIP
+        for entry in &bids {
+            self.bid_book.push(OrderBookEntry{
+                price: entry[0],
+                amount: entry[1],
+                update_id,
+            });
+        }
+
+        // TODO: WIP
+        for entry in &asks {
+            self.ask_book.push(OrderBookEntry{
+                price: entry[0],
+                amount: entry[1],
+                update_id,
+            });
+        }
+
+        self.timestamp = timestamp;
+        self.last_update_id = update_id;
+    }
+
     /// Update the order book by applying the given differences.
     pub fn apply_diffs(
         &mut self,
@@ -74,7 +103,7 @@ impl OrderBook
     }
 
     /// Returns the current spread from the top of the order book.
-    pub fn spread(self) -> f64 {
+    pub fn spread(&self) -> f64 {
         if self.bid_book.is_empty() || self.ask_book.is_empty() {
             return 0.0
         }
@@ -84,27 +113,27 @@ impl OrderBook
         ask - bid
     }
 
-    pub fn best_bid_price(self) -> f64 {
+    pub fn best_bid_price(&self) -> f64 {
         if self.bid_book.is_empty() {
             return 0.0
         }
         return self.bid_book[0].price;
     }
-    pub fn best_ask_price(self) -> f64  {
+    pub fn best_ask_price(&self) -> f64  {
         if self.ask_book.is_empty() {
             return 0.0
         }
         return self.ask_book[0].price;
     }
 
-    pub fn best_bid_amount(self) -> f64 {
+    pub fn best_bid_amount(&self) -> f64 {
         if self.bid_book.is_empty() {
             return 0.0
         }
         return self.bid_book[0].amount;
     }
 
-    pub fn best_ask_amount(self) -> f64  {
+    pub fn best_ask_amount(&self) -> f64  {
         if self.ask_book.is_empty() {
             return 0.0
         }

@@ -15,7 +15,7 @@
 
 #[cfg(test)]
 mod tests {
-    use nautilus_order_book::model::OrderBookEntry;
+    use nautilus_order_book::entry::OrderBookEntry;
 
     #[test]
     fn instantiate_order_book_entry() {

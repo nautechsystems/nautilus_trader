@@ -15,7 +15,7 @@
 
 #[cfg(test)]
 mod tests {
-    use nautilus_order_book::order_book::OrderBook;
+    use nautilus_order_book::book::OrderBook;
 
     #[test]
     fn instantiate_order_book() {
@@ -81,5 +81,28 @@ mod tests {
         let result = order_book.best_ask_amount();
 
         assert_eq!(0.0, result);
+    }
+
+    #[test]
+    fn apply_float_diffs() {
+        let mut order_book = OrderBook::new(
+            "BTC/USD".to_string(),
+            "USD".to_string(),
+            0,
+        );
+
+        order_book.apply_float_diffs(
+            vec![[1000.0, 10.0], [999.0, 20.0]],
+            vec![[1001.0, 11.0], [1002.0, 21.0]],
+            1610000000000,
+            1,
+        );
+
+        assert_eq!(1000.0, order_book.best_bid_price());
+        assert_eq!(10.0, order_book.best_bid_amount());
+        assert_eq!(1001.0, order_book.best_ask_price());
+        assert_eq!(11.0, order_book.best_ask_amount());
+        assert_eq!(1610000000000, order_book.timestamp);
+        assert_eq!(1, order_book.last_update_id);
     }
 }
