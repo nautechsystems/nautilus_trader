@@ -88,7 +88,7 @@ Objects
 Market Order
 ------------
 
-.. automodule:: nautilus_trader.model.order.market_order
+.. automodule:: nautilus_trader.model.order.market
    :show-inheritance:
    :inherited-members:
    :members:
@@ -97,7 +97,7 @@ Market Order
 Limit Order
 -----------
 
-.. automodule:: nautilus_trader.model.order.limit_order
+.. automodule:: nautilus_trader.model.order.limit
    :show-inheritance:
    :inherited-members:
    :members:
