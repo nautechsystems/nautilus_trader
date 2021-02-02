@@ -19,89 +19,60 @@ mod tests {
 
     #[test]
     fn instantiate_order_book() {
-        let order_book = OrderBook::new(
-            "BTC/USD".to_string(),
-            "USD".to_string(),
-            0,
-        );
+        let order_book = OrderBook::new(0);
 
-        assert_eq!("BTC/USD", order_book.symbol);
-        assert_eq!("USD", order_book.currency);
         assert_eq!(0, order_book.timestamp);
         assert_eq!(0, order_book.last_update_id);
     }
 
     #[test]
-    fn best_bid_price_when_no_entries() {
-        let order_book = OrderBook::new(
-            "BTC/USD".to_string(),
-            "USD".to_string(),
-            0,
-        );
+    fn best_bid_price_when_no_entries_returns_min() {
+        let order_book = OrderBook::new(0);
+        let result = order_book.best_bid_price;
 
-        let result = order_book.best_bid_price();
+        assert_eq!(f64::MIN, result);
+    }
+
+    #[test]
+    fn best_ask_price_when_no_entries_returns_max() {
+        let order_book = OrderBook::new(0);
+        let result = order_book.best_ask_price;
+
+        assert_eq!(f64::MAX, result);
+    }
+
+    #[test]
+    fn best_bid_qty_when_no_entries_returns_zero() {
+        let order_book = OrderBook::new(0);
+
+        let result = order_book.best_bid_qty;
 
         assert_eq!(0.0, result);
     }
 
     #[test]
-    fn best_ask_price_when_no_entries() {
-        let order_book = OrderBook::new(
-            "BTC/USD".to_string(),
-            "USD".to_string(),
-            0,
-        );
-
-        let result = order_book.best_ask_price();
-
-        assert_eq!(0.0, result);
-    }
-
-    #[test]
-    fn best_bid_amount_when_no_entries() {
-        let order_book = OrderBook::new(
-            "BTC/USD".to_string(),
-            "USD".to_string(),
-            0,
-        );
-
-        let result = order_book.best_bid_amount();
-
-        assert_eq!(0.0, result);
-    }
-
-    #[test]
-    fn best_ask_amount_when_no_entries() {
-        let order_book = OrderBook::new(
-            "BTC/USD".to_string(),
-            "USD".to_string(),
-            0,
-        );
-
-        let result = order_book.best_ask_amount();
+    fn best_ask_qty_when_no_entries_returns_zero() {
+        let order_book = OrderBook::new(0);
+        let result = order_book.best_ask_qty;
 
         assert_eq!(0.0, result);
     }
 
     #[test]
     fn apply_float_diffs() {
-        let mut order_book = OrderBook::new(
-            "BTC/USD".to_string(),
-            "USD".to_string(),
-            0,
-        );
+        let mut order_book = OrderBook::new(0);
 
-        order_book.apply_float_diffs(
+        order_book.apply_snapshot(
             vec![[1000.0, 10.0], [999.0, 20.0]],
             vec![[1001.0, 11.0], [1002.0, 21.0]],
             1610000000000,
             1,
         );
 
-        assert_eq!(1000.0, order_book.best_bid_price());
-        assert_eq!(10.0, order_book.best_bid_amount());
-        assert_eq!(1001.0, order_book.best_ask_price());
-        assert_eq!(11.0, order_book.best_ask_amount());
+        assert_eq!(1000.0, order_book.best_bid_price);
+        assert_eq!(10.0, order_book.best_bid_qty);
+        assert_eq!(1001.0, order_book.best_ask_price);
+        assert_eq!(11.0, order_book.best_ask_qty);
         assert_eq!(1.0, order_book.spread());
         assert_eq!(1610000000000, order_book.timestamp);
         assert_eq!(1, order_book.last_update_id);
