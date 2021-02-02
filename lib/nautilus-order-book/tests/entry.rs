@@ -19,10 +19,10 @@ mod tests {
 
     #[test]
     fn instantiate_order_book_entry() {
-        let entry = OrderBookEntry { price: 10500.0, amount: 510.0, update_id: 123456 };
+        let entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 123456 };
 
         assert_eq!(10500.0, entry.price);
-        assert_eq!(510.0, entry.amount);
+        assert_eq!(510.0, entry.qty);
         assert_eq!(123456, entry.update_id);
     }
 }
