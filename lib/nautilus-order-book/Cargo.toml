@@ -6,7 +6,7 @@ edition = "2018"
 
 [lib]
 name = "nautilus_order_book"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 cbindgen = "0.17.0"

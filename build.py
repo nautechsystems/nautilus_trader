@@ -57,30 +57,25 @@ RUST_LIBRARIES = [
     "nautilus_order_book",
 ]
 
+STATIC_LINK_MAP = {
+    "nautilus_trader/model/order_book_2.pyx": "lib/nautilus-order-book/target/release/libnautilus_order_book.a",
+}
+
 
 def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
     print("Building rust libs...")
 
-    if platform.system() == "Darwin":  # MacOS
-        dylib_ext = ".dylib"
-        dylib_path = "/usr/local/lib"
-    else:  # Linux
-        dylib_ext = ".so"
-        dylib_path = "/usr/lib"
-
     for lib in RUST_LIBRARIES:
-        # Build each library in turn
         lib_dir = lib.replace('_', '-')
         cmd = f"(cd lib/{lib_dir}; cargo build --release)"
         print(cmd)
         os.system(cmd)
 
-        # Copy to standard dynamic library path
-        target = f"lib/{lib_dir}/target/release/lib{lib}{dylib_ext}"
-        destination = f"{dylib_path}/lib{lib}{dylib_ext}"
-        print(f"Copying: {target} -> {destination}")
-        os.system(f"sudo cp {target} {destination}")
+
+def _get_extra_link_args(extension):
+    link = STATIC_LINK_MAP.get(extension)
+    return None if link is None else [link]
 
 
 def _build_extensions() -> List[Extension]:
@@ -93,11 +88,12 @@ def _build_extensions() -> List[Extension]:
 
     return [
         Extension(
-            str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
-            [str(pyx)],
+            name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
+            sources=[str(pyx)],
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
-            libraries=RUST_LIBRARIES,
+            extra_link_args=_get_extra_link_args(str(pyx)),
+            language='c',
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
