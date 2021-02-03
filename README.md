@@ -27,7 +27,8 @@ Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
 ## Cython
 The project heavily utilizes Cython, which provides static type safety and performance through C extension modules.
-The libraries can be accessed from both pure Python and Cython.
+The vast majority of production Python code is actually written in Cython,
+however the libraries can be accessed from both pure Python and Cython.
 
 Cython is a compiled programming language that aims to be a superset of the
 Python programming language, designed to give C-like performance with code that
@@ -36,12 +37,12 @@ is written mostly in Python with optional additional C-inspired syntax.
 > https://cython.org
 
 ## Rust
-The project is beginning to utilize Rust (stable) for performance critical components.
+The project also utilizes Rust (stable) for performance critical components.
 Rust is blazingly fast (comparable to C++) and memory-efficient: with no runtime or garbage collector,
 it can power performance-critical services, run on embedded devices, and easily integrate with other languages.
 
-Rust’s rich type system and ownership model guarantee memory-safety and thread-safety — eliminating
-many classes of bugs at compile-time.
+Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
+eliminating many classes of bugs at compile-time.
 
 Language binding is handled through Cython and linked at compile time before wheel binaries are
 packaged, so a user does not need to have Rust installed to run _NautilusTrader_.
@@ -56,7 +57,7 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Features
 
-- **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
+- **Fast:** C-level speed and type safety provided through Cython and Rust. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
 - **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
