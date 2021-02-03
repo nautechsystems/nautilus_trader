@@ -24,7 +24,7 @@ jobs:
 
       # Python setup
       - name: Set up Python environment
-      - uses: actions/setup-python@v2
+        uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -33,7 +33,6 @@ jobs:
         uses: hecrj/setup-rust-action@v1
         with:
           rust-version: ${{ matrix.rust }}
-        run: echo "Setup rust stable"
 
       # Install build dependencies
       - name: Install build dependencies
