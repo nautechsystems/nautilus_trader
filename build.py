@@ -65,6 +65,8 @@ def _build_rust_libs() -> None:
     print("cargo build --release")
 
     os.system("(cd lib/nautilus-order-book; cargo build --release)")
+    os.system("(cd lib/nautilus-order-book/target/release; ls)")  # TODO: Peek
+    os.system("(cd /usr/lib/; ls)")  # TODO: Peek
 
     # TODO: Refactor below
     if platform.system() == "Linux":
