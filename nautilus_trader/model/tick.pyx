@@ -40,7 +40,7 @@ cdef class Tick:
         self,
         Symbol symbol not None,
         datetime timestamp not None,
-        long double unix_timestamp,
+        double unix_timestamp,
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -51,7 +51,7 @@ cdef class Tick:
             The ticker symbol.
         timestamp : datetime
             The tick timestamp (UTC).
-        unix_timestamp : long double
+        unix_timestamp : double
             The tick UNIX timestamp (seconds).
 
         """
@@ -91,7 +91,7 @@ cdef class QuoteTick(Tick):
         Quantity bid_size not None,
         Quantity ask_size not None,
         datetime timestamp not None,
-        long double unix_timestamp=0,
+        double unix_timestamp=0,
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -110,9 +110,9 @@ cdef class QuoteTick(Tick):
             The size at the best ask.
         timestamp : datetime
             The tick timestamp (UTC).
-        unix_timestamp : long double, optional
+        unix_timestamp : double, optional
             The tick UNIX timestamp (seconds). If not given then will be
-            inferred from `timestamp.timestamp()`.
+            captured from `timestamp.timestamp()`.
 
         """
         if unix_timestamp == 0:
@@ -250,7 +250,7 @@ cdef class TradeTick(Tick):
         OrderSide side,
         TradeMatchId match_id not None,
         datetime timestamp not None,
-        long double unix_timestamp=0,
+        double unix_timestamp=0,
     ):
         """
         Initialize a new instance of the `TradeTick` class.
@@ -269,9 +269,9 @@ cdef class TradeTick(Tick):
             The trade match identifier.
         timestamp : datetime
             The tick timestamp (UTC).
-        unix_timestamp : long double, optional
+        unix_timestamp : double, optional
             The tick UNIX timestamp (seconds). If not given then will be
-            inferred from `timestamp.timestamp()`.
+            captured from `timestamp.timestamp()`.
 
         Raises
         ------
