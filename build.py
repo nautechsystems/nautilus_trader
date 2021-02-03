@@ -72,9 +72,17 @@ def _build_rust_libs() -> None:
                   "lib/nautilus-order-book/target/release/libnautilus_order_book.so "
                   "/usr/lib/libnautilus_order_book.so")
     elif platform.system() == "Darwin":  # MacOS
+        # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/UsingDynamicLibraries.html
         os.system("sudo cp "
                   "lib/nautilus-order-book/target/release/libnautilus_order_book.dylib "
                   "/usr/lib/libnautilus_order_book.dylib")
+        os.system("sudo cp "
+                  "lib/nautilus-order-book/target/release/libnautilus_order_book.dylib "
+                  "/usr/local/lib/libnautilus_order_book.dylib")
+
+        # TODO: Temp peeking
+        os.system("(cd /usr/lib/; ls)")
+        os.system("(cd /usr/local/lib/; ls)")
 
 
 def _build_extensions() -> List[Extension]:
