@@ -61,7 +61,6 @@ RUST_LIBRARIES = [
 def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
     print("Building rust libs...")
-    print("cargo build --release")
 
     if platform.system() == "Darwin":  # MacOS
         dylib_ext = ".dylib"
