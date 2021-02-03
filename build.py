@@ -65,8 +65,6 @@ def _build_rust_libs() -> None:
     print("cargo build --release")
 
     os.system("(cd lib/nautilus-order-book; cargo build --release)")
-    os.system("(cd lib/nautilus-order-book/target/release; ls)")  # TODO: Peek
-    os.system("(cd /usr/lib/; ls)")  # TODO: Peek
 
     # TODO: Refactor below
     if platform.system() == "Linux":
@@ -75,8 +73,8 @@ def _build_rust_libs() -> None:
                   "/usr/lib/libnautilus_order_book.so")
     elif platform.system() == "Darwin":  # MacOS
         os.system("sudo cp "
-                  "lib/nautilus-order-book/target/release/libnautilus_order_book.dynlib "
-                  "/usr/lib/libnautilus_order_book.dynlib")
+                  "lib/nautilus-order-book/target/release/libnautilus_order_book.dylib "
+                  "/usr/lib/libnautilus_order_book.dylib")
 
 
 def _build_extensions() -> List[Extension]:
