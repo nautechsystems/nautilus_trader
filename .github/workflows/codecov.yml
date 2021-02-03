@@ -33,6 +33,7 @@ jobs:
         uses: hecrj/setup-rust-action@v1
         with:
           rust-version: ${{ matrix.rust }}
+        run: echo "Setup rust stable"
 
       # Install build dependencies
       - name: Install build dependencies
