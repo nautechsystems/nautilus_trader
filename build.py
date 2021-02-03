@@ -64,19 +64,23 @@ def _build_rust_libs() -> None:
 
     if platform.system() == "Darwin":  # MacOS
         dylib_ext = ".dylib"
-        dylib_path = "/usr/local/lib/"
+        dylib_path = "/usr/local/lib"
     else:  # Linux
         dylib_ext = ".so"
-        dylib_path = "/usr/lib/"
+        dylib_path = "/usr/lib"
 
     for lib in RUST_LIBRARIES:
         # Build each library in turn
         lib_dir = lib.replace('_', '-')
-        os.system(f"(cd lib/{lib_dir}; cargo build --release)")
+        cmd = f"(cd lib/{lib_dir}; cargo build --release)"
+        print(cmd)
+        os.system(cmd)
 
         # Copy to standard dynamic library path
-        os.system(f"sudo cp lib/{lib_dir}/target/release/lib{lib}{dylib_ext} "
-                  f"{dylib_path}/lib{lib}{dylib_ext}")
+        target = f"lib/{lib_dir}/target/release/lib{lib}{dylib_ext}"
+        destination = f"{dylib_path}/lib{lib}{dylib_ext}"
+        print(f"Copying: {target} -> {destination}")
+        os.system(f"sudo cp {target} {destination}")
 
 
 def _build_extensions() -> List[Extension]:
