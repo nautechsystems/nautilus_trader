@@ -35,6 +35,17 @@ is written mostly in Python with optional additional C-inspired syntax.
 
 > https://cython.org
 
+## Rust
+The project is beginning to utilize Rust (stable) for performance critical components.
+Rust is blazingly fast (comparable to C++) and memory-efficient: with no runtime or garbage collector,
+it can power performance-critical services, run on embedded devices, and easily integrate with other languages.
+
+Rust’s rich type system and ownership model guarantee memory-safety and thread-safety — eliminating
+many classes of bugs at compile-time.
+
+Language binding is handled through Cython and linked at compile time before wheel binaries are
+packaged, so a user does not need to have Rust installed to run _NautilusTrader_.
+
 ## Documentation
 
 The documentation for the latest version of the package is available at _readthedocs_.
@@ -166,6 +177,16 @@ Following any changes to `.pyx` and `.pxd` files, you can recompile by running:
 
     python build.py
 
+Increasingly the project will be utilizing [Rust](https://www.rust-lang.org/), so to develop throughout the
+entire codebase Rust (stable) will need to be installed on the system.
+
+To download Rustup (tooling manager) and install Rust for Linux and MacOS,
+run the following - then follow the on-screen instructions:
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+> https://www.rust-lang.org/tools/install
+
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 
 ## Contributing
@@ -191,3 +212,4 @@ Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 > https://nautechsystems.io
 
 ![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
+![rust](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/rust-logo.png?raw=true "rust")
