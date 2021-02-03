@@ -5,6 +5,12 @@
 
 #include <stdint.h>
 
+typedef struct OrderBookEntry {
+  double price;
+  double qty;
+  uint64_t update_id;
+} OrderBookEntry;
+
 /**
  * Represents a limit order book
  */
@@ -15,9 +21,19 @@ typedef struct OrderBook {
   double best_ask_price;
   double best_bid_qty;
   double best_ask_qty;
-  double bid_book[25][2];
-  double ask_book[25][2];
+  struct OrderBookEntry _bid_book[25];
+  struct OrderBookEntry _ask_book[25];
 } OrderBook;
+
+/**
+ * Updates the entry with the given quantity and update identifier.
+ */
+struct OrderBookEntry new_entry(double price, double qty, uint64_t update_id);
+
+/**
+ * Updates the entry with the given quantity and update identifier.
+ */
+void update(struct OrderBookEntry *self, double qty, uint64_t update_id);
 
 /**
  * Initialize a new instance of the `OrderBook` struct.
@@ -30,14 +46,14 @@ struct OrderBook new(uint64_t timestamp);
 void reset(struct OrderBook *self);
 
 /**
- * Apply the snapshot of price and quantity float arrays.
- * Assumption that bids and asks are correctly ordered.
+ * Apply the order book entry to the bid side.
  */
-void apply_snapshot(struct OrderBook *self,
-                    const double (*bids)[25][2],
-                    const double (*asks)[25][2],
-                    uint64_t timestamp,
-                    uint64_t update_id);
+void apply_bid_diff(struct OrderBook *self, struct OrderBookEntry entry, uint64_t timestamp);
+
+/**
+ * Apply the order book entry to the ask side.
+ */
+void apply_ask_diff(struct OrderBook *self, struct OrderBookEntry entry, uint64_t timestamp);
 
 /**
  * Returns the current spread from the top of the order book.

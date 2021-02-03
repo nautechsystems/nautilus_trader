@@ -16,6 +16,7 @@
 #[cfg(test)]
 mod tests {
     use nautilus_order_book::book::OrderBook;
+    use nautilus_order_book::entry::OrderBookEntry;
 
     #[test]
     fn instantiate_order_book() {
@@ -59,22 +60,42 @@ mod tests {
     }
 
     #[test]
-    fn apply_float_diffs() {
+    fn apply_bid_diff() {
         let mut order_book = OrderBook::new(0);
 
-        order_book.apply_snapshot(
-            vec![[1000.0, 10.0], [999.0, 20.0]],
-            vec![[1001.0, 11.0], [1002.0, 21.0]],
-            1610000000000,
-            1,
-        );
+        order_book.apply_bid_diff(OrderBookEntry { price: 1000.0, qty: 10.0, update_id: 1 }, 1610000000001);
 
         assert_eq!(1000.0, order_book.best_bid_price);
         assert_eq!(10.0, order_book.best_bid_qty);
-        assert_eq!(1001.0, order_book.best_ask_price);
-        assert_eq!(11.0, order_book.best_ask_qty);
-        assert_eq!(1.0, order_book.spread());
-        assert_eq!(1610000000000, order_book.timestamp);
+        assert_eq!(1610000000001, order_book.timestamp);
         assert_eq!(1, order_book.last_update_id);
+    }
+
+    #[test]
+    fn apply_ask_diff() {
+        let mut order_book = OrderBook::new(0);
+
+        order_book.apply_ask_diff(OrderBookEntry { price: 1001.0, qty: 20.0, update_id: 2 }, 1610000000002);
+
+        assert_eq!(1001.0, order_book.best_ask_price);
+        assert_eq!(20.0, order_book.best_ask_qty);
+        assert_eq!(1610000000002, order_book.timestamp);
+        assert_eq!(2, order_book.last_update_id);
+    }
+
+    #[test]
+    fn apply_bid_then_ask_diffs() {
+        let mut order_book = OrderBook::new(0);
+
+        order_book.apply_bid_diff(OrderBookEntry { price: 1000.0, qty: 10.0, update_id: 1 }, 1610000000001);
+        order_book.apply_ask_diff(OrderBookEntry { price: 1001.0, qty: 20.0, update_id: 2 }, 1610000000002);
+
+        assert_eq!(1000.0, order_book.best_bid_price);
+        assert_eq!(1001.0, order_book.best_ask_price);
+        assert_eq!(10.0, order_book.best_bid_qty);
+        assert_eq!(20.0, order_book.best_ask_qty);
+        assert_eq!(1.0, order_book.spread());
+        assert_eq!(1610000000002, order_book.timestamp);
+        assert_eq!(2, order_book.last_update_id);
     }
 }
