@@ -5,8 +5,6 @@
 
 #include <stdint.h>
 
-typedef struct Vec_OrderBookEntry Vec_OrderBookEntry;
-
 /**
  * Represents a limit order book
  */
@@ -17,17 +15,29 @@ typedef struct OrderBook {
   double best_ask_price;
   double best_bid_qty;
   double best_ask_qty;
+  double bid_book[25][2];
+  double ask_book[25][2];
 } OrderBook;
 
 /**
  * Initialize a new instance of the `OrderBook` struct.
  */
-struct OrderBook* new(uint64_t timestamp);
+struct OrderBook new(uint64_t timestamp);
 
 /**
  * Clear stateful values from the order book.
  */
 void reset(struct OrderBook *self);
+
+/**
+ * Apply the snapshot of price and quantity float arrays.
+ * Assumption that bids and asks are correctly ordered.
+ */
+void apply_snapshot(struct OrderBook *self,
+                    const double (*bids)[25][2],
+                    const double (*asks)[25][2],
+                    uint64_t timestamp,
+                    uint64_t update_id);
 
 /**
  * Returns the current spread from the top of the order book.

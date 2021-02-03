@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[repr(C)]
+#[derive(Copy, Clone)]
 pub struct OrderBookEntry
 {
     pub price: f64,
