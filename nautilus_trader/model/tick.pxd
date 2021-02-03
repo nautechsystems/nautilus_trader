@@ -29,7 +29,7 @@ cdef class Tick:
     cdef readonly datetime timestamp
     """The ticks timestamp (UTC).\n\n:returns: `datetime`"""
     cdef long double unix_timestamp
-    """The ticks unix timestamp (UTC).\n\n:returns: `double`"""
+    """The ticks UNIX timestamp (seconds).\n\n:returns: `double`"""
 
 
 cdef class QuoteTick(Tick):
