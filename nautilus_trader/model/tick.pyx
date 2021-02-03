@@ -40,6 +40,7 @@ cdef class Tick:
         self,
         Symbol symbol not None,
         datetime timestamp not None,
+        long double unix_timestamp
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -50,28 +51,31 @@ cdef class Tick:
             The ticker symbol.
         timestamp : datetime
             The tick timestamp (UTC).
+        unix_timestamp : long double
+            The tick unix_timestamp.
 
         """
         self.symbol = symbol
         self.timestamp = timestamp
+        self.unix_timestamp = unix_timestamp
 
     def __eq__(self, Tick other) -> bool:
-        return self.timestamp == other.timestamp
+        return self.unix_timestamp == other.unix_timestamp
 
     def __ne__(self, Tick other) -> bool:
-        return self.timestamp != other.timestamp
+        return self.unix_timestamp != other.unix_timestamp
 
     def __lt__(self, Tick other) -> bool:
-        return self.timestamp < other.timestamp
+        return self.unix_timestamp < other.unix_timestamp
 
     def __le__(self, Tick other) -> bool:
-        return self.timestamp <= other.timestamp
+        return self.unix_timestamp <= other.unix_timestamp
 
     def __gt__(self, Tick other) -> bool:
-        return self.timestamp > other.timestamp
+        return self.unix_timestamp > other.unix_timestamp
 
     def __ge__(self, Tick other) -> bool:
-        return self.timestamp >= other.timestamp
+        return self.unix_timestamp >= other.unix_timestamp
 
 
 cdef class QuoteTick(Tick):
@@ -87,6 +91,7 @@ cdef class QuoteTick(Tick):
         Quantity bid_size not None,
         Quantity ask_size not None,
         datetime timestamp not None,
+        long double unix_timestamp=0
     ):
         """
         Initialize a new instance of the `QuoteTick` class.
@@ -105,9 +110,14 @@ cdef class QuoteTick(Tick):
             The size at the best ask.
         timestamp : datetime
             The tick timestamp (UTC).
+        unix_timestamp : long double
+            The tick unix_timestamp (optional)
 
         """
-        super().__init__(symbol, timestamp)
+        if unix_timestamp == 0:
+            unix_timestamp = timestamp.timestamp()
+
+        super().__init__(symbol, timestamp, unix_timestamp)
 
         self.bid = bid
         self.ask = ask
@@ -239,6 +249,7 @@ cdef class TradeTick(Tick):
         OrderSide side,
         TradeMatchId match_id not None,
         datetime timestamp not None,
+        long double unix_timestamp=0
     ):
         """
         Initialize a new instance of the `TradeTick` class.
@@ -257,6 +268,8 @@ cdef class TradeTick(Tick):
             The trade match identifier.
         timestamp : datetime
             The tick timestamp (UTC).
+        unix_timestamp : long double
+            The tick unix_timestamp (optional)
 
         Raises
         ------
@@ -265,7 +278,11 @@ cdef class TradeTick(Tick):
 
         """
         Condition.not_equal(side, OrderSide.UNDEFINED, "side", "UNDEFINED")
-        super().__init__(symbol, timestamp)
+
+        if unix_timestamp == 0:
+            unix_timestamp = timestamp.timestamp()
+
+        super().__init__(symbol, timestamp, unix_timestamp)
 
         self.price = price
         self.size = size
