@@ -51,7 +51,7 @@ cdef class Tick:
             The ticker symbol.
         timestamp : datetime
             The tick timestamp (UTC).
-        unix_timestamp: long double
+        unix_timestamp : long double
             The tick unix_timestamp.
 
         """
@@ -110,7 +110,7 @@ cdef class QuoteTick(Tick):
             The size at the best ask.
         timestamp : datetime
             The tick timestamp (UTC).
-        unix_timestamp: long double
+        unix_timestamp : long double
             The tick unix_timestamp (optional)
 
         """
@@ -268,7 +268,7 @@ cdef class TradeTick(Tick):
             The trade match identifier.
         timestamp : datetime
             The tick timestamp (UTC).
-        unix_timestamp: long double
+        unix_timestamp : long double
             The tick unix_timestamp (optional)
 
         Raises
