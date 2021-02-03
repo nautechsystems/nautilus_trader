@@ -3,7 +3,6 @@ import os
 import platform
 from pathlib import Path
 import shutil
-import sys
 from typing import List
 
 from Cython.Build import build_ext
@@ -64,25 +63,21 @@ def _build_rust_libs() -> None:
     print("Building rust libs...")
     print("cargo build --release")
 
-    os.system("(cd lib/nautilus-order-book; cargo build --release)")
+    if platform.system() == "Darwin":  # MacOS
+        dylib_ext = ".dylib"
+        dylib_path = "/usr/local/lib/"
+    else:  # Linux
+        dylib_ext = ".so"
+        dylib_path = "/usr/lib/"
 
-    # TODO: Refactor below
-    if platform.system() == "Linux":
-        os.system("sudo cp "
-                  "lib/nautilus-order-book/target/release/libnautilus_order_book.so "
-                  "/usr/lib/libnautilus_order_book.so")
-    elif platform.system() == "Darwin":  # MacOS
-        # https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/UsingDynamicLibraries.html
-        os.system("sudo cp "
-                  "lib/nautilus-order-book/target/release/libnautilus_order_book.dylib "
-                  "/usr/lib/libnautilus_order_book.dylib")
-        os.system("sudo cp "
-                  "lib/nautilus-order-book/target/release/libnautilus_order_book.dylib "
-                  "/usr/local/lib/libnautilus_order_book.dylib")
+    for lib in RUST_LIBRARIES:
+        # Build each library in turn
+        lib_dir = lib.replace('_', '-')
+        os.system(f"(cd lib/{lib_dir}; cargo build --release)")
 
-        # TODO: Temp peeking
-        os.system("(cd /usr/lib/; ls)")
-        os.system("(cd /usr/local/lib/; ls)")
+        # Copy to standard dynamic library path
+        os.system(f"sudo cp lib/{lib_dir}/target/release/lib{lib}{dylib_ext} "
+                  f"{dylib_path}/lib{lib}{dylib_ext}")
 
 
 def _build_extensions() -> List[Extension]:
