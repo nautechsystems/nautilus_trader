@@ -53,6 +53,20 @@ CYTHON_COMPILER_DIRECTIVES = {
     # **Options.extra_warnings,
 }
 
+RUST_LIBRARIES = [
+    "nautilus_order_book",
+]
+
+
+def _build_rust_libs() -> None:
+    # Build the Rust libraries using Cargo
+    print("Building rust libs...")
+    print("cargo build --release")
+    os.system("(cd lib/nautilus-order-book; cargo build --release)")
+    os.system("sudo cp "
+              "lib/nautilus-order-book/target/release/libnautilus_order_book.so "
+              "/usr/lib/libnautilus_order_book.so")
+
 
 def _build_extensions() -> List[Extension]:
     # Build Extensions to feed into cythonize()
@@ -68,7 +82,7 @@ def _build_extensions() -> List[Extension]:
             [str(pyx)],
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
-            # libraries=["nautilus_order_book"]  # TODO: WIP
+            libraries=RUST_LIBRARIES,
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
@@ -122,6 +136,8 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 def build(setup_kwargs):
     """Construct the extensions and distribution."""  # noqa
+    _build_rust_libs()
+
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 

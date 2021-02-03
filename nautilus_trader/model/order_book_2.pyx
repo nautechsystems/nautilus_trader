@@ -16,6 +16,7 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.order_book_rs cimport OrderBook as OrderBookRs
+from nautilus_trader.model.order_book_rs cimport OrderBookEntry
 from nautilus_trader.model cimport order_book_rs
 
 
@@ -25,20 +26,25 @@ cdef class OrderBook:
     def __cinit__(self, uint64_t timestamp):
         self._book = order_book_rs.new(timestamp)
 
-    # cpdef void apply_snapshot(
-    #     self,
-    #     double[:, :] bids,
-    #     double[:, :] asks,
-    #     uint64_t timestamp,
-    #     uint64_t update_id,
-    # ) except *:
-    #     order_book_rs.apply_snapshot(
-    #         &self._book,
-    #         <double [25][2]>bids,
-    #         <double [25][2]>asks,
-    #         timestamp,
-    #         update_id,
-    #     )
+    cpdef void apply_bid_diff(
+        self,
+        double price,
+        double qty,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
+        order_book_rs.apply_bid_diff(&self._book, entry, timestamp)
+
+    cpdef void apply_ask_diff(
+            self,
+            double price,
+            double qty,
+            uint64_t update_id,
+            uint64_t timestamp,
+    ) except *:
+        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
+        order_book_rs.apply_ask_diff(&self._book, entry, timestamp)
 
     cpdef double spread(self):
         return order_book_rs.spread(&self._book)
@@ -53,7 +59,7 @@ cdef class OrderBook:
         return self._book.best_bid_qty
 
     cpdef double best_ask_qty(self):
-        return self._book.best_bid_qty
+        return self._book.best_ask_qty
 
     cpdef uint64_t timestamp(self):
         return self._book.timestamp

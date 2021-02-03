@@ -17,18 +17,22 @@ from libc.stdint cimport uint64_t
 
 
 cdef extern from "lib/nautilus-order-book/src/nautilus_order_book.h":
+    ctypedef struct OrderBookEntry:
+        double price
+        double qty
+        uint64_t update_id
+
+    OrderBookEntry new_entry(double price, double qty, uint64_t update_id)
+
     ctypedef struct OrderBook:
         double best_bid_price
         double best_ask_price
+        double best_bid_qty
+        double best_ask_qty
         uint64_t timestamp
         uint64_t last_update_id
 
-    void apply_snapshot(
-        OrderBook *self,
-        const double (*bids)[25][2],
-        const double (*asks)[25][2],
-        uint64_t timestamp,
-        uint64_t update_id,
-    )
+    void apply_bid_diff(OrderBook *self, OrderBookEntry entry, uint64_t timestamp)
+    void apply_ask_diff(OrderBook *self, OrderBookEntry entry, uint64_t timestamp)
     OrderBook new(uint64_t timestamp)
     double spread(OrderBook *self)

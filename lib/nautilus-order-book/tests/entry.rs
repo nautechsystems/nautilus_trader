@@ -18,11 +18,21 @@ mod tests {
     use nautilus_order_book::entry::OrderBookEntry;
 
     #[test]
-    fn instantiate_order_book_entry() {
-        let entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 123456 };
+    fn instantiate() {
+        let entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 1 };
 
         assert_eq!(10500.0, entry.price);
         assert_eq!(510.0, entry.qty);
-        assert_eq!(123456, entry.update_id);
+        assert_eq!(1, entry.update_id);
+    }
+
+    #[test]
+    fn update() {
+        let mut entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 1 };
+        entry.update(600.0, 2);
+
+        assert_eq!(10500.0, entry.price);
+        assert_eq!(600.0, entry.qty);
+        assert_eq!(2, entry.update_id);
     }
 }

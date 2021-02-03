@@ -21,3 +21,20 @@ pub struct OrderBookEntry
     pub qty: f64,
     pub update_id: u64,
 }
+
+
+impl OrderBookEntry
+{
+    /// Updates the entry with the given quantity and update identifier.
+    #[no_mangle]
+    pub extern "C" fn new_entry(price: f64, qty: f64, update_id: u64) -> OrderBookEntry {
+        return OrderBookEntry { price, qty, update_id };
+    }
+
+    /// Updates the entry with the given quantity and update identifier.
+    #[no_mangle]
+    pub extern "C" fn update(&mut self, qty: f64, update_id: u64) {
+        self.qty = qty;
+        self.update_id = update_id;
+    }
+}
