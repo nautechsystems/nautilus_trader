@@ -68,6 +68,7 @@ def _build_extensions() -> List[Extension]:
             [str(pyx)],
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
+            # libraries=["nautilus_order_book"]  # TODO: WIP
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),

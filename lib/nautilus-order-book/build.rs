@@ -28,5 +28,5 @@ fn main() {
 
     cbindgen::generate_with_config(&crate_dir, config)
         .expect("Unable to generate bindings")
-        .write_to_file(crate_dir.join("libnautilus_order_book.h"));
+        .write_to_file(crate_dir.join("src/nautilus_order_book.h"));
 }
