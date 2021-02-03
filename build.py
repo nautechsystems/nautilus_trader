@@ -1,5 +1,6 @@
 import itertools
 import os
+import platform
 from pathlib import Path
 import shutil
 import sys
@@ -62,10 +63,18 @@ def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
     print("Building rust libs...")
     print("cargo build --release")
+
     os.system("(cd lib/nautilus-order-book; cargo build --release)")
-    os.system("sudo cp "
-              "lib/nautilus-order-book/target/release/libnautilus_order_book.so "
-              "/usr/lib/libnautilus_order_book.so")
+
+    # TODO: Refactor below
+    if platform.system() == "Linux":
+        os.system("sudo cp "
+                  "lib/nautilus-order-book/target/release/libnautilus_order_book.so "
+                  "/usr/lib/libnautilus_order_book.so")
+    elif platform.system() == "Darwin":  # MacOS
+        os.system("sudo cp "
+                  "lib/nautilus-order-book/target/release/libnautilus_order_book.dynlib "
+                  "/usr/lib/libnautilus_order_book.dynlib")
 
 
 def _build_extensions() -> List[Extension]:
@@ -158,7 +167,7 @@ if __name__ == "__main__":
 
     # Work around a Cython problem in Python 3.8.x on MacOS
     # https://github.com/cython/cython/issues/3262
-    if sys.platform == "darwin":
+    if platform.system() == "Darwin":
         print("MacOS: Setting multiprocessing method to 'fork'.")
         try:
             # noinspection PyUnresolvedReferences
@@ -169,4 +178,5 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
+    print(f"System: {platform.system()}")
     build({})
