@@ -38,7 +38,7 @@ is written mostly in Python with optional additional C-inspired syntax.
 
 ## Rust
 The project also utilizes Rust (stable) for performance critical components.
-Rust is blazingly fast (comparable to C++) and memory-efficient: with no runtime or garbage collector,
+Rust is blazingly fast (comparable to C/C++) and memory-efficient: with no runtime or garbage collector,
 it can power performance-critical services, run on embedded devices, and easily integrate with other languages.
 
 Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
@@ -46,6 +46,8 @@ eliminating many classes of bugs at compile-time.
 
 Language binding is handled through Cython and linked at compile time before wheel binaries are
 packaged, so a user does not need to have Rust installed to run _NautilusTrader_.
+
+> https://www.rust-lang.org/
 
 ## Documentation
 
@@ -60,7 +62,7 @@ The documentation for the latest version of the package is available at _readthe
 - **Fast:** C-level speed and type safety provided through Cython and Rust. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
 - **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
-- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
+- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
@@ -181,7 +183,7 @@ Following any changes to `.pyx` and `.pxd` files, you can recompile by running:
 Increasingly the project will be utilizing [Rust](https://www.rust-lang.org/), so to develop throughout the
 entire codebase Rust (stable) will need to be installed on the system.
 
-To download Rustup (tooling manager) and install Rust for Linux and MacOS,
+To download Rustup (tooling manager) and install Rust for Linux or MacOS,
 run the following - then follow the on-screen instructions:
 
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh

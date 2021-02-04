@@ -42,13 +42,13 @@ cdef class Position:
         Raises
         ------
         ValueError
-            If event.position_id is NULL
+            If event.position_id has a `NULL` value.
         ValueError
-            If event.strategy_id is NULL
+            If event.strategy_id has a `NULL` value.
 
         """
-        Condition.true(event.position_id.not_null(), "event.position_id was NULL")
-        Condition.true(event.strategy_id.not_null(), "event.strategy_id was NULL")
+        Condition.true(event.position_id.not_null(), "event.position_id.value was NULL")
+        Condition.true(event.strategy_id.not_null(), "event.strategy_id.value was NULL")
 
         self._events = []  # type: list[OrderFilled]
         self._buy_quantity = Decimal()
