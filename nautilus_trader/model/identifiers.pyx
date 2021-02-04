@@ -385,7 +385,7 @@ cdef class StrategyId(Identifier):
     @staticmethod
     def null():
         """
-        Return a strategy identifier with an `NULL` value.
+        Return a strategy identifier with a 'NULL' value.
 
         Returns
         -------
@@ -586,7 +586,7 @@ cdef class OrderId(Identifier):
     @staticmethod
     def null():
         """
-        Return an order identifier with an `NULL` value.
+        Return an order identifier with a 'NULL' value.
 
         Returns
         -------
@@ -638,7 +638,7 @@ cdef class PositionId(Identifier):
     @staticmethod
     def null():
         """
-        Return a position identifier with a `NULL` value.
+        Return a position identifier with a 'NULL' value.
 
         Returns
         -------
