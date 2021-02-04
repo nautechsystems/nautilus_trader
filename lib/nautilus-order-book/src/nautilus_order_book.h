@@ -78,8 +78,18 @@ double spread(const struct OrderBook *self);
 double buy_price_for_qty(struct OrderBook *self, double qty);
 
 /**
+ * Returns the predicted buy quantity for the given price.
+ */
+double buy_qty_for_price(struct OrderBook *self, double price);
+
+/**
  * Returns the predicted sell price for the given quantity.
  */
 double sell_price_for_qty(struct OrderBook *self, double qty);
+
+/**
+ * Returns the predicted sell quantity for the given price.
+ */
+double sell_qty_for_price(struct OrderBook *self, double price);
 
 #endif /* add_h */
