@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn buy_price_for_qty_when_entires() {
+    fn buy_price_for_qty_when_entries() {
         let mut order_book = OrderBook::new(0);
 
         order_book.apply_ask_diff(OrderBookEntry { price: 1000.0, qty: 10.0, update_id: 1 }, 1610000000000);
@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn sell_price_for_qty_when_entires() {
+    fn sell_price_for_qty_when_entries() {
         let mut order_book = OrderBook::new(0);
 
         order_book.apply_bid_diff(OrderBookEntry { price: 1000.5, qty: 10.0, update_id: 1 }, 1610000000000);
@@ -182,6 +182,8 @@ mod tests {
         assert_eq!(11.0, order_book.best_bid_qty);
         assert_eq!(10.0, order_book.best_ask_qty);
         assert_eq!(1000.7, order_book.sell_price_for_qty(100.0));
+        assert_eq!(551.0, order_book.sell_qty_for_price(1000.0));
         assert_eq!(1002.3, order_book.buy_price_for_qty(100.0));
+        assert_eq!(30.0, order_book.buy_qty_for_price(1002.1));
     }
 }

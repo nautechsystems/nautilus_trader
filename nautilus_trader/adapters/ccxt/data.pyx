@@ -659,8 +659,6 @@ cdef class CCXTDataClient(LiveDataClient):
             self._log.error(f"Cannot subscribe to order book (no instrument for {symbol.code}).")
             return
 
-        cdef double[:, :] bids
-        cdef double[:, :] asks
         cdef OrderBook order_book = None
         try:
             while True:
@@ -675,25 +673,30 @@ cdef class CCXTDataClient(LiveDataClient):
                         # First quote timestamp often None
                         timestamp = self._client.milliseconds()
 
-                    bids = np.asarray(lob.get("bids"), dtype=np.float64)
-                    asks = np.asarray(lob.get("asks"), dtype=np.float64)
+                    bids = lob.get("bids")
+                    asks = lob.get("asks")
                     if bids is None:
                         continue
                     if asks is None:
                         continue
 
-                    if order_book is None:  # Fast C-level check
+                    if order_book is None:
                         order_book = OrderBook(
                             symbol,
                             level,
+                            depth,
                             instrument.price_precision,
                             instrument.size_precision,
-                            bids,
-                            asks,
+                            list(bids),
+                            list(asks),
+                            lob.get("nonce"),
                             timestamp,
                         )
+
                     else:
-                        order_book.update(bids, asks, timestamp)
+                        # Currently inefficient while using CCXT. The order book
+                        # is regenerated with a snapshot on every update.
+                        order_book.apply_snapshot(list(bids), list(asks), lob.get("nonce"), timestamp)
 
                     self._handle_order_book(order_book)
                 except CCXTError as ex:
