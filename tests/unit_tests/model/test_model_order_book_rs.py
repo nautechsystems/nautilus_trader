@@ -25,10 +25,8 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class OrderBookTests(unittest.TestCase):
-    pass
 
     def test_instantiation(self):
-        pass
         # Arrange
         # Act
         order_book = OrderBook(0)
