@@ -13,29 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-/// Represents an entry in an order book.
-pub struct OrderBookEntry
-{
-    pub price: f64,
-    pub qty: f64,
-    pub update_id: u64,
-}
+extern crate cbindgen;
+
+use std::env;
+use std::path::PathBuf;
 
 
-impl OrderBookEntry
-{
-    /// Initialize a new instance of the `OrderBookEntry` structure.
-    #[no_mangle]
-    pub extern "C" fn new_entry(price: f64, qty: f64, update_id: u64) -> OrderBookEntry {
-        return OrderBookEntry { price, qty, update_id };
-    }
+fn main() {
+    let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR env var is not defined"));
 
-    /// Update the entry with the given quantity and update identifier.
-    #[no_mangle]
-    pub extern "C" fn update(&mut self, qty: f64, update_id: u64) {
-        self.qty = qty;
-        self.update_id = update_id;
-    }
+    let config = cbindgen::Config::from_file("cbindgen.toml")
+        .expect("Unable to find cbindgen.toml configuration file");
+
+    cbindgen::generate_with_config(&crate_dir, config)
+        .expect("Unable to generate bindings")
+        .write_to_file(crate_dir.join("src/nautilus_order_book.h"));
 }

@@ -17,126 +17,185 @@ use crate::entry::OrderBookEntry;
 
 
 /// Represents a limit order book
+#[repr(C)]
 pub struct OrderBook
 {
-    /// The order book symbol.
-    pub symbol: String,
-    /// The price currency.
-    pub currency: String,
-    /// The last update timestamp.
     pub timestamp: u64,
-    /// The last update identifier.
     pub last_update_id: u64,
+    pub best_bid_price: f64,
+    pub best_ask_price: f64,
+    pub best_bid_qty: f64,
+    pub best_ask_qty: f64,
 
-    bid_book: Vec<OrderBookEntry>,
-    ask_book: Vec<OrderBookEntry>,
+    _bid_book: [OrderBookEntry; 25],
+    _ask_book: [OrderBookEntry; 25],
 }
 
 
 impl OrderBook
 {
-    /// Initialize a new instance of the `OrderBook` struct.
-    pub fn new(
-        symbol: String,
-        currency: String,
-        timestamp: u64,
-    ) -> OrderBook {
+    /// Initialize a new instance of the `OrderBook` structure.
+    #[no_mangle]
+    pub extern "C" fn new(timestamp: u64) -> OrderBook {
         return OrderBook {
-            symbol,
-            currency,
             timestamp,
             last_update_id: 0,
-            bid_book: vec![],
-            ask_book: vec![],
+            best_bid_price: f64::MIN,
+            best_ask_price: f64::MAX,
+            best_bid_qty: 0.0,
+            best_ask_qty: 0.0,
+            _bid_book: [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25],
+            _ask_book: [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25],
         };
     }
 
-    pub fn apply_float_diffs(
+    /// Clear stateful values from the order book.
+    #[no_mangle]
+    pub extern "C" fn reset(&mut self) {
+        self._bid_book = [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25];
+        self._ask_book = [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25];
+    }
+
+    /// Apply the snapshot of 10 bids and 10 asks.
+    #[no_mangle]
+    pub extern "C" fn apply_snapshot10(
         &mut self,
-        bids: Vec<[f64; 2]>,
-        asks: Vec<[f64; 2]>,
-        timestamp: u64,
+        bids: &[OrderBookEntry; 10],
+        asks: &[OrderBookEntry; 10],
         update_id: u64,
+        timestamp: u64,
     ) {
-        // TODO: WIP
-        for entry in &bids {
-            self.bid_book.push(OrderBookEntry{
-                price: entry[0],
-                amount: entry[1],
-                update_id,
-            });
+        let mut snapshot_idx = 0;
+        let mut bid_book_idx = 0;
+        while snapshot_idx < bids.len() && bid_book_idx < self._bid_book.len() {
+            let to_enter = bids[snapshot_idx];
+            for i in bid_book_idx..self._bid_book.len() {
+                let next = self._bid_book[i];
+                if to_enter.price > next.price {
+                    self._bid_book[i] = to_enter;
+                    snapshot_idx += 1;
+                    bid_book_idx += 1;
+                    break;
+                }
+                else {
+                    bid_book_idx += 1;
+                }
+            }
         }
 
-        // TODO: WIP
-        for entry in &asks {
-            self.ask_book.push(OrderBookEntry{
-                price: entry[0],
-                amount: entry[1],
-                update_id,
-            });
+        snapshot_idx = 0;
+        let mut ask_book_idx = 0;
+        while snapshot_idx < asks.len() && ask_book_idx < self._ask_book.len() {
+            let to_enter = asks[snapshot_idx];
+            for i in ask_book_idx..self._ask_book.len() {
+                let next = self._bid_book[i];
+                if to_enter.price > next.price {
+                    self._ask_book[i] = to_enter;
+                    snapshot_idx += 1;
+                    ask_book_idx += 1;
+                    break;
+                }
+                else {
+                    ask_book_idx += 1;
+                }
+            }
         }
+
+        let best_bid = self._bid_book[0];
+        self.best_bid_price = best_bid.price;
+        self.best_bid_qty = best_bid.qty;
+
+        let best_ask = self._ask_book[0];
+        self.best_ask_price = best_ask.price;
+        self.best_ask_qty = best_ask.qty;
 
         self.timestamp = timestamp;
         self.last_update_id = update_id;
     }
 
-    /// Update the order book by applying the given differences.
-    pub fn apply_diffs(
-        &mut self,
-        bids: Vec<OrderBookEntry>,
-        asks: Vec<OrderBookEntry>,
-        timestamp: u64,
-        update_id: u64,
-    ) {
-        // TODO: WIP
-        for entry in bids {
-            println!("{}", entry.price);
+    /// Apply the order book entry to the bid side.
+    #[no_mangle]
+    pub extern "C" fn apply_bid_diff(&mut self, entry: OrderBookEntry, timestamp: u64) {
+        let mut to_enter = entry;
+        for i in 0..self._bid_book.len() {
+            let mut next = self._bid_book[i];
+            if to_enter.price > next.price {
+                self._bid_book[i] = to_enter;
+                to_enter = next;
+                if to_enter.price == f64::MIN {
+                    break;  // No need to re-enter empty entry
+                }
+            } else if to_enter.price == next.price {
+                next.update(entry.qty, entry.update_id);
+                break;
+            }
         }
 
-        // TODO: WIP
-        for entry in asks {
-            println!("{}", entry.price);
-        }
-
+        let best_bid = self._bid_book[0];
+        self.best_bid_price = best_bid.price;
+        self.best_bid_qty = best_bid.qty;
         self.timestamp = timestamp;
-        self.last_update_id = update_id;
+        self.last_update_id = entry.update_id;
+    }
+
+    /// Apply the order book entry to the ask side.
+    #[no_mangle]
+    pub extern "C" fn apply_ask_diff(&mut self, entry: OrderBookEntry, timestamp: u64) {
+        let mut to_enter = entry;
+        for i in 0..self._ask_book.len() {
+            let mut next = self._ask_book[i];
+            if to_enter.price < next.price {
+                self._ask_book[i] = to_enter;
+                to_enter = next;
+                if to_enter.price == f64::MAX {
+                    break;  // No need to re-enter empty entry
+                }
+            } else if to_enter.price == next.price {
+                next.update(entry.qty, entry.update_id);
+                break;
+            }
+        }
+
+        let best_ask = self._ask_book[0];
+        self.best_ask_price = best_ask.price;
+        self.best_ask_qty = best_ask.qty;
+        self.timestamp = timestamp;
+        self.last_update_id = entry.update_id;
     }
 
     /// Returns the current spread from the top of the order book.
-    pub fn spread(&self) -> f64 {
-        if self.bid_book.is_empty() || self.ask_book.is_empty() {
-            return 0.0
-        }
-
-        let bid = self.bid_book[0].price;
-        let ask = self.ask_book[0].price;
-        ask - bid
+    #[no_mangle]
+    pub extern "C" fn spread(&self) -> f64 {
+        self.best_ask_price - self.best_bid_price
     }
 
-    pub fn best_bid_price(&self) -> f64 {
-        if self.bid_book.is_empty() {
-            return 0.0
+    /// Returns the predicted buy price for the given quantity.
+    #[no_mangle]
+    pub extern "C" fn buy_price_for_qty(&mut self, qty: f64) -> f64 {
+        let mut cum_qty = 0.0;
+        let mut out_price = f64::NAN;
+        for entry in &self._ask_book {
+            cum_qty += entry.qty;
+            if cum_qty >= qty {
+                out_price = entry.price;
+                break;
+            }
         }
-        return self.bid_book[0].price;
-    }
-    pub fn best_ask_price(&self) -> f64  {
-        if self.ask_book.is_empty() {
-            return 0.0
-        }
-        return self.ask_book[0].price;
-    }
-
-    pub fn best_bid_amount(&self) -> f64 {
-        if self.bid_book.is_empty() {
-            return 0.0
-        }
-        return self.bid_book[0].amount;
+        return out_price
     }
 
-    pub fn best_ask_amount(&self) -> f64  {
-        if self.ask_book.is_empty() {
-            return 0.0
+    /// Returns the predicted sell price for the given quantity.
+    #[no_mangle]
+    pub extern "C" fn sell_price_for_qty(&mut self, qty: f64) -> f64 {
+        let mut cum_qty = 0.0;
+        let mut out_price = f64::NAN;
+        for entry in &self._bid_book {
+            cum_qty += entry.qty;
+            if cum_qty >= qty {
+                out_price = entry.price;
+                break;
+            }
         }
-        return self.ask_book[0].amount;
+        return out_price
     }
 }

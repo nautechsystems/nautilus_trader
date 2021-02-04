@@ -1,8 +1,8 @@
 import itertools
 import os
+import platform
 from pathlib import Path
 import shutil
-import sys
 from typing import List
 
 from Cython.Build import build_ext
@@ -53,6 +53,30 @@ CYTHON_COMPILER_DIRECTIVES = {
     # **Options.extra_warnings,
 }
 
+RUST_LIBRARIES = [
+    "nautilus_order_book",
+]
+
+STATIC_LINK_MAP = {
+    "nautilus_trader/model/order_book_2.pyx": "lib/nautilus-order-book/target/release/libnautilus_order_book.a",
+}
+
+
+def _build_rust_libs() -> None:
+    # Build the Rust libraries using Cargo
+    print("Building rust libs...")
+
+    for lib in RUST_LIBRARIES:
+        lib_dir = lib.replace('_', '-')
+        cmd = f"(cd lib/{lib_dir}; cargo build --release)"
+        print(cmd)
+        os.system(cmd)
+
+
+def _get_extra_link_args(extension):
+    link = STATIC_LINK_MAP.get(extension)
+    return None if link is None else [link]
+
 
 def _build_extensions() -> List[Extension]:
     # Build Extensions to feed into cythonize()
@@ -64,10 +88,12 @@ def _build_extensions() -> List[Extension]:
 
     return [
         Extension(
-            str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
-            [str(pyx)],
+            name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
+            sources=[str(pyx)],
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
+            extra_link_args=_get_extra_link_args(str(pyx)),
+            language='c',
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
@@ -121,6 +147,8 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 def build(setup_kwargs):
     """Construct the extensions and distribution."""  # noqa
+    _build_rust_libs()
+
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 
@@ -141,7 +169,7 @@ if __name__ == "__main__":
 
     # Work around a Cython problem in Python 3.8.x on MacOS
     # https://github.com/cython/cython/issues/3262
-    if sys.platform == "darwin":
+    if platform.system() == "Darwin":
         print("MacOS: Setting multiprocessing method to 'fork'.")
         try:
             # noinspection PyUnresolvedReferences
@@ -152,4 +180,5 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
+    print(f"System: {platform.system()}")
     build({})

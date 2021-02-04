@@ -27,13 +27,27 @@ Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
 ## Cython
 The project heavily utilizes Cython, which provides static type safety and performance through C extension modules.
-The libraries can be accessed from both pure Python and Cython.
+The vast majority of production Python code is actually written in Cython,
+however the libraries can be accessed from both pure Python and Cython.
 
 Cython is a compiled programming language that aims to be a superset of the
 Python programming language, designed to give C-like performance with code that
 is written mostly in Python with optional additional C-inspired syntax.
 
 > https://cython.org
+
+## Rust
+The project also utilizes Rust (stable) for performance critical components.
+Rust is blazingly fast (comparable to C/C++) and memory-efficient: with no runtime or garbage collector,
+it can power performance-critical services, run on embedded devices, and easily integrate with other languages.
+
+Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
+eliminating many classes of bugs at compile-time.
+
+Language binding is handled through Cython and linked at compile time before wheel binaries are
+packaged, so a user does not need to have Rust installed to run _NautilusTrader_.
+
+> https://www.rust-lang.org/
 
 ## Documentation
 
@@ -45,10 +59,10 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Features
 
-- **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
+- **Fast:** C-level speed and type safety provided through Cython and Rust. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
 - **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
-- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick and bar data.
+- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
 - **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
@@ -166,6 +180,16 @@ Following any changes to `.pyx` and `.pxd` files, you can recompile by running:
 
     python build.py
 
+Increasingly the project will be utilizing [Rust](https://www.rust-lang.org/), so to develop throughout the
+entire codebase Rust (stable) will need to be installed on the system.
+
+To download Rustup (tooling manager) and install Rust for Linux or MacOS,
+run the following - then follow the on-screen instructions:
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+> https://www.rust-lang.org/tools/install
+
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 
 ## Contributing
@@ -191,3 +215,4 @@ Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 > https://nautechsystems.io
 
 ![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
+![rust](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/rust-logo.png?raw=true "rust")
