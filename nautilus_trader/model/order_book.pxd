@@ -29,7 +29,7 @@ cdef class OrderBook:
     cdef readonly int size_precision
     """The precision for the order book quantities.\n\n:returns: `int`"""
     cdef readonly long timestamp
-    """The last update timestamp (UNIX time).\n\n:returns: `long`"""
+    """The last update timestamp (Unix time).\n\n:returns: `long`"""
 
     cpdef void update(
         self,

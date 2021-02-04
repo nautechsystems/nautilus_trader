@@ -52,7 +52,7 @@ cdef class Tick:
         timestamp : datetime
             The tick timestamp (UTC).
         unix_timestamp : double
-            The tick UNIX timestamp (seconds).
+            The tick Unix timestamp (seconds).
 
         """
         self.symbol = symbol
@@ -111,7 +111,7 @@ cdef class QuoteTick(Tick):
         timestamp : datetime
             The tick timestamp (UTC).
         unix_timestamp : double, optional
-            The tick UNIX timestamp (seconds). If not given then will be
+            The tick Unix timestamp (seconds). If not given then will be
             captured from `timestamp.timestamp()`.
 
         """
@@ -270,7 +270,7 @@ cdef class TradeTick(Tick):
         timestamp : datetime
             The tick timestamp (UTC).
         unix_timestamp : double, optional
-            The tick UNIX timestamp (seconds). If not given then will be
+            The tick Unix timestamp (seconds). If not given then will be
             captured from `timestamp.timestamp()`.
 
         Raises
