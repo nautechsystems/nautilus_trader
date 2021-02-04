@@ -92,10 +92,10 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If event.strategy_id has a `NULL` value.
+            If event.strategy_id has a 'NULL' value.
 
         """
-        Condition.true(event.strategy_id.not_null(), f"event.strategy_id.value was NULL")
+        Condition.true(event.strategy_id.not_null(), f"event.strategy_id.value was 'NULL'")
 
         self._events = [event]    # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
