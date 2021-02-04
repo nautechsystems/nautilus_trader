@@ -34,7 +34,7 @@ pub struct OrderBook
 
 impl OrderBook
 {
-    /// Initialize a new instance of the `OrderBook` struct.
+    /// Initialize a new instance of the `OrderBook` structure.
     #[no_mangle]
     pub extern "C" fn new(timestamp: u64) -> OrderBook {
         return OrderBook {
@@ -54,6 +54,63 @@ impl OrderBook
     pub extern "C" fn reset(&mut self) {
         self._bid_book = [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25];
         self._ask_book = [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25];
+    }
+
+    /// Apply the snapshot of 10 bids and 10 asks.
+    #[no_mangle]
+    pub extern "C" fn apply_snapshot10(
+        &mut self,
+        bids: &[OrderBookEntry; 10],
+        asks: &[OrderBookEntry; 10],
+        update_id: u64,
+        timestamp: u64,
+    ) {
+        let mut snapshot_idx = 0;
+        let mut bid_book_idx = 0;
+        while snapshot_idx < bids.len() && bid_book_idx < self._bid_book.len() {
+            let to_enter = bids[snapshot_idx];
+            for i in bid_book_idx..self._bid_book.len() {
+                let next = self._bid_book[i];
+                if to_enter.price > next.price {
+                    self._bid_book[i] = to_enter;
+                    snapshot_idx += 1;
+                    bid_book_idx += 1;
+                    break;
+                }
+                else {
+                    bid_book_idx += 1;
+                }
+            }
+        }
+
+        snapshot_idx = 0;
+        let mut ask_book_idx = 0;
+        while snapshot_idx < asks.len() && ask_book_idx < self._ask_book.len() {
+            let to_enter = asks[snapshot_idx];
+            for i in ask_book_idx..self._ask_book.len() {
+                let next = self._bid_book[i];
+                if to_enter.price > next.price {
+                    self._ask_book[i] = to_enter;
+                    snapshot_idx += 1;
+                    ask_book_idx += 1;
+                    break;
+                }
+                else {
+                    ask_book_idx += 1;
+                }
+            }
+        }
+
+        let best_bid = self._bid_book[0];
+        self.best_bid_price = best_bid.price;
+        self.best_bid_qty = best_bid.qty;
+
+        let best_ask = self._ask_book[0];
+        self.best_ask_price = best_ask.price;
+        self.best_ask_qty = best_ask.qty;
+
+        self.timestamp = timestamp;
+        self.last_update_id = update_id;
     }
 
     /// Apply the order book entry to the bid side.
@@ -110,5 +167,35 @@ impl OrderBook
     #[no_mangle]
     pub extern "C" fn spread(&self) -> f64 {
         self.best_ask_price - self.best_bid_price
+    }
+
+    /// Returns the predicted buy price for the given quantity.
+    #[no_mangle]
+    pub extern "C" fn buy_price_for_qty(&mut self, qty: f64) -> f64 {
+        let mut cum_qty = 0.0;
+        let mut out_price = f64::NAN;
+        for entry in &self._ask_book {
+            cum_qty += entry.qty;
+            if cum_qty >= qty {
+                out_price = entry.price;
+                break;
+            }
+        }
+        return out_price
+    }
+
+    /// Returns the predicted sell price for the given quantity.
+    #[no_mangle]
+    pub extern "C" fn sell_price_for_qty(&mut self, qty: f64) -> f64 {
+        let mut cum_qty = 0.0;
+        let mut out_price = f64::NAN;
+        for entry in &self._bid_book {
+            cum_qty += entry.qty;
+            if cum_qty >= qty {
+                out_price = entry.price;
+                break;
+            }
+        }
+        return out_price
     }
 }

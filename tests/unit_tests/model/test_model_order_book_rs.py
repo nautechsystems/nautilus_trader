@@ -18,6 +18,8 @@ import unittest
 from nautilus_trader.model.order_book_2 import OrderBook
 from tests.test_kit.providers import TestInstrumentProvider
 
+import numpy as np
+
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
@@ -112,3 +114,45 @@ class OrderBookTests(unittest.TestCase):
         self.assertEqual(21.0, order_book.best_ask_qty())
         self.assertEqual(5, order_book.last_update_id())
         self.assertEqual(1610000000004, order_book.timestamp())
+
+    def test_apply_snapshot(self):
+        # Arrange
+        order_book = OrderBook(0)
+
+        bids = np.asarray([
+            [1002.0, 10.0],
+            [1001.0, 20.0],
+            [1000.8, 30.0],
+            [1000.7, 40.0],
+            [1000.6, 50.0],
+            [1000.5, 60.0],
+            [1000.4, 70.0],
+            [1000.3, 80.0],
+            [1000.2, 90.0],
+            [1000.1, 100.0],
+        ])
+
+        asks = np.asarray([
+            [1003.0, 10.0],
+            [1004.0, 20.0],
+            [1004.1, 30.0],
+            [1004.2, 40.0],
+            [1004.3, 50.0],
+            [1004.4, 60.0],
+            [1004.5, 70.0],
+            [1004.6, 80.0],
+            [1004.7, 90.0],
+            [1004.8, 100.0],
+        ])
+
+        # Act
+        order_book.apply_snapshot(bids, asks, 1, 1)
+
+        # Assert
+        self.assertEqual(1.0, order_book.spread())
+        self.assertEqual(1002.0, order_book.best_bid_price())
+        self.assertEqual(1003.0, order_book.best_ask_price())
+        self.assertEqual(10.0, order_book.best_bid_qty())
+        self.assertEqual(10.0, order_book.best_ask_qty())
+        self.assertEqual(1004.2, order_book.buy_price_for_qty(100.0))
+        self.assertEqual(1000.7, order_book.sell_price_for_qty(100.0))

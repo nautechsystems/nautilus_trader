@@ -5,6 +5,9 @@
 
 #include <stdint.h>
 
+/**
+ * Represents an entry in an order book.
+ */
 typedef struct OrderBookEntry {
   double price;
   double qty;
@@ -26,17 +29,17 @@ typedef struct OrderBook {
 } OrderBook;
 
 /**
- * Updates the entry with the given quantity and update identifier.
+ * Initialize a new instance of the `OrderBookEntry` structure.
  */
 struct OrderBookEntry new_entry(double price, double qty, uint64_t update_id);
 
 /**
- * Updates the entry with the given quantity and update identifier.
+ * Update the entry with the given quantity and update identifier.
  */
 void update(struct OrderBookEntry *self, double qty, uint64_t update_id);
 
 /**
- * Initialize a new instance of the `OrderBook` struct.
+ * Initialize a new instance of the `OrderBook` structure.
  */
 struct OrderBook new(uint64_t timestamp);
 
@@ -44,6 +47,15 @@ struct OrderBook new(uint64_t timestamp);
  * Clear stateful values from the order book.
  */
 void reset(struct OrderBook *self);
+
+/**
+ * Apply the snapshot of 10 bids and 10 asks.
+ */
+void apply_snapshot10(struct OrderBook *self,
+                      const struct OrderBookEntry (*bids)[10],
+                      const struct OrderBookEntry (*asks)[10],
+                      uint64_t update_id,
+                      uint64_t timestamp);
 
 /**
  * Apply the order book entry to the bid side.
@@ -59,5 +71,15 @@ void apply_ask_diff(struct OrderBook *self, struct OrderBookEntry entry, uint64_
  * Returns the current spread from the top of the order book.
  */
 double spread(const struct OrderBook *self);
+
+/**
+ * Returns the predicted buy price for the given quantity.
+ */
+double buy_price_for_qty(struct OrderBook *self, double qty);
+
+/**
+ * Returns the predicted sell price for the given quantity.
+ */
+double sell_price_for_qty(struct OrderBook *self, double qty);
 
 #endif /* add_h */
