@@ -58,7 +58,7 @@ RUST_LIBRARIES = [
 ]
 
 STATIC_LINK_MAP = {
-    "nautilus_trader/model/order_book_2.pyx": ["lib/nautilus-order-book/target/release/libnautilus_order_book.a"],
+    "nautilus_trader/model/order_book.pyx": ["lib/nautilus-order-book/target/release/libnautilus_order_book.a"],
 }
 
 
