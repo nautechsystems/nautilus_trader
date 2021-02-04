@@ -193,7 +193,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         for order in active_orders:
             if order.id.is_null():
                 self._log.error(f"Cannot resolve state for {repr(order.cl_ord_id)}, "
-                                f"OrderId was NULL.")
+                                f"OrderId was 'NULL'.")
                 continue  # Cannot resolve order
             instrument = self._instrument_provider.get(order.symbol)
             if instrument is None:
