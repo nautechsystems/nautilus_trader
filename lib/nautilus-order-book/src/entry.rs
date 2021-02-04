@@ -15,6 +15,7 @@
 
 #[repr(C)]
 #[derive(Copy, Clone)]
+/// Represents an entry in an order book.
 pub struct OrderBookEntry
 {
     pub price: f64,
@@ -25,13 +26,13 @@ pub struct OrderBookEntry
 
 impl OrderBookEntry
 {
-    /// Updates the entry with the given quantity and update identifier.
+    /// Initialize a new instance of the `OrderBookEntry` structure.
     #[no_mangle]
     pub extern "C" fn new_entry(price: f64, qty: f64, update_id: u64) -> OrderBookEntry {
         return OrderBookEntry { price, qty, update_id };
     }
 
-    /// Updates the entry with the given quantity and update identifier.
+    /// Update the entry with the given quantity and update identifier.
     #[no_mangle]
     pub extern "C" fn update(&mut self, qty: f64, update_id: u64) {
         self.qty = qty;

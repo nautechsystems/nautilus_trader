@@ -26,26 +26,6 @@ cdef class OrderBook:
     def __cinit__(self, uint64_t timestamp):
         self._book = order_book_rs.new(timestamp)
 
-    cpdef void apply_bid_diff(
-        self,
-        double price,
-        double qty,
-        uint64_t update_id,
-        uint64_t timestamp,
-    ) except *:
-        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
-        order_book_rs.apply_bid_diff(&self._book, entry, timestamp)
-
-    cpdef void apply_ask_diff(
-            self,
-            double price,
-            double qty,
-            uint64_t update_id,
-            uint64_t timestamp,
-    ) except *:
-        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
-        order_book_rs.apply_ask_diff(&self._book, entry, timestamp)
-
     cpdef double spread(self):
         return order_book_rs.spread(&self._book)
 
@@ -66,3 +46,42 @@ cdef class OrderBook:
 
     cpdef uint64_t last_update_id(self):
         return self._book.last_update_id
+
+    cpdef void apply_snapshot(
+        self,
+        double[:, :] bids,
+        double[:, :] asks,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        #cdef OrderBookEntry[10] bid_entries = [order_book_rs.new_entry(row[0], row[1], update_id) for row in bids]
+        #cdef OrderBookEntry[10] ask_entries = [order_book_rs.new_entry(row[0], row[1], update_id) for row in asks]
+
+        [order_book_rs.apply_bid_diff(&self._book, order_book_rs.new_entry(row[0], row[1], update_id), timestamp) for row in bids]
+        [order_book_rs.apply_ask_diff(&self._book, order_book_rs.new_entry(row[0], row[1], update_id), timestamp) for row in asks]
+
+    cpdef void apply_bid_diff(
+        self,
+        double price,
+        double qty,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
+        order_book_rs.apply_bid_diff(&self._book, entry, timestamp)
+
+    cpdef void apply_ask_diff(
+        self,
+        double price,
+        double qty,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
+        order_book_rs.apply_ask_diff(&self._book, entry, timestamp)
+
+    cpdef double buy_price_for_qty(self, double qty) except *:
+        return order_book_rs.buy_price_for_qty(&self._book, qty)
+
+    cpdef double sell_price_for_qty(self, double qty) except *:
+        return order_book_rs.sell_price_for_qty(&self._book, qty)

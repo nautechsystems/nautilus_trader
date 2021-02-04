@@ -36,3 +36,5 @@ cdef extern from "lib/nautilus-order-book/src/nautilus_order_book.h":
     void apply_ask_diff(OrderBook *self, OrderBookEntry entry, uint64_t timestamp)
     OrderBook new(uint64_t timestamp)
     double spread(OrderBook *self)
+    double buy_price_for_qty(OrderBook *self, double qty)
+    double sell_price_for_qty(OrderBook *self, double qty)
