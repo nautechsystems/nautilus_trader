@@ -58,7 +58,7 @@ RUST_LIBRARIES = [
 ]
 
 STATIC_LINK_MAP = {
-    "nautilus_trader/model/order_book_2.pyx": "lib/nautilus-order-book/target/release/libnautilus_order_book.a",
+    "nautilus_trader/model/order_book.pyx": ["lib/nautilus-order-book/target/release/libnautilus_order_book.a"],
 }
 
 
@@ -71,11 +71,6 @@ def _build_rust_libs() -> None:
         cmd = f"(cd lib/{lib_dir}; cargo build --release)"
         print(cmd)
         os.system(cmd)
-
-
-def _get_extra_link_args(extension):
-    link = STATIC_LINK_MAP.get(extension)
-    return None if link is None else [link]
 
 
 def _build_extensions() -> List[Extension]:
@@ -92,7 +87,7 @@ def _build_extensions() -> List[Extension]:
             sources=[str(pyx)],
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
-            extra_link_args=_get_extra_link_args(str(pyx)),
+            extra_link_args=STATIC_LINK_MAP.get(str(pyx)),
             language='c',
         )
         for pyx in itertools.chain(

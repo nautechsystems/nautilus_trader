@@ -15,7 +15,11 @@
 
 from decimal import Decimal
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model cimport order_book_rs
+from nautilus_trader.model.order_book_rs cimport OrderBookEntry
 
 
 cdef class OrderBook:
@@ -27,10 +31,12 @@ cdef class OrderBook:
         self,
         Symbol symbol not None,
         int level,
+        int depth,
         int price_precision,
         int size_precision,
-        double[:, :] bids not None,
-        double[:, :] asks not None,
+        list bids not None,
+        list asks not None,
+        long update_id,
         long timestamp,
     ):
         """
@@ -51,7 +57,7 @@ cdef class OrderBook:
         size_precision : int
             The precision for the order book quantities.
         timestamp : long
-            The initial order book update timestamp (UNIX time).
+            The initial order book update timestamp (Unix time).
 
         Raises
         ------
@@ -63,117 +69,307 @@ cdef class OrderBook:
         Condition.not_negative(price_precision, "price_precision")
         Condition.not_negative(size_precision, "size_precision")
 
-        self._bids = bids
-        self._asks = asks
-
         self.symbol = symbol
         self.level = level
+        self.depth = depth
         self.price_precision = price_precision
         self.size_precision = size_precision
-        self.timestamp = timestamp
+
+        self.apply_snapshot(bids, asks, update_id, timestamp)
+
+    def __cinit__(
+        self,
+        Symbol symbol not None,
+        int level,
+        int depth,
+        int price_precision,
+        int size_precision,
+        list bids not None,
+        list asks not None,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ):
+        self._book = order_book_rs.new(timestamp)
 
     def __str__(self) -> str:
         return (f"{self.symbol}, "
-                f"bids_len={len(self._bids)}, "
-                f"asks_len={len(self._asks)}, "
-                f"timestamp={self.timestamp}")
+                f"level={self.level}, "
+                f"depth={self.depth}, "
+                f"last_update_id={self._book.last_update_id}, "
+                f"timestamp={self._book.timestamp}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    cpdef void update(
-        self,
-        double[:, :] bids,
-        double[:, :] asks,
-        long timestamp,
-    ) except *:
-        """
-        Update the order book with the given bids, asks and timestamp.
-
-        Parameters
-        ----------
-        bids : double[:, :]
-            The updated bids.
-        asks : double[:, :]
-            The updated asks.
-        timestamp : long
-            The update timestamp (UNIX time)
-
-        """
-        self._bids = bids
-        self._asks = asks
-        self.timestamp = timestamp
-
-    cdef double[:, :] bids_c(self):
-        """
-        Return the order book bids.
-
-        Returns
-        -------
-        double[:, :]
-
-        """
-        return self._bids
-
-    cdef double[:, :] asks_c(self):
-        """
-        Return the order book asks.
-
-        Returns
-        -------
-        double[:, :]
-
-        """
-        return self._asks
-
     cpdef list bids(self):
         """
-        Return the order book bids.
+        Return the current bid entries as doubles.
 
         Returns
         -------
-        double[:, :]
+        list[double, double]
 
         """
-        cdef double[:] entry
-        return [[entry[0], entry[1]] for entry in self.bids_c()]
+        cdef OrderBookEntry entry
+        return [[row.price, row.qty] for row in self._book._bid_book if row.qty != 0]
 
     cpdef list asks(self):
         """
-        Return the order book asks.
+        Return the current bid entries as doubles.
 
         Returns
         -------
-        list[list[double]]
+        list[double, double]
 
         """
-        cdef double[:] entry
-        return [[entry[0], entry[1]] for entry in self.asks_c()]
+        cdef OrderBookEntry entry
+        return [[row.price, row.qty] for row in self._book._ask_book if row.qty != 0]  # noqa
 
     cpdef list bids_as_decimals(self):
         """
         Return the bids with prices and quantities as decimals.
 
-        Decimal type is the built-in `decimal.Decimal`.
+        The Decimal type is the built-in `decimal.Decimal`.
 
         Returns
         -------
-        list[list[Decimal, Decimal]]
-
+        list[[Decimal, Decimal]]
         """
-        cdef double[:] entry
-        return [[Decimal(f"{entry[0]:.{self.price_precision}f}"), Decimal(f"{entry[1]:.{self.size_precision}f}")] for entry in self._bids]
+        cdef OrderBookEntry entry
+        return [
+            [Decimal(f"{row.price:.{self.price_precision}f}"), Decimal(f"{row.qty:.{self.size_precision}f}")]
+            for row in self._book._bid_book if row.qty != 0  # noqa (access to protected member ok here)
+        ]
 
     cpdef list asks_as_decimals(self):
         """
         Return the asks with prices and quantities as decimals.
 
-        Decimal type is the built-in `decimal.Decimal`.
+        The Decimal type is the built-in `decimal.Decimal`.
 
         Returns
         -------
-        list[list[Decimal, Decimal]]
+        list[[Decimal, Decimal]]
+        """
+        cdef OrderBookEntry entry
+        return [
+            [Decimal(f"{row.price:.{self.price_precision}f}"), Decimal(f"{row.qty:.{self.size_precision}f}")]
+            for row in self._book._ask_book if row.qty != 0  # noqa (access to protected member ok here)
+        ]
+
+    cpdef double spread(self):
+        """
+        Return the top of book spread.
+
+        Returns
+        -------
+        double
 
         """
-        cdef double[:] entry
-        return [[Decimal(f"{entry[0]:.{self.price_precision}f}"), Decimal(f"{entry[1]:.{self.size_precision}f}")] for entry in self._asks]
+        return order_book_rs.spread(&self._book)
+
+    cpdef double best_bid_price(self):
+        """
+        Return the current best bid price.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._book.best_bid_price
+
+    cpdef double best_ask_price(self):
+        """
+        Return the current best ask price.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._book.best_ask_price
+
+    cpdef double best_bid_qty(self):
+        """
+        Return the current size at the best bid.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._book.best_bid_qty
+
+    cpdef double best_ask_qty(self):
+        """
+        Return the current size at the best ask.
+
+        Returns
+        -------
+        double
+
+        """
+        return self._book.best_ask_qty
+
+    cpdef double buy_price_for_qty(self, double qty) except *:
+        """
+        Return the predicted price the for given buy quantity.
+
+        Parameters
+        ----------
+        qty : double
+            The buy quantity.
+
+        Returns
+        -------
+        double
+
+        """
+        return order_book_rs.buy_price_for_qty(&self._book, qty)
+
+    cpdef double buy_qty_for_price(self, double price) except *:
+        """
+        Return the predicted quantity the for given buy price.
+
+        Parameters
+        ----------
+        price : double
+            The buy price.
+
+        Returns
+        -------
+        double
+
+        """
+        return order_book_rs.buy_qty_for_price(&self._book, price)
+
+    cpdef double sell_price_for_qty(self, double qty) except *:
+        """
+        Return the predicted price the for given sell quantity.
+
+        Parameters
+        ----------
+        qty : double
+            The sell quantity.
+
+        Returns
+        -------
+        double
+
+        """
+        return order_book_rs.sell_price_for_qty(&self._book, qty)
+
+    cpdef double sell_qty_for_price(self, double price) except *:
+        """
+        Return the predicted quantity the for given sell price.
+
+        Parameters
+        ----------
+        price : double
+            The sell price.
+
+        Returns
+        -------
+        double
+
+        """
+        return order_book_rs.sell_qty_for_price(&self._book, price)
+
+    cpdef uint64_t timestamp(self):
+        """
+        Return the last updated timestamp.
+
+        Returns
+        -------
+        unsigned long
+
+        """
+        return self._book.timestamp
+
+    cpdef uint64_t last_update_id(self):
+        """
+        Return the last update identifier.
+
+        Returns
+        -------
+        unsigned long
+
+        """
+        return self._book.last_update_id
+
+    cpdef void apply_snapshot(
+        self,
+        list bids,
+        list asks,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        """
+        Apply the snapshot with the given parameters.
+
+        Parameters
+        ----------
+        bids : list[double, double]
+            The bid side entries.
+        asks : list[double, double]
+            The ask side entries.
+        update_id : unsigned long
+            The identifier of this update.
+        timestamp : unsigned long
+            The timestamp of this update.
+
+        """
+        order_book_rs.reset(&self._book)
+        [order_book_rs.apply_bid_diff(&self._book, order_book_rs.new_entry(row[0], row[1], update_id), timestamp) for row in bids]
+        [order_book_rs.apply_ask_diff(&self._book, order_book_rs.new_entry(row[0], row[1], update_id), timestamp) for row in asks]
+
+    cpdef void apply_bid_diff(
+        self,
+        double price,
+        double qty,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        """
+        Apply the given bid side difference.
+
+        Parameters
+        ----------
+        price : double
+            The price for the entry.
+        qty : double
+            The quantity for the entry.
+        update_id : unsigned long
+            The identifier of this update.
+        timestamp : unsigned long
+            The timestamp of this update.
+
+        """
+        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
+        order_book_rs.apply_bid_diff(&self._book, entry, timestamp)
+
+    cpdef void apply_ask_diff(
+        self,
+        double price,
+        double qty,
+        uint64_t update_id,
+        uint64_t timestamp,
+    ) except *:
+        """
+        Apply the given ask side difference.
+
+        Parameters
+        ----------
+        price : double
+            The price for the entry.
+        qty : double
+            The quantity for the entry.
+        update_id : unsigned long
+            The identifier of this update.
+        timestamp : unsigned long
+            The timestamp of this update.
+
+        """
+        cdef OrderBookEntry entry = order_book_rs.new_entry(price, qty, update_id)
+        order_book_rs.apply_ask_diff(&self._book, entry, timestamp)

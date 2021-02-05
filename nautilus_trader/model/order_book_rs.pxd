@@ -31,10 +31,15 @@ cdef extern from "lib/nautilus-order-book/src/nautilus_order_book.h":
         double best_ask_qty
         uint64_t timestamp
         uint64_t last_update_id
+        OrderBookEntry _bid_book[25]
+        OrderBookEntry _ask_book[25]
 
+    void reset(OrderBook *self)
     void apply_bid_diff(OrderBook *self, OrderBookEntry entry, uint64_t timestamp)
     void apply_ask_diff(OrderBook *self, OrderBookEntry entry, uint64_t timestamp)
     OrderBook new(uint64_t timestamp)
     double spread(OrderBook *self)
     double buy_price_for_qty(OrderBook *self, double qty)
+    double buy_qty_for_price(OrderBook *self, double price)
     double sell_price_for_qty(OrderBook *self, double qty)
+    double sell_qty_for_price(OrderBook *self, double price)
