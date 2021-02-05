@@ -27,7 +27,7 @@ Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
 ## Cython
 The project heavily utilizes Cython, which provides static type safety and performance through C extension modules.
-The vast majority of production Python code is actually written in Cython,
+The vast majority of the production Python code is actually written in Cython,
 however the libraries can be accessed from both pure Python and Cython.
 
 Cython is a compiled programming language that aims to be a superset of the
@@ -81,12 +81,32 @@ The latest version is tested against Python 3.7 - 3.9 on Linux and MacOS.
 Users are encouraged to use the latest stable version of Python.
 
 We recommend you setup a virtual environment to isolate the dependencies.
+Installation can be achieved through _one_ of the following options.
 
-To install the latest package from PyPI, run:
+#### From PyPI
+
+To install the latest binary wheel or sdist package from PyPI, run:
 
     pip install -U nautilus_trader
 
-Alternatively, to install from source using pip, run:
+#### From Source
+
+Installation from source requires Cython to compile the Python libraries, and Cargo to compile the Rust libraries.
+To install Cython run:
+
+    pip install -U Cython==3.0a6
+
+To install Rust with Cargo for Linux or MacOS, run the following - then follow the on-screen instructions:
+
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+> https://www.rust-lang.org/tools/install
+
+Then to install using pip, run:
+
+    pip install -U git+https://github.com/nautechsystems/nautilus_trader
+
+**Or** from the cloned root directory, run:
 
     pip install .
 
@@ -170,18 +190,11 @@ We recommend the PyCharm _Professional_ edition IDE as it interprets Cython synt
 
 You could also use Visual Studio Code with a Cython plugin.
 
-[Poetry](https://python-poetry.org/) is the preferred tool for handling all package and dev dependencies.
+[Poetry](https://python-poetry.org/) is the preferred tool for handling all Python package and dev dependencies.
 
-To install all dependencies and compile the C extensions, run:
-
-    poetry install
-
-Following any changes to `.pyx` and `.pxd` files, you can recompile by running:
-
-    python build.py
-
-Increasingly the project will be utilizing [Rust](https://www.rust-lang.org/), so to develop throughout the
-entire codebase Rust (stable) will need to be installed on the system.
+[Rust](https://www.rust-lang.org/) will be increasingly utilized by the project, so to develop throughout the
+entire codebase Rust (stable) will need to be installed on the system. Note that a developer doesn't
+need to touch the Rust part of the codebase to work with (and/or contribute to) the Python side.
 
 To download Rustup (tooling manager) and install Rust for Linux or MacOS,
 run the following - then follow the on-screen instructions:
@@ -189,6 +202,16 @@ run the following - then follow the on-screen instructions:
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 > https://www.rust-lang.org/tools/install
+
+To install all dependencies and compile the Rust libs and C extensions, run:
+
+    poetry install
+
+Following any changes to `.rs`, `.pyx` or `.pxd` files, you can recompile by running:
+
+    python build.py
+
+The build uses `cbindgen` to automatically generate the `.h` C header files needed to interop between Rust and Cython.
 
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 
@@ -214,5 +237,5 @@ Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io
 
-![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
 ![rust](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/rust-logo.png?raw=true "rust")
+![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
