@@ -1,3 +1,0 @@
-# Nautilus Order Book
-
-## ALPHA

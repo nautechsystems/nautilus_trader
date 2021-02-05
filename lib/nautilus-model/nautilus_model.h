@@ -26,6 +26,7 @@ typedef struct OrderBook {
   double best_ask_qty;
   struct OrderBookEntry _bid_book[25];
   struct OrderBookEntry _ask_book[25];
+  const int32_t *_bid_book_test;
 } OrderBook;
 
 /**
@@ -74,21 +75,29 @@ double spread(const struct OrderBook *self);
 
 /**
  * Returns the predicted buy price for the given quantity.
+ *
+ * If no ask entries or price is too far from the market then will return NaN.
  */
 double buy_price_for_qty(struct OrderBook *self, double qty);
 
 /**
  * Returns the predicted buy quantity for the given price.
+ *
+ * If no ask entries or price is too far from the market then will return 0.0.
  */
 double buy_qty_for_price(struct OrderBook *self, double price);
 
 /**
  * Returns the predicted sell price for the given quantity.
+ *
+ * If no bid entries or price is too far from the market then will return NaN.
  */
 double sell_price_for_qty(struct OrderBook *self, double qty);
 
 /**
  * Returns the predicted sell quantity for the given price.
+ *
+ * If no bid entries or price is too far from the market then will return 0.0.
  */
 double sell_qty_for_price(struct OrderBook *self, double price);
 
