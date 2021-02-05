@@ -13,29 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-/// Represents an entry in an order book.
-pub struct OrderBookEntry
-{
-    pub price: f64,
-    pub qty: f64,
-    pub update_id: u64,
-}
+#[cfg(test)]
+mod tests {
+    use nautilus_core::time::c_utc_now;
+    use nautilus_core::time::c_timestamp;
+    use nautilus_core::time::c_timestamp_ms;
+    use nautilus_core::time::c_timestamp_us;
 
-
-impl OrderBookEntry
-{
-    /// Initialize a new instance of the `OrderBookEntry` structure.
-    #[no_mangle]
-    pub extern "C" fn new_entry(price: f64, qty: f64, update_id: u64) -> OrderBookEntry {
-        return OrderBookEntry { price, qty, update_id };
+    #[test]
+    fn c_utc_now_returns_expected_struct() {
+        let date_time = c_utc_now();
+        assert!(date_time.year > 0)
     }
 
-    /// Update the entry with the given quantity and update identifier.
-    #[no_mangle]
-    pub extern "C" fn update(&mut self, qty: f64, update_id: u64) {
-        self.qty = qty;
-        self.update_id = update_id;
+    #[test]
+    fn c_timestamp_returns_expected_struct() {
+        let result = c_timestamp();
+        assert!(result > 1610000000.0)
+    }
+
+    #[test]
+    fn c_timestamp_ms_returns_expected_struct() {
+        let result = c_timestamp_ms();
+        assert!(result > 1610000000000)
+    }
+
+    #[test]
+    fn c_timestamp_us_returns_expected_struct() {
+        let result = c_timestamp_us();
+        assert!(result > 1610000000000000)
     }
 }
