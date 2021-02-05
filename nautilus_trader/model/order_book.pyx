@@ -18,8 +18,8 @@ from decimal import Decimal
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.order_book_rs cimport OrderBookEntry
 from nautilus_trader.model cimport order_book_rs
+from nautilus_trader.model.order_book_rs cimport OrderBookEntry
 
 
 cdef class OrderBook:
