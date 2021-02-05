@@ -326,10 +326,12 @@ class DataCacheTests(unittest.TestCase):
         order_book = OrderBook(
             symbol=ETHUSDT_BINANCE.symbol,
             level=2,
+            depth=25,
             price_precision=2,
             size_precision=2,
-            bids=np.asarray([[1550.15, 0.51], [1580.00, 1.20]]),
-            asks=np.asarray([[1552.15, 1.51], [1582.00, 2.20]]),
+            bids=[[1550.15, 0.51], [1580.00, 1.20]],
+            asks=[[1552.15, 1.51], [1582.00, 2.20]],
+            update_id=1,
             timestamp=0,
         )
 

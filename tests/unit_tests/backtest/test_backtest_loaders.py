@@ -58,8 +58,6 @@ class BacktestLoadersTests(unittest.TestCase):
 
 class ParquetTickDataLoadersTests(unittest.TestCase):
 
-    # TODO: Remove this once pyarrow publishes wheels for Python 3.9
-    @pytest.mark.skipif(sys.version_info >= (3, 9), reason="requires python < 3.9")
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act
@@ -73,8 +71,6 @@ class ParquetTickDataLoadersTests(unittest.TestCase):
         self.assertIn('buyer_maker', trade_ticks.columns)
         self.assertEqual(trade_ticks.iloc[0]['trade_id'], 553287559)
 
-    # TODO: Remove this once pyarrow publishes wheels for Python 3.9
-    @pytest.mark.skipif(sys.version_info >= (3, 9), reason="requires python < 3.9")
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange
         # Act

@@ -15,11 +15,9 @@
 
 from decimal import Decimal
 import os
-import sys
 import unittest
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.data_container import BacktestDataContainer
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -337,8 +335,6 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def tearDown(self):
         self.engine.dispose()
 
-    # TODO: Remove this once pyarrow publishes wheels for Python 3.9
-    @pytest.mark.skipif(sys.version_info >= (3, 9), reason="requires python < 3.9")
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
         strategy = EMACross(

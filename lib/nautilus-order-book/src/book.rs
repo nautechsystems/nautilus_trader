@@ -184,6 +184,20 @@ impl OrderBook
         return out_price
     }
 
+    /// Returns the predicted buy quantity for the given price.
+    #[no_mangle]
+    pub extern "C" fn buy_qty_for_price(&mut self, price: f64) -> f64 {
+        let mut cum_qty = 0.0;
+        for entry in &self._ask_book {
+            if entry.price <= price {
+                cum_qty += entry.qty;
+            } else {
+                break;
+            }
+        }
+        return cum_qty
+    }
+
     /// Returns the predicted sell price for the given quantity.
     #[no_mangle]
     pub extern "C" fn sell_price_for_qty(&mut self, qty: f64) -> f64 {
@@ -197,5 +211,19 @@ impl OrderBook
             }
         }
         return out_price
+    }
+
+    /// Returns the predicted sell quantity for the given price.
+    #[no_mangle]
+    pub extern "C" fn sell_qty_for_price(&mut self, price: f64) -> f64 {
+        let mut cum_qty = 0.0;
+        for entry in &self._bid_book {
+            if entry.price >= price {
+                cum_qty += entry.qty;
+            } else {
+                break;
+            }
+        }
+        return cum_qty
     }
 }
