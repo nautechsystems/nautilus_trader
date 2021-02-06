@@ -15,39 +15,59 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
+**The project is temporarily out of space on PyPI. Please install from source for the latest version.**
+
 ## Introduction
 
-_NautilusTrader_ is an open-source, high-performance, production-grade algorithmic trading platform,
+NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
 
-The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular adapters.
-Thus the platform can handle high-frequency trading operations for any asset classes including FX, Equities,
-Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
+The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
+adapters. Thus the platform can handle high-frequency trading operations for any asset classes
+including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
 
-## Cython
-The project heavily utilizes Cython, which provides static type safety and performance through C extension modules.
-The vast majority of the production Python code is actually written in Cython,
-however the libraries can be accessed from both pure Python and Cython.
+## Features
 
-Cython is a compiled programming language that aims to be a superset of the
-Python programming language, designed to give C-like performance with code that
-is written mostly in Python with optional additional C-inspired syntax.
+- **Fast:** C-level speed and type safety provided through Cython and Rust. Asynchronous networking utilizing uvloop.
+- **Reliable:** Redis backed performant state persistence for live implementations.
+- **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
+- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
+- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
+- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-> https://cython.org
+## Values
 
-## Rust
-The project also utilizes Rust (stable) for performance critical components.
-Rust is blazingly fast (comparable to C/C++) and memory-efficient: with no runtime or garbage collector,
-it can power performance-critical services, run on embedded devices, and easily integrate with other languages.
+- Reliability
+- Performance
+- Testability
+- Modularity
+- Maintainability
+- Scalability
+
+## What is Cython?
+
+[Cython](https://cython.org) is a compiled programming language that aims to be a superset of the Python programming
+language, designed to give C-like performance with code that is written mostly in Python with
+optional additional C-inspired syntax.
+
+The project heavily utilizes Cython to provide static type safety and increased performance
+for Python through C [extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production Python code is actually
+written in Cython, however the libraries can be accessed from both pure Python and Cython.
+
+## What is Rust?
+
+[Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
+concurrency. Rust is blazingly fast (comparable to C/C++) and memory-efficient: with no runtime or
+garbage collector, it can power mission-critical services, run on embedded devices, and easily
+integrate with other languages.
 
 Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
 eliminating many classes of bugs at compile-time.
 
-Language binding is handled through Cython and linked at compile time before wheel binaries are
-packaged, so a user does not need to have Rust installed to run _NautilusTrader_.
-
-> https://www.rust-lang.org/
+The project utilizes Rust for performance-critical components. Language binding is handled through
+Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
+does not need to have Rust installed to run NautilusTrader.
 
 ## Documentation
 
@@ -57,58 +77,45 @@ The documentation for the latest version of the package is available at _readthe
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 
-## Features
-
-- **Fast:** C-level speed and type safety provided through Cython and Rust. Asynchronous networking utilizing uvloop.
-- **Reliable:** Redis backed performant state persistence for live implementations.
-- **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
-- **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
-- **Multi-venue:** Multiple venue capabilities allows market making and statistical arbitrage strategies.
-- **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-
-## Values
-
-- Reliability
-- Testability
-- Performance
-- Modularity
-- Maintainability
-- Scalability
-
 ## Installation
 
 The latest version is tested against Python 3.7 - 3.9 on Linux and MacOS.
-Users are encouraged to use the latest stable version of Python.
 
-We recommend you setup a virtual environment to isolate the dependencies.
-Installation can be achieved through _one_ of the following options.
+We recommend users setup a virtual environment to isolate the dependencies, and run the platform
+with the latest stable version of Python.
+
+Installation for Unix-like systems can be achieved through _one_ of the following options;
 
 #### From PyPI
 
-To install the latest binary wheel or sdist package from PyPI, run:
+To install the latest binary wheel (or sdist package) from PyPI, run:
 
     pip install -U nautilus_trader
 
 #### From Source
 
-Installation from source requires Cython to compile the Python libraries, and Cargo to compile the Rust libraries.
-To install Cython run:
+Installation from source requires `rustc` and `cargo` to compile the Rust libraries,
+and Cython to compile the Python C extensions.
 
-    pip install -U Cython==3.0a6
+1. To install `rustup` (the Rust toolchain installer), run:
 
-To install Rust with Cargo for Linux or MacOS, run the following - then follow the on-screen instructions:
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   Then follow the on-screen instructions.
 
-> https://www.rust-lang.org/tools/install
+2. To install Cython, run:
 
-Then to install using pip, run:
+        pip install -U Cython==3.0a6
 
-    pip install -U git+https://github.com/nautechsystems/nautilus_trader
+3. Then to install NautilusTrader using `pip`, run:
 
-**Or** from the cloned root directory, run:
+        pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-    pip install .
+    **Or** clone the source with `git`, and install from the projects root directory by running:
+
+        git clone https://github.com/nautechsystems/nautilus_trader
+        cd nautilus_trader
+        pip install .
 
 ## Data Types
 
@@ -166,6 +173,7 @@ More will be added in due course including `StopLimit`, `MarketIfTouched`,
 request specific order types or features.
 
 ## Integrations
+
 An integration adapter for CCXT Pro is currently under active development.
 The adapter requires the `ccxtpro` package, which in turn requires a license.
 
@@ -184,30 +192,47 @@ exchanges.
 
 ## Development
 
-We recommend the PyCharm _Professional_ edition IDE as it interprets Cython syntax.
+For development of the Python codebase, we recommend using the PyCharm _Professional_ edition IDE, as
+it interprets Cython syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
 
-> https://www.jetbrains.com/pycharm/
+`poetry` is the preferred tool for handling all Python package and dev dependencies.
 
-You could also use Visual Studio Code with a Cython plugin.
+> https://python-poetry.org/
 
-[Poetry](https://python-poetry.org/) is the preferred tool for handling all Python package and dev dependencies.
+For development of the Rust codebase, we recommend using a JetBrains IDE (e.g. PyCharm or CLion) with the Rust plug-in.
+Alternatively, you could use Visual Studio Code with the Rust extension.
 
-[Rust](https://www.rust-lang.org/) will be increasingly utilized by the project, so to develop throughout the
-entire codebase Rust (stable) will need to be installed on the system. Note that a developer doesn't
-need to touch the Rust part of the codebase to work with (and/or contribute to) the Python side.
-
-To download Rustup (tooling manager) and install Rust for Linux or MacOS,
-run the following - then follow the on-screen instructions:
-
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+Note that a developer doesn't need to touch the Rust side of the codebase to work with (and contribute to) the Python side.
+However, for builds to work `rustup` (the Rust toolchain installer) will need to be installed on your
+system, along with `rustc` (the Rust compiler) and `cargo` (the Rust package manager).
 
 > https://www.rust-lang.org/tools/install
 
-To install all dependencies and compile the Rust libs and C extensions, run:
+#### Environment Setup
 
-    poetry install
+The following steps are for Unix-like systems, and only need to be completed once.
 
-Following any changes to `.rs`, `.pyx` or `.pxd` files, you can recompile by running:
+1. Install `rustup` by running:
+
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+    Then follow the on-screen instructions.
+
+2. Install the Cython package by running:
+
+        pip install -U Cython==3.0a6
+
+3. Install `poetry` by running:
+
+        curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+
+4. Then install all Python package dependencies, and compile the Rust libs and Python C extensions by running:
+
+        poetry install
+
+#### Builds
+
+Following any changes to `.rs`, `.pyx` or `.pxd` files, you can re-compile by running:
 
     python build.py
 
@@ -227,7 +252,7 @@ Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader
 
 ## License
 
-_NautilusTrader_ is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
+NautilusTrader is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
 
 Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through CLAassistant.
 
