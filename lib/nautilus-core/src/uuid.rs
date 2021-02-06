@@ -13,5 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod entry;
-pub mod book;
+use uuid::Uuid;
+use std::ffi::CString;
+use std::os::raw::c_char;
+
+
+#[no_mangle]
+pub extern "C" fn c_uuid_str_new() -> *mut c_char {
+    return CString::new(Uuid::new_v4().to_string()).unwrap().into_raw();
+}
+
+
+#[no_mangle]
+pub extern "C" fn c_uuid_str_free(s: *mut c_char) {
+    unsafe {
+        if s.is_null() {
+            return;
+        }
+        CString::from_raw(s)  // Frees memory here
+    };
+}

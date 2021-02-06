@@ -13,7 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::entry::OrderBookEntry;
+#[repr(C)]
+#[derive(Copy, Clone)]
+/// Represents an entry in an order book.
+pub struct OrderBookEntry
+{
+    pub price: f64,
+    pub qty: f64,
+    pub update_id: u64,
+}
+
+
+impl OrderBookEntry
+{
+    /// Initialize a new instance of the `OrderBookEntry` structure.
+    #[no_mangle]
+    pub extern "C" fn new_entry(price: f64, qty: f64, update_id: u64) -> OrderBookEntry {
+        return OrderBookEntry { price, qty, update_id };
+    }
+
+    /// Update the entry with the given quantity and update identifier.
+    #[no_mangle]
+    pub extern "C" fn update(&mut self, qty: f64, update_id: u64) {
+        self.qty = qty;
+        self.update_id = update_id;
+    }
+}
 
 
 /// Represents a limit order book
@@ -29,6 +54,7 @@ pub struct OrderBook
 
     _bid_book: [OrderBookEntry; 25],
     _ask_book: [OrderBookEntry; 25],
+    _bid_book_test: *const i32,
 }
 
 
@@ -46,6 +72,7 @@ impl OrderBook
             best_ask_qty: 0.0,
             _bid_book: [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25],
             _ask_book: [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25],
+            _bid_book_test: vec![].as_ptr(),
         };
     }
 
@@ -54,6 +81,8 @@ impl OrderBook
     pub extern "C" fn reset(&mut self) {
         self._bid_book = [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25];
         self._ask_book = [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25];
+        // self._bid_book_test.cast();
+        // self._bid_book_test.clear()
     }
 
     /// Apply the snapshot of 10 bids and 10 asks.
@@ -170,6 +199,8 @@ impl OrderBook
     }
 
     /// Returns the predicted buy price for the given quantity.
+    ///
+    /// If no ask entries or price is too far from the market then will return NaN.
     #[no_mangle]
     pub extern "C" fn buy_price_for_qty(&mut self, qty: f64) -> f64 {
         let mut cum_qty = 0.0;
@@ -185,6 +216,8 @@ impl OrderBook
     }
 
     /// Returns the predicted buy quantity for the given price.
+    ///
+    /// If no ask entries or price is too far from the market then will return 0.0.
     #[no_mangle]
     pub extern "C" fn buy_qty_for_price(&mut self, price: f64) -> f64 {
         let mut cum_qty = 0.0;
@@ -199,6 +232,8 @@ impl OrderBook
     }
 
     /// Returns the predicted sell price for the given quantity.
+    ///
+    /// If no bid entries or price is too far from the market then will return NaN.
     #[no_mangle]
     pub extern "C" fn sell_price_for_qty(&mut self, qty: f64) -> f64 {
         let mut cum_qty = 0.0;
@@ -214,6 +249,8 @@ impl OrderBook
     }
 
     /// Returns the predicted sell quantity for the given price.
+    ///
+    /// If no bid entries or price is too far from the market then will return 0.0.
     #[no_mangle]
     pub extern "C" fn sell_qty_for_price(&mut self, price: f64) -> f64 {
         let mut cum_qty = 0.0;

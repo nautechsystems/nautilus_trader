@@ -15,24 +15,11 @@
 
 #[cfg(test)]
 mod tests {
-    use nautilus_order_book::entry::OrderBookEntry;
+    use nautilus_core::uuid::c_uuid_str_new;
 
     #[test]
-    fn instantiate() {
-        let entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 1 };
-
-        assert_eq!(10500.0, entry.price);
-        assert_eq!(510.0, entry.qty);
-        assert_eq!(1, entry.update_id);
-    }
-
-    #[test]
-    fn update() {
-        let mut entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 1 };
-        entry.update(600.0, 2);
-
-        assert_eq!(10500.0, entry.price);
-        assert_eq!(600.0, entry.qty);
-        assert_eq!(2, entry.update_id);
+    fn c_uuid_str_new_returns_none_null_ptr() {
+        let uuid_str = c_uuid_str_new();
+        assert!(!uuid_str.is_null())
     }
 }
