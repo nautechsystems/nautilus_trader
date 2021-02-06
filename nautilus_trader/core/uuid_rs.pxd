@@ -13,24 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.uuid cimport UUID
+cdef extern from "lib/nautilus-core/nautilus_core.h":
+    ctypedef struct UuidStr:
+        char *value
 
-
-cdef class UUIDFactory:
-    """
-    Provides a factory which generates version 4 UUID's.
-    """
-
-    cpdef UUID generate(self):
-        """
-        Return a generated UUID version 4.
-
-        Returns
-        -------
-        UUID
-
-        """
-        return self.generate_c()
-
-    cdef UUID generate_c(self):
-        return UUID()
+    char *c_uuid_str_new()
+    void c_uuid_str_free(char *s)

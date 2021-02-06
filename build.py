@@ -54,11 +54,14 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 RUST_LIBRARIES = [
-    "nautilus_order_book",
+    "nautilus-core",
+    "nautilus-model",
 ]
 
 STATIC_LINK_MAP = {
-    "nautilus_trader/model/order_book.pyx": ["lib/nautilus-order-book/target/release/libnautilus_order_book.a"],
+    "nautilus_trader/core/uuid.pyx": ["lib/nautilus-core/target/release/libnautilus_core.a"],
+    "nautilus_trader/common/clock.pyx": ["lib/nautilus-core/target/release/libnautilus_core.a"],
+    "nautilus_trader/model/order_book.pyx": ["lib/nautilus-model/target/release/libnautilus_model.a"],
 }
 
 
@@ -67,8 +70,7 @@ def _build_rust_libs() -> None:
     print("Building rust libs...")
 
     for lib in RUST_LIBRARIES:
-        lib_dir = lib.replace('_', '-')
-        cmd = f"(cd lib/{lib_dir}; cargo build --release)"
+        cmd = f"(cd lib/{lib}; cargo build --release)"
         print(cmd)
         os.system(cmd)
 

@@ -13,24 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.uuid cimport UUID
+from libc.stdint cimport uint32_t
+from libc.stdint cimport uint64_t
 
 
-cdef class UUIDFactory:
-    """
-    Provides a factory which generates version 4 UUID's.
-    """
+cdef extern from "lib/nautilus-core/nautilus_core.h":
+    ctypedef struct DateTime:
+        uint32_t year
+        uint32_t month
+        uint32_t day
+        uint32_t hour
+        uint32_t minute
+        uint32_t second
+        uint32_t microsecond
 
-    cpdef UUID generate(self):
-        """
-        Return a generated UUID version 4.
+    DateTime c_utc_now()
+    double c_timestamp()
+    uint64_t c_timestamp_ms()
+    uint64_t c_timestamp_us()
 
-        Returns
-        -------
-        UUID
-
-        """
-        return self.generate_c()
-
-    cdef UUID generate_c(self):
-        return UUID()
+    char* c_uuid_str_new()
+    void c_uuid_str_free(char *s)

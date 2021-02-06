@@ -1,15 +1,17 @@
 [package]
-name = "nautilus_order_book"
+name = "nautilus-core"
 version = "0.1.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 edition = "2018"
 
 [lib]
-name = "nautilus_order_book"
+name = "nautilus_core"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 cbindgen = "0.17.0"
+uuid = { version = "0.4", features = ["v4"] }
+chrono = "0.4.0"
 
 [build-dependencies]
 cbindgen = "0.17.0"

@@ -19,6 +19,7 @@ This module provides a data producer for backtesting.
 
 from bisect import bisect_left
 import gc
+import time
 
 import numpy as np
 import pandas as pd
@@ -32,7 +33,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport format_bytes
 from nautilus_trader.core.functions cimport get_size_of
 from nautilus_trader.core.functions cimport slice_dataframe
-from nautilus_trader.core.time cimport unix_time
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
@@ -112,7 +112,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef list trade_tick_frames = []
         self.execution_resolutions = []
 
-        cdef double ts_total = unix_time()
+        cdef double ts_total = self._clock.unix_time()
         cdef double ts
         for instrument in data.instruments.values():
             symbol = instrument.symbol
@@ -523,7 +523,7 @@ cdef class CachedProducer(DataProducerFacade):
         self._log.info(f"Pre-caching ticks...")
         self._producer.setup(self.min_timestamp, self.max_timestamp)
 
-        cdef double ts = unix_time()
+        cdef double ts = time.time()
 
         cdef Tick tick
         while self._producer.has_tick_data:
@@ -532,7 +532,7 @@ cdef class CachedProducer(DataProducerFacade):
             self._ts_cache.append(tick.timestamp.timestamp())
 
         self._log.info(f"Pre-cached {len(self._tick_cache):,} "
-                       f"total tick rows in {unix_time() - ts:.3f}s.")
+                       f"total tick rows in {time.time() - ts:.3f}s.")
 
         self._producer.reset()
         self._producer.clear()
