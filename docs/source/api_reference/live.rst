@@ -4,20 +4,40 @@ Live
 .. automodule:: nautilus_trader.live
 
 
-Data
-----
+Data Client
+-----------
 
-.. automodule:: nautilus_trader.live.data
+.. automodule:: nautilus_trader.live.data_client
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
 
-Execution
----------
+Data Engine
+-----------
 
-.. automodule:: nautilus_trader.live.execution
+.. automodule:: nautilus_trader.live.data_engine
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+
+Execution Client
+----------------
+
+.. automodule:: nautilus_trader.live.execution_client
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+
+Execution Engine
+----------------
+
+.. automodule:: nautilus_trader.live.execution_engine
    :show-inheritance:
    :inherited-members:
    :members:
@@ -28,6 +48,16 @@ Node
 ----
 
 .. automodule:: nautilus_trader.live.node
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+
+Providers
+---------
+
+.. automodule:: nautilus_trader.live.providers
    :show-inheritance:
    :inherited-members:
    :members:
