@@ -108,12 +108,12 @@ jobs:
         with:
           version-command: poetry version --short
 
-      # Set release environment variables
-      - name: Set release env variables
+      # Set release output variables
+      - name: Set Output
+        id: vars
         run: |
-          echo ::set-env name=VERSION::$(poetry version --short)
-          echo ::set-env name=TAG_NAME::$(echo v$VERSION)
-          echo ::set-env name=RELEASE_NAME::$(echo NautilusTrader $VERSION Beta)
+          echo ::set-output name=tag_name::${GITHUB_REF#refs/*/}
+          echo ::set-output name=release_name::NautilusTrader ${GITHUB_REF#refs/*/} Beta
 
       # Create GitHub release
       - name: Create Release
@@ -121,6 +121,8 @@ jobs:
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.vars.outputs.tag_name }}
+          RELEASE_NAME: ${{ steps.vars.outputs.release_name }}
         with:
           tag_name: v${{ env.TAG_NAME }}
           release_name: ${{ env.RELEASE_NAME }}
@@ -171,12 +173,11 @@ jobs:
           poetry install
           poetry build --format sdist
 
-      # Set release environment variables
-      - name: Set release env variables
+      # Set release output variables
+      - name: Set Output
+        id: vars
         run: |
-          echo ::set-env name=VERSION::$(poetry version --short)
-          echo ::set-env name=TAG_NAME::$(echo v$VERSION)
-          echo ::set-env name=RELEASE_URL::$(echo https://github.com/nautechsystems/nautilus_trader/releases/tag/$TAG_NAME)
+          echo ::set-output name=release_url::https://github.com/nautechsystems/nautilus_trader/releases/tag/${GITHUB_REF#refs/*/}
 
       # Upload Release Asset
       - name: Upload Release Asset
@@ -184,6 +185,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_URL: ${{ steps.vars.outputs.release_url }}
         with:
           upload_url: ${{ env.RELEASE_URL }}
           asset_path: find ./dist -mindepth 1 -print -quit
@@ -242,12 +244,11 @@ jobs:
           poetry install
           poetry build --format wheel
 
-      # Set release environment variables
-      - name: Set release env variables
+      # Set release output variables
+      - name: Set Output
+        id: vars
         run: |
-          echo ::set-env name=VERSION::$(poetry version --short)
-          echo ::set-env name=TAG_NAME::$(echo v$VERSION)
-          echo ::set-env name=RELEASE_URL::$(echo https://github.com/nautechsystems/nautilus_trader/releases/tag/$TAG_NAME)
+          echo ::set-output name=release_url::https://github.com/nautechsystems/nautilus_trader/releases/tag/${GITHUB_REF#refs/*/}
 
       # Upload Release Asset
       - name: Upload Release Asset
@@ -255,6 +256,7 @@ jobs:
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_URL: ${{ steps.vars.outputs.release_url }}
         with:
           upload_url: ${{ env.RELEASE_URL }}
           asset_path: find ./dist -mindepth 1 -print -quit
