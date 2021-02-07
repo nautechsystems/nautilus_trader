@@ -17,7 +17,7 @@ from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
 
-cdef extern from "lib/nautilus-core/nautilus_core.h":
+cdef extern from "lib/nautilus/core/nautilus_core.h":
     ctypedef struct DateTime:
         uint32_t year
         uint32_t month
