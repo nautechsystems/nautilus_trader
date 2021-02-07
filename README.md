@@ -10,7 +10,6 @@
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
-![github-version](https://img.shields.io/github/v/release/nautechsystems/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
