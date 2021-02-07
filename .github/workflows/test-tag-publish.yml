@@ -190,7 +190,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          upload_url: https://api.github.com/repos/nautechsystems/nautilus_trader/releases/latest
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
@@ -264,7 +264,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          upload_url: https://api.github.com/repos/nautechsystems/nautilus_trader/releases/latest
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
