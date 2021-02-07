@@ -53,15 +53,19 @@ CYTHON_COMPILER_DIRECTIVES = {
     # **Options.extra_warnings,
 }
 
-RUST_LIBRARIES = [
-    "nautilus-core",
-    "nautilus-model",
-]
+##########################
+#       Rust build       #
+##########################
+
+RUST_LIBRARIES = {
+    "nautilus-core": "lib/nautilus-core/target/release/libnautilus_core.a",
+    "nautilus-model": "lib/nautilus-model/target/release/libnautilus_model.a",
+}
 
 STATIC_LINK_MAP = {
-    "nautilus_trader/core/uuid.pyx": ["lib/nautilus-core/target/release/libnautilus_core.a"],
-    "nautilus_trader/common/clock.pyx": ["lib/nautilus-core/target/release/libnautilus_core.a"],
-    "nautilus_trader/model/order_book.pyx": ["lib/nautilus-model/target/release/libnautilus_model.a"],
+    "nautilus_trader/core/uuid.pyx": [RUST_LIBRARIES["nautilus-core"]],
+    "nautilus_trader/common/clock.pyx": [RUST_LIBRARIES["nautilus-core"]],
+    "nautilus_trader/model/order_book.pyx": [RUST_LIBRARIES["nautilus-model"]],
 }
 
 
