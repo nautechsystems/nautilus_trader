@@ -3,6 +3,7 @@ name: codecov
 on:
   push:
     branches-ignore:
+      - "develop" # TODO!: Remove
       - "dependabot/**"
   pull_request:
     branches-ignore:

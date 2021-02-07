@@ -6,6 +6,7 @@ on:
   push:
     branches-ignore:
       - "master"
+      - "develop" # TODO!: Remove
       - "dependabot/**"
   pull_request:
     branches-ignore:
