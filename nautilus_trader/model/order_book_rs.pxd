@@ -16,7 +16,7 @@
 from libc.stdint cimport uint64_t
 
 
-cdef extern from "lib/nautilus-model/nautilus_model.h":
+cdef extern from "lib/nautilus/model/nautilus_model.h":
     ctypedef struct OrderBookEntry:
         double price
         double qty
