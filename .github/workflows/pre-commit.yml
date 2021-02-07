@@ -3,6 +3,7 @@ name: pre-commit checks
 on:
   push:
     branches-ignore:
+      - "develop" # TODO!: Remove
       - "master"
       - "dependabot/**"
   pull_request:
