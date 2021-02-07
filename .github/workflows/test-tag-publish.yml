@@ -179,7 +179,9 @@ jobs:
         run: |
           echo "::set-output name=upload_url::https://github.com/nautechsystems/nautilus_trader/releases/tag/v$(poetry version --short)"
           echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-          echo "::set-output name=asset_name::$((cd dist/; printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}'))"
+          cd dist
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          cd ..
 
       # Upload release asset
       - name: Upload release asset
@@ -254,7 +256,9 @@ jobs:
         run: |
           echo "::set-output name=upload_url::https://github.com/nautechsystems/nautilus_trader/releases/tag/v$(poetry version --short)"
           echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-          echo "::set-output name=asset_name::$((cd dist/; printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}'))"
+          cd dist
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          cd ..
 
       # Upload release asset
       - name: Upload release asset
