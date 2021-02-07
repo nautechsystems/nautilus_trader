@@ -4,7 +4,7 @@ name: test-tag-publish
 
 on:
   push:
-    branches: [ develop ]  # TODO!: Change
+    branches: [ master ]
 
 jobs:
   test:
