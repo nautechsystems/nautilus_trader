@@ -68,6 +68,8 @@ jobs:
         python-version: [ 3.9 ]
     name: test-tag-publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    outputs:
+      upload_url: ${{ steps.create-release.outputs.upload_url }}
 
     steps:
       - uses: actions/checkout@v2
@@ -190,7 +192,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: https://api.github.com/repos/nautechsystems/nautilus_trader/releases/latest
+          upload_url: ${{ needs.tag_release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
@@ -264,7 +266,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: https://api.github.com/repos/nautechsystems/nautilus_trader/releases/latest
+          upload_url: ${{ needs.tag_release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
