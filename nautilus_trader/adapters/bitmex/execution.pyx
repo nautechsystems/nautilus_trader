@@ -13,10 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from cpython.datetime cimport datetime
-
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
@@ -24,17 +20,11 @@ from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 
@@ -141,52 +131,4 @@ cdef class BitmexExecutionClient(CCXTExecutionClient):
                 cl_ord_id=order.cl_ord_id,
                 reason=str(ex),
                 timestamp=self._clock.utc_now_c(),
-            )
-
-# -- EVENTS ----------------------------------------------------------------------------------------
-
-    cdef void _on_order_status(self, dict event) except *:
-        event_info = event["info"]
-        event_info["symbol"] = event["symbol"]
-        event_info["timestamp"] = event["timestamp"]
-        cdef str cl_ord_id_str = event_info["clOrdID"]
-        if cl_ord_id_str == '':  # Sent from website or otherwise not supplied
-            cl_ord_id_str = "NULL"
-        cdef ClientOrderId cl_ord_id = ClientOrderId(cl_ord_id_str)
-        cdef OrderId order_id = OrderId(event_info["orderID"])
-        cdef datetime timestamp = from_posix_ms(event_info["timestamp"])  # Event time (generic for now)
-        cdef str ord_status = event_info["ordStatus"]
-        if ord_status == "New":
-            self._generate_order_accepted(cl_ord_id, order_id, timestamp)
-        elif ord_status == "Canceled":
-            self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-        elif ord_status == "Rejected":
-            self._generate_order_rejected(cl_ord_id, order_id, timestamp)
-
-    cdef void _on_exec_report(self, dict event) except *:
-        event_info = event["info"]
-        event_info["symbol"] = event["symbol"]
-        event_info["timestamp"] = event["timestamp"]
-        cdef str cl_ord_id_str = event_info["clOrdID"]
-        if cl_ord_id_str == '':  # Sent from website or otherwise not supplied
-            cl_ord_id_str = "NULL"
-
-        if event_info["execType"] == "Trade":
-            fill_qty = Decimal(event_info["lastQty"])
-            cum_qty = Decimal(event_info["cumQty"])
-            leaves_qty = Decimal(event_info["leavesQty"])
-            self._generate_order_filled(
-                cl_ord_id=ClientOrderId(cl_ord_id_str),
-                order_id=OrderId(event_info["orderID"]),
-                execution_id=ExecutionId(event_info["execID"]),
-                symbol=Symbol(event_info["symbol"], self.venue),
-                order_side=OrderSideParser.from_str(event_info["side"].upper()),
-                fill_qty=fill_qty,
-                cum_qty=cum_qty,
-                leaves_qty=leaves_qty,
-                avg_px=Decimal(event_info["lastPx"]),
-                commission_amount=Decimal(str(event_info.get("execComm", 0) / 0.00000001)),  # Commission in XBt (Satoshi)
-                commission_currency="BTC",
-                liquidity_side=LiquiditySide.TAKER if event_info["lastLiquidityInd"] == "RemovedLiquidity" else LiquiditySide.MAKER,
-                timestamp=from_posix_ms(event_info["timestamp"]),
             )
