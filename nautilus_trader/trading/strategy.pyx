@@ -120,11 +120,11 @@ cdef class TradingStrategy(Component):
             log_initialized=False,
         )
 
-        self._data_engine = None    # Initialized when registered with the data engine
-        self._exec_engine = None    # Initialized when registered with the execution engine
+        self._data_engine = None  # Initialized when registered with the data engine
+        self._exec_engine = None  # Initialized when registered with the execution engine
 
         # Identifiers
-        self.trader_id = None       # Initialized when registered with a trader
+        self.trader_id = None     # Initialized when registered with a trader
         self.id = strategy_id
 
         # Indicators

@@ -13,10 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from cpython.datetime cimport datetime
-
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
@@ -24,19 +20,13 @@ from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_posix_ms
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport OrderId
-from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.order.base cimport Order
 from nautilus_trader.model.order.base cimport PassiveOrder
 
@@ -137,48 +127,4 @@ cdef class BinanceExecutionClient(CCXTExecutionClient):
                 cl_ord_id=order.cl_ord_id,
                 reason=str(ex),
                 timestamp=self._clock.utc_now_c(),
-            )
-
-# -- EVENTS ----------------------------------------------------------------------------------------
-
-    cdef void _on_order_status(self, dict event) except *:
-        event_info = event["info"]
-        event_info["symbol"] = event["symbol"]
-        event_info["timestamp"] = event["timestamp"]
-        cdef OrderId order_id = OrderId(str(event_info["i"]))
-        cdef datetime timestamp = from_posix_ms(event_info["E"])  # Event time (generic for now)
-        cdef str exec_type = event_info["x"]
-        if exec_type == "NEW":
-            cl_ord_id = ClientOrderId(event_info["c"])  # ClientOrderId
-            self._generate_order_accepted(cl_ord_id, order_id, timestamp)
-        elif exec_type == "CANCELED":
-            cl_ord_id = ClientOrderId(event_info["C"])  # Original ClientOrderId
-            self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
-        elif exec_type == "EXPIRED":
-            cl_ord_id = ClientOrderId(event_info["c"])  # ClientOrderId
-            self._generate_order_expired(cl_ord_id, order_id, timestamp)
-
-    cdef void _on_exec_report(self, dict event) except *:
-        event_info = event["info"]
-        event_info["symbol"] = event["symbol"]
-        event_info["timestamp"] = event["timestamp"]
-        cdef str exec_type = event_info["x"]
-        if exec_type == "TRADE":
-            fill_qty = Decimal(event_info["l"])
-            cum_qty = Decimal(event_info["z"])
-            leaves_qty = Decimal(event_info["q"]) - cum_qty
-            self._generate_order_filled(
-                cl_ord_id=ClientOrderId(event_info["c"]),
-                order_id=OrderId(str(event_info["i"])),
-                execution_id=ExecutionId(str(event_info["t"])),
-                symbol=Symbol(event_info["symbol"], self.venue),
-                order_side=OrderSideParser.from_str(event_info["S"]),
-                fill_qty=fill_qty,
-                cum_qty=cum_qty,
-                leaves_qty=leaves_qty,
-                avg_px=Decimal(str(event_info["L"])),
-                commission_amount=Decimal(event_info["n"]),
-                commission_currency=event_info["N"],
-                liquidity_side=LiquiditySide.TAKER,
-                timestamp=from_posix_ms(event_info["T"])
             )

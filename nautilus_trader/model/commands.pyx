@@ -118,7 +118,8 @@ cdef class SubmitOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.order.cl_ord_id.value}, "
                 f"{position_id_str}"
-                f"strategy_id={self.strategy_id.value})")
+                f"strategy_id={self.strategy_id.value}, "
+                f"cmd_id={self.id})")
 
 
 cdef class SubmitBracketOrder(TradingCommand):
@@ -176,7 +177,8 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
-                f"id={self.bracket_order.id.value})")
+                f"entry_cl_ord_id={self.bracket_order.entry.cl_ord_id.value}, "
+                f"cmd_id={self.id})")
 
 
 cdef class AmendOrder(TradingCommand):
@@ -238,7 +240,8 @@ cdef class AmendOrder(TradingCommand):
                 f"account_id={self.account_id.value}, "
                 f"cl_ord_id={self.cl_ord_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
-                f"price={self.price})")
+                f"price={self.price}, "
+                f"cmd_id={self.id})")
 
 
 cdef class CancelOrder(TradingCommand):
@@ -289,5 +292,6 @@ cdef class CancelOrder(TradingCommand):
                 f"venue={self.venue.value}, "
                 f"trader_id={self.trader_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"cl_ord_id={self.cl_ord_id.value},"
-                f"order_id={self.order_id.value})")
+                f"cl_ord_id={self.cl_ord_id.value}, "
+                f"order_id={self.order_id.value}, "
+                f"cmd_id={self.id})")

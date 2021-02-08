@@ -68,6 +68,8 @@ jobs:
         python-version: [ 3.9 ]
     name: test-tag-publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    outputs:
+      upload_url: ${{ steps.create-release.outputs.upload_url }}
 
     steps:
       - uses: actions/checkout@v2
@@ -109,14 +111,14 @@ jobs:
           version-command: poetry version --short
 
       # Set release output variables
-      - name: Set Output
+      - name: Set output
         id: vars
         run: |
-          echo ::set-output name=tag_name::${GITHUB_REF#refs/*/}
-          echo ::set-output name=release_name::NautilusTrader ${GITHUB_REF#refs/*/} Beta
+          echo "::set-output name=tag_name::v$(poetry version --short)"
+          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
 
       # Create GitHub release
-      - name: Create Release
+      - name: Create release
         id: create-release
         uses: actions/create-release@v1
         env:
@@ -124,7 +126,7 @@ jobs:
           TAG_NAME: ${{ steps.vars.outputs.tag_name }}
           RELEASE_NAME: ${{ steps.vars.outputs.release_name }}
         with:
-          tag_name: v${{ env.TAG_NAME }}
+          tag_name: ${{ env.TAG_NAME }}
           release_name: ${{ env.RELEASE_NAME }}
           draft: false
           prerelease: false
@@ -174,31 +176,33 @@ jobs:
           poetry build --format sdist
 
       # Set release output variables
-      - name: Set Output
+      - name: Set output
         id: vars
         run: |
-          echo ::set-output name=release_url::https://github.com/nautechsystems/nautilus_trader/releases/tag/${GITHUB_REF#refs/*/}
+          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          cd dist
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
-      # Upload Release Asset
-      - name: Upload Release Asset
+      # Upload release asset
+      - name: Upload release asset
         id: upload-release-asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_URL: ${{ steps.vars.outputs.release_url }}
+          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
+          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: ${{ env.RELEASE_URL }}
-          asset_path: find ./dist -mindepth 1 -print -quit
-          asset_name: (cd dist/; printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')
+          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          asset_path: ${{ env.ASSET_PATH }}
+          asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
 
-# TODO: Temporarily out of space on PyPI
-#      # Publish
-#      - name: Publish to production PyPI
-#        env:
-#          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-#          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-#        run: poetry publish
+      # Publish
+      - name: Publish to production PyPI
+        env:
+          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: poetry publish
 
 
   publish_wheels:
@@ -245,28 +249,30 @@ jobs:
           poetry build --format wheel
 
       # Set release output variables
-      - name: Set Output
+      - name: Set output
         id: vars
         run: |
-          echo ::set-output name=release_url::https://github.com/nautechsystems/nautilus_trader/releases/tag/${GITHUB_REF#refs/*/}
+          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          cd dist
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
-      # Upload Release Asset
-      - name: Upload Release Asset
+      # Upload release asset
+      - name: Upload release asset
         id: upload-release-asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_URL: ${{ steps.vars.outputs.release_url }}
+          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
+          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: ${{ env.RELEASE_URL }}
-          asset_path: find ./dist -mindepth 1 -print -quit
-          asset_name: (cd dist/; printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')
+          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          asset_path: ${{ env.ASSET_PATH }}
+          asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
 
-# TODO: Temporarily out of space on PyPI
-#      # Publish
-#      - name: Publish to production PyPI
-#        env:
-#          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-#          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-#        run: poetry publish
+      # Publish
+      - name: Publish to production PyPI
+        env:
+          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: poetry publish

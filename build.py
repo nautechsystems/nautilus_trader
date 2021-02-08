@@ -58,8 +58,8 @@ CYTHON_COMPILER_DIRECTIVES = {
 ##########################
 
 RUST_LIBRARIES = {
-    "nautilus-core": "lib/nautilus-core/target/release/libnautilus_core.a",
-    "nautilus-model": "lib/nautilus-model/target/release/libnautilus_model.a",
+    "nautilus-core": "lib/nautilus/target/release/libnautilus_core.a",
+    "nautilus-model": "lib/nautilus/target/release/libnautilus_model.a",
 }
 
 STATIC_LINK_MAP = {
@@ -73,10 +73,9 @@ def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
     print("Building rust libs...")
 
-    for lib in RUST_LIBRARIES:
-        cmd = f"(cd lib/{lib}; cargo build --release)"
-        print(cmd)
-        os.system(cmd)
+    cmd = f"(cd lib/nautilus; cargo build --release)"
+    print(cmd)
+    os.system(cmd)
 
 
 def _build_extensions() -> List[Extension]:

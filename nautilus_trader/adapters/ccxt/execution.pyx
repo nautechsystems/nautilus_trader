@@ -19,6 +19,8 @@ from decimal import Decimal
 import ccxt
 from ccxt.base.errors import BaseError as CCXTError
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
@@ -43,6 +45,8 @@ from nautilus_trader.model.events cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport OrderId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -111,6 +115,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._watch_orders_task = None
         self._watch_exec_reports_task = None
 
+        # Order quantity cache (to handle CCXT not tracking ClOrdID and cumulative qty in trade events)
+        self._cached_orders = {}  # type: {OrderId: Order}
+        self._cached_filled = {}  # type: {OrderId: Decimal}
+
+    cdef void _on_reset(self) except *:
+        self._cached_orders.clear()
+        self._cached_filled.clear()
+
     cpdef void connect(self) except *:
         """
         Connect the client.
@@ -147,15 +159,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.is_connected = True
         self._log.info("Connected.")
 
-    async def state_report(self, list active_orders) -> ExecutionStateReport:
+    async def state_report(self, list active_orders):
         """
-        Return a execution state report based on the given list of active orders
-        and open positions.
+        Return an execution state report based on the given list of active
+        orders.
 
         Parameters
         ----------
         active_orders : list[Order]
-            The orders which currently have an active status.
+            The orders which currently have an 'active' status.
 
         Returns
         -------
@@ -450,6 +462,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, Order order):
         self._log.debug(f"Submitted {order}.")
+
         # Generate event here to ensure it is processed before OrderAccepted
         self._generate_order_submitted(
             cl_ord_id=order.cl_ord_id,
@@ -490,7 +503,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
 # -- EVENTS ----------------------------------------------------------------------------------------
 
-    cdef void _on_account_state(self, dict event) except *:
+    cdef inline void _on_account_state(self, dict event) except *:
         cdef list balances = []
         cdef list balances_free = []
         cdef list balances_locked = []
@@ -551,10 +564,76 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         self._handle_event(account_state)
 
-    cdef void _on_order_status(self, dict event) except *:
-        # TODO: Implement
-        self._log.info(str(event), LogColor.BLUE)
+    cdef inline void _on_order_status(self, dict event) except *:
+        cdef OrderId order_id = OrderId(event["id"])
+        cdef ClientOrderId cl_ord_id = ClientOrderId(event["clientOrderId"])
 
-    cdef void _on_exec_report(self, dict event) except *:
-        # TODO: Implement
-        self._log.info(str(event), LogColor.BLUE)
+        if order_id not in self._cached_orders:
+            order = self._engine.cache.order(cl_ord_id)
+            if order is None:
+                # If state resolution has done its job this should never happen
+                self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
+                return
+            self._cache_order(order_id, order)
+
+        cdef datetime timestamp = from_posix_ms(event["timestamp"])
+        cdef str status = event["status"]
+        # status == "rejected" should be captured in `submit_order`
+        if status == "open" and event["filled"] == 0:
+            self._generate_order_accepted(cl_ord_id, order_id, timestamp)
+        elif status == "canceled":
+            self._generate_order_cancelled(cl_ord_id, order_id, timestamp)
+            self._decache_order(order_id)
+        elif status == "expired":
+            self._generate_order_expired(cl_ord_id, order_id, timestamp)
+            self._decache_order(order_id)
+
+    cdef inline void _on_exec_report(self, dict event) except *:
+        cdef OrderId order_id = OrderId(event["order"])
+        cdef Order order = self._cached_orders.get(order_id)
+
+        if order is None:
+            cl_ord_id = self._engine.cache.cl_ord_id(order_id)
+            if cl_ord_id is None:
+                self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
+                return
+            order = self._engine.cache.order(cl_ord_id)
+            if order is None:
+                # If state resolution has done its job this should never happen
+                self._log.error(f"Cannot fill un-cached order with {repr(order_id)}.")
+                return
+            self._cache_order(order_id, order)
+
+        prev_cum_qty: Decimal = self._cached_filled.get(order_id)
+        fill_qty: Decimal = Decimal(f"{event['amount']:.{order.quantity.precision_c()}f}")
+        cum_qty: Decimal = prev_cum_qty + fill_qty
+        self._cached_filled[order.cl_ord_id] = cum_qty
+        leaves_qty: Decimal = order.quantity - cum_qty
+        if leaves_qty == 0:
+            self._decache_order(order_id)
+
+        self._generate_order_filled(
+            cl_ord_id=order.cl_ord_id,
+            order_id=order_id,
+            execution_id=ExecutionId(event["id"]),
+            symbol=Symbol(event["symbol"], self.venue),
+            order_side=OrderSideParser.from_str(event["side"].upper()),
+            fill_qty=fill_qty,
+            cum_qty=cum_qty,
+            leaves_qty=order.quantity - cum_qty,
+            avg_px=event["price"],
+            commission_amount=event.get("fee", {}).get("cost", 0),
+            commission_currency=event.get("fee", {}).get("currency"),
+            liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
+            timestamp=from_posix_ms(event["timestamp"]),
+        )
+
+    cdef inline void _cache_order(self, OrderId order_id, Order order) except *:
+        self._cached_orders[order_id] = order
+        self._cached_filled[order_id] = order.filled_qty
+        self._log.debug(f"Cached {repr(order_id)} {order}.")
+
+    cdef inline void _decache_order(self, OrderId order_id) except *:
+        self._cached_orders.pop(order_id, None)
+        self._cached_filled.pop(order_id, None)
+        self._log.debug(f"De-cached {repr(order_id)}.")

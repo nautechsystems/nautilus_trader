@@ -109,11 +109,19 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         self._log.info("Resetting...")
 
+        self._on_reset()
+
         self._account_last_free.clear()
         self._account_last_used.clear()
         self._account_last_total.clear()
 
         self._log.info("Reset.")
+
+    cdef void _on_reset(self) except *:
+        """
+        Actions to be performed when client is reset.
+        """
+        pass  # Optionally override in subclass
 
     cpdef void dispose(self) except *:
         """
