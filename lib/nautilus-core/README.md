@@ -1,3 +1,0 @@
-# Nautilus Core
-
-## ALPHA

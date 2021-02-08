@@ -35,6 +35,7 @@ cdef class LiveExecutionClient(ExecutionClient):
     cdef dict _account_last_used
     cdef dict _account_last_total
 
+    cdef void _on_reset(self) except *
     cdef inline void _generate_order_invalid(self, ClientOrderId cl_ord_id, str reason) except *
     cdef inline void _generate_order_submitted(self, ClientOrderId cl_ord_id, datetime timestamp) except *
     cdef inline void _generate_order_rejected(self, ClientOrderId cl_ord_id, str reason, datetime timestamp) except *

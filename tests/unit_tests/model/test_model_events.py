@@ -71,9 +71,9 @@ class EventTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(f"AccountState(account_id=SIM-000, "
-                         f"free=[1,525,000.00 USD], locked=[0.00 USD], id={uuid})", str(event))
+                         f"free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})", str(event))
         self.assertEqual(f"AccountState(account_id=SIM-000, "
-                         f"free=[1,525,000.00 USD], locked=[0.00 USD], id={uuid})", repr(event))
+                         f"free=[1,525,000.00 USD], locked=[0.00 USD], event_id={uuid})", repr(event))
 
     def test_order_initialized(self):
         # Arrange
@@ -93,8 +93,8 @@ class EventTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, id={uuid})", str(event))
-        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, id={uuid})", repr(event))
+        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})", str(event))
+        self.assertEqual(f"OrderInitialized(cl_ord_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})", repr(event))
 
     def test_order_invalid(self):
         # Arrange
@@ -109,9 +109,9 @@ class EventTests(unittest.TestCase):
         # Act
         # Assert
         self.assertEqual(f"OrderInvalid(cl_ord_id=O-2020872378423, "
-                         f"reason='DUPLICATE_CL_ORD_ID', id={uuid})", str(event))
+                         f"reason='DUPLICATE_CL_ORD_ID', event_id={uuid})", str(event))
         self.assertEqual(f"OrderInvalid(cl_ord_id=O-2020872378423, "
-                         f"reason='DUPLICATE_CL_ORD_ID', id={uuid})", repr(event))
+                         f"reason='DUPLICATE_CL_ORD_ID', event_id={uuid})", repr(event))
 
     def test_order_denied(self):
         # Arrange
@@ -125,9 +125,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderDenied(cl_ord_id=O-2020872378423, "
-                         f"reason='SINGLE_ORDER_RISK_EXCEEDED', id={uuid})", str(event))
+                         f"reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", str(event))
         self.assertEqual(f"OrderDenied(cl_ord_id=O-2020872378423, "
-                         f"reason='SINGLE_ORDER_RISK_EXCEEDED', id={uuid})", repr(event))
+                         f"reason='SINGLE_ORDER_RISK_EXCEEDED', event_id={uuid})", repr(event))
 
     def test_order_submitted(self):
         # Arrange
@@ -142,9 +142,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderSubmitted(account_id=SIM-000, "
-                         f"cl_ord_id=O-2020872378423, id={uuid})", str(event))
+                         f"cl_ord_id=O-2020872378423, event_id={uuid})", str(event))
         self.assertEqual(f"OrderSubmitted(account_id=SIM-000, "
-                         f"cl_ord_id=O-2020872378423, id={uuid})", repr(event))
+                         f"cl_ord_id=O-2020872378423, event_id={uuid})", repr(event))
 
     def test_order_rejected(self):
         # Arrange
@@ -160,9 +160,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"reason='INSUFFICIENT_MARGIN', id={uuid})", str(event))  # noqa
+                         f"reason='INSUFFICIENT_MARGIN', event_id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderRejected(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"reason='INSUFFICIENT_MARGIN', id={uuid})", repr(event))  # noqa
+                         f"reason='INSUFFICIENT_MARGIN', event_id={uuid})", repr(event))  # noqa
 
     def test_order_accepted(self, order_id=None):
         if order_id is None:
@@ -181,9 +181,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id={123456}, id={uuid})", str(event))  # noqa
+                         f"order_id={123456}, event_id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderAccepted(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id={123456}, id={uuid})", repr(event))  # noqa
+                         f"order_id={123456}, event_id={uuid})", repr(event))  # noqa
 
     def test_order_cancel_reject(self):
         # Arrange
@@ -202,10 +202,10 @@ class EventTests(unittest.TestCase):
         # Act
         self.assertEqual(f"OrderCancelReject(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-                         f"id={uuid})", str(event))
+                         f"event_id={uuid})", str(event))
         self.assertEqual(f"OrderCancelReject(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-                         f"id={uuid})", repr(event))
+                         f"event_id={uuid})", repr(event))
 
     def test_order_cancelled(self):
         # Arrange
@@ -221,9 +221,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, id={uuid})", str(event))
+                         f"order_id=123456, event_id={uuid})", str(event))
         self.assertEqual(f"OrderCancelled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, id={uuid})", repr(event))
+                         f"order_id=123456, event_id={uuid})", repr(event))
 
     def test_order_amended(self):
         # Arrange
@@ -241,9 +241,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
-                         f"order_id=123456, qty=500,000, price=1.95000, id={uuid})", str(event))
+                         f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})", str(event))
         self.assertEqual(f"OrderAmended(account_id=SIM-000, cl_order_id=O-2020872378423, "
-                         f"order_id=123456, qty=500,000, price=1.95000, id={uuid})", repr(event))
+                         f"order_id=123456, qty=500,000, price=1.95000, event_id={uuid})", repr(event))
 
     def test_order_expired(self):
         # Arrange
@@ -259,9 +259,9 @@ class EventTests(unittest.TestCase):
 
         # Act
         self.assertEqual(f"OrderExpired(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, id={uuid})", str(event))
+                         f"order_id=123456, event_id={uuid})", str(event))
         self.assertEqual(f"OrderExpired(account_id=SIM-000, cl_ord_id=O-2020872378423, "
-                         f"order_id=123456, id={uuid})", repr(event))
+                         f"order_id=123456, event_id={uuid})", repr(event))
 
     def test_order_filled(self):
         # Arrange
@@ -293,9 +293,9 @@ class EventTests(unittest.TestCase):
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
                          f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                          f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
-                         f"commission=12.20000000 USDT, id={uuid})", str(event))  # noqa
+                         f"commission=12.20000000 USDT, event_id={uuid})", str(event))  # noqa
         self.assertEqual(f"OrderFilled(account_id=SIM-000, cl_ord_id=O-2020872378423, "
                          f"order_id=123456, position_id=2, strategy_id=SCALPER-001, "
                          f"symbol=BTC/USDT.BINANCE, side=BUY-MAKER, fill_qty=0.561000, "
                          f"fill_price=15600.12445 USDT, cum_qty=0.561000, leaves_qty=0, "
-                         f"commission=12.20000000 USDT, id={uuid})", repr(event))  # noqa
+                         f"commission=12.20000000 USDT, event_id={uuid})", repr(event))  # noqa

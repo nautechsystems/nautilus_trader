@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-cdef extern from "lib/nautilus-core/nautilus_core.h":
+cdef extern from "lib/nautilus/core/nautilus_core.h":
     ctypedef struct UuidStr:
         char *value
 
