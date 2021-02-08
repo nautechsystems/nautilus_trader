@@ -137,6 +137,7 @@ cdef class Order:
         cdef str id_string = f"id={self.id.value}, " if self.id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id.value}, "
+                f"id={self.id.value}, "
                 f"{id_string}"
                 f"state={self._fsm.state_string_c()}, "
                 f"{self.status_string_c()})")
