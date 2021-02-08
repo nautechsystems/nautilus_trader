@@ -85,7 +85,7 @@ cdef class AccountState(Event):
                 f"account_id={self.account_id.value}, "
                 f"free=[{', '.join([b.to_str() for b in self.balances_free])}], "
                 f"locked=[{', '.join([b.to_str() for b in self.balances_locked])}], "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderEvent(Event):
@@ -206,7 +206,7 @@ cdef class OrderInitialized(OrderEvent):
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"strategy_id={self.strategy_id}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderInvalid(OrderEvent):
@@ -260,7 +260,7 @@ cdef class OrderInvalid(OrderEvent):
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason='{self.reason}', "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderDenied(OrderEvent):
@@ -312,7 +312,7 @@ cdef class OrderDenied(OrderEvent):
         return (f"{type(self).__name__}("
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason='{self.reason}', "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderSubmitted(OrderEvent):
@@ -360,7 +360,7 @@ cdef class OrderSubmitted(OrderEvent):
         return (f"{type(self).__name__}("
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderRejected(OrderEvent):
@@ -418,7 +418,7 @@ cdef class OrderRejected(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"reason='{self.reason}', "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderAccepted(OrderEvent):
@@ -477,7 +477,7 @@ cdef class OrderAccepted(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderCancelReject(OrderEvent):
@@ -547,7 +547,7 @@ cdef class OrderCancelReject(OrderEvent):
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"response_to={self.response_to}, "
                 f"reason='{self.reason}', "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderCancelled(OrderEvent):
@@ -599,7 +599,7 @@ cdef class OrderCancelled(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderAmended(OrderEvent):
@@ -661,7 +661,7 @@ cdef class OrderAmended(OrderEvent):
                 f"order_id={self.order_id}, "
                 f"qty={self.quantity.to_str()}, "
                 f"price={self.price}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderExpired(OrderEvent):
@@ -712,7 +712,7 @@ cdef class OrderExpired(OrderEvent):
                 f"account_id={self.account_id}, "
                 f"cl_ord_id={self.cl_ord_id}, "
                 f"order_id={self.order_id}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class OrderFilled(OrderEvent):
@@ -833,7 +833,7 @@ cdef class OrderFilled(OrderEvent):
                 f"cum_qty={self.cum_qty.to_str()}, "
                 f"leaves_qty={self.leaves_qty.to_str()}, "
                 f"commission={self.commission.to_str()}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class PositionEvent(Event):
@@ -913,7 +913,7 @@ cdef class PositionOpened(PositionEvent):
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
                 f"avg_open={round(self.position.avg_open, 5)}, "
                 f"{self.position.status_string_c()}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class PositionChanged(PositionEvent):
@@ -967,7 +967,7 @@ cdef class PositionChanged(PositionEvent):
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
                 f"{self.position.status_string_c()}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
 
 
 cdef class PositionClosed(PositionEvent):
@@ -1023,4 +1023,4 @@ cdef class PositionClosed(PositionEvent):
                 f"realized_points={round(self.position.realized_points, 5)}, "
                 f"realized_return={round(self.position.realized_return * 100, 3)}%, "
                 f"realized_pnl={self.position.realized_pnl.to_str()}, "
-                f"id={self.id})")
+                f"event_id={self.id})")
