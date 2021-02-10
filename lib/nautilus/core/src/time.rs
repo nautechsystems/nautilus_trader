@@ -19,12 +19,10 @@ use chrono::Timelike;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-
 /// Represents a datetime
 #[repr(C)]
 #[derive(PartialEq, Copy, Clone)]
-pub struct DateTime
-{
+pub struct DateTime {
     pub year: u32,
     pub month: u32,
     pub day: u32,
@@ -33,7 +31,6 @@ pub struct DateTime
     pub second: u32,
     pub microsecond: u32,
 }
-
 
 #[no_mangle]
 /// Return the current date time in UTC.
@@ -50,23 +47,29 @@ pub extern "C" fn c_utc_now() -> DateTime {
     };
 }
 
-
 #[no_mangle]
 /// Return the current seconds since the Unix epoch.
 pub extern "C" fn c_timestamp() -> f64 {
-    return SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs_f64();
+    return SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs_f64();
 }
-
 
 #[no_mangle]
 /// Return the current milliseconds since the Unix epoch.
 pub extern "C" fn c_timestamp_ms() -> u64 {
-    return SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis() as u64;
+    return SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis() as u64;
 }
-
 
 #[no_mangle]
 /// Return the current microseconds since the Unix epoch.
 pub extern "C" fn c_timestamp_us() -> u64 {
-    return SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_micros() as u64;
+    return SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_micros() as u64;
 }

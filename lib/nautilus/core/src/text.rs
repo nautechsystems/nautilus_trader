@@ -13,20 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-extern crate cbindgen;
+use std::os::raw::c_char;
 
-use std::env;
-use std::path::PathBuf;
+pub type CStringRaw = *mut c_char;
 
-fn main() {
-    let crate_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR env var is not defined"),
-    );
-
-    let config = cbindgen::Config::from_file("cbindgen.toml")
-        .expect("Unable to find cbindgen.toml configuration file");
-
-    cbindgen::generate_with_config(&crate_dir, config)
-        .expect("Unable to generate bindings")
-        .write_to_file(crate_dir.join("nautilus_model.h"));
-}
+// unsafe fn c_str_raw_to_string(s: CStringRaw) -> Result<String, IntoStringError> {
+//     unsafe {
+//         if s.is_null() {
+//             return Err(IntoStringError { inner: Default::default(), error: () });
+//         }
+//         return CString::from_raw(s).into_string();
+//     };
+// }

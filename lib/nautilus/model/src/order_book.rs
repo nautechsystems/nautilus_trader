@@ -16,20 +16,21 @@
 #[repr(C)]
 #[derive(Copy, Clone)]
 /// Represents an entry in an order book.
-pub struct OrderBookEntry
-{
+pub struct OrderBookEntry {
     pub price: f64,
     pub qty: f64,
     pub update_id: u64,
 }
 
-
-impl OrderBookEntry
-{
+impl OrderBookEntry {
     /// Initialize a new instance of the `OrderBookEntry` structure.
     #[no_mangle]
     pub extern "C" fn new_entry(price: f64, qty: f64, update_id: u64) -> OrderBookEntry {
-        return OrderBookEntry { price, qty, update_id };
+        return OrderBookEntry {
+            price,
+            qty,
+            update_id,
+        };
     }
 
     /// Update the entry with the given quantity and update identifier.
@@ -40,11 +41,9 @@ impl OrderBookEntry
     }
 }
 
-
 /// Represents a limit order book
 #[repr(C)]
-pub struct OrderBook
-{
+pub struct OrderBook {
     pub timestamp: u64,
     pub last_update_id: u64,
     pub best_bid_price: f64,
@@ -57,12 +56,10 @@ pub struct OrderBook
     _bid_book_test: *const i32,
 }
 
-
-impl OrderBook
-{
+impl OrderBook {
     /// Initialize a new instance of the `OrderBook` structure.
     #[no_mangle]
-    pub extern "C" fn new(timestamp: u64) -> OrderBook {
+    pub extern "C" fn new(timestamp: u64) -> Self {
         return OrderBook {
             timestamp,
             last_update_id: 0,
@@ -70,8 +67,16 @@ impl OrderBook
             best_ask_price: f64::MAX,
             best_bid_qty: 0.0,
             best_ask_qty: 0.0,
-            _bid_book: [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25],
-            _ask_book: [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25],
+            _bid_book: [OrderBookEntry {
+                price: f64::MIN,
+                qty: 0.0,
+                update_id: 0,
+            }; 25],
+            _ask_book: [OrderBookEntry {
+                price: f64::MAX,
+                qty: 0.0,
+                update_id: 0,
+            }; 25],
             _bid_book_test: vec![].as_ptr(),
         };
     }
@@ -79,8 +84,16 @@ impl OrderBook
     /// Clear stateful values from the order book.
     #[no_mangle]
     pub extern "C" fn reset(&mut self) {
-        self._bid_book = [OrderBookEntry { price: f64::MIN, qty: 0.0, update_id: 0 }; 25];
-        self._ask_book = [OrderBookEntry { price: f64::MAX, qty: 0.0, update_id: 0 }; 25];
+        self._bid_book = [OrderBookEntry {
+            price: f64::MIN,
+            qty: 0.0,
+            update_id: 0,
+        }; 25];
+        self._ask_book = [OrderBookEntry {
+            price: f64::MAX,
+            qty: 0.0,
+            update_id: 0,
+        }; 25];
         // self._bid_book_test.cast();
         // self._bid_book_test.clear()
     }
@@ -105,8 +118,7 @@ impl OrderBook
                     snapshot_idx += 1;
                     bid_book_idx += 1;
                     break;
-                }
-                else {
+                } else {
                     bid_book_idx += 1;
                 }
             }
@@ -123,8 +135,7 @@ impl OrderBook
                     snapshot_idx += 1;
                     ask_book_idx += 1;
                     break;
-                }
-                else {
+                } else {
                     ask_book_idx += 1;
                 }
             }
@@ -152,7 +163,7 @@ impl OrderBook
                 self._bid_book[i] = to_enter;
                 to_enter = next;
                 if to_enter.price == f64::MIN {
-                    break;  // No need to re-enter empty entry
+                    break; // No need to re-enter empty entry
                 }
             } else if to_enter.price == next.price {
                 next.update(entry.qty, entry.update_id);
@@ -177,7 +188,7 @@ impl OrderBook
                 self._ask_book[i] = to_enter;
                 to_enter = next;
                 if to_enter.price == f64::MAX {
-                    break;  // No need to re-enter empty entry
+                    break; // No need to re-enter empty entry
                 }
             } else if to_enter.price == next.price {
                 next.update(entry.qty, entry.update_id);
@@ -212,7 +223,7 @@ impl OrderBook
                 break;
             }
         }
-        return out_price
+        return out_price;
     }
 
     /// Returns the predicted buy quantity for the given price.
@@ -228,7 +239,7 @@ impl OrderBook
                 break;
             }
         }
-        return cum_qty
+        return cum_qty;
     }
 
     /// Returns the predicted sell price for the given quantity.
@@ -245,7 +256,7 @@ impl OrderBook
                 break;
             }
         }
-        return out_price
+        return out_price;
     }
 
     /// Returns the predicted sell quantity for the given price.
@@ -261,6 +272,6 @@ impl OrderBook
                 break;
             }
         }
-        return cum_qty
+        return cum_qty;
     }
 }
