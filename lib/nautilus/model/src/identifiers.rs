@@ -13,20 +13,42 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-extern crate cbindgen;
+use nautilus_core::text::CStringRaw;
 
-use std::env;
-use std::path::PathBuf;
-
-fn main() {
-    let crate_dir = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR env var is not defined"),
-    );
-
-    let config = cbindgen::Config::from_file("cbindgen.toml")
-        .expect("Unable to find cbindgen.toml configuration file");
-
-    cbindgen::generate_with_config(&crate_dir, config)
-        .expect("Unable to generate bindings")
-        .write_to_file(crate_dir.join("nautilus_model.h"));
+pub trait Identifier {
+    fn get_value(&self) -> &str;
 }
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct Symbol {
+    pub value: CStringRaw,
+}
+
+// impl Symbol
+// {
+//     pub fn c_symbol_new(value: CStringRaw) -> Symbol {
+//         return Symbol { value };
+//     }
+// }
+//
+// impl Identifier for Symbol {
+//     fn get_value(&self) -> &str {
+//         return &c_str_raw_to_string(self.value);
+//     }
+// }
+
+// #[cfg(test)]
+// mod tests {
+//     use crate::identifiers::{Identifier, Symbol};
+//
+//     #[test]
+//     fn instantiate() {
+//         let symbol = Symbol {
+//             value: "AUD/USD".to_string(),
+//         };
+//
+//         assert_eq!("AUD/USD", symbol.value);
+//         assert_eq!("AUD/USD", symbol.get_value());
+//     }
+// }

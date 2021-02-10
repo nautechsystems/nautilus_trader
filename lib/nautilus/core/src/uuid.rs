@@ -13,23 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use uuid::Uuid;
+use crate::text::CStringRaw;
 use std::ffi::CString;
-use std::os::raw::c_char;
-
+use uuid::Uuid;
 
 #[no_mangle]
-pub extern "C" fn c_uuid_str_new() -> *mut c_char {
+pub extern "C" fn c_uuid_str_new() -> CStringRaw {
     return CString::new(Uuid::new_v4().to_string()).unwrap().into_raw();
 }
 
-
 #[no_mangle]
-pub extern "C" fn c_uuid_str_free(s: *mut c_char) {
+pub extern "C" fn c_uuid_str_free(s: CStringRaw) {
     unsafe {
         if s.is_null() {
             return;
         }
-        CString::from_raw(s)  // Frees memory here
+        CString::from_raw(s) // Frees memory here
     };
 }

@@ -15,12 +15,16 @@
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::order_book::OrderBookEntry;
     use nautilus_model::order_book::OrderBook;
+    use nautilus_model::order_book::OrderBookEntry;
 
     #[test]
     fn instantiate() {
-        let entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 1 };
+        let entry = OrderBookEntry {
+            price: 10500.0,
+            qty: 510.0,
+            update_id: 1,
+        };
 
         assert_eq!(10500.0, entry.price);
         assert_eq!(510.0, entry.qty);
@@ -29,7 +33,11 @@ mod tests {
 
     #[test]
     fn update() {
-        let mut entry = OrderBookEntry { price: 10500.0, qty: 510.0, update_id: 1 };
+        let mut entry = OrderBookEntry {
+            price: 10500.0,
+            qty: 510.0,
+            update_id: 1,
+        };
         entry.update(600.0, 2);
 
         assert_eq!(10500.0, entry.price);
@@ -82,7 +90,14 @@ mod tests {
     fn apply_bid_diff() {
         let mut order_book = OrderBook::new(0);
 
-        order_book.apply_bid_diff(OrderBookEntry { price: 1000.0, qty: 10.0, update_id: 1 }, 1610000000001);
+        order_book.apply_bid_diff(
+            OrderBookEntry {
+                price: 1000.0,
+                qty: 10.0,
+                update_id: 1,
+            },
+            1610000000001,
+        );
 
         assert_eq!(1000.0, order_book.best_bid_price);
         assert_eq!(10.0, order_book.best_bid_qty);
@@ -94,7 +109,14 @@ mod tests {
     fn apply_ask_diff() {
         let mut order_book = OrderBook::new(0);
 
-        order_book.apply_ask_diff(OrderBookEntry { price: 1001.0, qty: 20.0, update_id: 2 }, 1610000000002);
+        order_book.apply_ask_diff(
+            OrderBookEntry {
+                price: 1001.0,
+                qty: 20.0,
+                update_id: 2,
+            },
+            1610000000002,
+        );
 
         assert_eq!(1001.0, order_book.best_ask_price);
         assert_eq!(20.0, order_book.best_ask_qty);
@@ -106,8 +128,22 @@ mod tests {
     fn apply_bid_then_ask_diffs() {
         let mut order_book = OrderBook::new(0);
 
-        order_book.apply_bid_diff(OrderBookEntry { price: 1000.0, qty: 10.0, update_id: 1 }, 1610000000001);
-        order_book.apply_ask_diff(OrderBookEntry { price: 1001.0, qty: 20.0, update_id: 2 }, 1610000000002);
+        order_book.apply_bid_diff(
+            OrderBookEntry {
+                price: 1000.0,
+                qty: 10.0,
+                update_id: 1,
+            },
+            1610000000001,
+        );
+        order_book.apply_ask_diff(
+            OrderBookEntry {
+                price: 1001.0,
+                qty: 20.0,
+                update_id: 2,
+            },
+            1610000000002,
+        );
 
         assert_eq!(1000.0, order_book.best_bid_price);
         assert_eq!(1001.0, order_book.best_ask_price);
@@ -140,10 +176,38 @@ mod tests {
     fn buy_price_for_qty_when_entries() {
         let mut order_book = OrderBook::new(0);
 
-        order_book.apply_ask_diff(OrderBookEntry { price: 1000.0, qty: 10.0, update_id: 1 }, 1610000000000);
-        order_book.apply_ask_diff(OrderBookEntry { price: 1000.1, qty: 20.0, update_id: 1 }, 1610000000000);
-        order_book.apply_ask_diff(OrderBookEntry { price: 1000.2, qty: 30.0, update_id: 1 }, 1610000000000);
-        order_book.apply_ask_diff(OrderBookEntry { price: 1000.3, qty: 40.0, update_id: 1 }, 1610000000000);
+        order_book.apply_ask_diff(
+            OrderBookEntry {
+                price: 1000.0,
+                qty: 10.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
+        order_book.apply_ask_diff(
+            OrderBookEntry {
+                price: 1000.1,
+                qty: 20.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
+        order_book.apply_ask_diff(
+            OrderBookEntry {
+                price: 1000.2,
+                qty: 30.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
+        order_book.apply_ask_diff(
+            OrderBookEntry {
+                price: 1000.3,
+                qty: 40.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
 
         let result = order_book.buy_price_for_qty(35.0);
 
@@ -154,10 +218,38 @@ mod tests {
     fn sell_price_for_qty_when_entries() {
         let mut order_book = OrderBook::new(0);
 
-        order_book.apply_bid_diff(OrderBookEntry { price: 1000.5, qty: 10.0, update_id: 1 }, 1610000000000);
-        order_book.apply_bid_diff(OrderBookEntry { price: 1000.4, qty: 20.0, update_id: 1 }, 1610000000000);
-        order_book.apply_bid_diff(OrderBookEntry { price: 1000.3, qty: 30.0, update_id: 1 }, 1610000000000);
-        order_book.apply_bid_diff(OrderBookEntry { price: 1000.2, qty: 40.0, update_id: 1 }, 1610000000000);
+        order_book.apply_bid_diff(
+            OrderBookEntry {
+                price: 1000.5,
+                qty: 10.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
+        order_book.apply_bid_diff(
+            OrderBookEntry {
+                price: 1000.4,
+                qty: 20.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
+        order_book.apply_bid_diff(
+            OrderBookEntry {
+                price: 1000.3,
+                qty: 30.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
+        order_book.apply_bid_diff(
+            OrderBookEntry {
+                price: 1000.2,
+                qty: 40.0,
+                update_id: 1,
+            },
+            1610000000000,
+        );
 
         let result = order_book.sell_price_for_qty(35.0);
 
@@ -169,29 +261,109 @@ mod tests {
         let mut order_book = OrderBook::new(0);
 
         let bids = [
-            OrderBookEntry { price: 1001.0, qty: 11.0, update_id: 1 },
-            OrderBookEntry { price: 1000.9, qty: 20.0, update_id: 1 },
-            OrderBookEntry { price: 1000.8, qty: 30.0, update_id: 1 },
-            OrderBookEntry { price: 1000.7, qty: 40.0, update_id: 1 },
-            OrderBookEntry { price: 1000.6, qty: 50.0, update_id: 1 },
-            OrderBookEntry { price: 1000.5, qty: 60.0, update_id: 1 },
-            OrderBookEntry { price: 1000.4, qty: 70.0, update_id: 1 },
-            OrderBookEntry { price: 1000.3, qty: 80.0, update_id: 1 },
-            OrderBookEntry { price: 1000.2, qty: 90.0, update_id: 1 },
-            OrderBookEntry { price: 1000.1, qty: 100.0, update_id: 1 },
+            OrderBookEntry {
+                price: 1001.0,
+                qty: 11.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.9,
+                qty: 20.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.8,
+                qty: 30.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.7,
+                qty: 40.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.6,
+                qty: 50.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.5,
+                qty: 60.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.4,
+                qty: 70.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.3,
+                qty: 80.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.2,
+                qty: 90.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1000.1,
+                qty: 100.0,
+                update_id: 1,
+            },
         ];
 
         let asks = [
-            OrderBookEntry { price: 1002.0, qty: 10.0, update_id: 1 },
-            OrderBookEntry { price: 1002.1, qty: 20.0, update_id: 1 },
-            OrderBookEntry { price: 1002.2, qty: 30.0, update_id: 1 },
-            OrderBookEntry { price: 1002.3, qty: 40.0, update_id: 1 },
-            OrderBookEntry { price: 1002.4, qty: 50.0, update_id: 1 },
-            OrderBookEntry { price: 1002.5, qty: 60.0, update_id: 1 },
-            OrderBookEntry { price: 1002.6, qty: 70.0, update_id: 1 },
-            OrderBookEntry { price: 1002.7, qty: 80.0, update_id: 1 },
-            OrderBookEntry { price: 1002.8, qty: 90.0, update_id: 1 },
-            OrderBookEntry { price: 1002.9, qty: 100.0, update_id: 1 },
+            OrderBookEntry {
+                price: 1002.0,
+                qty: 10.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.1,
+                qty: 20.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.2,
+                qty: 30.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.3,
+                qty: 40.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.4,
+                qty: 50.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.5,
+                qty: 60.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.6,
+                qty: 70.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.7,
+                qty: 80.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.8,
+                qty: 90.0,
+                update_id: 1,
+            },
+            OrderBookEntry {
+                price: 1002.9,
+                qty: 100.0,
+                update_id: 1,
+            },
         ];
 
         order_book.apply_snapshot10(&bids, &asks, 1610000000000, 1);

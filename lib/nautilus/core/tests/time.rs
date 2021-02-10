@@ -15,10 +15,10 @@
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::c_utc_now;
     use nautilus_core::time::c_timestamp;
     use nautilus_core::time::c_timestamp_ms;
     use nautilus_core::time::c_timestamp_us;
+    use nautilus_core::time::c_utc_now;
 
     #[test]
     fn c_utc_now_returns_expected_struct() {

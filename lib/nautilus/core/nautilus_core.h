@@ -18,6 +18,8 @@ typedef struct DateTime {
   uint32_t microsecond;
 } DateTime;
 
+typedef char *CStringRaw;
+
 /**
  * Return the current date time in UTC.
  */
@@ -38,8 +40,8 @@ uint64_t c_timestamp_ms(void);
  */
 uint64_t c_timestamp_us(void);
 
-char *c_uuid_str_new(void);
+CStringRaw c_uuid_str_new(void);
 
-void c_uuid_str_free(char *s);
+void c_uuid_str_free(CStringRaw s);
 
 #endif /* add_h */
