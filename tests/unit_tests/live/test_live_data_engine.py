@@ -24,7 +24,6 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.live.data_client import LiveDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -340,41 +339,3 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.stop()
 
         self.loop.run_until_complete(run_test())
-
-
-class LiveDataClientTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock, level_console=LogLevel.DEBUG)
-
-        self.portfolio = Portfolio(
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
-        self.engine = LiveDataEngine(
-            loop=self.loop,
-            portfolio=self.portfolio,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.client = LiveDataClient(
-            venue=BINANCE,
-            engine=self.engine,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-    def test_dummy_test(self):
-        # Arrange
-        # Act
-        # Assert
-        self.assertTrue(True)  # No exception raised
