@@ -100,11 +100,12 @@ if __name__ == "__main__":
 
     # Optionally view reports
     with pd.option_context(
-            "display.max_rows",
-            100,
-            "display.max_columns",
-            None,
-            "display.width", 300):
+        "display.max_rows",
+        100,
+        "display.max_columns",
+        None,
+        "display.width", 300,
+    ):
         print(engine.trader.generate_account_report(SIM))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())

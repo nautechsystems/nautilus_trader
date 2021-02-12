@@ -2,4 +2,4 @@
 
 ## ALPHA
 
-Experimental Rust components for _NautilusTrader_.
+Experimental Rust components for NautilusTrader.
