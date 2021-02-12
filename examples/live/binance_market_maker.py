@@ -24,7 +24,6 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 
-
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
 config = {
