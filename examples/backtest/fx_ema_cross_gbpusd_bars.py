@@ -36,7 +36,6 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
-
 if __name__ == "__main__":
     # Setup trading instruments
     SIM = Venue("SIM")

@@ -35,7 +35,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit.providers import TestDataProvider
 
-
 if __name__ == "__main__":
     # Setup trading instruments
     # Requires an internet connection for the instrument loader
