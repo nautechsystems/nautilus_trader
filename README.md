@@ -29,7 +29,7 @@ including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venu
 
 ## Features
 
-- **Fast:** C-level speed and type safety provided through Cython and Rust. Asynchronous networking utilizing uvloop.
+- **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
 - **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
@@ -54,20 +54,6 @@ optional additional C-inspired syntax.
 The project heavily utilizes Cython to provide static type safety and increased performance
 for Python through C [extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production Python code is actually
 written in Cython, however the libraries can be accessed from both pure Python and Cython.
-
-## What is Rust?
-
-[Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast (comparable to C/C++) and memory-efficient: with no runtime or
-garbage collector, it can power mission-critical services, run on embedded devices, and easily
-integrate with other languages.
-
-Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
-eliminating many classes of bugs at compile-time.
-
-The project utilizes Rust for performance-critical components. Language binding is handled through
-Cython, with static libraries linked at compile-time before the wheel binaries are packaged, so a user
-does not need to have Rust installed to run NautilusTrader.
 
 ## Documentation
 
@@ -104,20 +90,13 @@ Download the appropriate `.whl` for your operating system and Python version, th
 
 #### From Source
 
-Installation from source requires `rustc` and `cargo` to compile the Rust libraries,
-and Cython to compile the Python C extensions.
+Installation from source requires Cython to compile the Python C extensions.
 
-1. To install `rustup` (the Rust toolchain installer), run:
-
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-   Then follow the on-screen instructions.
-
-2. To install Cython, run:
+1. To install Cython, run:
 
         pip install -U Cython==3.0a6
 
-3. Then to install NautilusTrader using `pip`, run:
+2. Then to install NautilusTrader using `pip`, run:
 
         pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
@@ -158,9 +137,17 @@ The following `BarAggregation` options are possible;
 - `VALUE_IMBALANCE` (TBA)
 - `VALUE_RUNS` (TBA)
 
-The price types and bar aggregations can be combined with step sizes > 1 in any
+The price types and bar aggregations can be combined with step sizes >= 1 in any
 way through `BarSpecification` objects. This enables maximum flexibility and now
 allows alternative bars to be produced for live trading.
+
+```
+# BarSpecification examples
+tick_bars   = BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
+time_bars   = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
+volume_bars = BarSpecification(100, BarAggregation.VOLUME, PriceType.MID)
+value_bars  = BarSpecification(1_000_000, BarAggregation.VALUE, PriceType.MID)
+```
 
 Bars can be either internally or externally aggregated (alternative bar types are
 only available by internal aggregation). External aggregation is normally for
@@ -209,44 +196,27 @@ it interprets Cython syntax. Alternatively, you could use Visual Studio Code wit
 
 > https://python-poetry.org/
 
-For development of the Rust codebase, we recommend using a JetBrains IDE (e.g. PyCharm or CLion) with the Rust plug-in.
-Alternatively, you could use Visual Studio Code with the Rust extension.
-
-Note that a developer doesn't need to touch the Rust side of the codebase to work with (and contribute to) the Python side.
-However, for builds to work `rustup` (the Rust toolchain installer) will need to be installed on your
-system, along with `rustc` (the Rust compiler) and `cargo` (the Rust package manager).
-
-> https://www.rust-lang.org/tools/install
-
 #### Environment Setup
 
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install `rustup` by running:
-
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-    Then follow the on-screen instructions.
-
-2. Install the Cython package by running:
+1. Install the Cython package by running:
 
         pip install -U Cython==3.0a6
 
-3. Install `poetry` by running:
+2. Install `poetry` by running:
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-4. Then install all Python package dependencies, and compile the Rust libs and Python C extensions by running:
+3. Then install all Python package dependencies, and compile the Rust libs and Python C extensions by running:
 
         poetry install
 
 #### Builds
 
-Following any changes to `.rs`, `.pyx` or `.pxd` files, you can re-compile by running:
+Following any changes to `.pyx` or `.pxd` files, you can re-compile by running:
 
     python build.py
-
-The build uses `cbindgen` to automatically generate the `.h` C header files needed to interop between Rust and Cython.
 
 Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/developer_guide/overview.html) for further information.
 
@@ -272,5 +242,4 @@ Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 
 > https://nautechsystems.io
 
-![rust](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/rust-logo.png?raw=true "rust")
 ![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
