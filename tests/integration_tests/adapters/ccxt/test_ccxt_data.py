@@ -40,7 +40,6 @@ from tests import PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
-
 TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
