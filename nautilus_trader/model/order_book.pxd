@@ -13,14 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint64_t
-
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.order_book_rs cimport OrderBook as OrderBookRs
 
 
 cdef class OrderBook:
-    cdef OrderBookRs _book
+    cdef list _bids
+    cdef list _asks
 
     cdef readonly Symbol symbol
     """The order book symbol.\n\n:returns: `Symbol`"""
@@ -32,6 +30,10 @@ cdef class OrderBook:
     """The precision for the order book prices.\n\n:returns: `int`"""
     cdef readonly int size_precision
     """The precision for the order book quantities.\n\n:returns: `int`"""
+    cdef readonly long update_id
+    """The last update timestamp (Unix time).\n\n:returns: `long`"""
+    cdef readonly long timestamp
+    """The last update timestamp (Unix time).\n\n:returns: `long`"""
 
     cpdef list bids(self)
     cpdef list asks(self)
@@ -42,31 +44,4 @@ cdef class OrderBook:
     cpdef double best_ask_price(self)
     cpdef double best_bid_qty(self)
     cpdef double best_ask_qty(self)
-    cpdef double buy_price_for_qty(self, double qty) except *
-    cpdef double buy_qty_for_price(self, double price) except *
-    cpdef double sell_price_for_qty(self, double qty) except *
-    cpdef double sell_qty_for_price(self, double price) except *
-    cpdef uint64_t timestamp(self)
-    cpdef uint64_t last_update_id(self)
-
-    cpdef void apply_snapshot(
-        self,
-        list bids,
-        list asks,
-        uint64_t update_id,
-        uint64_t timestamp,
-    ) except *
-    cpdef void apply_bid_diff(
-        self,
-        double price,
-        double qty,
-        uint64_t update_id,
-        uint64_t timestamp,
-    ) except *
-    cpdef void apply_ask_diff(
-        self,
-        double price,
-        double qty,
-        uint64_t update_id,
-        uint64_t timestamp,
-    ) except *
+    cpdef void apply_snapshot(self, list bids, list asks, long update_id, long timestamp) except *

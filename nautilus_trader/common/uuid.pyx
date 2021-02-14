@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+
 from nautilus_trader.core.uuid cimport UUID
 
 
@@ -33,4 +35,4 @@ cdef class UUIDFactory:
         return self.generate_c()
 
     cdef UUID generate_c(self):
-        return UUID()
+        return UUID(value=os.urandom(16))
