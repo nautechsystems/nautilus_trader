@@ -208,7 +208,7 @@ The following steps are for Unix-like systems, and only need to be completed onc
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-3. Then install all Python package dependencies, and compile the Rust libs and Python C extensions by running:
+3. Then install all Python package dependencies, and compile the C extensions by running:
 
         poetry install
 
