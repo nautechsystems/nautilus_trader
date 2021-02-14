@@ -464,8 +464,7 @@ cdef class TradingStrategy(Component):
         )
 
         self.order_factory.set_count(order_id_count)
-        color = LogColor.BLUE if order_id_count > 0 else LogColor.NORMAL
-        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.", color)
+        self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
 
     cpdef void register_data_engine(self, DataEngine engine) except *:
         """

@@ -35,7 +35,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit.providers import TestDataProvider
 
-
 if __name__ == "__main__":
     # Setup trading instruments
     # Requires an internet connection for the instrument loader
@@ -95,11 +94,12 @@ if __name__ == "__main__":
 
     # Optionally view reports
     with pd.option_context(
-            "display.max_rows",
-            100,
-            "display.max_columns",
-            None,
-            "display.width", 300):
+        "display.max_rows",
+        100,
+        "display.max_columns",
+        None,
+        "display.width", 300,
+    ):
         print(engine.trader.generate_account_report(BINANCE))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())

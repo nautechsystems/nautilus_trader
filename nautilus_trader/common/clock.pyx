@@ -28,10 +28,7 @@ from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport UNIX_EPOCH
-from nautilus_trader.core.time_rs cimport DateTime
-from nautilus_trader.core.time_rs cimport c_timestamp_ms
-from nautilus_trader.core.time_rs cimport c_timestamp_us
-from nautilus_trader.core.time_rs cimport c_utc_now
+from nautilus_trader.core.time cimport unix_time
 
 
 cdef class Clock:
@@ -112,29 +109,7 @@ cdef class Clock:
         double
 
         """
-        return c_timestamp_us() / 1000000
-
-    cpdef long unix_time_ms(self):
-        """
-        Return the current Unix time in milliseconds from the system clock.
-
-        Returns
-        -------
-        double
-
-        """
-        return c_timestamp_ms()
-
-    cpdef long unix_time_us(self):
-        """
-        Return the current Unix time in microseconds from the system clock.
-
-        Returns
-        -------
-        double
-
-        """
-        return c_timestamp_us()
+        return unix_time()
 
     cpdef list timer_names(self):
         """
@@ -560,17 +535,7 @@ cdef class LiveClock(Clock):
         # such as UTC. The preferred way of dealing with times is to always work
         # in UTC, converting to localtime only when generating output to be read
         # by humans.
-        cdef DateTime date_time = c_utc_now()
-        return datetime(
-            year=date_time.year,
-            month=date_time.month,
-            day=date_time.day,
-            hour=date_time.hour,
-            minute=date_time.minute,
-            second=date_time.second,
-            microsecond=date_time.microsecond,
-            tzinfo=self._utc,
-        )
+        return datetime.now(tz=self._utc)
 
     cdef Timer _create_timer(
         self,
