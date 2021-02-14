@@ -20,7 +20,6 @@ from nautilus_trader.indicators.hilbert_period import HilbertPeriod
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
-
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 
 
