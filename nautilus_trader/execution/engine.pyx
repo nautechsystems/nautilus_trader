@@ -840,4 +840,4 @@ cdef class ExecutionEngine(Component):
         cdef StrategyId strategy_id
         for strategy_id, count in counts.items():
             self._pos_id_generator.set_count(strategy_id, count)
-            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.", LogColor.BLUE)
+            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")

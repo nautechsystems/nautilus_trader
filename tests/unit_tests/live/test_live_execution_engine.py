@@ -24,9 +24,7 @@ from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.cache import DataCache
 from nautilus_trader.execution.database import BypassExecutionDatabase
-from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
-from nautilus_trader.live.providers import InstrumentProvider
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
@@ -46,7 +44,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_audusd())
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy(TestStubs.symbol_gbpusd())
 
 
-class ExecutionEngineTests(unittest.TestCase):
+class LiveExecutionEngineTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -397,58 +395,6 @@ class ExecutionEngineTests(unittest.TestCase):
     #
     #         # Act
     #         await self.exec_engine.resolve_state()
+    #         self.exec_engine.stop()
     #
     #     self.loop.run_until_complete(run_test())
-
-
-class LiveExecutionClientTests(unittest.TestCase):
-
-    def setUp(self):
-        # Fixture Setup
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.logger = TestLogger(self.clock)
-
-        self.trader_id = TraderId("TESTER", "000")
-        self.account_id = TestStubs.account_id()
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("S", "001"),
-            clock=self.clock,
-        )
-
-        self.portfolio = Portfolio(
-            clock=self.clock,
-            logger=self.logger,
-        )
-        self.portfolio.register_cache(DataCache(self.logger))
-
-        self.analyzer = PerformanceAnalyzer()
-
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
-        self.engine = LiveExecutionEngine(
-            loop=self.loop,
-            database=database,
-            portfolio=self.portfolio,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        instrument_provider = InstrumentProvider(venue=SIM, load_all=False)
-        self.client = LiveExecutionClient(
-            venue=SIM,
-            account_id=self.account_id,
-            engine=self.engine,
-            instrument_provider=instrument_provider,
-            clock=self.clock,
-            logger=self.logger,
-        )
