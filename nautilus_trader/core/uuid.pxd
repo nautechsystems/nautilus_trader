@@ -13,8 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+cdef extern from *:
+    ctypedef unsigned long long uint128 "__uint128_t"
+
 
 cdef class UUID:
+    cdef readonly uint128 int_val
     cdef readonly str value
 
     @staticmethod

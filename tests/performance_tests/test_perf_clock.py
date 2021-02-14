@@ -31,16 +31,11 @@ class LiveClockPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_utc_now():
         PerformanceHarness.profile_function(live_clock.utc_now, 100000, 1)
-        # ~0.0ms / ~1.1μs / 1117ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~1.4μs / 1376ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_unix_time():
         PerformanceHarness.profile_function(live_clock.unix_time, 100000, 1)
-        # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
-
-    @staticmethod
-    def test_unix_time_us():
-        PerformanceHarness.profile_function(live_clock.unix_time_us, 100000, 1)
         # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
 
 

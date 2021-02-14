@@ -39,12 +39,12 @@ class CorrectnessConditionPerformanceTests(unittest.TestCase):
     @staticmethod
     def test_condition_none():
         PerformanceHarness.profile_function(CorrectnessTests.none, 100000, 1)
-        # ~0.0ms / ~0.2μs / 200ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.1μs / 142ns minimum of 100,000 runs @ 1 iteration each run.
 
     @staticmethod
     def test_condition_true():
-        PerformanceHarness.profile_function(CorrectnessTests.true, 1, 100000)
-        # ~0.0ms / ~0.2μs / 166ns minimum of 100,000 runs @ 1 iteration each run.
+        PerformanceHarness.profile_function(CorrectnessTests.true, 100000, 1)
+        # ~0.0ms / ~0.1μs / 149ns minimum of 100,000 runs @ 1 iteration each run.
         # ~9.8ms / ~9763.3μs / 9763294ns minimum of 1 runs @ 100,000 iterations each run.
 
         # 100000 iterations @ 12ms with boolean except returning False
