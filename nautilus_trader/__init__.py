@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The top level package contains all sub-packages needed for `NautilusTrader`.
+The top level package contains all sub-packages needed for NautilusTrader.
 """
 
 import os
