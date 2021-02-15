@@ -55,6 +55,36 @@ The project heavily utilizes Cython to provide static type safety and increased 
 for Python through C [extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production Python code is actually
 written in Cython, however the libraries can be accessed from both pure Python and Cython.
 
+## Why NautilusTrader?
+
+One of the key value propositions of NautilusTrader is that it addresses the challenge of keeping
+the backtest environment consistent with the production live trading environment.
+
+Normally research and backtesting may be conducted in Python (or other suitable language), with
+trading strategies traditionally then needing to be reimplemented in C++/C#/Java or other statically
+typed language(s). The reasoning here is to enjoy the performance a compiled language can offer,
+along with the tooling and support which has made these languages historically more suitable for
+large enterprise systems.
+
+The value of NautilusTrader here is that this re-implementation step is circumvented, as the
+platform was designed from the ground up to hold its own in terms of performance and quality.
+Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
+making it a suitable language for implementing a large system such as this. The benefit here being
+that a Python native environment can be offered, suitable for professional quantitative traders and
+hedge funds.
+
+## Why Python?
+
+Python was originally created decades ago as a simple scripting language with a clean straight
+forward syntax. It has since evolved into a fully fledged general purpose object-oriented
+programming language. Not only that, Python has become the _de facto lingua franca_ of data science,
+machine learning, and artificial intelligence.
+
+The language out of the box is not without its drawbacks however, especially in the context of
+implementing large systems. Cython has addressed some of these issues, offering all the advantages
+of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
+developer/user communities.
+
 ## Documentation
 
 The documentation for the latest version of the package is available at _readthedocs_.
