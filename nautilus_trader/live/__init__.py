@@ -12,3 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+"""
+The `live` sub-package groups all engine and client implementations for live trading.
+"""
