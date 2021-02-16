@@ -16,8 +16,8 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_unix_time_ms
+from nautilus_trader.core.datetime cimport to_unix_time_ms
 
 
 cdef str NONE = str(None)
@@ -27,12 +27,12 @@ cdef class ObjectParser:
 
     @staticmethod
     cdef str datetime_to_str(datetime dt):
-        return NONE if dt is None else str(to_posix_ms(dt))
+        return NONE if dt is None else str(to_unix_time_ms(dt))
 
     @staticmethod
     cdef datetime string_to_datetime(str time_string):
         Condition.valid_string(time_string, "time_string")
-        return None if time_string == NONE else from_posix_ms(long(time_string))
+        return None if time_string == NONE else from_unix_time_ms(long(time_string))
 
     @staticmethod
     def datetime_to_str_py(datetime dt):

@@ -26,8 +26,8 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_unix_time_ms
+from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.execution.reports cimport ExecutionStateReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
@@ -217,7 +217,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 response = await self._client.fetch_order(order.id.value, order.symbol.code)
                 trades = await self._client.fetch_my_trades(
                     symbol=order.symbol.code,
-                    since=to_posix_ms(order.timestamp),
+                    since=to_unix_time_ms(order.timestamp),
                 )
                 order_trades = [trade for trade in trades if trade["order"] == order.id.value]
 
@@ -247,7 +247,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                     commission_amount=trade["fee"]["cost"],
                     commission_currency=trade["fee"]["currency"],
                     liquidity_side=LiquiditySide.TAKER if trade["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                    timestamp=from_posix_ms(trade["timestamp"]),
+                    timestamp=from_unix_time_ms(trade["timestamp"]),
                 )
 
             status = response["status"]
@@ -260,7 +260,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 order_filled[order.id] = cum_qty
             elif status == "canceled":
                 order_states[order.id] = OrderState.CANCELLED
-                timestamp = from_posix_ms(<long>response["timestamp"])
+                timestamp = from_unix_time_ms(<long>response["timestamp"])
                 self._generate_order_cancelled(order.cl_ord_id, order.id, timestamp)
             elif status == "expired":
                 order_states[order.id] = OrderState.EXPIRED
@@ -576,7 +576,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 return
             self._cache_order(order_id, order)
 
-        cdef datetime timestamp = from_posix_ms(event["timestamp"])
+        cdef datetime timestamp = from_unix_time_ms(event["timestamp"])
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`
         if status == "open" and event["filled"] == 0:
@@ -625,7 +625,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             commission_amount=event.get("fee", {}).get("cost", 0),
             commission_currency=event.get("fee", {}).get("currency"),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-            timestamp=from_posix_ms(event["timestamp"]),
+            timestamp=from_unix_time_ms(event["timestamp"]),
         )
 
     cdef inline void _cache_order(self, OrderId order_id, Order order) except *:

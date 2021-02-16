@@ -1,14 +1,14 @@
 Packaged Data
 =============
 
-Various data is contained internally in the `tests/test_kit/data` folder.
+Various data is contained internally in the ``tests/test_kit/data`` folder.
 
 Libor Rates
 -----------
 The libor rates for 1 month USD can be updated by downloading the CSV data
 from https://fred.stlouisfed.org/series/USD1MTD156N
 
-Ensure you select `Max` for the time window.
+Ensure you select ``Max`` for the time window.
 
 Short Term Interest Rates
 -------------------------
