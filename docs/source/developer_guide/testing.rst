@@ -15,19 +15,19 @@ Tests can be run using either Pytest or the Nox tool.
 If you're using PyCharm then tests should run directly by right clicking on the
 respective folder (or top level tests folder) and clicking 'Run pytest'.
 
-Alternatively you can use the `pytest .` command from the root level `tests`
+Alternatively you can use the ``pytest .`` command from the root level ``tests``
 folder, or the other sub folders.
 
 Nox
 ---
-Nox sessions are defined within the `noxfile.py`, to run various test collections.
+Nox sessions are defined within the ``noxfile.py``, to run various test collections.
 
 To run unit tests with nox::
 
     nox -s tests
 
 
-If you have `redis-server` up you can run integration tests with nox::
+If you have ``redis-server`` up you can run integration tests with nox::
 
     nox -s integration_tests
 
@@ -40,11 +40,11 @@ Mocks
 -----
 Unit tests will often include other components acting as mocks. The intent of
 this is to simplify the test suite to avoid extensive use of a mocking framework,
-although `MagicMock` objects are currently used in particular cases.
+although ``MagicMock`` objects are currently used in particular cases.
 
 Code Coverage
 -------------
-Code coverage output is generated using `coverage` and reported using `codecov`.
+Code coverage output is generated using ``coverage`` and reported using ``codecov``.
 
 High test coverage is a goal for the project however not at the expense of
 appropriate error handling, or causing "test induced damage" to the architecture.
