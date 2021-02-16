@@ -15,8 +15,6 @@
 
 import asyncio
 
-import numpy as np
-
 from cpython.datetime cimport datetime
 
 from ccxt.base.errors import BaseError as CCXTError

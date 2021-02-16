@@ -23,6 +23,9 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
 
+NautilusTrader is AI/ML first, designed to deploy models for algorithmic trading strategies developed
+using the Python ecosystem - within a highly performant and robust Python native environment.
+
 The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
 adapters. Thus the platform can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
@@ -36,14 +39,36 @@ including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venu
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-## Values
+## Why NautilusTrader?
 
-- Reliability
-- Performance
-- Testability
-- Modularity
-- Maintainability
-- Scalability
+One of the key value propositions of NautilusTrader is that it addresses the challenge of keeping
+the research/backtest environment consistent with the production live trading environment.
+
+Normally research and backtesting may be conducted in Python (or other suitable language), with
+trading strategies traditionally then needing to be reimplemented in C++/C#/Java or other statically
+typed language(s). The reasoning here is to enjoy the performance a compiled language can offer,
+along with the tooling and support which has made these languages historically more suitable for
+large enterprise systems.
+
+The value of NautilusTrader here is that this re-implementation step is circumvented, as the
+platform was designed from the ground up to hold its own in terms of performance and quality.
+
+Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
+making it a suitable language for implementing a large system such as this. The benefit being
+that a Python native environment can be offered, suitable for professional quantitative traders and
+hedge funds.
+
+## Why Python?
+
+Python was originally created decades ago as a simple scripting language with a clean straight
+forward syntax. It has since evolved into a fully fledged general purpose object-oriented
+programming language. Not only that, Python has become the _de facto lingua franca_ of data science,
+machine learning, and artificial intelligence.
+
+The language out of the box is not without its drawbacks however, especially in the context of
+implementing large systems. Cython has addressed a lot of these issues, offering all the advantages
+of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
+developer/user communities.
 
 ## What is Cython?
 
@@ -54,6 +79,15 @@ optional additional C-inspired syntax.
 The project heavily utilizes Cython to provide static type safety and increased performance
 for Python through C [extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production Python code is actually
 written in Cython, however the libraries can be accessed from both pure Python and Cython.
+
+## Values
+
+- Reliability
+- Performance
+- Testability
+- Modularity
+- Maintainability
+- Scalability
 
 ## Documentation
 
@@ -189,28 +223,41 @@ exchanges.
 
 ## Development
 
-For development of the Python codebase, we recommend using the PyCharm _Professional_ edition IDE, as
-it interprets Cython syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
+For development we recommend using the PyCharm _Professional_ edition IDE, as it interprets Cython
+syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
 
 `poetry` is the preferred tool for handling all Python package and dev dependencies.
 
 > https://python-poetry.org/
 
+`pre-commit` is used to automatically run various checks, auto-formatters and linting tools
+at commit.
+
+> https://pre-commit.com/
+
 #### Environment Setup
 
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install the Cython package by running:
+1. Install the pre-commit package:
+
+        pip install pre-commit
+
+2. Install the Cython package by running:
 
         pip install -U Cython==3.0a6
 
-2. Install `poetry` by running:
+3. Install `poetry` by running:
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-3. Then install all Python package dependencies, and compile the Rust libs and Python C extensions by running:
+4. Then install all Python package dependencies, and compile the C extensions by running:
 
         poetry install
+
+5. Setup the pre-commit hook which will then run automatically at commit:
+
+        pre-commit run --all-files
 
 #### Builds
 

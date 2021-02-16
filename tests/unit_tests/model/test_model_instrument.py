@@ -31,7 +31,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestInstrumentProvider
 
-
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", Venue("SIM")))
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", Venue("SIM")))
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()

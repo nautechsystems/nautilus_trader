@@ -16,11 +16,7 @@ To contribute, the following steps should be followed;
   your local machine. This will automatically run various checks, auto-formatters
   and linting tools. Further information can be found here https://pre-commit.com/.
 
-- Install the latest version of isort `pip install -U isort` (used in the pre-commit).
-
-- Before committing it's a good practice to run `pre-commit run --all-files` yourself.
-
-- It's recommended you install _Redis_ with a default configuration, so that integration
+- It's recommended you install Redis using the default configuration, so that integration
   tests will pass on your machine.
 
 - Open a pull request (PR) on the `develop` branch with a summary comment.

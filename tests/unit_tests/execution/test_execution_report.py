@@ -15,8 +15,8 @@
 
 import unittest
 
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.execution.reports import ExecutionStateReport
+from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import TestStubs
 
 

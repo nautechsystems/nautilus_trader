@@ -14,7 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `adapters` module provides integrations for data providers, brokerages, and exchanges.
-
-More description to follow.
+The `adapters` sub-package provides integrations for data providers, brokerages, and exchanges.
 """

@@ -71,7 +71,7 @@ config = {
 # file.
 strategy = VolatilityMarketMaker(
     symbol=Symbol("ETH/USDT", Venue("BINANCE")),
-    bar_spec= BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     trade_size=Decimal("0.05"),
     atr_period=20,
     atr_multiple=1.0,

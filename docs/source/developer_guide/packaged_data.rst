@@ -1,18 +1,6 @@
-Overview
-========
-
-We recommend the PyCharm Professional edition IDE as it interprets Cython syntax.
-Unfortunately the Community edition will not interpret Cython syntax.
-
-> https://www.jetbrains.com/pycharm/
-
-To run code from source, first compile the C extensions for the package::
-
-    python build.py
-
-
 Packaged Data
--------------
+=============
+
 Various data is contained internally in the `tests/test_kit/data` folder.
 
 Libor Rates
