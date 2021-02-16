@@ -9,6 +9,9 @@ NautilusTrader is an open-source, high-performance, production-grade algorithmic
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live.
 
+NautilusTrader is AI/ML first, designed to deploy models for algorithmic trading strategies developed
+using the Python ecosystem - within a highly performant and robust Python native environment.
+
 The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
 adapters. Thus the platform can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venues simultaneously.
@@ -20,29 +23,10 @@ including FX, Equities, Futures, Options, CFDs and Crypto - across multiple venu
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-Values
-------
-- Reliability
-- Performance
-- Testability
-- Modularity
-- Maintainability
-- Scalability
-
-What is Cython?
----------------
-Cython is a compiled programming language that aims to be a superset of the Python programming
-language, designed to give C-like performance with code that is written mostly in Python with
-optional additional C-inspired syntax.
-
-The project heavily utilizes Cython to provide static type safety and increased performance
-for Python through C extension modules. The vast majority of the production Python code is actually
-written in Cython, however the libraries can be accessed from both pure Python and Cython.
-
 Why NautilusTrader?
 -------------------
 One of the key value propositions of NautilusTrader is that it addresses the challenge of keeping
-the backtest environment consistent with the production live trading environment.
+the research/backtest environment consistent with the production live trading environment.
 
 Normally research and backtesting may be conducted in Python (or other suitable language), with
 trading strategies traditionally then needing to be reimplemented in C++/C#/Java or other statically
@@ -52,8 +36,9 @@ large enterprise systems.
 
 The value of NautilusTrader here is that this re-implementation step is circumvented, as the
 platform was designed from the ground up to hold its own in terms of performance and quality.
+
 Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
-making it a suitable language for implementing a large system such as this. The benefit here being
+making it a suitable language for implementing a large system such as this. The benefit being
 that a Python native environment can be offered, suitable for professional quantitative traders and
 hedge funds.
 
@@ -66,9 +51,29 @@ Not only that, Python has become the `de facto lingua franca` of data science,
 machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of implementing
-large systems. Cython has addressed some of these issues, offering all the advantages
+large systems. Cython has addressed a lot of these issues, offering all the advantages
 of a statically typed language, embedded into Pythons rich ecosystem of software
 libraries and developer/user communities.
+
+What is Cython?
+---------------
+Cython is a compiled programming language that aims to be a superset of the Python programming
+language, designed to give C-like performance with code that is written mostly in Python with
+optional additional C-inspired syntax.
+
+The project heavily utilizes Cython to provide static type safety and increased performance
+for Python through C extension modules. The vast majority of the production Python code is actually
+written in Cython, however the libraries can be accessed from both pure Python and Cython.
+
+Values
+------
+- Reliability
+- Performance
+- Testability
+- Modularity
+- Maintainability
+- Scalability
+
 
 
 
@@ -135,8 +140,8 @@ Index
     :caption: Developer Guide
     :hidden:
 
-    developer_guide/overview
     developer_guide/environment
     developer_guide/coding_standards
-    developer_guide/developing_adapters
     developer_guide/testing
+    developer_guide/developing_adapters
+    developer_guide/packaged_data
