@@ -239,7 +239,7 @@ at commit.
 
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install the pre-commit package:
+1. Install the pre-commit package by running:
 
         pip install pre-commit
 
@@ -255,7 +255,7 @@ The following steps are for Unix-like systems, and only need to be completed onc
 
         poetry install
 
-5. Setup the pre-commit hook which will then run automatically at commit:
+5. Setup the pre-commit hook which will then run automatically at commit by running:
 
         pre-commit run --all-files
 
