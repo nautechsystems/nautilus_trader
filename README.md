@@ -99,7 +99,10 @@ The documentation for the latest version of the package is available at _readthe
 
 ## Installation
 
-The latest version is tested against Python 3.7 - 3.9 on Linux and MacOS.
+The `master` branch will always reflect the code of the latest release version.
+Also, the documentation is always current for the latest version.
+
+The package is tested against Python 3.7 - 3.9 on both Linux and MacOS.
 
 We recommend users setup a virtual environment to isolate the dependencies, and run the platform
 with the latest stable version of Python.
@@ -239,7 +242,7 @@ at commit.
 
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install the pre-commit package:
+1. Install the `pre-commit` package by running:
 
         pip install pre-commit
 
@@ -255,7 +258,7 @@ The following steps are for Unix-like systems, and only need to be completed onc
 
         poetry install
 
-5. Setup the pre-commit hook which will then run automatically at commit:
+5. Setup the `pre-commit` hook which will then run automatically at commit by running:
 
         pre-commit run --all-files
 
