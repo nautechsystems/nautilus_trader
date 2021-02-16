@@ -24,7 +24,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.providers import TestInstrumentProvider
 
-
 SIM = Venue("SIM")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))

@@ -24,7 +24,6 @@ from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-
 USDJPY_SIM = Symbol("USD/JPY", Venue("SIM"))
 AUDUSD_SIM = Symbol("AUD/USD", Venue("SIM"))
 

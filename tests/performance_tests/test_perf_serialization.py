@@ -29,7 +29,6 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
 
-
 AUDUSD = TestStubs.symbol_audusd()
 
 

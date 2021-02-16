@@ -24,7 +24,6 @@ from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import UNIX_EPOCH
 
-
 AUDUSD = Symbol("AUDUSD", Venue("IDEALPRO"))
 MESSAGE = Message(MessageType.COMMAND, uuid4(), UNIX_EPOCH)
 

@@ -29,7 +29,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
 from tests import PACKAGE_ROOT
 
-
 # import ccxt  # uncomment to test against real API
 
 
