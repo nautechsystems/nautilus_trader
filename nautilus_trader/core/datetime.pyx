@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-This module provides efficient functions for performing standard datetime
-related operations. Functions include awareness/tz checks and conversions, as
-well as ISO 8601 conversion.
+This module provides efficient functions for performing standard datetime related operations.
+
+Functions include awareness/tz checks and conversions, as well as ISO 8601 conversion.
 """
 
 import pandas as pd
@@ -29,13 +29,13 @@ from cpython.unicode cimport PyUnicode_Contains
 
 from nautilus_trader.core.correctness cimport Condition
 
-# UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
+# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 
-cpdef long to_posix_ms(datetime timestamp) except *:
+cpdef long to_unix_time_ms(datetime timestamp) except *:
     """
-    Return the POSIX millisecond timestamp from the given object.
+    Return the Unix millisecond timestamp from the given datetime.
 
     Parameters
     ----------
@@ -50,13 +50,13 @@ cpdef long to_posix_ms(datetime timestamp) except *:
     return <long>((timestamp - UNIX_EPOCH).total_seconds() * 1000)
 
 
-cpdef datetime from_posix_ms(long posix):
+cpdef datetime from_unix_time_ms(long timestamp):
     """
-    Return the datetime in UTC from the given POSIX millisecond timestamp.
+    Return the datetime in UTC from the given Unix millisecond timestamp.
 
     Parameters
     ----------
-    posix : int
+    timestamp : long
         The timestamp to convert.
 
     Returns
@@ -64,7 +64,7 @@ cpdef datetime from_posix_ms(long posix):
     datetime
 
     """
-    return UNIX_EPOCH + timedelta(milliseconds=posix)  # Round off thousands
+    return UNIX_EPOCH + timedelta(milliseconds=timestamp)  # Round off thousands
 
 
 cpdef bint is_datetime_utc(datetime timestamp) except *:
@@ -205,7 +205,7 @@ cpdef str format_iso8601(datetime dt):
     """
     Condition.not_none(datetime, "datetime")
 
-    # Note the below is faster than .isoformat() or string formatting by 25%
+    # Note the below is faster than `.isoformat()` or string formatting by 25%
     # Have not tried char* manipulation
     cdef str tz_stripped = str(dt).replace(' ', 'T', 1).rpartition('+')[0]
 
@@ -237,7 +237,7 @@ cpdef str format_iso8601_us(datetime dt):
     """
     Condition.not_none(datetime, "datetime")
 
-    # Note the below is faster than .isoformat() or string formatting by 25%
+    # Note the below is faster than `.isoformat()` or string formatting by 25%
     # Have not tried char* manipulation
     cdef str tz_stripped = str(dt).replace(' ', 'T', 1).rpartition('+')[0]
 
