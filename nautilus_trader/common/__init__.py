@@ -28,7 +28,7 @@ Trading domain specific components for generating `Order` and `Identifier` objec
 
 Common logging components.
 
-A high performance Queue.
+A high performance `Queue`.
 
-Common `UUID` class.
+Common `UUID` factory.
 """
