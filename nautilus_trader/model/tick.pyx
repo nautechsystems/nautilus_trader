@@ -17,8 +17,8 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_unix_time_ms
+from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -198,7 +198,7 @@ cdef class QuoteTick(Tick):
             Price(pieces[1]),
             Quantity(pieces[2]),
             Quantity(pieces[3]),
-            from_posix_ms(long(pieces[4])),
+            from_unix_time_ms(long(pieces[4])),
         )
 
     @staticmethod
@@ -234,7 +234,7 @@ cdef class QuoteTick(Tick):
         str
 
         """
-        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{to_posix_ms(self.timestamp)}"
+        return f"{self.bid},{self.ask},{self.bid_size},{self.ask_size},{to_unix_time_ms(self.timestamp)}"
 
 
 cdef class TradeTick(Tick):
@@ -318,7 +318,7 @@ cdef class TradeTick(Tick):
             Quantity(pieces[1]),
             OrderSideParser.from_str(pieces[2]),
             TradeMatchId(pieces[3]),
-            from_posix_ms(long(pieces[4])),
+            from_unix_time_ms(long(pieces[4])),
         )
 
     @staticmethod
@@ -358,4 +358,4 @@ cdef class TradeTick(Tick):
                 f"{self.size},"
                 f"{OrderSideParser.to_str(self.side)},"
                 f"{self.match_id},"
-                f"{to_posix_ms(self.timestamp)}")
+                f"{to_unix_time_ms(self.timestamp)}")

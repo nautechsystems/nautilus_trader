@@ -24,11 +24,11 @@ import pytz
 from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import format_iso8601
-from nautilus_trader.core.datetime import from_posix_ms
+from nautilus_trader.core.datetime import from_unix_time_ms
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
-from nautilus_trader.core.datetime import to_posix_ms
+from nautilus_trader.core.datetime import to_unix_time_ms
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
@@ -43,7 +43,7 @@ class TestFunctionsTests(unittest.TestCase):
     def test_to_posix_ms_with_various_values_returns_expected_long(self, value, expected):
         # Arrange
         # Act
-        posix = to_posix_ms(value)
+        posix = to_unix_time_ms(value)
 
         # Assert
         self.assertEqual(expected, posix)
@@ -57,7 +57,7 @@ class TestFunctionsTests(unittest.TestCase):
     def test_from_posix_ms_with_various_values_returns_expected_datetime(self, value, expected):
         # Arrange
         # Act
-        dt = from_posix_ms(value)
+        dt = from_unix_time_ms(value)
 
         # Assert
         self.assertEqual(expected, dt)

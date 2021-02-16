@@ -19,8 +19,8 @@ from cpython.datetime cimport datetime
 cdef datetime UNIX_EPOCH
 
 
-cpdef long to_posix_ms(datetime timestamp) except *
-cpdef datetime from_posix_ms(long posix)
+cpdef long to_unix_time_ms(datetime timestamp) except *
+cpdef datetime from_unix_time_ms(long timestamp)
 cpdef bint is_datetime_utc(datetime timestamp) except *
 cpdef bint is_tz_aware(time_object) except *
 cpdef bint is_tz_naive(time_object) except *

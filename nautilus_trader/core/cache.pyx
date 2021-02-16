@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-Defines a generic object cache.
+This module defines a generic object cache.
 
 The intended use is to reduce the creation of duplicate objects such as
 identifiers, which represent the same thing.

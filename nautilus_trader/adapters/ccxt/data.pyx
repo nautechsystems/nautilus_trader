@@ -25,8 +25,8 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport from_posix_ms
-from nautilus_trader.core.datetime cimport to_posix_ms
+from nautilus_trader.core.datetime cimport from_unix_time_ms
+from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -801,7 +801,7 @@ cdef class CCXTDataClient(LiveDataClient):
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
             Quantity(best_ask_size, size_precision),
-            from_posix_ms(timestamp),
+            from_unix_time_ms(timestamp),
         )
 
         self._handle_quote_tick(tick)
@@ -872,7 +872,7 @@ cdef class CCXTDataClient(LiveDataClient):
             Quantity(amount, size_precision),
             side,
             TradeMatchId(trade_match_id),
-            from_posix_ms(timestamp),
+            from_unix_time_ms(timestamp),
         )
 
         self._handle_trade_tick(tick)
@@ -957,7 +957,7 @@ cdef class CCXTDataClient(LiveDataClient):
             Price(low_price, price_precision),
             Price(close_price, price_precision),
             Quantity(volume, size_precision),
-            from_posix_ms(timestamp),
+            from_unix_time_ms(timestamp),
         )
 
         self._handle_bar(bar_type, bar)
@@ -1025,7 +1025,7 @@ cdef class CCXTDataClient(LiveDataClient):
         try:
             trades = await self._client.fetch_trades(
                 symbol=symbol.code,
-                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
+                since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
         except CCXTError as ex:
@@ -1104,7 +1104,7 @@ cdef class CCXTDataClient(LiveDataClient):
             data = await self._client.fetch_ohlcv(
                 symbol=bar_type.symbol.code,
                 timeframe=timeframe,
-                since=to_posix_ms(from_datetime) if from_datetime is not None else None,
+                since=to_unix_time_ms(from_datetime) if from_datetime is not None else None,
                 limit=limit,
             )
         except TypeError:
@@ -1153,7 +1153,7 @@ cdef class CCXTDataClient(LiveDataClient):
             Quantity(trade['amount'], size_precision),
             OrderSide.BUY if trade["side"] == "buy" else OrderSide.SELL,
             TradeMatchId(trade["id"]),
-            from_posix_ms(trade["timestamp"]),
+            from_unix_time_ms(trade["timestamp"]),
         )
 
     cdef inline Bar _parse_bar(
@@ -1168,7 +1168,7 @@ cdef class CCXTDataClient(LiveDataClient):
             Price(values[3], price_precision),
             Price(values[4], price_precision),
             Quantity(values[5], size_precision),
-            from_posix_ms(values[0]),
+            from_unix_time_ms(values[0]),
         )
 
     cdef str _make_timeframe(self, BarSpecification bar_spec):
