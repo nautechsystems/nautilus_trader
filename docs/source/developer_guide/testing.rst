@@ -49,7 +49,7 @@ Code coverage output is generated using ``coverage`` and reported using ``codeco
 High test coverage is a goal for the project however not at the expense of
 appropriate error handling, or causing "test induced damage" to the architecture.
 
-There are currently areas of the codebase which are 'impossible' to test unless
+There are currently areas of the codebase which are `impossible` to test unless
 there is a change to the production code. For example the last condition check
 of an if-else block which would catch an unrecognized value, these should be
 left in place in case there is a change to the production code - which these

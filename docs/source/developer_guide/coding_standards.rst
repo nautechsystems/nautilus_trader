@@ -9,18 +9,18 @@ Code Style
 
 We philosophically agree with the ``Black`` formatting style, however it does not
 currently run over Cython code. So you could say we are "handcrafting towards"
-``Blacks`` stylistic conventions.
+``Black``s stylistic conventions.
 
 The current codebase can be used as a guide for formatting guidance.
 
-- For longer lines of code, and when passing more than a couple of arguments
+1- For longer lines of code, and when passing more than a couple of arguments
 it's common to take a new line which aligns at the next logical indent (rather
 than attempting a hanging alignment off an opening parenthesis).
 
-- The closing parenthesis should be located on a new line, aligned at the logical
+2- The closing parenthesis should be located on a new line, aligned at the logical
 indent.
 
-- Also ensure multiple hanging parameters or arguments end with a comma::
+3- Also ensure multiple hanging parameters or arguments end with a comma::
 
     LongCodeLine(
         some_arg1,
