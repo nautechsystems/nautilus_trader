@@ -162,7 +162,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         self._id_tag_trader = id_tag_trader.value
         self._counts = {}  # type: dict[StrategyId, int]
 
-    cpdef void set_count(self, StrategyId strategy_id, int count):
+    cpdef void set_count(self, StrategyId strategy_id, int count) except *:
         """
         Set the internal position count for the given strategy identifier.
 
@@ -183,6 +183,24 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         Condition.not_negative_int(count, "count")
 
         self._counts[strategy_id] = count
+
+    cpdef int get_count(self, StrategyId strategy_id) except *:
+        """
+        Return the internal position count for the given strategy identifier.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy identifier associated with the count.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(strategy_id, "strategy_id")
+
+        return self._counts.get(strategy_id, 0)
 
     cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=False):
         """

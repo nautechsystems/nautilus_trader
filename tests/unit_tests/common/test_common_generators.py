@@ -92,6 +92,26 @@ class PositionIdGeneratorTests(unittest.TestCase):
         self.assertEqual(PositionId("P-19700101-000000-001-002-1F"), result2)
         self.assertEqual(PositionId("P-19700101-000000-001-001-2F"), result3)
 
+    def test_set_count_with_valid_strategy_identifier(self):
+        # Arrange
+        strategy_id = StrategyId("S", "001")
+
+        # Act
+        self.position_id_generator.set_count(strategy_id, 5)
+
+        # Assert
+        self.assertEqual(5, self.position_id_generator.get_count(strategy_id))
+
+    def test_get_count_when_strategy_id_has_no_count_returns_zero(self):
+        # Arrange
+        strategy_id = StrategyId("S", "001")
+
+        # Act
+        result = self.position_id_generator.get_count(strategy_id)
+
+        # Assert
+        self.assertEqual(0, result)
+
     def test_reset_id_generator(self):
         # Arrange
         self.position_id_generator.generate(StrategyId("S", "002"))
