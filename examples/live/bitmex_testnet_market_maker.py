@@ -30,6 +30,11 @@ config = {
     "trader": {
         "name": "TESTER",              # Not sent beyond system boundary
         "id_tag": "001",               # Used to ensure orders are unique for this trader
+    },
+
+    "system": {
+        "connection_timeout": 5.0,     # Timeout for successful connections for all engine clients
+        "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
 

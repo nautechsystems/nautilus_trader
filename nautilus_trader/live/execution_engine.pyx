@@ -121,9 +121,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-    async def resolve_state(self) -> bool:
+    async def reconcile_state(self) -> bool:
         """
-        Resolve the execution engines state with all execution clients.
+        Reconcile the execution engines state with all execution clients.
 
         The execution engine will collect all cached active orders and send
         those to the relevant execution client(s) for a comparison with the
