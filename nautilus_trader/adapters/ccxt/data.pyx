@@ -204,7 +204,7 @@ cdef class CCXTDataClient(LiveDataClient):
         if self._update_instruments_task:
             self._update_instruments_task.cancel()
             # TODO: This task is not finishing
-            # stop_tasks.append(self._update_instruments_task)
+            stop_tasks.append(self._update_instruments_task)
 
         # Cancel residual tasks
         for task in self._subscribed_trade_ticks.values():
