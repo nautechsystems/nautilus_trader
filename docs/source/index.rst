@@ -140,6 +140,7 @@ Index
     :caption: Developer Guide
     :hidden:
 
+    developer_guide/overview
     developer_guide/environment
     developer_guide/coding_standards
     developer_guide/testing
