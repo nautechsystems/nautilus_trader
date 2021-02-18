@@ -31,12 +31,12 @@ cdef class LiveDataClient(DataClient):
     """
 
     def __init__(
-            self,
-            Venue venue not None,
-            LiveDataEngine engine not None,
-            LiveClock clock not None,
-            Logger logger not None,
-            dict config=None,
+        self,
+        Venue venue not None,
+        LiveDataEngine engine not None,
+        LiveClock clock not None,
+        Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the `LiveDataClient` class.

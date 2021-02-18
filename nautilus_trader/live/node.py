@@ -92,6 +92,7 @@ class TradingNode:
 
         # Extract configs
         config_trader = config.get("trader", {})
+        config_system = config.get("system", {})
         config_log = config.get("logging", {})
         config_exec_db = config.get("exec_database", {})
         config_strategy = config.get("strategy", {})
@@ -189,7 +190,10 @@ class TradingNode:
             logger=self._logger,
         )
 
-        self._check_residuals_delay = config_trader.get("check_residuals_delay", 5.0)
+        # System config
+        self._connection_timeout = config_system.get("connection_timeout", 5.0)
+        self._disconnection_timeout = config_system.get("disconnection_timeout", 5.0)
+        self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
         self._load_strategy_state = config_strategy.get("load_state", True)
         self._save_strategy_state = config_strategy.get("save_state", True)
 
@@ -300,7 +304,7 @@ class TradingNode:
             self._loop.stop()
             self._cancel_all_tasks()
         except RuntimeError as ex:
-            self._log.error("Shutdown coro issues will be fixed soon...")  # TODO: Remove when fixed
+            self._log.error("CCXT shutdown issues will be fixed soon...")  # TODO: Remove when fixed
             self._log.exception(ex)
         finally:
             if self._loop.is_running():
@@ -356,7 +360,7 @@ class TradingNode:
         for name, config in config.items():
             if name.startswith("ccxt-"):
                 try:
-                    import ccxtpro  # TODO: Find a better way of doing this
+                    import ccxtpro
                 except ImportError:
                     raise ImportError("ccxtpro is not installed, "
                                       "installation instructions can be found at https://ccxt.pro")
@@ -421,7 +425,7 @@ class TradingNode:
             if not result:
                 return
 
-            result: bool = await self._exec_engine.resolve_state()
+            result: bool = await self._exec_engine.reconcile_state()
             if not result:
                 return
 
@@ -445,8 +449,8 @@ class TradingNode:
         # instruments are received and updated with the data engine.
         # The execution engine clients will be set as connected when all
         # accounts are updated and the current order and position status is
-        # confirmed. Thus any delay here will be due to blocking network IO.
-        seconds = 5  # Hard coded for now
+        # reconciled. Thus any delay here will be due to blocking network IO.
+        seconds = self._connection_timeout
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0.1)
@@ -495,7 +499,7 @@ class TradingNode:
     async def _await_engines_disconnected(self) -> None:
         self._log.info("Waiting for engines to disconnect...")
 
-        seconds = 5  # Hard coded for now
+        seconds = self._disconnection_timeout
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0.1)

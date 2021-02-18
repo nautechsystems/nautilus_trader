@@ -464,7 +464,6 @@ cdef class Order:
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
         elif isinstance(event, OrderAmended):
-            # TODO: Implement
             Condition.true(self._fsm.state == OrderState.ACCEPTED, "state was != OrderState.ACCEPTED")
             self._amended(event)
         elif isinstance(event, OrderCancelled):

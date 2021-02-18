@@ -14,11 +14,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from decimal import Decimal
 import os
+import pathlib
+import sys
 
 import pandas as pd
+
+sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
 
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.backtest.data_container import BacktestDataContainer

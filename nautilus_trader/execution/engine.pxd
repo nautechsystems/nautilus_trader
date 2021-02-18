@@ -55,6 +55,7 @@ cdef class ExecutionEngine(Component):
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
+    cpdef int position_id_count(self, StrategyId strategy_id) except *
     cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *
     cpdef bint check_integrity(self) except *
     cpdef bint check_connected(self) except *

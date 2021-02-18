@@ -242,6 +242,7 @@ class ExecutionEngineTests(unittest.TestCase):
 
     def test_setting_of_position_id_counts(self):
         # Arrange
+        strategy_id = StrategyId("S", "001")
         order = self.order_factory.market(
             BTCUSDT_BINANCE.symbol,
             OrderSide.BUY,
@@ -254,7 +255,7 @@ class ExecutionEngineTests(unittest.TestCase):
             order,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-1-001"),
-            strategy_id=StrategyId("S", "001"),
+            strategy_id=strategy_id,
             fill_price=Price("50000.00000000"),
         )
 
@@ -267,7 +268,9 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.exec_engine.load_cache()
-        # TODO: Get position id count
+
+        # Assert
+        self.assertEqual(1, self.exec_engine.position_id_count(strategy_id))
 
     def test_given_random_command_logs_and_continues(self):
         # Arrange

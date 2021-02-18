@@ -1,7 +1,7 @@
 import itertools
 import os
-import platform
 from pathlib import Path
+import platform
 import shutil
 from typing import List
 
@@ -11,7 +11,6 @@ from Cython.Compiler import Options
 import numpy as np
 from setuptools import Distribution
 from setuptools import Extension
-
 
 # If DEBUG mode is enabled, skip compiler optimizations (TODO: implement)
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))

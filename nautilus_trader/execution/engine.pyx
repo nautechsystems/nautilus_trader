@@ -35,7 +35,6 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -145,6 +144,22 @@ cdef class ExecutionEngine(Component):
 
         """
         return sorted(list(self._strategies.keys()))
+
+    cpdef int position_id_count(self, StrategyId strategy_id) except *:
+        """
+        The position identifier count for the given strategy identifier.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy identifier for the position count.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._pos_id_generator.get_count(strategy_id)
 
     cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *:
         """

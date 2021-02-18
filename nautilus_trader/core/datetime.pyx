@@ -44,7 +44,7 @@ cpdef long to_unix_time_ms(datetime timestamp) except *:
 
     Returns
     -------
-    int
+    long
 
     """
     return <long>((timestamp - UNIX_EPOCH).total_seconds() * 1000)
