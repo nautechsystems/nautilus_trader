@@ -36,11 +36,11 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
-from tests import PACKAGE_ROOT
+from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ccxt/responses/"
 
 BINANCE = Venue("BINANCE")
 BTCUSDT = Symbol("BTC/USDT", BINANCE)

@@ -16,8 +16,12 @@
 
 from decimal import Decimal
 import os
+import pathlib
+import sys
 
 import pandas as pd
+
+sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.data_container import BacktestDataContainer

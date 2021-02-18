@@ -40,6 +40,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 cdef class PositionIdGenerator(IdentifierGenerator):
     cdef dict _counts
 
-    cpdef void set_count(self, StrategyId strategy_id, int count)
+    cpdef void set_count(self, StrategyId strategy_id, int count) except *
+    cpdef int get_count(self, StrategyId strategy_id) except *
     cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=*)
     cpdef void reset(self) except *

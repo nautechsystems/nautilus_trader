@@ -106,18 +106,19 @@ cdef class DataEngine(Component):
         super().__init__(clock, logger, name="DataEngine")
 
         self._use_previous_close = config.get("use_previous_close", True)
-        self._clients = {}              # type: dict[Venue, DataClient]
-        self._correlation_index = {}    # type: dict[UUID, callable]
+        self._clients = {}               # type: dict[Venue, DataClient]
+        self._correlation_index = {}     # type: dict[UUID, callable]
 
         # Handlers
-        self._instrument_handlers = {}  # type: dict[Symbol, list[callable]]
-        self._order_book_handlers = {}  # type: dict[Symbol, list[callable]]
-        self._quote_tick_handlers = {}  # type: dict[Symbol, list[callable]]
-        self._trade_tick_handlers = {}  # type: dict[Symbol, list[callable]]
-        self._bar_handlers = {}         # type: dict[BarType, list[callable]]
+        self._instrument_handlers = {}   # type: dict[Symbol, list[callable]]
+        self._order_book_handlers = {}   # type: dict[Symbol, list[callable]]
+        self._quote_tick_handlers = {}   # type: dict[Symbol, list[callable]]
+        self._trade_tick_handlers = {}   # type: dict[Symbol, list[callable]]
+        self._bar_handlers = {}          # type: dict[BarType, list[callable]]
+        self._data_handlers = {}         # type: dict[type, list[callable]]
 
         # Aggregators
-        self._bar_aggregators = {}      # type: dict[BarType, BarAggregator]
+        self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Snapshot providers
         self._order_book_intervals = {}  # type: dict[(Symbol, int), list[callable]]
@@ -265,7 +266,7 @@ cdef class DataEngine(Component):
 
     cpdef void register_strategy(self, TradingStrategy strategy) except *:
         """
-        Register the given trade strategy with the data client.
+        Register the given trading strategy with the data engine.
 
         Parameters
         ----------
@@ -335,6 +336,7 @@ cdef class DataEngine(Component):
         self._quote_tick_handlers.clear()
         self._trade_tick_handlers.clear()
         self._bar_handlers.clear()
+        self._data_handlers.clear()
         self._bar_aggregators.clear()
         self._clock.cancel_timers()
         self.command_count = 0
@@ -882,7 +884,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         else:
-            self._log.error(f"Cannot handle unrecognized data of type {type(data)}, {data}.")
+            self._handle_custom_data(data)
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
@@ -931,6 +933,15 @@ cdef class DataEngine(Component):
             for handler in bar_handlers:
                 handler(bar_type, bar)
 
+    cdef inline void _handle_custom_data(self, data) except *:
+        cdef list handlers = self._data_handlers.get(type(data))
+        if handlers is None:
+            self._log.error(f"Cannot handle unrecognized data of type {type(data)}, {data}.")
+        else:
+            # Send to all registered data handlers for that data type
+            for handler in handlers:
+                handler(data)
+
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
     cdef inline void _handle_response(self, DataResponse response) except *:
@@ -951,7 +962,12 @@ cdef class DataEngine(Component):
                 response.correlation_id,
             )
         else:
-            self._log.error(f"Cannot handle data (data_type {response.data_type} is unrecognized).")
+            callback = self._correlation_index.pop(response.correlation_id, None)
+            if callback is None:
+                self._log.error(f"Callback not found for correlation_id {response.correlation_id}.")
+                return
+
+            callback(response.data)
 
     cdef inline void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef Instrument instrument

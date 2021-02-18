@@ -500,7 +500,7 @@ cdef class Portfolio(PortfolioFacade):
                                 f"(no instrument for {position.symbol}).")
                 return None  # Cannot calculate
 
-            last = self._get_last_price(position)  # TODO: Optimize
+            last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate market value "
                                 f"(no prices for {position.symbol}).")
@@ -603,7 +603,7 @@ cdef class Portfolio(PortfolioFacade):
             if position.symbol != symbol:
                 continue
 
-            last = self._get_last_price(position)  # TODO: Optimize
+            last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate market value "
                                 f"(no prices for {position.symbol}).")
@@ -864,7 +864,7 @@ cdef class Portfolio(PortfolioFacade):
             if instrument.leverage == 1:
                 continue  # No margin necessary
 
-            last = self._get_last_price(position)  # TODO: Optimize
+            last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate position maintenance margin "
                                 f"(no prices for {position.symbol}).")
@@ -940,7 +940,7 @@ cdef class Portfolio(PortfolioFacade):
             if position.symbol != symbol:
                 continue  # Nothing to calculate
 
-            last = self._get_last_price(position)  # TODO: Optimize (could be long or short)
+            last = self._get_last_price(position)
             if last is None:
                 self._log.error(f"Cannot calculate unrealized PnL (no prices for {symbol}).")
                 return None  # Cannot calculate

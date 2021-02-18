@@ -36,10 +36,10 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
-from tests import PACKAGE_ROOT
+from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 OANDA = Venue("OANDA")
 AUDUSD = Symbol("AUD/USD", OANDA)

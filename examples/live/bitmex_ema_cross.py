@@ -15,6 +15,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.live.node import TradingNode
@@ -30,6 +34,11 @@ config = {
     "trader": {
         "name": "TESTER",              # Not sent beyond system boundary
         "id_tag": "001",               # Used to ensure orders are unique for this trader
+    },
+
+    "system": {
+        "connection_timeout": 5.0,     # Timeout for successful connections for all engine clients
+        "disconnection_timeout": 5.0,  # Timeout for successful disconnection for all engine clients
         "check_residuals_delay": 5.0,  # How long to wait after stopping for residual events (secs)
     },
 
