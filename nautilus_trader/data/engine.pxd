@@ -47,6 +47,7 @@ cdef class DataEngine(Component):
     cdef dict _quote_tick_handlers
     cdef dict _trade_tick_handlers
     cdef dict _bar_handlers
+    cdef dict _data_handlers
     cdef dict _bar_aggregators
     cdef dict _order_book_intervals
 
@@ -109,6 +110,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
+    cdef inline void _handle_custom_data(self, data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
