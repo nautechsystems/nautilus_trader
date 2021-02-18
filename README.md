@@ -107,6 +107,10 @@ The package is tested against Python 3.7 - 3.9 on both Linux and MacOS.
 We recommend users setup a virtual environment to isolate the dependencies, and run the platform
 with the latest stable version of Python.
 
+`pyenv` is the recommended tool for handling Python installations and virtual environments.
+
+> https://github.com/pyenv/pyenv
+
 Installation for Unix-like systems can be achieved through _one_ of the following options;
 
 #### From PyPI
@@ -143,9 +147,17 @@ Installation from source requires Cython to compile the Python C extensions.
         cd nautilus_trader
         pip install .
 
+## Examples
+
+Examples of both backtest and live trading launch scripts are available in the `examples` directory.
+These can run through PyCharm, or by running:
+
+    python <name_of_script>.py
+
 ## Data Types
 
-The following data types can be requested, and also subscribed to as streams.
+The following market data types can be requested historically, and also subscribed to as live streams
+when available from an exchange/broker, and implemented in an integrations adapter.
 
 - `Instrument`
 - `OrderBook` (L1, L2 and L3 if available. Streaming or interval snapshots)
@@ -229,6 +241,11 @@ exchanges.
 For development we recommend using the PyCharm _Professional_ edition IDE, as it interprets Cython
 syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
 
+`pyenv` is the recommended tool for handling Python installations and virtual environments.
+
+> https://github.com/pyenv/pyenv
+
+
 `poetry` is the preferred tool for handling all Python package and dev dependencies.
 
 > https://python-poetry.org/
@@ -242,21 +259,21 @@ at commit.
 
 The following steps are for Unix-like systems, and only need to be completed once.
 
-1. Install the `pre-commit` package by running:
-
-        pip install pre-commit
-
-2. Install the Cython package by running:
+1. Install the Cython package by running:
 
         pip install -U Cython==3.0a6
 
-3. Install `poetry` by running:
+2. Install `poetry` by running:
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-4. Then install all Python package dependencies, and compile the C extensions by running:
+3. Then install all Python package dependencies, and compile the C extensions by running:
 
         poetry install
+
+4. Install the `pre-commit` package by running:
+
+        pip install pre-commit
 
 5. Setup the `pre-commit` hook which will then run automatically at commit by running:
 
