@@ -25,9 +25,9 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instrument import Instrument
-from tests import PACKAGE_ROOT
+from tests import TESTS_PACKAGE_ROOT
 
-TEST_PATH = PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
+TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 
 class OandaInstrumentProviderTests(unittest.TestCase):
