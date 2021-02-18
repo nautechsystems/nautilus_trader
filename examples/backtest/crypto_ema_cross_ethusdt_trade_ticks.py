@@ -18,6 +18,7 @@ from decimal import Decimal
 import pathlib
 import sys
 
+import ccxt
 import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
