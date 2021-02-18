@@ -15,6 +15,10 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).parents[2]))  # Allows relative imports from examples
 
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.live.node import TradingNode
