@@ -59,13 +59,13 @@ cdef class DataEngine(Component):
     cdef readonly DataCache cache
     """The engines data cache.\n\n:returns: `DataCache`"""
     cdef readonly int command_count
-    """The total count of commands received by the engine.\n\n:returns: `int`"""
+    """The total count of data commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int data_count
-    """The total count of data objects received by the engine.\n\n:returns: `int`"""
+    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
     cdef readonly int request_count
-    """The total count of requests received by the engine.\n\n:returns: `int`"""
+    """The total count of data requests received by the engine.\n\n:returns: `int`"""
     cdef readonly int response_count
-    """The total count of responses received by the engine.\n\n:returns: `int`"""
+    """The total count of data responses received by the engine.\n\n:returns: `int`"""
 
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *

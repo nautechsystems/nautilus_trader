@@ -50,5 +50,5 @@ cdef class DataResponse(Response):
     """The data client name for the response.\n\n:returns: `str`"""
     cdef readonly DataType data_type
     """The response data type.\n\n:returns: `type`"""
-    cdef readonly list data
-    """The response data.\n\n:returns: `list`"""
+    cdef readonly object data
+    """The response data.\n\n:returns: `object`"""

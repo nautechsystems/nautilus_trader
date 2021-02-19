@@ -719,6 +719,32 @@ cdef class TradingStrategy(Component):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    cpdef void subscribe_data(self, str provider, DataType data_type) except *:
+        """
+        Subscribe to data of the given data type.
+
+        Parameters
+        ----------
+        provider : str
+            The data provider name (normally corresponding to the data client name).
+        data_type : DataType
+            The data type to subscribe to.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        cdef Subscribe subscribe = Subscribe(
+            provider=provider,
+            data_type=data_type,
+            handler=self.handle_data,
+            command_id=self.uuid_factory.generate_c(),
+            command_timestamp=self.clock.utc_now_c(),
+        )
+
+        self._data_engine.execute(subscribe)
+
+        self.log.info(f"Subscribed to {data_type} data.")
+
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
         Subscribe to update `Instrument` data for the given symbol.
@@ -884,6 +910,32 @@ cdef class TradingStrategy(Component):
         self._data_engine.execute(subscribe)
 
         self.log.info(f"Subscribed to {bar_type} <Bar> data.")
+
+    cpdef void unsubscribe_data(self, str provider, DataType data_type) except *:
+        """
+        Unsubscribe from data of the given data type.
+
+        Parameters
+        ----------
+        provider : str
+            The data provider name (normally corresponding to the data client name).
+        data_type : DataType
+            The data type to unsubscribe from.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        cdef Unsubscribe unsubscribe = Unsubscribe(
+            provider=provider,
+            data_type=data_type,
+            handler=self.handle_data,
+            command_id=self.uuid_factory.generate_c(),
+            command_timestamp=self.clock.utc_now_c(),
+        )
+
+        self._data_engine.execute(unsubscribe)
+
+        self.log.info(f"Unsubscribed to {data_type} data.")
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -1711,7 +1763,7 @@ cdef class TradingStrategy(Component):
         self.log.info(f"Received <Bar[{length}]> data for {bar_type}.")
 
         if length > 0 and first.timestamp > last.timestamp:
-            raise RuntimeError(f"Cannot handle <Bar[{length}]> data, incorrectly sorted")
+            raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):
             self.handle_bar(bar_type, bars[i], is_historical=True)
