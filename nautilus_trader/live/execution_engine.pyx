@@ -194,7 +194,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 break
             await asyncio.sleep(0.001)  # One millisecond sleep
 
-        self._log.info(f"State resolved.", LogColor.GREEN)
+        self._log.info(f"State reconciled.", LogColor.GREEN)
         return True  # Execution states resolved
 
     cpdef void kill(self) except *:

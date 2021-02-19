@@ -23,15 +23,14 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 
 
-cdef class BacktestDataClient(DataClient):
+cdef class BacktestMarketDataClient(MarketDataClient):
     """
     Provides an implementation of `DataClient` for backtesting.
     """
@@ -39,7 +38,7 @@ cdef class BacktestDataClient(DataClient):
     def __init__(
         self,
         list instruments not None,
-        Venue venue not None,
+        str name not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -60,7 +59,7 @@ cdef class BacktestDataClient(DataClient):
 
         """
         super().__init__(
-            venue,
+            name,
             engine,
             clock,
             logger,
@@ -68,7 +67,13 @@ cdef class BacktestDataClient(DataClient):
 
         self._instruments = {}
         for instrument in instruments:
-            Condition.equal(instrument.symbol.venue, self.venue, "instrument.symbol.venue", "self.venue")
+            # Check the instrument is for the correct client
+            Condition.equal(
+                instrument.symbol.venue.value,
+                self.name,
+                "instrument.symbol.venue.value",
+                "self.name",
+            )
             self._instruments[instrument.symbol] = instrument
 
         self.is_connected = False

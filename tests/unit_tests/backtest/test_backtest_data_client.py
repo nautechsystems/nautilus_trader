@@ -15,7 +15,7 @@
 
 import unittest
 
-from nautilus_trader.backtest.data_client import BacktestDataClient
+from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -48,9 +48,9 @@ class BacktestDataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.client = BacktestDataClient(
+        self.client = BacktestMarketDataClient(
             instruments=[USDJPY_SIM],
-            venue=Venue("SIM"),
+            name="SIM",
             engine=self.data_engine,
             clock=TestClock(),
             logger=self.logger,

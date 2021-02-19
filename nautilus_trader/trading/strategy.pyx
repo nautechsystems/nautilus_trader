@@ -44,6 +44,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport Subscribe
@@ -78,6 +79,7 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
+# Events for WRN log level
 cdef tuple _WARNING_EVENTS = (
     OrderInvalid,
     OrderDenied,
@@ -731,9 +733,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe subscribe = Subscribe(
-            venue=symbol.venue,
-            data_type=Instrument,
-            metadata={SYMBOL: symbol},
+            provider=symbol.venue.value,
+            data_type=DataType(Instrument, metadata={SYMBOL: symbol}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -792,15 +793,14 @@ cdef class TradingStrategy(Component):
         Condition.not_negative(interval, "interval")
 
         cdef Subscribe subscribe = Subscribe(
-            venue=symbol.venue,
-            data_type=OrderBook,
-            metadata={
+            provider=symbol.venue.value,
+            data_type=DataType(OrderBook, metadata={
                 SYMBOL: symbol,
                 LEVEL: level,
                 DEPTH: depth,
                 INTERVAL: interval,
                 KWARGS: kwargs,
-            },
+            }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -824,9 +824,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe subscribe = Subscribe(
-            venue=symbol.venue,
-            data_type=QuoteTick,
-            metadata={SYMBOL: symbol},
+            provider=symbol.venue.value,
+            data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -850,9 +849,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe subscribe = Subscribe(
-            venue=symbol.venue,
-            data_type=TradeTick,
-            metadata={SYMBOL: symbol},
+            provider=symbol.venue.value,
+            data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -876,9 +874,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Subscribe subscribe = Subscribe(
-            venue=bar_type.symbol.venue,
-            data_type=Bar,
-            metadata={BAR_TYPE: bar_type},
+            provider=bar_type.symbol.venue.value,
+            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -902,9 +899,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
-            venue=symbol.venue,
-            data_type=Instrument,
-            metadata={SYMBOL: symbol},
+            provider=symbol.venue.value,
+            data_type=DataType(Instrument, metadata={SYMBOL: symbol}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -933,12 +929,11 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
-            venue=symbol.venue,
-            data_type=OrderBook,
-            metadata={
+            provider=symbol.venue.value,
+            data_type=DataType(OrderBook, metadata={
                 SYMBOL: symbol,
                 INTERVAL: interval,
-            },
+            }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -962,9 +957,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
-            venue=symbol.venue,
-            data_type=QuoteTick,
-            metadata={SYMBOL: symbol},
+            provider=symbol.venue.value,
+            data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -988,9 +982,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
-            venue=symbol.venue,
-            data_type=TradeTick,
-            metadata={SYMBOL: symbol},
+            provider=symbol.venue.value,
+            data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -1014,9 +1007,8 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe unsubscribe = Unsubscribe(
-            venue=bar_type.symbol.venue,
-            data_type=Bar,
-            metadata={BAR_TYPE: bar_type},
+            provider=bar_type.symbol.venue.value,
+            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate_c(),
             command_timestamp=self.clock.utc_now_c(),
@@ -1060,14 +1052,13 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            venue=symbol.venue,
-            data_type=QuoteTick,
-            metadata={
+            provider=symbol.venue.value,
+            data_type=DataType(QuoteTick, metadata={
                 SYMBOL: symbol,
                 FROM_DATETIME: from_datetime,
                 TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.tick_capacity,
-            },
+            }),
             callback=self.handle_quote_ticks,
             request_id=self.uuid_factory.generate_c(),
             request_timestamp=self.clock.utc_now_c(),
@@ -1107,14 +1098,13 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            venue=symbol.venue,
-            data_type=TradeTick,
-            metadata={
+            provider=symbol.venue.value,
+            data_type=DataType(TradeTick, metadata={
                 SYMBOL: symbol,
                 FROM_DATETIME: from_datetime,
                 TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.tick_capacity,
-            },
+            }),
             callback=self.handle_trade_ticks,
             request_id=self.uuid_factory.generate_c(),
             request_timestamp=self.clock.utc_now_c(),
@@ -1154,14 +1144,13 @@ cdef class TradingStrategy(Component):
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
         cdef DataRequest request = DataRequest(
-            venue=bar_type.symbol.venue,
-            data_type=Bar,
-            metadata={
+            provider=bar_type.symbol.venue.value,
+            data_type=DataType(Bar, metadata={
                 BAR_TYPE: bar_type,
                 FROM_DATETIME: from_datetime,
                 TO_DATETIME: to_datetime,
                 LIMIT: self._data_engine.cache.bar_capacity,
-            },
+            }),
             callback=self.handle_bars,
             request_id=self.uuid_factory.generate_c(),
             request_timestamp=self.clock.utc_now_c(),
@@ -1197,10 +1186,8 @@ cdef class TradingStrategy(Component):
 
         cdef AccountId account_id = self.execution.account_id(order.symbol.venue)
         if account_id is None:
-            self.log.error(
-                f"Cannot submit {order} "
-                f"(no account registered for {order.symbol.venue})."
-            )
+            self.log.error(f"Cannot submit order: "
+                           f"no account registered for {order.symbol.venue}, {order}.")
             return  # Cannot send command
 
         cdef SubmitOrder command = SubmitOrder(
@@ -1236,10 +1223,8 @@ cdef class TradingStrategy(Component):
 
         cdef AccountId account_id = self.execution.account_id(bracket_order.entry.symbol.venue)
         if account_id is None:
-            self.log.error(
-                f"Cannot submit {bracket_order} "
-                f"(no account registered for {bracket_order.entry.symbol.venue})."
-            )
+            self.log.error(f"Cannot submit bracket order: "
+                           f"no account registered for {bracket_order.entry.symbol.venue}, {bracket_order}.")
             return  # Cannot send command
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(

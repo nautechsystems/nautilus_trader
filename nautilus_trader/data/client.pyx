@@ -27,14 +27,15 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarData
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -50,7 +51,7 @@ cdef class DataClient:
 
     def __init__(
         self,
-        Venue venue not None,
+        str name not None,
         DataEngine engine not None,
         Clock clock not None,
         Logger logger not None,
@@ -59,8 +60,10 @@ cdef class DataClient:
         """
         Initialize a new instance of the `DataClient` class.
 
-        venue : Venue
-            The venue the client can provide data for.
+        Parameters
+        ----------
+        name : Venue
+            The data client name.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -71,22 +74,122 @@ cdef class DataClient:
             The configuration options.
 
         """
+        Condition.valid_string(name, "name")
+
         if config is None:
             config = {}
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(config.get("name", f"DataClient-{venue.value}"), logger)
+        self._log = LoggerAdapter(config.get("name", f"DataClient-{name}"), logger)
         self._engine = engine
         self._config = config
 
-        self.venue = venue
+        self.name = name
         self.is_connected = False
 
         self._log.info("Initialized.")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}-{self.venue}"
+        return f"{type(self).__name__}-{self.name}"
+
+    cpdef void connect(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void disconnect(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void reset(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void dispose(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe(self, DataType data_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe(self, DataType data_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+# -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+# -- PYTHON WRAPPERS -------------------------------------------------------------------------------
+
+    def _handle_data_py(self, DataType data_type, data):
+        self._engine.process(Data(data_type, data))
+
+    def _handle_data_response_py(self, DataType data_type, data, UUID correlation_id):
+        self._handle_data_response(data_type, data, correlation_id)
+
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
+
+    cdef void _handle_data(self, DataType data_type, data) except *:
+        self._engine.process(Data(data_type, data))
+
+    cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *:
+        cdef DataResponse response = DataResponse(
+            provider=self.name,
+            data_type=data_type,
+            data=data,
+            correlation_id=correlation_id,
+            response_id=self._uuid_factory.generate(),
+            response_timestamp=self._clock.utc_now_c(),
+        )
+
+        self._engine.receive(response)
+
+
+cdef class MarketDataClient(DataClient):
+    """
+    The abstract base class for all market data clients.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+        self,
+        str name not None,
+        DataEngine engine not None,
+        Clock clock not None,
+        Logger logger not None,
+        dict config=None,
+    ):
+        """
+        Initialize a new instance of the `MarketDataClient` class.
+
+        Parameters
+        ----------
+        name : str
+            The data client name (normally the venue).
+        engine : DataEngine
+            The data engine to connect to the client.
+        clock : Clock
+            The clock for the component.
+        logger : Logger
+            The logger for the component.
+        config : dict[str, object], optional
+            The configuration options.
+
+        """
+        super().__init__(
+            name=name,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
+        )
 
     cpdef list unavailable_methods(self):
         """
@@ -117,6 +220,14 @@ cdef class DataClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe(self, DataType data_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe(self, DataType data_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """Abstract method (implement in subclass)."""
@@ -159,6 +270,10 @@ cdef class DataClient:
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request(self, DataType datatype, UUID correlation_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void request_instrument(self, Symbol symbol, UUID correlation_id) except *:
         """Abstract method (implement in subclass)."""
@@ -249,9 +364,8 @@ cdef class DataClient:
 
     cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            venue=self.venue,
-            data_type=Instrument,
-            metadata={},
+            provider=self.name,
+            data_type=DataType(Instrument),
             data=instruments,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -262,9 +376,8 @@ cdef class DataClient:
 
     cdef void _handle_quote_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            venue=self.venue,
-            data_type=QuoteTick,
-            metadata={SYMBOL: symbol},
+            provider=self.name,
+            data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -275,9 +388,8 @@ cdef class DataClient:
 
     cdef void _handle_trade_ticks(self, Symbol symbol, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            venue=self.venue,
-            data_type=TradeTick,
-            metadata={SYMBOL: symbol},
+            provider=self.name,
+            data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
@@ -288,9 +400,8 @@ cdef class DataClient:
 
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
-            venue=self.venue,
-            data_type=Bar,
-            metadata={BAR_TYPE: bar_type, "Partial": partial},
+            provider=self.name,
+            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type, "Partial": partial}),
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),

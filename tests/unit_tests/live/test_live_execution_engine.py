@@ -331,7 +331,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
         self.loop.run_until_complete(run_test())
 
     # TODO: WIP
-    # def test_resolve_state_with_multiple_active_orders_resolved_correctly1(self):
+    # def test_reconcile_state_with_multiple_active_orders_resolved_correctly1(self):
     #     async def run_test():
     #         # Arrange
     #         self.exec_engine.start()
@@ -393,7 +393,7 @@ class LiveExecutionEngineTests(unittest.TestCase):
     #         self.exec_engine.process(TestStubs.event_order_submitted(order2))
     #
     #         # Act
-    #         await self.exec_engine.resolve_state()
+    #         await self.exec_engine.reconcile_state()
     #         self.exec_engine.stop()
     #
     #     self.loop.run_until_complete(run_test())
