@@ -707,68 +707,100 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         self.assertEqual([], self.data_engine.subscribed_order_books)
 
-    def test_process_order_book_when_subscriber_then_sends_to_registered_handler(self):
-        pass
-        # TODO: WIP
-        # # Arrange
-        # self.data_engine.register_client(self.binance_client)
-        # self.binance_client.connect()
-        #
-        # handler = []
-        # subscribe = Subscribe(
-        #     provider=BINANCE.value,
-        #     data_type=Instrument,
-        #     metadata={"Symbol": ETHUSDT_BINANCE.symbol},
-        #     handler=handler.append,
-        #     command_id=self.uuid_factory.generate(),
-        #     command_timestamp=self.clock.utc_now(),
-        # )
-        #
-        # self.data_engine.execute(subscribe)
-        #
-        # # Act
-        # self.data_engine.process(ETHUSDT_BINANCE)
-        #
-        # # Assert
-        # self.assertEqual([ETHUSDT_BINANCE], handler)
+    def test_process_order_book_when_one_subscriber_then_sends_to_registered_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
 
-    def test_process_order_book_when_subscribers_then_sends_to_registered_handlers(self):
-        pass
-        # TODO: WIP
-        # # Arrange
-        # self.data_engine.register_client(self.binance_client)
-        # self.binance_client.connect()
-        #
-        # handler1 = []
-        # subscribe1 = Subscribe(
-        #     provider=BINANCE.value,
-        #     data_type=Instrument,
-        #     metadata={"Symbol": ETHUSDT_BINANCE.symbol},
-        #     handler=handler1.append,
-        #     command_id=self.uuid_factory.generate(),
-        #     command_timestamp=self.clock.utc_now(),
-        # )
-        #
-        # handler2 = []
-        # subscribe2 = Subscribe(
-        #     provider=BINANCE.value,
-        #     data_type=Instrument,
-        #     metadata={"Symbol": ETHUSDT_BINANCE.symbol},
-        #     handler=handler2.append,
-        #     command_id=self.uuid_factory.generate(),
-        #     command_timestamp=self.clock.utc_now(),
-        # )
-        #
-        # self.data_engine.execute(subscribe1)
-        # self.data_engine.execute(subscribe2)
-        #
-        # # Act
-        # self.data_engine.process(ETHUSDT_BINANCE)
-        #
-        # # Assert
-        # self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_instruments)
-        # self.assertEqual([ETHUSDT_BINANCE], handler1)
-        # self.assertEqual([ETHUSDT_BINANCE], handler2)
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            depth=25,
+            price_precision=2,
+            size_precision=5,
+            bids=[],
+            asks=[],
+            update_id=0,
+            timestamp=0,
+        )
+
+        handler = []
+        subscribe = Subscribe(
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, {
+                "Symbol": ETHUSDT_BINANCE.symbol,
+                "Level": 2,
+                "Depth": 25,
+                "Interval": 0,  # Streaming
+            }),
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Act
+        self.data_engine.process(order_book)
+
+        # Assert
+        self.assertEqual(order_book, handler[0])
+
+    def test_process_order_book_when_multiple_subscribers_then_sends_to_registered_handlers(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            depth=25,
+            price_precision=2,
+            size_precision=5,
+            bids=[],
+            asks=[],
+            update_id=0,
+            timestamp=0,
+        )
+
+        handler1 = []
+        subscribe1 = Subscribe(
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, {
+                "Symbol": ETHUSDT_BINANCE.symbol,
+                "Level": 2,
+                "Depth": 25,
+                "Interval": 0,  # Streaming
+            }),
+            handler=handler1.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        handler2 = []
+        subscribe2 = Subscribe(
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, {
+                "Symbol": ETHUSDT_BINANCE.symbol,
+                "Level": 2,
+                "Depth": 25,
+                "Interval": 0,  # Streaming
+            }),
+            handler=handler2.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe1)
+        self.data_engine.execute(subscribe2)
+
+        # Act
+        self.data_engine.process(order_book)
+
+        # Assert
+        self.assertEqual([ETHUSDT_BINANCE.symbol], self.data_engine.subscribed_order_books)
+        self.assertEqual(order_book, handler1[0])
+        self.assertEqual(order_book, handler2[0])
 
     def test_execute_subscribe_for_quote_ticks(self):
         # Arrange

@@ -15,7 +15,9 @@
 
 import unittest
 
+from nautilus_trader.data.base import Data
 from nautilus_trader.data.base import DataCacheFacade
+from nautilus_trader.data.base import DataType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -25,6 +27,30 @@ from tests.test_kit.stubs import TestStubs
 SIM = Venue("SIM")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("USD/JPY", SIM))
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
+
+
+class DataTypeTests(unittest.TestCase):
+
+    def test_data_type_instantiation(self):
+        # Arrange
+        # Act
+        data_type = DataType(str, {"Type": "NEWS_FLASH"})
+
+        # Assert
+        self.assertEqual(str, data_type.type)
+        self.assertEqual({"Type": "NEWS_FLASH"}, data_type.metadata)
+        self.assertEqual("<str> {'Type': 'NEWS_FLASH'}", str(data_type))
+        self.assertEqual("DataType(type=str, metadata={'Type': 'NEWS_FLASH'})", repr(data_type))
+
+    def test_data_instantiation(self):
+        # Arrange
+        # Act
+        data_type = DataType(str, {"Type": "NEWS_FLASH"})
+        data = Data(data_type, "SOME_NEWS_HEADLINE")
+
+        # Assert
+        self.assertEqual(data_type, data.data_type)
+        self.assertEqual("SOME_NEWS_HEADLINE", data.data)
 
 
 class DataCacheFacadeTests(unittest.TestCase):
