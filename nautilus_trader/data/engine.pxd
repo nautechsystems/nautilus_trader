@@ -20,6 +20,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
@@ -114,7 +115,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
-    cdef inline void _handle_custom_data(self, data) except *
+    cdef inline void _handle_custom_data(self, Data data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
