@@ -18,7 +18,7 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.client import DataClient
+from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.enums import OrderSide
@@ -38,7 +38,7 @@ SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
 
 
-class DataClientTests(unittest.TestCase):
+class MarketDataClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -59,8 +59,8 @@ class DataClientTests(unittest.TestCase):
 
         self.venue = Venue("SIM")
 
-        self.client = DataClient(
-            venue=self.venue,
+        self.client = MarketDataClient(
+            name=self.venue.value,
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,

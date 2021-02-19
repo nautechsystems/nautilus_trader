@@ -18,11 +18,11 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.data.base import DataType
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.serialization.base import CommandSerializer
@@ -71,9 +71,8 @@ class SerializationBaseTests(unittest.TestCase):
     def test_command_serializer_methods_raise_not_implemented_error(self):
         # Arrange
         command = Subscribe(
-            venue=Venue("SIM"),
-            data_type=QuoteTick,
-            metadata={},
+            provider="SIM",
+            data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=uuid4(),
             command_timestamp=UNIX_EPOCH,

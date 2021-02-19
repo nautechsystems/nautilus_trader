@@ -27,6 +27,16 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
+cdef class Data:
+    cdef DataType data_type
+    cdef object data
+
+
+cdef class DataType:
+    cdef type type
+    cdef dict metadata
+
+
 cdef class DataCacheFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------  # noqa

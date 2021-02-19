@@ -35,6 +35,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -382,7 +383,8 @@ cdef class ExecutionEngine(Component):
         self.cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {self._clock.unix_time() - ts:.3f}s.")
+        cdef long total_ns = round((self._clock.unix_time() - ts) * 1000000)
+        self._log.info(f"Loaded cache in {total_ns}μs.")
 
         # Update portfolio
         for account in self.cache.accounts():
@@ -623,8 +625,8 @@ cdef class ExecutionEngine(Component):
 
             # Set the correct ClientOrderId for the event
             event.cl_ord_id = cl_ord_id
-            self._log.warning(f"{repr(cl_ord_id)} was found in cache and "
-                              f"applying event to order with {repr(order.id)}.")
+            self._log.info(f"{repr(cl_ord_id)} was found in cache and "
+                              f"applying event to order with {repr(order.id)}.", LogColor.GREEN)
 
         if isinstance(event, OrderFilled):
             self._confirm_strategy_id(event)

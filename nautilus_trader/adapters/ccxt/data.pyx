@@ -28,7 +28,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport from_unix_time_ms
 from nautilus_trader.core.datetime cimport to_unix_time_ms
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.live.data_client cimport LiveDataClient
+from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarSpecification
@@ -40,7 +40,6 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport TradeMatchId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -52,7 +51,7 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
-cdef class CCXTDataClient(LiveDataClient):
+cdef class CCXTDataClient(LiveMarketDataClient):
     """
     Provides a data client for the unified CCXT Pro API.
     """
@@ -85,7 +84,7 @@ cdef class CCXTDataClient(LiveDataClient):
 
         """
         super().__init__(
-            Venue(client.name.upper()),
+            client.name.upper(),
             engine,
             clock,
             logger,

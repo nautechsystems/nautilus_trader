@@ -16,7 +16,7 @@
 import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
-from nautilus_trader.backtest.data_client import BacktestDataClient
+from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -92,9 +92,9 @@ class TraderTests(unittest.TestCase):
             logger=logger,
         )
 
-        self.data_client = BacktestDataClient(
+        self.data_client = BacktestMarketDataClient(
             instruments=[USDJPY_SIM],
-            venue=Venue("SIM"),
+            name="SIM",
             engine=self.data_engine,
             clock=clock,
             logger=logger,

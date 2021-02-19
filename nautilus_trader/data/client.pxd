@@ -19,11 +19,11 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -37,17 +37,34 @@ cdef class DataClient:
     cdef DataEngine _engine
     cdef dict _config
 
-    cdef readonly Venue venue
+    cdef readonly str name
     """The clients venue.\n\n:returns: `Venue`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
-
-    cpdef list unavailable_methods(self)
 
     cpdef void connect(self) except *
     cpdef void disconnect(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe(self, DataType data_type) except *
+    cpdef void unsubscribe(self, DataType data_type) except *
+
+# -- REQUEST HANDLERS ------------------------------------------------------------------------------
+
+    cpdef void request(self, DataType data_type, UUID correlation_id) except *
+
+# -- DATA HANDLERS ---------------------------------------------------------------------------------
+
+    cdef void _handle_data(self, DataType data_type, data) except *
+    cdef void _handle_data_response(self, DataType data_type, data, UUID correlation_id) except *
+
+
+cdef class MarketDataClient(DataClient):
+
+    cpdef list unavailable_methods(self)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 

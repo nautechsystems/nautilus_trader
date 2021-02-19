@@ -25,6 +25,66 @@ from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
+cdef class Data:
+    """
+    Represents wrapped data which includes data type information.
+    """
+
+    def __init__(self, DataType data_type not None, data not None):
+        """
+        Initialize a new instance of the `Data` class.
+
+        Parameters
+        ----------
+        data_type : DataType
+            The data type.
+        data : object
+            The data object to wrap.
+
+        """
+        self.data_type = data_type
+        self.data = data
+
+
+cdef class DataType:
+    """
+    Represents a data type including its metadata.
+    """
+
+    def __init__(self, type data_type not None, dict metadata=None):
+        """
+        Initialize a new instance of the `DataType` class.
+
+        Parameters
+        ----------
+        data_type : type
+            The PyObject type of the data.
+        metadata : dict
+            The data types metadata.
+
+        """
+        if metadata is None:
+            metadata = {}
+
+        self.type = data_type
+        self.metadata = metadata
+
+    def __eq__(self, DataType other) -> bool:
+        return self.type == other.type and self.metadata == other.metadata
+
+    def __ne__(self, DataType other) -> bool:
+        return self.type != other.type or self.metadata != other.metadata
+
+    def __hash__(self) -> int:
+        return hash((self.type, self.metadata))
+
+    def __str__(self) -> str:
+        return f"<{self.type.__name__}> {self.metadata}"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
+
+
 cdef class DataCacheFacade:
     """
     Provides a read-only facade for a `DataCache`.

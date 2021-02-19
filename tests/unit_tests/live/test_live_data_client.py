@@ -20,7 +20,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.live.data_client import LiveDataClient
+from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
@@ -33,7 +33,7 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class LiveDataClientTests(unittest.TestCase):
+class LiveMarketDataClientTests(unittest.TestCase):
 
     def setUp(self):
         # Fixture Setup
@@ -57,8 +57,8 @@ class LiveDataClientTests(unittest.TestCase):
             logger=self.logger,
         )
 
-        self.client = LiveDataClient(
-            venue=BINANCE,
+        self.client = LiveMarketDataClient(
+            name=BINANCE.value,
             engine=self.engine,
             clock=self.clock,
             logger=self.logger,

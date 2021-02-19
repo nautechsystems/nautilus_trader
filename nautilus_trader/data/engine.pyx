@@ -51,7 +51,9 @@ from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
+from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
@@ -64,7 +66,6 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.identifiers cimport Symbol
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instrument cimport Instrument
 from nautilus_trader.model.order_book cimport OrderBook
 from nautilus_trader.model.tick cimport QuoteTick
@@ -106,7 +107,7 @@ cdef class DataEngine(Component):
         super().__init__(clock, logger, name="DataEngine")
 
         self._use_previous_close = config.get("use_previous_close", True)
-        self._clients = {}               # type: dict[Venue, DataClient]
+        self._clients = {}               # type: dict[str, DataClient]
         self._correlation_index = {}     # type: dict[UUID, callable]
 
         # Handlers
@@ -115,7 +116,7 @@ cdef class DataEngine(Component):
         self._quote_tick_handlers = {}   # type: dict[Symbol, list[callable]]
         self._trade_tick_handlers = {}   # type: dict[Symbol, list[callable]]
         self._bar_handlers = {}          # type: dict[BarType, list[callable]]
-        self._data_handlers = {}         # type: dict[type, list[callable]]
+        self._data_handlers = {}         # type: dict[DataType, list[callable]]
 
         # Aggregators
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
@@ -136,13 +137,13 @@ cdef class DataEngine(Component):
         self._log.info(f"use_previous_close={self._use_previous_close}")
 
     @property
-    def registered_venues(self):
+    def registered_clients(self):
         """
-        The venues registered with the data engine.
+        The data clients registered with the data engine.
 
         Returns
         -------
-        list[Venue]
+        list[str]
 
         """
         return sorted(list(self._clients.keys()))
@@ -258,9 +259,9 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.not_in(client.venue, self._clients, "client", "self._clients")
+        Condition.not_in(client.name, self._clients, "client", "self._clients")
 
-        self._clients[client.venue] = client
+        self._clients[client.name] = client
 
         self._log.info(f"Registered {client}.")
 
@@ -291,9 +292,9 @@ cdef class DataEngine(Component):
 
         """
         Condition.not_none(client, "client")
-        Condition.is_in(client.venue, self._clients, "client.venue", "self._clients")
+        Condition.is_in(client.name, self._clients, "client.name", "self._clients")
 
-        del self._clients[client.venue]
+        del self._clients[client.name]
         self._log.info(f"Deregistered {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -415,10 +416,10 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        cdef DataClient client = self._clients.get(command.venue)
+        cdef DataClient client = self._clients.get(command.provider)
         if client is None:
             self._log.error(f"Cannot handle command "
-                            f"(no client registered for {command.venue}) {command}.")
+                            f"(no client registered for {command.provider}) {command}.")
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -429,78 +430,84 @@ cdef class DataEngine(Component):
             self._log.error(f"Cannot handle unrecognized command {command}.")
 
     cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *:
-        if command.data_type == Instrument:
+        if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
-                command.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SYMBOL),
                 command.handler,
             )
-        elif command.data_type == OrderBook:
+        elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book(
                 client,
-                command.metadata.get(SYMBOL),
-                command.metadata,
+                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata,
                 command.handler,
             )
-        elif command.data_type == QuoteTick:
+        elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
-                command.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SYMBOL),
                 command.handler,
             )
-        elif command.data_type == TradeTick:
+        elif command.data_type.type == TradeTick:
             self._handle_subscribe_trade_ticks(
                 client,
-                command.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SYMBOL),
                 command.handler,
             )
-        elif command.data_type == Bar:
+        elif command.data_type.type == Bar:
             self._handle_subscribe_bars(
                 client,
-                command.metadata.get(BAR_TYPE),
+                command.data_type.metadata.get(BAR_TYPE),
                 command.handler,
             )
         else:
-            self._log.error(f"Cannot subscribe to unrecognized data type {command.data_type}.")
+            try:
+                client.subscribe(command.data_type)
+            except NotImplementedError:
+                self._log.error(f"Cannot subscribe to unrecognized data type {command.data_type}.")
 
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
-        if command.data_type == Instrument:
+        if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
-                command.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SYMBOL),
                 command.handler,
             )
-        elif command.data_type == OrderBook:
+        elif command.data_type.type == OrderBook:
             self._handle_unsubscribe_order_book(
                 client,
-                command.metadata.get(SYMBOL),
-                command.metadata,
+                command.data_type.metadata.get(SYMBOL),
+                command.data_type.metadata,
                 command.handler,
             )
-        elif command.data_type == QuoteTick:
+        elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
                 client,
-                command.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SYMBOL),
                 command.handler,
             )
-        elif command.data_type == TradeTick:
+        elif command.data_type.type == TradeTick:
             self._handle_unsubscribe_trade_ticks(
                 client,
-                command.metadata.get(SYMBOL),
+                command.data_type.metadata.get(SYMBOL),
                 command.handler,
             )
-        elif command.data_type == Bar:
+        elif command.data_type.type == Bar:
             self._handle_unsubscribe_bars(
                 client,
-                command.metadata.get(BAR_TYPE),
+                command.data_type.metadata.get(BAR_TYPE),
                 command.handler,
             )
         else:
-            self._log.error(f"Cannot unsubscribe from unrecognized data type {command.data_type}.")
+            try:
+                client.unsubscribe(command.data_type)
+            except NotImplementedError:
+                self._log.error(f"Cannot subscribe to unrecognized data type {command.data_type}.")
 
     cdef inline void _handle_subscribe_instrument(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         handler: callable,
     ) except *:
@@ -522,7 +529,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_subscribe_order_book(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         dict metadata,
         handler: callable,
@@ -576,7 +583,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_subscribe_quote_ticks(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         handler: callable,
     ) except *:
@@ -599,7 +606,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_subscribe_trade_ticks(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         handler: callable,
     ) except *:
@@ -622,7 +629,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_subscribe_bars(
         self,
-        DataClient client,
+        MarketDataClient client,
         BarType bar_type,
         handler: callable,
     ) except *:
@@ -649,9 +656,32 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {bar_type} <Bar> data.")
 
-    cdef inline void _handle_unsubscribe_instrument(
+    cdef inline void _handle_subscribe_data(
         self,
         DataClient client,
+        DataType data_type,
+        handler: callable,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(data_type, "data_type")
+        Condition.callable(handler, "handler")
+
+        if data_type not in self._data_handlers:
+            # Setup handlers
+            self._data_handlers[data_type] = []  # type: list[callable]
+            client.subscribe(data_type)
+            self._log.info(f"Subscribed to {data_type} data.")
+
+        # Add handler for subscriber
+        if handler not in self._data_handlers[data_type]:
+            self._data_handlers[data_type].append(handler)
+            self._log.debug(f"Added {handler} for {data_type} data.")
+        else:
+            self._log.warning(f"Handler {handler} already subscribed to {data_type} data.")
+
+    cdef inline void _handle_unsubscribe_instrument(
+        self,
+        MarketDataClient client,
         Symbol symbol,
         handler: callable,
     ) except *:
@@ -678,7 +708,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_unsubscribe_order_book(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         dict metadata,
         handler: callable,
@@ -732,7 +762,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_unsubscribe_quote_ticks(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         handler: callable,
     ) except *:
@@ -759,7 +789,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_unsubscribe_trade_ticks(
         self,
-        DataClient client,
+        MarketDataClient client,
         Symbol symbol,
         handler: callable,
     ) except *:
@@ -786,7 +816,7 @@ cdef class DataEngine(Component):
 
     cdef inline void _handle_unsubscribe_bars(
         self,
-        DataClient client,
+        MarketDataClient client,
         BarType bar_type,
         handler: callable,
     ) except *:
@@ -814,16 +844,43 @@ cdef class DataEngine(Component):
                 client.unsubscribe_bars(bar_type)
             self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
 
+    cdef inline void _handle_unsubscribe_data(
+        self,
+        DataClient client,
+        DataType data_type,
+        handler: callable,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(data_type, "data_type")
+        Condition.callable(handler, "handler")
+
+        if data_type not in self._data_handlers:
+            self._log.warning(f"Handler {handler} not subscribed to {data_type} data.")
+            return
+
+        # Remove subscribers handler
+        if handler in self._data_handlers[data_type]:
+            self._data_handlers[data_type].remove(handler)
+            self._log.debug(f"Removed handler {handler} for {data_type} data.")
+        else:
+            self._log.warning(f"Handler {handler} not subscribed to {data_type} data.")
+
+        if not self._data_handlers[data_type]:
+            # No more handlers for data type
+            del self._data_handlers[data_type]
+            client.unsubscribe(data_type)
+            self._log.info(f"Unsubscribed from {data_type} data.")
+
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
     cdef inline void _handle_request(self, DataRequest request) except *:
         self._log.debug(f"{RECV}{REQ} {request}.")
         self.request_count += 1
 
-        cdef DataClient client = self._clients.get(request.venue)
+        cdef DataClient client = self._clients.get(request.provider)
         if client is None:
             self._log.error(f"Cannot handle request "
-                            f"(no client registered for {request.venue}) {request}.")
+                            f"(no client registered for {request.provider}) {request}.")
             return  # No client to handle request
 
         if request.id in self._correlation_index:
@@ -833,44 +890,49 @@ cdef class DataEngine(Component):
 
         self._correlation_index[request.id] = request.callback
 
-        if request.data_type == Instrument:
-            symbol = request.metadata.get(SYMBOL)
+        if request.data_type.type == Instrument:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            symbol = request.data_type.metadata.get(SYMBOL)
             if symbol:
                 client.request_instrument(symbol, request.id)
             else:
                 client.request_instruments(request.id)
-        elif request.data_type == QuoteTick:
+        elif request.data_type.type == QuoteTick:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
-                request.metadata.get(SYMBOL),
-                request.metadata.get(FROM_DATETIME),
-                request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT, 0),
+                request.data_type.metadata.get(SYMBOL),
+                request.data_type.metadata.get(FROM_DATETIME),
+                request.data_type.metadata.get(TO_DATETIME),
+                request.data_type.metadata.get(LIMIT, 0),
                 request.id,
             )
-        elif request.data_type == TradeTick:
+        elif request.data_type.type == TradeTick:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_trade_ticks(
-                request.metadata.get(SYMBOL),
-                request.metadata.get(FROM_DATETIME),
-                request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT, 0),
+                request.data_type.metadata.get(SYMBOL),
+                request.data_type.metadata.get(FROM_DATETIME),
+                request.data_type.metadata.get(TO_DATETIME),
+                request.data_type.metadata.get(LIMIT, 0),
                 request.id,
             )
-        elif request.data_type == Bar:
+        elif request.data_type.type == Bar:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_bars(
-                request.metadata.get(BAR_TYPE),
-                request.metadata.get(FROM_DATETIME),
-                request.metadata.get(TO_DATETIME),
-                request.metadata.get(LIMIT, 0),
+                request.data_type.metadata.get(BAR_TYPE),
+                request.data_type.metadata.get(FROM_DATETIME),
+                request.data_type.metadata.get(TO_DATETIME),
+                request.data_type.metadata.get(LIMIT, 0),
                 request.id,
             )
         else:
-            self._log.error(f"Cannot handle request "
-                            f"(data type {request.data_type} is unrecognized).")
+            try:
+                client.request(request.data_type, request.id)
+            except NotImplementedError:
+                self._log.error(f"Cannot handle request ({request.data_type} is unrecognized).")
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef inline void _handle_data(self, data) except *:
-        # Not logging every data item received
         self.data_count += 1
 
         if isinstance(data, OrderBook):
@@ -948,17 +1010,17 @@ cdef class DataEngine(Component):
         self._log.debug(f"{RECV}{RES} {response}.")
         self.response_count += 1
 
-        if response.data_type == Instrument:
+        if response.data_type.type == Instrument:
             self._handle_instruments(response.data, response.correlation_id)
-        elif response.data_type == QuoteTick:
+        elif response.data_type.type == QuoteTick:
             self._handle_quote_ticks(response.data, response.correlation_id)
-        elif response.data_type == TradeTick:
+        elif response.data_type.type == TradeTick:
             self._handle_trade_ticks(response.data, response.correlation_id)
-        elif response.data_type == Bar:
+        elif response.data_type.type == Bar:
             self._handle_bars(
-                response.metadata.get(BAR_TYPE),
+                response.data_type.metadata.get(BAR_TYPE),
                 response.data,
-                response.metadata.get("Partial"),
+                response.data_type.metadata.get("Partial"),
                 response.correlation_id,
             )
         else:
@@ -1051,7 +1113,7 @@ cdef class DataEngine(Component):
             for handler in handlers:
                 handler(order_book)
 
-    cdef inline void _start_bar_aggregator(self, DataClient client, BarType bar_type) except *:
+    cdef inline void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         if bar_type.spec.is_time_aggregated():
             # Create aggregator
             aggregator = TimeBarAggregator(
@@ -1098,30 +1160,31 @@ cdef class DataEngine(Component):
 
     cdef inline void _hydrate_aggregator(
         self,
-        DataClient client,
+        MarketDataClient client,
         TimeBarAggregator aggregator,
         BarType bar_type,
     ) except *:
-        data_type = TradeTick if bar_type.spec.price_type == PriceType.LAST else QuoteTick
+        data_type = type(TradeTick) if bar_type.spec.price_type == PriceType.LAST else QuoteTick
 
-        if data_type == TradeTick and "request_trade_ticks" in client.unavailable_methods():
+        if data_type == type(TradeTick) and "request_trade_ticks" in client.unavailable_methods():
             return
-        elif data_type == QuoteTick and "request_quote_ticks" in client.unavailable_methods():
+        elif data_type == type(QuoteTick) and "request_quote_ticks" in client.unavailable_methods():
             return
 
         # Update aggregator with latest data
         bulk_updater = BulkTimeBarUpdater(aggregator)
 
+        metadata = {
+            SYMBOL: bar_type.symbol,
+            FROM_DATETIME: aggregator.get_start_time(),
+            TO_DATETIME: None,
+        }
+
         # noinspection bulk_updater.receive
         # noinspection PyUnresolvedReferences
         request = DataRequest(
-            venue=bar_type.symbol.venue,
-            data_type=data_type,
-            metadata={
-                SYMBOL: bar_type.symbol,
-                FROM_DATETIME: aggregator.get_start_time(),
-                TO_DATETIME: None,
-            },
+            provider=bar_type.symbol.venue.value,
+            data_type=DataType(data_type, metadata),
             callback=bulk_updater.receive,
             request_id=self._uuid_factory.generate(),
             request_timestamp=self._clock.utc_now_c(),
@@ -1130,7 +1193,7 @@ cdef class DataEngine(Component):
         # Send request directly to handler as we're already inside engine
         self._handle_request(request)
 
-    cdef inline void _stop_bar_aggregator(self, DataClient client, BarType bar_type) except *:
+    cdef inline void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef aggregator = self._bar_aggregators.get(bar_type)
         if aggregator is None:
             self._log.warning(f"No bar aggregator to stop for {bar_type}")
