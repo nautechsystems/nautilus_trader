@@ -15,11 +15,12 @@
 
 import unittest
 
-from nautilus_trader.backtest.data_client import BacktestDataClient
+from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
+from nautilus_trader.data.base import DataType
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataRequest
@@ -77,17 +78,17 @@ class DataEngineTests(unittest.TestCase):
 
         self.portfolio.register_cache(self.data_engine.cache)
 
-        self.binance_client = BacktestDataClient(
+        self.binance_client = BacktestMarketDataClient(
             instruments=[BTCUSDT_BINANCE, ETHUSDT_BINANCE],
-            venue=BINANCE,
+            name=BINANCE.value,
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.bitmex_client = BacktestDataClient(
+        self.bitmex_client = BacktestMarketDataClient(
             instruments=[XBTUSD_BITMEX],
-            venue=BITMEX,
+            name=BITMEX.value,
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -97,7 +98,7 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.data_engine.registered_venues)
+        self.assertEqual([], self.data_engine.registered_clients)
 
     def test_subscribed_instruments_when_nothing_subscribed_returns_empty_list(self):
         # Arrange
@@ -129,7 +130,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.register_client(self.binance_client)
 
         # Assert
-        self.assertIn(BINANCE, self.data_engine.registered_venues)
+        self.assertIn(BINANCE.value, self.data_engine.registered_clients)
 
     def test_deregister_client_successfully_removes_client(self):
         # Arrange
@@ -139,7 +140,7 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.deregister_client(self.binance_client)
 
         # Assert
-        self.assertNotIn(BINANCE, self.data_engine.registered_venues)
+        self.assertNotIn(BINANCE.value, self.data_engine.registered_clients)
 
     def test_register_strategy_successfully_registered_with_strategy(self):
         # Arrange
@@ -266,9 +267,8 @@ class DataEngineTests(unittest.TestCase):
 
         # Bogus message
         command = DataCommand(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -284,14 +284,13 @@ class DataEngineTests(unittest.TestCase):
         # Arrange
         handler = []
         request = DataRequest(
-            venue=Venue("RANDOM"),
-            data_type=QuoteTick,
-            metadata={
+            provider="RANDOM",
+            data_type=DataType(QuoteTick, metadata={
                 "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
-            },
+            }),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
@@ -309,14 +308,13 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         request = DataRequest(
-            venue=BINANCE,
-            data_type=str,  # str data type is invalid
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(str, metadata={  # str data type is invalid
                 "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
-            },
+            }),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
@@ -336,28 +334,26 @@ class DataEngineTests(unittest.TestCase):
         uuid = self.uuid_factory.generate()  # We'll use this as a duplicate
 
         request1 = DataRequest(
-            venue=BINANCE,
-            data_type=QuoteTick,  # str data type is invalid
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={  # str data type is invalid
                 "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
-            },
+            }),
             callback=handler.append,
             request_id=uuid,  # Duplicate
             request_timestamp=self.clock.utc_now(),
         )
 
         request2 = DataRequest(
-            venue=BINANCE,
-            data_type=QuoteTick,  # str data type is invalid
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={  # str data type is invalid
                 "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
-            },
+            }),
             callback=handler.append,
             request_id=uuid,  # Duplicate
             request_timestamp=self.clock.utc_now(),
@@ -375,9 +371,8 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.register_client(self.binance_client)
 
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=str,  # str data type is invalid
-            metadata={},  # Invalid anyway
+            provider=BINANCE.value,
+            data_type=DataType(str),  # str data type is invalid
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -395,9 +390,8 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -416,9 +410,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=str,  # str data type is invalid
-            metadata={},  # Invalid anyway
+            provider=BINANCE.value,
+            data_type=DataType(type(str)),  # str data type is invalid
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -437,9 +430,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(type(QuoteTick), metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -454,9 +446,8 @@ class DataEngineTests(unittest.TestCase):
     def test_receive_response_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         response = DataResponse(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
@@ -493,9 +484,8 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=Instrument,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(Instrument, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -514,9 +504,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=Instrument,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(Instrument, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -525,9 +514,8 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.execute(subscribe)
 
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=Instrument,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(Instrument, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -546,9 +534,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=Instrument,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(Instrument, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -569,9 +556,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler1 = []
         subscribe1 = Subscribe(
-            venue=BINANCE,
-            data_type=Instrument,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(Instrument, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -579,9 +565,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler2 = []
         subscribe2 = Subscribe(
-            venue=BINANCE,
-            data_type=Instrument,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(Instrument, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -604,14 +589,13 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=OrderBook,
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, metadata={
                 "Symbol": ETHUSDT_BINANCE.symbol,
                 "Level": 2,
                 "Depth": 10,
                 "Interval": 0,
-            },
+            }),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -629,14 +613,13 @@ class DataEngineTests(unittest.TestCase):
         self.binance_client.connect()
 
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=OrderBook,
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, metadata={
                 "Symbol": ETHUSDT_BINANCE.symbol,
                 "Level": 2,
                 "Depth": 25,
                 "Interval": 10,
-            },
+            }),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -655,14 +638,13 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=OrderBook,
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, metadata={
                 "Symbol": ETHUSDT_BINANCE.symbol,
                 "Level": 2,
                 "Depth": 25,
                 "Interval": 0,
-            },
+            }),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -671,12 +653,11 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.execute(subscribe)
 
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=OrderBook,
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, metadata={
                 "Symbol": ETHUSDT_BINANCE.symbol,
                 "Interval": 0,
-            },
+            }),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -695,14 +676,13 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=OrderBook,
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, metadata={
                 "Symbol": ETHUSDT_BINANCE.symbol,
                 "Level": 2,
                 "Depth": 25,
                 "Interval": 10,
-            },
+            }),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -711,12 +691,11 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.execute(subscribe)
 
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=OrderBook,
-            metadata={
+            provider=BINANCE.value,
+            data_type=DataType(OrderBook, metadata={
                 "Symbol": ETHUSDT_BINANCE.symbol,
                 "Interval": 10,
-            },
+            }),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -730,13 +709,14 @@ class DataEngineTests(unittest.TestCase):
 
     def test_process_order_book_when_subscriber_then_sends_to_registered_handler(self):
         pass
+        # TODO: WIP
         # # Arrange
         # self.data_engine.register_client(self.binance_client)
         # self.binance_client.connect()
         #
         # handler = []
         # subscribe = Subscribe(
-        #     venue=BINANCE,
+        #     provider=BINANCE.value,
         #     data_type=Instrument,
         #     metadata={"Symbol": ETHUSDT_BINANCE.symbol},
         #     handler=handler.append,
@@ -754,13 +734,14 @@ class DataEngineTests(unittest.TestCase):
 
     def test_process_order_book_when_subscribers_then_sends_to_registered_handlers(self):
         pass
+        # TODO: WIP
         # # Arrange
         # self.data_engine.register_client(self.binance_client)
         # self.binance_client.connect()
         #
         # handler1 = []
         # subscribe1 = Subscribe(
-        #     venue=BINANCE,
+        #     provider=BINANCE.value,
         #     data_type=Instrument,
         #     metadata={"Symbol": ETHUSDT_BINANCE.symbol},
         #     handler=handler1.append,
@@ -770,7 +751,7 @@ class DataEngineTests(unittest.TestCase):
         #
         # handler2 = []
         # subscribe2 = Subscribe(
-        #     venue=BINANCE,
+        #     provider=BINANCE.value,
         #     data_type=Instrument,
         #     metadata={"Symbol": ETHUSDT_BINANCE.symbol},
         #     handler=handler2.append,
@@ -796,9 +777,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -816,9 +796,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -827,9 +806,8 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.execute(subscribe)
 
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -848,9 +826,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -881,9 +858,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler1 = []
         subscribe1 = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -891,9 +867,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler2 = []
         subscribe2 = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -926,9 +901,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=TradeTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(TradeTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -947,9 +921,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=TradeTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(TradeTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -958,9 +931,8 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.execute(subscribe)
 
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=TradeTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(TradeTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -979,9 +951,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = []
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=TradeTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(TradeTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1011,9 +982,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler1 = []
         subscribe1 = Subscribe(
-            venue=BINANCE,
-            data_type=TradeTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(TradeTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler1.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1021,9 +991,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler2 = []
         subscribe2 = Subscribe(
-            venue=BINANCE,
-            data_type=TradeTick,
-            metadata={"Symbol": ETHUSDT_BINANCE.symbol},
+            provider=BINANCE.value,
+            data_type=DataType(TradeTick, metadata={"Symbol": ETHUSDT_BINANCE.symbol}),
             handler=handler2.append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1058,9 +1027,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = ObjectStorer()
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=Bar,
-            metadata={"BarType": bar_type},
+            provider=BINANCE.value,
+            data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1082,9 +1050,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = ObjectStorer()
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=Bar,
-            metadata={"BarType": bar_type},
+            provider=BINANCE.value,
+            data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1093,9 +1060,8 @@ class DataEngineTests(unittest.TestCase):
         self.data_engine.execute(subscribe)
 
         unsubscribe = Unsubscribe(
-            venue=BINANCE,
-            data_type=Bar,
-            metadata={"BarType": bar_type},
+            provider=BINANCE.value,
+            data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1117,9 +1083,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler = ObjectStorer()
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=Bar,
-            metadata={"BarType": bar_type},
+            provider=BINANCE.value,
+            data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler.store_2,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1154,9 +1119,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler1 = ObjectStorer()
         subscribe1 = Subscribe(
-            venue=BINANCE,
-            data_type=Bar,
-            metadata={"BarType": bar_type},
+            provider=BINANCE.value,
+            data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler1.store_2,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -1164,9 +1128,8 @@ class DataEngineTests(unittest.TestCase):
 
         handler2 = ObjectStorer()
         subscribe2 = Subscribe(
-            venue=BINANCE,
-            data_type=Bar,
-            metadata={"BarType": bar_type},
+            provider=BINANCE.value,
+            data_type=DataType(Bar, metadata={"BarType": bar_type}),
             handler=handler2.store_2,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),

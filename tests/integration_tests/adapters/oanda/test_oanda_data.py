@@ -25,6 +25,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.data.base import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.bar import Bar
@@ -289,14 +290,13 @@ class OandaDataClientTests(unittest.TestCase):
             bar_type = BarType(symbol=AUDUSD, bar_spec=bar_spec)
 
             request = DataRequest(
-                venue=OANDA,
-                data_type=Bar,
-                metadata={
+                provider=OANDA.value,
+                data_type=DataType(Bar, metadata={
                     "BarType": bar_type,
                     "FromDateTime": None,
                     "ToDateTime": None,
                     "Limit": 1000,
-                },
+                }),
                 callback=handler.store_2,
                 request_id=self.uuid_factory.generate(),
                 request_timestamp=self.clock.utc_now(),

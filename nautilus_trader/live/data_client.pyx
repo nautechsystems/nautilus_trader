@@ -19,8 +19,8 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.client cimport DataClient
+from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class LiveDataClient(DataClient):
@@ -32,7 +32,7 @@ cdef class LiveDataClient(DataClient):
 
     def __init__(
         self,
-        Venue venue not None,
+        str name not None,
         LiveDataEngine engine not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -43,8 +43,8 @@ cdef class LiveDataClient(DataClient):
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the client.
+        name : str
+            The data client name.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -56,7 +56,50 @@ cdef class LiveDataClient(DataClient):
 
         """
         super().__init__(
-            venue,
+            name,
+            engine,
+            clock,
+            logger,
+            config,
+        )
+
+        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
+
+
+cdef class LiveMarketDataClient(MarketDataClient):
+    """
+    The abstract base class for all live data clients.
+
+    This class should not be used directly, but through its concrete subclasses.
+    """
+
+    def __init__(
+            self,
+            str name not None,
+            LiveDataEngine engine not None,
+            LiveClock clock not None,
+            Logger logger not None,
+            dict config=None,
+    ):
+        """
+        Initialize a new instance of the `LiveMarketDataClient` class.
+
+        Parameters
+        ----------
+        name : str
+            The data client name.
+        engine : LiveDataEngine
+            The data engine for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : Logger
+            The logger for the client.
+        config : dict[str, object], optional
+            The configuration options.
+
+        """
+        super().__init__(
+            name,
             engine,
             clock,
             logger,
