@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -41,7 +42,14 @@ cdef class Data:
         data : object
             The data object to wrap.
 
+        Raises
+        ------
+        ValueError
+            If type(data) is not of type data_type.type.
+
         """
+        Condition.type(data, data_type.type, "data")
+
         self.data_type = data_type
         self.data = data
 
