@@ -1582,6 +1582,27 @@ class TradingStrategyTests(unittest.TestCase):
         self.assertEqual([], self.data_engine.subscribed_bars)
         self.assertEqual(2, self.data_engine.command_count)
 
+    def test_request_data_sends_request_to_data_engine(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
+
+        # Act
+        strategy.request_data("BLOOMBERG-01", data_type)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.request_count)
+
     def test_request_quote_ticks_sends_request_to_data_engine(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()

@@ -24,11 +24,14 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.cache cimport DataCacheFacade
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.messages cimport DataCommand
+from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.execution.base cimport ExecutionCacheFacade
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -141,6 +144,7 @@ cdef class TradingStrategy(Component):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
+    cpdef void request_data(self, str provider, DataType data_type) except *
     cpdef void request_quote_ticks(
         self,
         Symbol symbol,
@@ -184,3 +188,9 @@ cdef class TradingStrategy(Component):
     cpdef void handle_event(self, Event event) except *
 
     cdef void handle_event_c(self, Event event) except *
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _send_data_cmd(self, DataCommand command) except *
+    cdef inline void _send_data_req(self, DataRequest request) except *
+    cdef inline void _send_exec_cmd(self, TradingCommand command) except *

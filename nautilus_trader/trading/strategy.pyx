@@ -41,6 +41,8 @@ from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.logging cimport REQ
+from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
@@ -731,9 +733,10 @@ cdef class TradingStrategy(Component):
             The data type to subscribe to.
 
         """
-        Condition.not_none(data_type, "data_type")
+        Condition.valid_string(provider, "provider")
+        Condition.not_none(self._data_engine, "data_client")
 
-        cdef Subscribe subscribe = Subscribe(
+        cdef Subscribe command = Subscribe(
             provider=provider,
             data_type=data_type,
             handler=self.handle_data,
@@ -741,9 +744,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(subscribe)
-
-        self.log.info(f"Subscribed to {data_type} data.")
+        self._send_data_cmd(command)
 
     cpdef void subscribe_instrument(self, Symbol symbol) except *:
         """
@@ -758,7 +759,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
 
-        cdef Subscribe subscribe = Subscribe(
+        cdef Subscribe command = Subscribe(
             provider=symbol.venue.value,
             data_type=DataType(Instrument, metadata={SYMBOL: symbol}),
             handler=self.handle_instrument,
@@ -766,9 +767,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(subscribe)
-
-        self.log.info(f"Subscribed to {symbol} <Instrument> data.")
+        self._send_data_cmd(command)
 
     cpdef void subscribe_order_book(
         self,
@@ -818,7 +817,7 @@ cdef class TradingStrategy(Component):
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval, "interval")
 
-        cdef Subscribe subscribe = Subscribe(
+        cdef Subscribe command = Subscribe(
             provider=symbol.venue.value,
             data_type=DataType(OrderBook, metadata={
                 SYMBOL: symbol,
@@ -832,9 +831,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(subscribe)
-
-        self.log.info(f"Subscribed to {symbol} <OrderBook> data.")
+        self._send_data_cmd(command)
 
     cpdef void subscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -849,7 +846,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        cdef Subscribe subscribe = Subscribe(
+        cdef Subscribe command = Subscribe(
             provider=symbol.venue.value,
             data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
             handler=self.handle_quote_tick,
@@ -857,9 +854,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(subscribe)
-
-        self.log.info(f"Subscribed to {symbol} <QuoteTick> data.")
+        self._send_data_cmd(command)
 
     cpdef void subscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -874,7 +869,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
 
-        cdef Subscribe subscribe = Subscribe(
+        cdef Subscribe command = Subscribe(
             provider=symbol.venue.value,
             data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
             handler=self.handle_trade_tick,
@@ -882,9 +877,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(subscribe)
-
-        self.log.info(f"Subscribed to {symbol} <TradeTick> data.")
+        self._send_data_cmd(command)
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """
@@ -899,7 +892,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_client")
 
-        cdef Subscribe subscribe = Subscribe(
+        cdef Subscribe command = Subscribe(
             provider=bar_type.symbol.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
@@ -907,9 +900,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(subscribe)
-
-        self.log.info(f"Subscribed to {bar_type} <Bar> data.")
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_data(self, str provider, DataType data_type) except *:
         """
@@ -923,9 +914,10 @@ cdef class TradingStrategy(Component):
             The data type to unsubscribe from.
 
         """
-        Condition.not_none(data_type, "data_type")
+        Condition.valid_string(provider, "provider")
+        Condition.not_none(self._data_engine, "data_client")
 
-        cdef Unsubscribe unsubscribe = Unsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             provider=provider,
             data_type=data_type,
             handler=self.handle_data,
@@ -933,9 +925,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(unsubscribe)
-
-        self.log.info(f"Unsubscribed to {data_type} data.")
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_instrument(self, Symbol symbol) except *:
         """
@@ -950,7 +940,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        cdef Unsubscribe unsubscribe = Unsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             provider=symbol.venue.value,
             data_type=DataType(Instrument, metadata={SYMBOL: symbol}),
             handler=self.handle_instrument,
@@ -958,9 +948,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(unsubscribe)
-
-        self.log.info(f"Unsubscribed from {symbol} <Instrument> data.")
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_order_book(self, Symbol symbol, int interval=0) except *:
         """
@@ -980,7 +968,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self._data_engine, "data_client")
         Condition.not_none(symbol, "symbol")
 
-        cdef Unsubscribe unsubscribe = Unsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             provider=symbol.venue.value,
             data_type=DataType(OrderBook, metadata={
                 SYMBOL: symbol,
@@ -991,9 +979,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(unsubscribe)
-
-        self.log.info(f"Unsubscribed from {symbol} <OrderBook> data.")
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_quote_ticks(self, Symbol symbol) except *:
         """
@@ -1008,7 +994,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_client")
 
-        cdef Unsubscribe unsubscribe = Unsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             provider=symbol.venue.value,
             data_type=DataType(QuoteTick, metadata={SYMBOL: symbol}),
             handler=self.handle_quote_tick,
@@ -1016,9 +1002,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(unsubscribe)
-
-        self.log.info(f"Unsubscribed from {symbol} <QuoteTick> data.")
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_trade_ticks(self, Symbol symbol) except *:
         """
@@ -1033,7 +1017,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(symbol, "symbol")
         Condition.not_none(self._data_engine, "data_engine")
 
-        cdef Unsubscribe unsubscribe = Unsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             provider=symbol.venue.value,
             data_type=DataType(TradeTick, metadata={SYMBOL: symbol}),
             handler=self.handle_trade_tick,
@@ -1041,9 +1025,7 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(unsubscribe)
-
-        self.log.info(f"Unsubscribed from {symbol} <TradeTick> data.")
+        self._send_data_cmd(command)
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """
@@ -1058,7 +1040,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(self._data_engine, "data_engine")
 
-        cdef Unsubscribe unsubscribe = Unsubscribe(
+        cdef Unsubscribe command = Unsubscribe(
             provider=bar_type.symbol.venue.value,
             data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
             handler=self.handle_bar,
@@ -1066,11 +1048,34 @@ cdef class TradingStrategy(Component):
             command_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.execute(unsubscribe)
-
-        self.log.info(f"Unsubscribed from {bar_type} <Bar> data.")
+        self._send_data_cmd(command)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
+
+    cpdef void request_data(self, str provider, DataType data_type) except *:
+        """
+        Request custom data for the given data type from the given provider.
+
+        Parameters
+        ----------
+        provider : str
+            The data client name.
+        data_type : DataType
+            The data type for the request.
+
+        """
+        Condition.valid_string(provider, "provider")
+        Condition.not_none(self._data_engine, "data_engine")
+
+        cdef DataRequest request = DataRequest(
+            provider=provider,
+            data_type=data_type,
+            callback=self.handle_data,
+            request_id=self.uuid_factory.generate_c(),
+            request_timestamp=self.clock.utc_now_c(),
+        )
+
+        self._send_data_req(request)
 
     cpdef void request_quote_ticks(
         self,
@@ -1116,7 +1121,7 @@ cdef class TradingStrategy(Component):
             request_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.send(request)
+        self._send_data_req(request)
 
     cpdef void request_trade_ticks(
         self,
@@ -1162,7 +1167,7 @@ cdef class TradingStrategy(Component):
             request_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.send(request)
+        self._send_data_req(request)
 
     cpdef void request_bars(
         self,
@@ -1208,7 +1213,7 @@ cdef class TradingStrategy(Component):
             request_timestamp=self.clock.utc_now_c(),
         )
 
-        self._data_engine.send(request)
+        self._send_data_req(request)
 
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
@@ -1253,8 +1258,7 @@ cdef class TradingStrategy(Component):
             self.clock.utc_now_c(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute(command)
+        self._send_exec_cmd(command)
 
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
         """
@@ -1289,8 +1293,7 @@ cdef class TradingStrategy(Component):
             self.clock.utc_now_c(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute(command)
+        self._send_exec_cmd(command)
 
     cpdef void amend_order(
         self,
@@ -1364,8 +1367,7 @@ cdef class TradingStrategy(Component):
             self.clock.utc_now_c(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute(command)
+        self._send_exec_cmd(command)
 
     cpdef void cancel_order(self, Order order) except *:
         """
@@ -1402,8 +1404,7 @@ cdef class TradingStrategy(Component):
             self.clock.utc_now_c(),
         )
 
-        self.log.info(f"{CMD}{SENT} {command}.")
-        self._exec_engine.execute(command)
+        self._send_exec_cmd(command)
 
     cpdef void cancel_all_orders(self, Symbol symbol) except *:
         """
@@ -1466,7 +1467,7 @@ cdef class TradingStrategy(Component):
         )
 
         # Create command
-        cdef SubmitOrder submit_order = SubmitOrder(
+        cdef SubmitOrder command = SubmitOrder(
             position.symbol.venue,
             self.trader_id,
             position.account_id,
@@ -1477,8 +1478,7 @@ cdef class TradingStrategy(Component):
             self.clock.utc_now_c(),
         )
 
-        self.log.info(f"{CMD}{SENT} {submit_order}.")
-        self._exec_engine.execute(submit_order)
+        self._send_exec_cmd(command)
 
     cpdef void flatten_all_positions(self, Symbol symbol) except *:
         """
@@ -1825,3 +1825,20 @@ cdef class TradingStrategy(Component):
             except Exception as ex:
                 self.log.exception(ex)
                 raise
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _send_data_cmd(self, DataCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._data_engine.execute(command)
+
+    cdef inline void _send_data_req(self, DataRequest request) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{REQ}{SENT} {request}.")
+        self._data_engine.send(request)
+
+    cdef inline void _send_exec_cmd(self, TradingCommand command) except *:
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._exec_engine.execute(command)
