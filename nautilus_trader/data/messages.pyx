@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.data.base cimport DataType
 
 
 cdef class DataCommand(Command):
@@ -27,9 +28,8 @@ cdef class DataCommand(Command):
 
     def __init__(
         self,
-        Venue venue not None,
-        type data_type not None,
-        dict metadata not None,
+        str provider not None,
+        DataType data_type not None,
         handler not None: callable,
         UUID command_id not None,
         datetime command_timestamp not None,
@@ -38,12 +38,10 @@ cdef class DataCommand(Command):
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        provider : str
+            The data client name for the command.
         data_type : type
             The data type for the command.
-        metadata : type
-            The metadata for the command.
         handler : callable
             The handler for the command.
         command_id : UUID
@@ -54,16 +52,14 @@ cdef class DataCommand(Command):
         """
         super().__init__(command_id, command_timestamp)
 
-        self.venue = venue
+        self.provider = provider
         self.data_type = data_type
-        self.metadata = metadata
         self.handler = handler
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"data_type={self.data_type.__name__}, "
-                f"metadata={self.metadata}, "
+                f"provider={self.provider}, "
+                f"data_type={self.data_type}, "
                 f"handler={self.handler}, "
                 f"id={self.id}, "
                 f"timestamp={self.timestamp})")
@@ -76,9 +72,8 @@ cdef class Subscribe(DataCommand):
 
     def __init__(
         self,
-        Venue venue not None,
-        type data_type not None,
-        dict metadata not None,
+        str provider not None,
+        DataType data_type not None,
         handler not None: callable,
         UUID command_id not None,
         datetime command_timestamp not None,
@@ -88,12 +83,10 @@ cdef class Subscribe(DataCommand):
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        provider : str
+            The data client name for the command.
         data_type : type
             The data type for the subscription.
-        metadata : type
-            The metadata for the subscription.
         handler : callable
             The handler for the subscription.
         command_id : UUID
@@ -103,9 +96,8 @@ cdef class Subscribe(DataCommand):
 
         """
         super().__init__(
-            venue,
+            provider,
             data_type,
-            metadata,
             handler,
             command_id,
             command_timestamp,
@@ -119,9 +111,8 @@ cdef class Unsubscribe(DataCommand):
 
     def __init__(
         self,
-        Venue venue not None,
-        type data_type not None,
-        dict metadata not None,
+        str provider not None,
+        DataType data_type not None,
         handler not None: callable,
         UUID command_id not None,
         datetime command_timestamp not None,
@@ -131,12 +122,10 @@ cdef class Unsubscribe(DataCommand):
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the command.
+        provider : str
+            The data client name for the command.
         data_type : type
             The data type to unsubscribe from.
-        metadata : type
-            The metadata of the subscription.
         handler : callable
             The handler for the subscription.
         command_id : UUID
@@ -146,9 +135,8 @@ cdef class Unsubscribe(DataCommand):
 
         """
         super().__init__(
-            venue,
+            provider,
             data_type,
-            metadata,
             handler,
             command_id,
             command_timestamp,
@@ -162,9 +150,8 @@ cdef class DataRequest(Request):
 
     def __init__(
         self,
-        Venue venue not None,
-        type data_type not None,
-        dict metadata not None,
+        str provider not None,
+        DataType data_type not None,
         callback not None: callable,
         UUID request_id not None,
         datetime request_timestamp not None,
@@ -174,12 +161,10 @@ cdef class DataRequest(Request):
 
         Parameters
         ----------
-        venue : Venue
-            The venue for the request.
+        provider : str
+            The data client name for the request.
         data_type : type
             The data type for the request.
-        metadata : type
-            The metadata for the request.
         callback : callable
             The callback to receive the data.
         request_id : UUID
@@ -193,16 +178,14 @@ cdef class DataRequest(Request):
             request_timestamp,
         )
 
-        self.venue = venue
+        self.provider = provider
         self.data_type = data_type
-        self.metadata = metadata
         self.callback = callback
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"data_type={self.data_type.__name__}, "
-                f"metadata={self.metadata}, "
+                f"provider={self.provider}, "
+                f"data_type={self.data_type}, "
                 f"callback={self.callback}, "
                 f"id={self.id}, "
                 f"timestamp={self.timestamp})")
@@ -215,9 +198,8 @@ cdef class DataResponse(Response):
 
     def __init__(
         self,
-        Venue venue not None,
-        type data_type not None,
-        dict metadata not None,
+        str provider not None,
+        DataType data_type not None,
         list data not None,
         UUID correlation_id not None,
         UUID response_id not None,
@@ -228,12 +210,10 @@ cdef class DataResponse(Response):
 
         Parameters
         ----------
-        venue : Venue
-            The venue of the response.
+        provider : str
+            The data provider name of the response.
         data_type : type
             The data type of the response.
-        metadata : dict
-            The metadata of the response.
         data : list
             The data of the response.
         correlation_id : UUID
@@ -250,16 +230,14 @@ cdef class DataResponse(Response):
             response_timestamp,
         )
 
-        self.venue = venue
+        self.provider = provider
         self.data_type = data_type
-        self.metadata = metadata
         self.data = data
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"venue={self.venue}, "
-                f"data_type={self.data_type.__name__}, "
-                f"metadata={self.metadata}, "
+                f"provider={self.provider}, "
+                f"data_type={self.data_type}, "
                 f"len_data={len(self.data)}, "
                 f"correlation_id={self.correlation_id}, "
                 f"id={self.id}, "

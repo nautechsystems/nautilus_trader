@@ -18,7 +18,7 @@ import pytz
 from cpython.datetime cimport datetime
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.backtest.data_client cimport BacktestDataClient
+from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.data_container cimport BacktestDataContainer
 from nautilus_trader.backtest.data_producer cimport BacktestDataProducer
 from nautilus_trader.backtest.data_producer cimport CachedProducer
@@ -238,9 +238,9 @@ cdef class BacktestEngine:
                 if instrument.symbol.venue == venue:
                     instruments.append(instrument)
 
-            data_client = BacktestDataClient(
+            data_client = BacktestMarketDataClient(
                 instruments=instruments,
-                venue=venue,
+                name=venue.value,
                 engine=self._data_engine,
                 clock=self._test_clock,
                 logger=self._test_logger,

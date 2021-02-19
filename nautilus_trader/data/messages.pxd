@@ -16,16 +16,14 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.data.base cimport DataType
 
 
 cdef class DataCommand(Command):
-    cdef readonly Venue venue
-    """The venue for the command.\n\n:returns: `Venue`"""
-    cdef readonly type data_type
+    cdef readonly str provider
+    """The data client name for the command.\n\n:returns: `str`"""
+    cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The command metadata.\n\n:returns: `dict`"""
     cdef readonly object handler
     """The handler for the command.\n\n:returns: `callable`"""
 
@@ -39,22 +37,18 @@ cdef class Unsubscribe(DataCommand):
 
 
 cdef class DataRequest(Request):
-    cdef readonly Venue venue
-    """The venue for the request.\n\n:returns: `Venue`"""
-    cdef readonly type data_type
+    cdef readonly str provider
+    """The data client name for the request.\n\n:returns: `str`"""
+    cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The request metadata.\n\n:returns: `dict`"""
     cdef readonly object callback
     """The callback to receive the data.\n\n:returns: `callable`"""
 
 
 cdef class DataResponse(Response):
-    cdef readonly Venue venue
-    """The venue of the response.\n\n:returns: `Venue`"""
-    cdef readonly type data_type
+    cdef readonly str provider
+    """The data client name for the response.\n\n:returns: `str`"""
+    cdef readonly DataType data_type
     """The response data type.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The response metadata.\n\n:returns: `dict`"""
     cdef readonly list data
     """The response data.\n\n:returns: `list`"""

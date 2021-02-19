@@ -21,6 +21,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.data.base import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
@@ -88,9 +89,8 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
         subscribe = Subscribe(
-            venue=BINANCE,
-            data_type=QuoteTick,
-            metadata={},
+            provider=BINANCE.value,
+            data_type=DataType(QuoteTick),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -116,14 +116,13 @@ class LiveDataEngineTests(unittest.TestCase):
 
         handler = []
         request = DataRequest(
-            venue=Venue("RANDOM"),
-            data_type=QuoteTick,
-            metadata={
+            provider="RANDOM",
+            data_type=DataType(QuoteTick, metadata={
                 "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
                 "FromDateTime": None,
                 "ToDateTime": None,
                 "Limit": 1000,
-            },
+            }),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
             request_timestamp=self.clock.utc_now(),
@@ -148,9 +147,8 @@ class LiveDataEngineTests(unittest.TestCase):
         )
 
         response = DataResponse(
-            venue=Venue("BINANCE"),
-            data_type=QuoteTick,
-            metadata={},
+            provider="BINANCE",
+            data_type=DataType(QuoteTick),
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
@@ -236,9 +234,8 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.start()
 
             subscribe = Subscribe(
-                venue=BINANCE,
-                data_type=QuoteTick,
-                metadata={},
+                provider=BINANCE.value,
+                data_type=DataType(QuoteTick),
                 handler=[].append,
                 command_id=self.uuid_factory.generate(),
                 command_timestamp=self.clock.utc_now(),
@@ -264,14 +261,13 @@ class LiveDataEngineTests(unittest.TestCase):
 
             handler = []
             request = DataRequest(
-                venue=Venue("RANDOM"),
-                data_type=QuoteTick,
-                metadata={
+                provider="RANDOM",
+                data_type=DataType(QuoteTick, metadata={
                     "Symbol": Symbol("SOMETHING", Venue("RANDOM")),
                     "FromDateTime": None,
                     "ToDateTime": None,
                     "Limit": 1000,
-                },
+                }),
                 callback=handler.append,
                 request_id=self.uuid_factory.generate(),
                 request_timestamp=self.clock.utc_now(),
@@ -296,9 +292,8 @@ class LiveDataEngineTests(unittest.TestCase):
             self.data_engine.start()
 
             response = DataResponse(
-                venue=Venue("BINANCE"),
-                data_type=QuoteTick,
-                metadata={},
+                provider="BINANCE",
+                data_type=DataType(QuoteTick),
                 data=[],
                 correlation_id=self.uuid_factory.generate(),
                 response_id=self.uuid_factory.generate(),
