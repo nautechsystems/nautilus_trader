@@ -30,6 +30,8 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
+from nautilus_trader.data.base import DataType
+from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -1368,6 +1370,49 @@ class TradingStrategyTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(0, len(strategy.clock.timer_names()))
+
+    def test_subscribe_custom_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+
+        # Act
+        strategy.subscribe_data("QUANDL", data_type)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+
+    def test_unsubscribe_custom_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.data_engine.register_strategy(strategy)
+        self.exec_engine.register_strategy(strategy)
+
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+        strategy.subscribe_data("QUANDL", data_type)
+
+        # Act
+        strategy.unsubscribe_data("QUANDL", data_type)
+
+        # Assert
+        self.assertEqual(2, self.data_engine.command_count)
 
     def test_subscribe_instrument(self):
         # Arrange

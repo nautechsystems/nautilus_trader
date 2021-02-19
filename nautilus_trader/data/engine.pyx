@@ -150,6 +150,18 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
+    def subscribed_data_types(self):
+        """
+        The custom data types subscribed to.
+
+        Returns
+        -------
+        list[DataType]
+
+        """
+        return sorted(list(self._data_handlers.keys()))
+
+    @property
     def subscribed_instruments(self):
         """
         The instruments subscribed to.
@@ -419,8 +431,8 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(command.provider)
         if client is None:
-            self._log.error(f"Cannot handle command "
-                            f"(no client registered for {command.provider}) {command}.")
+            self._log.error(f"Cannot handle command: "
+                            f"(no client registered for '{command.provider}') {command}.")
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -881,7 +893,7 @@ cdef class DataEngine(Component):
         cdef DataClient client = self._clients.get(request.provider)
         if client is None:
             self._log.error(f"Cannot handle request: "
-                            f"no client registered for {request.provider}, {request}.")
+                            f"no client registered for '{request.provider}', {request}.")
             return  # No client to handle request
 
         if request.id in self._correlation_index:
@@ -929,7 +941,7 @@ cdef class DataEngine(Component):
             try:
                 client.request(request.data_type, request.id)
             except NotImplementedError:
-                self._log.error(f"Cannot handle request: {request.data_type} is unrecognized.")
+                self._log.error(f"Cannot handle request: DataType {request.data_type} is unrecognized.")
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
@@ -949,7 +961,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, Data):
             self._handle_custom_data(data)
         else:
-            self._log.error(f"Cannot handle data: {data} is an unrecognized type, {type(data)}.")
+            self._log.error(f"Cannot handle data: {data} is an unrecognized type: {type(data)}.")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
