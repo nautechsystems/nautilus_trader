@@ -48,12 +48,13 @@ class BarSpecificationTests(unittest.TestCase):
         self.assertTrue(bar_spec1 == bar_spec2)
         self.assertTrue(bar_spec1 != bar_spec3)
 
-    def test_bar_spec_str_and_repr(self):
+    def test_bar_spec_hash_str_and_repr(self):
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
         # Act
         # Assert
+        self.assertEqual(int, type(hash(bar_spec)))
         self.assertEqual("1-MINUTE-BID", str(bar_spec))
         self.assertEqual("BarSpecification(1-MINUTE-BID)", repr(bar_spec))
 
@@ -122,7 +123,7 @@ class BarTypeTests(unittest.TestCase):
         self.assertTrue(bar_type1 == bar_type2)
         self.assertTrue(bar_type1 != bar_type3)
 
-    def test_bar_type_str_and_repr(self):
+    def test_bar_type_hash_str_and_repr(self):
         # Arrange
         symbol = Symbol("AUD/USD", Venue("SIM"))
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
@@ -130,6 +131,7 @@ class BarTypeTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertEqual(int, type(hash(bar_type)))
         self.assertEqual("AUD/USD.SIM-1-MINUTE-BID", str(bar_type))
         self.assertEqual("BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)", repr(bar_type))
 
@@ -234,7 +236,7 @@ class BarTests(unittest.TestCase):
         self.assertEqual(bar1, bar1)
         self.assertNotEqual(bar1, bar2)
 
-    def test_str_repr(self):
+    def test_hash_str_repr(self):
         # Arrange
         bar = Bar(
             Price("1.00001"),
@@ -247,6 +249,7 @@ class BarTests(unittest.TestCase):
 
         # Act
         # Assert
+        self.assertEqual(int, type(hash(bar)))
         self.assertEqual("1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z", str(bar))
         self.assertEqual("Bar(1.00001,1.00004,1.00002,1.00003,100000,1970-01-01T00:00:00.000Z)", repr(bar))
 
