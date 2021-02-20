@@ -297,6 +297,10 @@ Refer to the [Developer Guide](https://nautilus-trader.readthedocs.io/en/latest/
 
 ## Contributing
 
+Even as some issues are marked with the `help wanted` label - this does not imply
+that help is _only_ wanted on those issues. The label indicates where 'extra attention'
+is needed.
+
 Involvement from the trading community is a goal for this project. All help is welcome!
 Developers can open issues on GitHub to discuss proposed enhancements/changes, or
 to make bug reports.
