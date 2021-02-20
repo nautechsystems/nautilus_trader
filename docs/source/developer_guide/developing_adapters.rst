@@ -1,4 +1,4 @@
 Developing Adapters
 ===================
 
-WIP
+**work in progress**
