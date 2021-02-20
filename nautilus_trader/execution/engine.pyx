@@ -480,7 +480,8 @@ cdef class ExecutionEngine(Component):
         if self.cache.order_exists(command.bracket_order.stop_loss.cl_ord_id):
             self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
-        if command.bracket_order.take_profit is not None and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
+        if command.bracket_order.take_profit is not None \
+                and self.cache.order_exists(command.bracket_order.take_profit.cl_ord_id):
             self._invalidate_bracket_order(command.bracket_order)
             return  # Invalid command
 
@@ -629,6 +630,9 @@ cdef class ExecutionEngine(Component):
                               f"applying event to order with {repr(order.id)}.", LogColor.GREEN)
 
         if isinstance(event, OrderFilled):
+            # The StrategyId needs to be confirmed prior to the PositionId.
+            # This is in case there is no PositionId currently assigned and one
+            # must be generated.
             self._confirm_strategy_id(event)
             self._confirm_position_id(event)
 
@@ -654,38 +658,43 @@ cdef class ExecutionEngine(Component):
         if fill.strategy_id.not_null():
             return  # Already assigned to fill
 
+        # Fetch identifier from cache
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.cl_ord_id)
-        if strategy_id is None and fill.position_id.not_null():
+        if strategy_id is not None:
+            # Assign identifier to fill
+            fill.strategy_id = strategy_id
+            return
+
+        if fill.position_id.not_null():
             # Check if strategy identifier assigned for position
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(f"Cannot find StrategyId for "
                             f"{repr(fill.cl_ord_id)} and "
                             f"{repr(fill.position_id)} not found for {fill}.")
-        else:
-            # Assign identifier to fill
-            fill.strategy_id = strategy_id
 
     cdef inline void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
             return  # Already assigned to fill
 
+        # Fetch identifier from cache
         cdef PositionId position_id = self.cache.position_id(fill.cl_ord_id)
-        if position_id is None:
-            # Check for open positions
-            positions_open = self.cache.positions_open(symbol=fill.symbol)
-            if len(positions_open) == 0:
-                # Assign new identifier to fill
-                fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-            elif len(positions_open) == 1:
-                # Assign existing identifier to fill
-                fill.position_id = positions_open[0].id
-            else:
-                self._log.error(f"Cannot assign PositionId: "
-                                f"{len(positions_open)} open positions")
-        else:
+        if position_id is not None:
             # Assign identifier to fill
             fill.position_id = position_id
+            return
+
+        # Check for open positions
+        positions_open = self.cache.positions_open(symbol=fill.symbol)
+        if len(positions_open) == 0:
+            # Assign new identifier to fill
+            fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+        elif len(positions_open) == 1:
+            # Assign existing identifier to fill
+            fill.position_id = positions_open[0].id
+        else:
+            self._log.error(f"Cannot assign PositionId: "
+                            f"{len(positions_open)} open positions")
 
     cdef inline void _handle_order_cancel_reject(self, OrderCancelReject event) except *:
         self._send_to_strategy(event, self.cache.strategy_id_for_order(event.cl_ord_id))
