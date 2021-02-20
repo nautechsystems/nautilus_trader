@@ -103,11 +103,19 @@ The `master` branch will always reflect the code of the latest release version.
 Also, the documentation is always current for the latest version.
 
 The package is tested against Python 3.7 - 3.9 on both Linux and MacOS.
+We recommend running the platform with the latest stable version of Python.
 
-We recommend users setup a virtual environment to isolate the dependencies, and run the platform
-with the latest stable version of Python.
+Unfortunately Windows installations are not currently supported. Attempts have
+been made to get the project more compatible with Windows, however there are some
+low level implementation details currently preventing this from being possible.
 
-`pyenv` is the recommended tool for handling Python installations and virtual environments.
+It is a goal for the project to keep dependencies focused, however there are
+still a large number of dependencies as found in the `pyproject.toml` file.
+Therefore we recommend you create a new virtual environment for NautilusTrader
+to isolate the dependencies.
+
+`pyenv` is the recommended tool for handling system wide Python installations
+and virtual environments.
 
 > https://github.com/pyenv/pyenv
 

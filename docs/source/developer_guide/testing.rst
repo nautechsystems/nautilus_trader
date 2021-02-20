@@ -1,7 +1,7 @@
 Testing
 =======
 
-The test suite is divided into broad categories of tests including;
+The test suite is divided into broad categories of tests including:
     - Unit tests
     - Integration tests
     - Acceptance/System tests
@@ -55,5 +55,5 @@ of an if-else block which would catch an unrecognized value, these should be
 left in place in case there is a change to the production code - which these
 checks could then catch.
 
-Other 'design-time' exceptions may also be impossible to test for, and so 100%
+Other `design-time` exceptions may also be impossible to test for, and so 100%
 test coverage is not the ultimate goal.
