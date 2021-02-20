@@ -56,6 +56,9 @@ cdef class DataCommand(Command):
         self.data_type = data_type
         self.handler = handler
 
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"provider={self.provider}, "
@@ -182,6 +185,9 @@ cdef class DataRequest(Request):
         self.data_type = data_type
         self.callback = callback
 
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"provider={self.provider}, "
@@ -233,6 +239,9 @@ cdef class DataResponse(Response):
         self.provider = provider
         self.data_type = data_type
         self.data = data
+
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
