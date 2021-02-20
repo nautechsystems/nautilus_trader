@@ -1085,6 +1085,120 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(OrderState.CANCELLED, order.state)
         self.assertEqual(5, order.event_count)
 
+    def test_handle_order_fill_event_with_no_strategy_id_correctly_handles_fill(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.execute(submit_order)
+
+        # Act
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId.null(),
+        ))
+
+        expected_position_id = PositionId("P-19700101-000000-000-001-1")
+
+        # Assert
+        self.assertTrue(self.cache.position_exists(expected_position_id))
+        self.assertTrue(self.cache.is_position_open(expected_position_id))
+        self.assertFalse(self.cache.is_position_closed(expected_position_id))
+        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
+        self.assertIn(expected_position_id, self.cache.position_ids())
+        self.assertNotIn(expected_position_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
+        self.assertIn(expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(expected_position_id, self.cache.position_open_ids())
+        self.assertEqual(1, self.cache.positions_total_count())
+        self.assertEqual(1, self.cache.positions_open_count())
+        self.assertEqual(0, self.cache.positions_closed_count())
+
+    def test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER", "000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.symbol,
+            OrderSide.BUY,
+            Quantity(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.venue,
+            self.trader_id,
+            self.account_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.utc_now(),
+        )
+
+        self.exec_engine.execute(submit_order)
+
+        # Act
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(
+            order=order,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId.null(),
+        ))
+
+        expected_position_id = PositionId("P-19700101-000000-000-001-1")
+
+        # Assert
+        self.assertTrue(self.cache.position_exists(expected_position_id))
+        self.assertTrue(self.cache.is_position_open(expected_position_id))
+        self.assertFalse(self.cache.is_position_closed(expected_position_id))
+        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
+        self.assertIn(expected_position_id, self.cache.position_ids())
+        self.assertNotIn(expected_position_id, self.cache.position_closed_ids(strategy_id=strategy.id))
+        self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
+        self.assertIn(expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id))
+        self.assertIn(expected_position_id, self.cache.position_open_ids())
+        self.assertEqual(1, self.cache.positions_total_count())
+        self.assertEqual(1, self.cache.positions_open_count())
+        self.assertEqual(0, self.cache.positions_closed_count())
+
     def test_handle_order_fill_event(self):
         # Arrange
         self.exec_engine.start()
