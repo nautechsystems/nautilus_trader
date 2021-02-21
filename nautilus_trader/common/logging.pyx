@@ -195,7 +195,7 @@ cdef class Logger:
         name : str
             The name of the logger.
         bypass_logging : bool
-            If the logger should be completely bypassed.
+            If the logger should be bypassed.
         level_console : LogLevel (Enum)
             The minimum log level for logging messages to the console.
         level_file : LogLevel (Enum)
@@ -359,7 +359,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self.component_name = component_name
-        self.bypassed = logger.bypass_logging
+        self.is_bypassed = logger.bypass_logging
 
     cpdef Logger get_logger(self):
         """
@@ -491,7 +491,7 @@ cdef class LoggerAdapter:
         LogColor color,
         str message,
     ) except *:
-        if not self.bypassed:
+        if not self.is_bypassed:
             self._logger.log(LogMessage(
                 self._logger.clock.utc_now_c(),
                 level,

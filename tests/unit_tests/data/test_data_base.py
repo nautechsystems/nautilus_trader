@@ -34,23 +34,47 @@ class DataTypeTests(unittest.TestCase):
     def test_data_type_instantiation(self):
         # Arrange
         # Act
-        data_type = DataType(str, {"Type": "NEWS_FLASH"})
+        data_type = DataType(str, {"type": "NEWS_WIRE"})
 
         # Assert
         self.assertEqual(str, data_type.type)
-        self.assertEqual({"Type": "NEWS_FLASH"}, data_type.metadata)
-        self.assertEqual("<str> {'Type': 'NEWS_FLASH'}", str(data_type))
-        self.assertEqual("DataType(type=str, metadata={'Type': 'NEWS_FLASH'})", repr(data_type))
+        self.assertEqual({"type": "NEWS_WIRE"}, data_type.metadata)
+        self.assertEqual("<str> {'type': 'NEWS_WIRE'}", str(data_type))
+        self.assertEqual("DataType(type=str, metadata={'type': 'NEWS_WIRE'})", repr(data_type))
+
+    def test_data_equality_and_hash(self):
+        # Arrange
+        # Act
+        data_type1 = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+        data_type2 = DataType(str, {"type": "NEWS_WIRE", "topic": "Flood"})
+        data_type3 = DataType(int, {"type": "FED_DATA", "topic": "NonFarmPayroll"})
+
+        # Assert
+        self.assertTrue(data_type1 == data_type1)
+        self.assertTrue(data_type1 != data_type2)
+        self.assertTrue(data_type1 != data_type2)
+        self.assertTrue(data_type1 != data_type3)
+        self.assertEqual(int, type(hash(data_type1)))
+
+    def test_data_type_as_key_in_dict(self):
+        # Arrange
+        # Act
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+
+        hash_map = {data_type: []}
+
+        # Assert
+        self.assertIn(data_type, hash_map)
 
     def test_data_instantiation(self):
         # Arrange
         # Act
-        data_type = DataType(str, {"Type": "NEWS_FLASH"})
-        data = Data(data_type, "SOME_NEWS_HEADLINE")
+        data_type = DataType(str, {"type": "NEWS_WIRE"})
+        data = Data(data_type, "Some News Headline")
 
         # Assert
         self.assertEqual(data_type, data.data_type)
-        self.assertEqual("SOME_NEWS_HEADLINE", data.data)
+        self.assertEqual("Some News Headline", data.data)
 
 
 class DataCacheFacadeTests(unittest.TestCase):

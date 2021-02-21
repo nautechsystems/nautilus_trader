@@ -39,8 +39,6 @@ from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import OrderId
-from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId

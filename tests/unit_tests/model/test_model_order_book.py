@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import unittest
-
-import numpy as np
 
 from nautilus_trader.model.order_book import OrderBook
 from tests.test_kit.providers import TestInstrumentProvider

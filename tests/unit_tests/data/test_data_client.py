@@ -18,6 +18,8 @@ import unittest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.data.base import DataType
+from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
@@ -27,6 +29,7 @@ from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.order_book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
@@ -36,6 +39,98 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy(Symbol("AUD/USD", SIM))
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+
+
+class DataClientTests(unittest.TestCase):
+
+    def setUp(self):
+        # Fixture Setup
+        self.clock = TestClock()
+        self.uuid_factory = UUIDFactory()
+        self.logger = TestLogger(self.clock)
+
+        self.portfolio = Portfolio(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            portfolio=self.portfolio,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.venue = Venue("SIM")
+
+        self.client = DataClient(
+            name="TEST_PROVIDER",
+            engine=self.data_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    def test_connect_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.connect)
+
+    def test_disconnect_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.disconnect)
+
+    def test_reset_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.reset)
+
+    def test_dispose_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.dispose)
+
+    def test_subscribe_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.subscribe, DataType(str))
+
+    def test_unsubscribe_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.unsubscribe, DataType(str))
+
+    def test_request_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.request, DataType(str), self.uuid_factory.generate())
+
+    def test_handle_data_sends_to_data_engine(self):
+        # Arrange
+        data_type = DataType(str, {"Type": "NEWS_WIRE"})
+
+        # Act
+        self.client._handle_data_py(data_type, "Some news headline")
+
+        # Assert
+        self.assertEqual(1, self.data_engine.data_count)
+
+    def test_handle_data_response_sends_to_data_engine(self):
+        # Arrange
+        data_type = DataType(float, {"Type": "ECONOMIC_DATA", "topic": "unemployment"})
+
+        # Act
+        self.client._handle_data_response_py(data_type, 6.6, self.uuid_factory.generate())
+
+        # Assert
+        self.assertEqual(1, self.data_engine.response_count)
 
 
 class MarketDataClientTests(unittest.TestCase):
@@ -96,6 +191,12 @@ class MarketDataClientTests(unittest.TestCase):
         # Assert
         self.assertRaises(NotImplementedError, self.client.subscribe_instrument, AUDUSD_SIM.symbol)
 
+    def test_subscribe_order_book_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.subscribe_order_book, AUDUSD_SIM.symbol, 2, 0)
+
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
@@ -119,6 +220,12 @@ class MarketDataClientTests(unittest.TestCase):
         # Act
         # Assert
         self.assertRaises(NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_SIM.symbol)
+
+    def test_unsubscribe_order_book_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_order_book, AUDUSD_SIM.symbol)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
@@ -168,10 +275,38 @@ class MarketDataClientTests(unittest.TestCase):
         # Assert
         self.assertRaises(NotImplementedError, self.client.request_bars, None, None, None, 0, None)
 
+    def test_unavailable_methods_when_none_given_returns_empty_list(self):
+        # Arrange
+        # Act
+        result = self.client.unavailable_methods()
+
+        # Assert
+        self.assertEqual([], result)
+
     def test_handle_instrument_sends_to_data_engine(self):
         # Arrange
         # Act
         self.client._handle_instrument_py(AUDUSD_SIM)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.data_count)
+
+    def test_handle_order_book_sends_to_data_engine(self):
+        # Arrange
+        order_book = OrderBook(
+            symbol=ETHUSDT_BINANCE.symbol,
+            level=2,
+            depth=25,
+            price_precision=2,
+            size_precision=5,
+            bids=[],
+            asks=[],
+            update_id=0,
+            timestamp=0,
+        )
+
+        # Act
+        self.client._handle_order_book_py(order_book)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)

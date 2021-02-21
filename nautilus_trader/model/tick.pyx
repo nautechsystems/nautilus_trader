@@ -77,6 +77,9 @@ cdef class Tick:
     def __ge__(self, Tick other) -> bool:
         return self.unix_timestamp >= other.unix_timestamp
 
+    def __hash__(self) -> int:
+        return hash((self.symbol, self.timestamp))
+
 
 cdef class QuoteTick(Tick):
     """

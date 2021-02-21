@@ -35,10 +35,12 @@ cdef class Data:
 
 
 cdef class DataType:
+    cdef frozenset _metadata_key
+
     cdef readonly type type
     """The type of the data.\n\n:returns: `type`"""
     cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `dict[str, object]`"""
+    """The data types metadata.\n\n:returns: `set[str, object]`"""
 
 
 cdef class DataCacheFacade:

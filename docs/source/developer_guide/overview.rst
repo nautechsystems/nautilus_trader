@@ -13,11 +13,13 @@ frameworks and libraries, whilst overcoming some of its inherent shortcomings in
 performance and lack of built in type safety (with it being an interpreted
 dynamic language).
 
-One of the advantages of Cython is that we don't have to concern ourselves with
-memory safety, as that is handled by its C code generator during the 'cythonization'
-step of the build. So we get the best of both worlds - with Pythons clean straight
-forward syntax, and a lot of potential to extract several orders of magnitude
-greater runtime performance through compiled C dynamic libraries.
+One of the advantages of Cython is that allocation and freeing of memory is
+handled by the C code generator during the 'cythonization' step of the build
+(unless you're specifically utilizing some of its lower level features).
+
+So we get the best of both worlds - with Pythons clean straight forward syntax,
+and a lot of potential to extract several orders of magnitude greater runtime
+performance through compiled C dynamic libraries.
 
 The main development and runtime environment we are working in is of course Python.
 However with the introduction of Cython syntax throughout the production codebase

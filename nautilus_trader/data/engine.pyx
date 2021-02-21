@@ -51,6 +51,7 @@ from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.aggregation cimport ValueBarAggregator
 from nautilus_trader.data.aggregation cimport VolumeBarAggregator
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
@@ -147,6 +148,18 @@ cdef class DataEngine(Component):
 
         """
         return sorted(list(self._clients.keys()))
+
+    @property
+    def subscribed_data_types(self):
+        """
+        The custom data types subscribed to.
+
+        Returns
+        -------
+        list[DataType]
+
+        """
+        return sorted(list(self._data_handlers.keys()))
 
     @property
     def subscribed_instruments(self):
@@ -418,8 +431,8 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(command.provider)
         if client is None:
-            self._log.error(f"Cannot handle command "
-                            f"(no client registered for {command.provider}) {command}.")
+            self._log.error(f"Cannot handle command: "
+                            f"(no client registered for '{command.provider}') {command}.")
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -879,13 +892,13 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(request.provider)
         if client is None:
-            self._log.error(f"Cannot handle request "
-                            f"(no client registered for {request.provider}) {request}.")
+            self._log.error(f"Cannot handle request: "
+                            f"no client registered for '{request.provider}', {request}.")
             return  # No client to handle request
 
         if request.id in self._correlation_index:
-            self._log.error(f"Cannot handle request "
-                            f"(duplicate identifier {request.id} found in correlation index).")
+            self._log.error(f"Cannot handle request: "
+                            f"duplicate identifier {request.id} found in correlation index.")
             return  # Do not handle duplicates
 
         self._correlation_index[request.id] = request.callback
@@ -928,7 +941,7 @@ cdef class DataEngine(Component):
             try:
                 client.request(request.data_type, request.id)
             except NotImplementedError:
-                self._log.error(f"Cannot handle request ({request.data_type} is unrecognized).")
+                self._log.error(f"Cannot handle request: DataType {request.data_type} is unrecognized.")
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
@@ -945,16 +958,17 @@ cdef class DataEngine(Component):
             self._handle_bar(data.bar_type, data.bar)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        else:
+        elif isinstance(data, Data):
             self._handle_custom_data(data)
+        else:
+            self._log.error(f"Cannot handle data: {data} is an unrecognized type: {type(data)}.")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
 
-        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol)
-        if instrument_handlers:
-            for handler in instrument_handlers:
-                handler(instrument)
+        cdef list instrument_handlers = self._instrument_handlers.get(instrument.symbol, [])
+        for handler in instrument_handlers:
+            handler(instrument)
 
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *:
         self.cache.add_quote_tick(tick)
@@ -963,46 +977,39 @@ cdef class DataEngine(Component):
         self.portfolio.update_tick(tick)
 
         # Send to all registered tick handlers for that symbol
-        cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol)
-        if tick_handlers is not None:
-            for handler in tick_handlers:
-                handler(tick)
+        cdef list tick_handlers = self._quote_tick_handlers.get(tick.symbol, [])
+        for handler in tick_handlers:
+            handler(tick)
 
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *:
         self.cache.add_trade_tick(tick)
 
         # Send to all registered tick handlers for that symbol
-        cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol)
-        if tick_handlers is not None:
-            for handler in tick_handlers:
-                handler(tick)
+        cdef list tick_handlers = self._trade_tick_handlers.get(tick.symbol, [])
+        for handler in tick_handlers:
+            handler(tick)
 
     cdef inline void _handle_order_book(self, OrderBook order_book) except *:
         self.cache.add_order_book(order_book)
 
         # Send to all registered order book handlers for that symbol
-        cdef list order_book_handlers = self._order_book_handlers.get(order_book.symbol)
-        if order_book_handlers is not None:
-            for handler in order_book_handlers:
-                handler(order_book)
+        cdef list order_book_handlers = self._order_book_handlers.get(order_book.symbol, [])
+        for handler in order_book_handlers:
+            handler(order_book)
 
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *:
         self.cache.add_bar(bar_type, bar)
 
         # Send to all registered bar handlers for that bar type
-        cdef list bar_handlers = self._bar_handlers.get(bar_type)
-        if bar_handlers is not None:
-            for handler in bar_handlers:
-                handler(bar_type, bar)
+        cdef list bar_handlers = self._bar_handlers.get(bar_type, [])
+        for handler in bar_handlers:
+            handler(bar_type, bar)
 
-    cdef inline void _handle_custom_data(self, data) except *:
-        cdef list handlers = self._data_handlers.get(type(data))
-        if handlers is None:
-            self._log.error(f"Cannot handle unrecognized data of type {type(data)}, {data}.")
-        else:
-            # Send to all registered data handlers for that data type
-            for handler in handlers:
-                handler(data)
+    cdef inline void _handle_custom_data(self, Data data) except *:
+        # Send to all registered data handlers for that data type
+        cdef list handlers = self._data_handlers.get(data.data_type, [])
+        for handler in handlers:
+            handler(data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
