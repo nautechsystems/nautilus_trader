@@ -298,7 +298,7 @@ cdef class LiveDataEngine(DataEngine):
                 elif message.type == MessageType.RESPONSE:
                     self._handle_response(message)
                 else:
-                    self._log.error(f"Cannot handle unrecognized message {message}.")
+                    self._log.error(f"Cannot handle message: unrecognized {message}.")
         except CancelledError:
             if self.message_qsize() > 0:
                 self._log.warning(f"Running cancelled "

@@ -450,7 +450,7 @@ cdef class ExecutionEngine(Component):
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
-            self._log.error(f"Cannot handle unrecognized command: {command}.")
+            self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef inline void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         # Validate command
@@ -579,7 +579,7 @@ cdef class ExecutionEngine(Component):
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
-            self._log.error(f"Cannot handle unrecognized event: {event}.")
+            self._log.error(f"Cannot handle event: unrecognized {event}.")
 
     cdef inline void _handle_account_event(self, AccountState event) except *:
         cdef Account account = self.cache.account(event.account_id)
