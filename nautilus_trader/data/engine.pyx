@@ -440,7 +440,7 @@ cdef class DataEngine(Component):
         elif isinstance(command, Unsubscribe):
             self._handle_unsubscribe(client, command)
         else:
-            self._log.error(f"Cannot handle unrecognized command {command}.")
+            self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef inline void _handle_subscribe(self, DataClient client, Subscribe command) except *:
         if command.data_type.type == Instrument:
@@ -475,10 +475,11 @@ cdef class DataEngine(Component):
                 command.handler,
             )
         else:
-            try:
-                client.subscribe(command.data_type)
-            except NotImplementedError:
-                self._log.error(f"Cannot subscribe to unrecognized data type {command.data_type}.")
+            self._handle_subscribe_data(
+                client,
+                command.data_type,
+                command.handler,
+            )
 
     cdef inline void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
         if command.data_type.type == Instrument:
@@ -513,10 +514,11 @@ cdef class DataEngine(Component):
                 command.handler,
             )
         else:
-            try:
-                client.unsubscribe(command.data_type)
-            except NotImplementedError:
-                self._log.error(f"Cannot subscribe to unrecognized data type {command.data_type}.")
+            self._handle_unsubscribe_data(
+                client,
+                command.data_type,
+                command.handler,
+            )
 
     cdef inline void _handle_subscribe_instrument(
         self,
@@ -681,8 +683,12 @@ cdef class DataEngine(Component):
 
         if data_type not in self._data_handlers:
             # Setup handlers
+            try:
+                client.subscribe(data_type)
+            except NotImplementedError:
+                self._log.error(f"Cannot subscribe: {client.name} has not implemented data type {data_type} subscriptions.")
+                return
             self._data_handlers[data_type] = []  # type: list[callable]
-            client.subscribe(data_type)
             self._log.info(f"Subscribed to {data_type} data.")
 
         # Add handler for subscriber
@@ -941,7 +947,7 @@ cdef class DataEngine(Component):
             try:
                 client.request(request.data_type, request.id)
             except NotImplementedError:
-                self._log.error(f"Cannot handle request: DataType {request.data_type} is unrecognized.")
+                self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}.")
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
@@ -961,7 +967,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, Data):
             self._handle_custom_data(data)
         else:
-            self._log.error(f"Cannot handle data: {data} is an unrecognized type: {type(data)}.")
+            self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
     cdef inline void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)

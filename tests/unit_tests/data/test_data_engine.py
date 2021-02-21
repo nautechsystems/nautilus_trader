@@ -45,6 +45,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.test_kit.mocks import MockMarketDataClient
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -89,6 +90,13 @@ class DataEngineTests(unittest.TestCase):
         self.bitmex_client = BacktestMarketDataClient(
             instruments=[XBTUSD_BITMEX],
             name=BITMEX.value,
+            engine=self.data_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.quandl = MockMarketDataClient(
+            name="QUANDL",
             engine=self.data_engine,
             clock=self.clock,
             logger=self.logger,
@@ -268,7 +276,7 @@ class DataEngineTests(unittest.TestCase):
         # Bogus message
         command = DataCommand(
             provider=BINANCE.value,
-            data_type=DataType(QuoteTick),
+            data_type=DataType(str),
             handler=[].append,
             command_id=self.uuid_factory.generate(),
             command_timestamp=self.clock.utc_now(),
@@ -329,6 +337,7 @@ class DataEngineTests(unittest.TestCase):
     def test_send_data_request_with_duplicate_ids_logs_and_does_not_handle_second(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
+        self.data_engine.start()
 
         handler = []
         uuid = self.uuid_factory.generate()  # We'll use this as a duplicate
@@ -403,6 +412,59 @@ class DataEngineTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(2, self.data_engine.command_count)
+
+    def test_execute_subscribe_custom_data(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.quandl)
+        self.binance_client.connect()
+
+        subscribe = Subscribe(
+            provider="QUANDL",
+            data_type=DataType(str, metadata={"Type": "news"}),
+            handler=[].append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        self.assertEqual(1, self.data_engine.command_count)
+        self.assertEqual(["subscribe"], self.quandl.calls)
+
+    def test_execute_unsubscribe_custom_data(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.quandl)
+        self.binance_client.connect()
+
+        handler = []
+        subscribe = Subscribe(
+            provider="QUANDL",
+            data_type=DataType(str, metadata={"Type": "news"}),
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            provider="QUANDL",
+            data_type=DataType(str, metadata={"Type": "news"}),
+            handler=handler.append,
+            command_id=self.uuid_factory.generate(),
+            command_timestamp=self.clock.utc_now(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        self.assertEqual(2, self.data_engine.command_count)
+        self.assertEqual(["subscribe", "unsubscribe"], self.quandl.calls)
 
     def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
         # Arrange
