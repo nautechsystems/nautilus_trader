@@ -15,8 +15,6 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**The project is temporarily out of space on PyPI. Please install from source for the latest version.**
-
 ## Introduction
 
 NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
