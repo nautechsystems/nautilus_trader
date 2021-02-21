@@ -153,7 +153,7 @@ class IdentifierTests(unittest.TestCase):
     def test_symbol_equality(self):
         # Arrange
         symbol1 = Symbol("AUD/USD", Venue("SIM"))
-        symbol2 = Symbol("AUD/USD", Venue('IDEAL_PRO'))
+        symbol2 = Symbol("AUD/USD", Venue('IDEALPRO'))
         symbol3 = Symbol("GBP/USD", Venue("SIM"))
 
         # Act

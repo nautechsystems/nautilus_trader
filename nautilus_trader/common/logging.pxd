@@ -107,7 +107,7 @@ cdef class LoggerAdapter:
 
     cdef readonly str component_name
     """The loggers component name.\n\n:returns: `str`"""
-    cdef readonly bint bypassed
+    cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
     cpdef Logger get_logger(self)

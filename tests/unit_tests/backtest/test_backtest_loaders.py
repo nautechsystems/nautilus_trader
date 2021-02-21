@@ -14,10 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import sys
 import unittest
-
-import pytest
 
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType

@@ -127,8 +127,8 @@ class TimerTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(f"Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)", str(timer))  # noqa
-        self.assertEqual(f"Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)", repr(timer))  # noqa
+        self.assertEqual("Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)", str(timer))  # noqa
+        self.assertEqual("Timer(name=TIMER_1, interval=0:00:01, start_time=1970-01-01 00:00:00+00:00, next_time=1970-01-01 00:00:01+00:00, stop_time=None)", repr(timer))  # noqa
 
     def test_hash(self):
         # Arrange

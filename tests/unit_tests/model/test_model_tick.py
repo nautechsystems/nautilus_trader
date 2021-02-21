@@ -72,7 +72,7 @@ class QuoteTickTests(unittest.TestCase):
         self.assertTrue(tick3 >= tick3)
         self.assertEqual([tick1, tick2, tick3], sorted([tick2, tick3, tick1]))
 
-    def test_tick_str_and_repr(self):
+    def test_tick_hash_str_and_repr(self):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.symbol,
@@ -88,6 +88,7 @@ class QuoteTickTests(unittest.TestCase):
         result1 = repr(tick)
 
         # Assert
+        self.assertEqual(int, type(hash(tick)))
         self.assertEqual("AUD/USD.SIM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z", result0)
         self.assertEqual("QuoteTick(AUD/USD.SIM,1.00000,1.00001,1,1,1970-01-01T00:00:00.000Z)", result1)
 

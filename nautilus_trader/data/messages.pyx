@@ -56,6 +56,9 @@ cdef class DataCommand(Command):
         self.data_type = data_type
         self.handler = handler
 
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"provider={self.provider}, "
@@ -182,6 +185,9 @@ cdef class DataRequest(Request):
         self.data_type = data_type
         self.callback = callback
 
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"provider={self.provider}, "
@@ -200,7 +206,7 @@ cdef class DataResponse(Response):
         self,
         str provider not None,
         DataType data_type not None,
-        list data not None,
+        data not None,
         UUID correlation_id not None,
         UUID response_id not None,
         datetime response_timestamp not None,
@@ -214,7 +220,7 @@ cdef class DataResponse(Response):
             The data provider name of the response.
         data_type : type
             The data type of the response.
-        data : list
+        data : object
             The data of the response.
         correlation_id : UUID
             The correlation identifier.
@@ -234,11 +240,13 @@ cdef class DataResponse(Response):
         self.data_type = data_type
         self.data = data
 
+    def __str__(self) -> str:
+        return f"{type(self).__name__}({self.data_type})"
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"provider={self.provider}, "
                 f"data_type={self.data_type}, "
-                f"len_data={len(self.data)}, "
                 f"correlation_id={self.correlation_id}, "
                 f"id={self.id}, "
                 f"timestamp={self.timestamp})")

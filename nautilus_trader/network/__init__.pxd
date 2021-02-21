@@ -12,27 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-[flake8]
-filename = *.py, *.pyx, *.pxd
-exclude =
-   .github
-   .nox
-   .pytest_cache
-   __pycache__
-   build
-   dist
-   docs
-   noxfile.py
-ignore = E225, E227, E252, E999, DAR402
-max-complexity = 10
-max-line-length = 150
-statistics = True
-
-# Ignores justification
-# ---------------------
-# E225 missing whitespace around operator (picks up cython casting)
-# E227 missing whitespace around bitwise or shift operator (picks up pointers)
-# E252 spaces around default argument assignment (incorrect syntax)
-# E999 SyntaxError: invalid syntax (cimport seen as invalid syntax)
-# D402 Excess exception(s) in Raises section (picks up legitimate multiple exceptions)

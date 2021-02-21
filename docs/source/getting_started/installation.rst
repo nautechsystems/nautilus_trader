@@ -4,26 +4,30 @@ Installation
 The ``master`` branch will always reflect the code of the latest release version.
 Also, the documentation is always current for the latest version.
 
-The package is tested against Python versions 3.7 - 3.9 on both Linux and
-MacOS. Users are encouraged to use the latest stable version of Python.
+The package is tested against Python 3.7 - 3.9 on both Linux and MacOS.
+We recommend running the platform with the latest stable version of Python.
+
+Unfortunately Windows installations are not currently supported. Attempts have
+been made to get the project more compatible with Windows, however there are some
+low level implementation details currently preventing this from being possible.
 
 It is a goal for the project to keep dependencies focused, however there are
 still a large number of dependencies as found in the ``pyproject.toml`` file.
-Therefore we recommend you create a new virtual environment for NautilusTrader.
+Therefore we recommend you create a new virtual environment for NautilusTrader
+to isolate the dependencies.
 
-There are various ways of achieving this - the easiest being to use the ``poetry``
-tool. https://python-poetry.org/docs/
+`pyenv` is the recommended tool for handling system wide Python installations
+and virtual environments.
 
-If you're not used to working with virtual environments, you will find a great
-explanation in the ``poetry`` documentation under the `Managing environments`
-sub-menu.
+> https://github.com/pyenv/pyenv
 
-Installation for Unix-like systems can be achieved through `one` of the following options;
+Installation for Unix-like systems can be achieved through `one` of the
+following options;
 
 From PyPI
 ---------
 
-To install the latest binary wheel (or sdist package) from PyPI, run:
+To install the latest binary wheel (or sdist package) from PyPI, run::
 
     pip install -U nautilus_trader
 

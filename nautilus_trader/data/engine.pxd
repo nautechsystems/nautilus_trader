@@ -20,6 +20,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
+from nautilus_trader.data.base cimport Data
 from nautilus_trader.data.base cimport DataType
 from nautilus_trader.data.cache cimport DataCache
 from nautilus_trader.data.client cimport DataClient
@@ -58,13 +59,13 @@ cdef class DataEngine(Component):
     cdef readonly DataCache cache
     """The engines data cache.\n\n:returns: `DataCache`"""
     cdef readonly int command_count
-    """The total count of commands received by the engine.\n\n:returns: `int`"""
+    """The total count of data commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int data_count
-    """The total count of data objects received by the engine.\n\n:returns: `int`"""
+    """The total count of data stream objects received by the engine.\n\n:returns: `int`"""
     cdef readonly int request_count
-    """The total count of requests received by the engine.\n\n:returns: `int`"""
+    """The total count of data requests received by the engine.\n\n:returns: `int`"""
     cdef readonly int response_count
-    """The total count of responses received by the engine.\n\n:returns: `int`"""
+    """The total count of data responses received by the engine.\n\n:returns: `int`"""
 
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *
@@ -114,7 +115,7 @@ cdef class DataEngine(Component):
     cdef inline void _handle_quote_tick(self, QuoteTick tick) except *
     cdef inline void _handle_trade_tick(self, TradeTick tick) except *
     cdef inline void _handle_bar(self, BarType bar_type, Bar bar) except *
-    cdef inline void _handle_custom_data(self, data) except *
+    cdef inline void _handle_custom_data(self, Data data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 

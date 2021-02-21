@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.constants cimport *  # str constants only
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -41,7 +42,14 @@ cdef class Data:
         data : object
             The data object to wrap.
 
+        Raises
+        ------
+        ValueError
+            If type(data) is not of type data_type.type.
+
         """
+        Condition.type(data, data_type.type, "data")
+
         self.data_type = data_type
         self.data = data
 
@@ -62,10 +70,21 @@ cdef class DataType:
         metadata : dict
             The data types metadata.
 
+        Warnings
+        --------
+        This class may be used as a key in other hash maps throughout the system,
+        thus the key and value contents of metadata must be themselves hashable.
+
+        Raises
+        ------
+        TypeError
+            If metadata contains a key or value which is not hashable.
+
         """
         if metadata is None:
             metadata = {}
 
+        self._metadata_key = frozenset(metadata.items())
         self.type = data_type
         self.metadata = metadata
 
@@ -76,7 +95,7 @@ cdef class DataType:
         return self.type != other.type or self.metadata != other.metadata
 
     def __hash__(self) -> int:
-        return hash((self.type, self.metadata))
+        return hash((self.type, self._metadata_key))
 
     def __str__(self) -> str:
         return f"<{self.type.__name__}> {self.metadata}"

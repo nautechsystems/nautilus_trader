@@ -319,19 +319,19 @@ cdef class MarketDataClient(DataClient):
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
     def _handle_instrument_py(self, Instrument instrument):
-        self._engine.process(instrument)
+        self._handle_instrument(instrument)
 
     def _handle_order_book_py(self, OrderBook order_book):
-        self._engine.process(order_book)
+        self._handle_order_book(order_book)
 
     def _handle_quote_tick_py(self, QuoteTick tick):
-        self._engine.process(tick)
+        self._handle_quote_tick(tick)
 
     def _handle_trade_tick_py(self, TradeTick tick):
-        self._engine.process(tick)
+        self._handle_trade_tick(tick)
 
     def _handle_bar_py(self, BarType bar_type, Bar bar):
-        self._engine.process(BarData(bar_type, bar))
+        self._handle_bar(bar_type, bar)
 
     def _handle_instruments_py(self, list instruments, UUID correlation_id):
         self._handle_instruments(instruments, correlation_id)

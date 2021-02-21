@@ -9,11 +9,11 @@ Code Style
 
 We philosophically agree with the ``Black`` formatting style, however it does not
 currently run over Cython code. So you could say we are "handcrafting towards"
-``Black``s stylistic conventions.
+``Black`` stylistic conventions.
 
 The current codebase can be used as a guide for formatting guidance.
 
-1- For longer lines of code, and when passing more than a couple of arguments
+1- For longer lines of code, and when passing more than a couple of arguments,
 it's common to take a new line which aligns at the next logical indent (rather
 than attempting a hanging alignment off an opening parenthesis).
 
