@@ -19,7 +19,8 @@ import inspect
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID
-from nautilus_trader.data.client import DataClient
+from nautilus_trader.data.base import DataType
+from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.database import ExecutionDatabase
@@ -62,7 +63,7 @@ class ObjectStorer:
         """
         return self._store
 
-    def store(self, obj):
+    def store(self, obj) -> None:
         """Store the given object.
 
         Parameters
@@ -74,7 +75,7 @@ class ObjectStorer:
         self.count += 1
         self._store.append(obj)
 
-    def store_2(self, obj1, obj2):
+    def store_2(self, obj1, obj2) -> None:
         """Store the given objects as a tuple.
 
         Parameters
@@ -115,12 +116,12 @@ class MockStrategy(TradingStrategy):
 
         self.calls = []
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.register_indicator_for_bars(self.bar_type, self.ema1)
         self.register_indicator_for_bars(self.bar_type, self.ema2)
 
-    def on_instrument(self, instrument):
+    def on_instrument(self, instrument) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(instrument)
 
@@ -128,11 +129,11 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(tick)
 
-    def on_trade_tick(self, tick):
+    def on_trade_tick(self, tick) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(tick)
 
-    def on_bar(self, bar_type, bar):
+    def on_bar(self, bar_type, bar) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store((bar_type, bar))
 
@@ -158,31 +159,31 @@ class MockStrategy(TradingStrategy):
             self.submit_order(sell_order)
             self.position_id = sell_order.cl_ord_id
 
-    def on_data(self, data):
+    def on_data(self, data) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(data)
 
-    def on_event(self, event):
+    def on_event(self, event) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(event)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def on_resume(self):
+    def on_resume(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def on_save(self):
+    def on_save(self) -> dict:
         self.calls.append(inspect.currentframe().f_code.co_name)
         return {}
 
-    def on_load(self, state):
+    def on_load(self, state) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 
@@ -200,65 +201,64 @@ class KaboomStrategy(TradingStrategy):
         self._explode_on_start = True
         self._explode_on_stop = True
 
-    def set_explode_on_start(self, setting):
+    def set_explode_on_start(self, setting) -> None:
         self._explode_on_start = setting
 
-    def set_explode_on_stop(self, setting):
+    def set_explode_on_stop(self, setting) -> None:
         self._explode_on_stop = setting
 
-    def on_start(self):
+    def on_start(self) -> None:
         if self._explode_on_start:
             raise RuntimeError(f"{self} BOOM!")
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         if self._explode_on_stop:
             raise RuntimeError(f"{self} BOOM!")
 
-    def on_resume(self):
+    def on_resume(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_reset(self):
+    def on_reset(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_save(self):
+    def on_save(self) -> dict:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_load(self, state):
+    def on_load(self, state) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_dispose(self):
+    def on_dispose(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_instrument(self, instrument):
+    def on_instrument(self, instrument) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_quote_tick(self, tick):
+    def on_quote_tick(self, tick) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_trade_tick(self, tick):
+    def on_trade_tick(self, tick) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_bar(self, bar_type, bar):
+    def on_bar(self, bar_type, bar) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_data(self, data):
+    def on_data(self, data) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_event(self, event):
+    def on_event(self, event) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
 
-class MockDataClient(DataClient):
+class MockMarketDataClient(MarketDataClient):
     """
     Provides a mock data client for testing.
 
     The client will append all method calls to the calls list.
-    The client will append all received commands to the commands list.
     """
 
     def __init__(
         self,
-        venue: Venue,
+        name: str,
         engine: DataEngine,
         clock: Clock,
         logger: Logger,
@@ -268,7 +268,7 @@ class MockDataClient(DataClient):
 
         Parameters
         ----------
-        venue : Venue
+        name : str
             The venue the client can provide data for.
         engine : DataEngine
             The data engine to connect to the client.
@@ -279,7 +279,7 @@ class MockDataClient(DataClient):
 
         """
         super().__init__(
-            venue,
+            name,
             engine,
             clock,
             logger,
@@ -289,49 +289,65 @@ class MockDataClient(DataClient):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    def connect(self):
+    def connect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def reset(self):
+    def reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def dispose(self):
+    def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    def subscribe_quote_ticks(self, symbol: Symbol):
+    def subscribe(self, data_type: DataType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_trade_ticks(self, symbol: Symbol):
+    def subscribe_instrument(self, symbol: Symbol) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_bars(self, bar_type: BarType):
+    def subscribe_order_book(self, symbol, level, depth=0, kwargs=None) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def subscribe_instrument(self, symbol: Symbol):
+    def subscribe_quote_ticks(self, symbol: Symbol) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_quote_ticks(self, symbol: Symbol):
+    def subscribe_trade_ticks(self, symbol: Symbol) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_trade_ticks(self, symbol: Symbol):
+    def subscribe_bars(self, bar_type: BarType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_bars(self, bar_type: BarType):
+    def unsubscribe(self, data_type: DataType) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_instrument(self, symbol: Symbol):
+    def unsubscribe_quote_ticks(self, symbol: Symbol) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def unsubscribe_trade_ticks(self, symbol: Symbol) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def unsubscribe_bars(self, bar_type: BarType) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def unsubscribe_instrument(self, symbol: Symbol) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def unsubscribe_order_book(self, symbol: Symbol) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 # -- REQUESTS --------------------------------------------------------------------------------------
-    def request_instrument(self, symbol: Symbol, correlation_id: UUID):
+
+    def request(self, datatype: DataType, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def request_instruments(self, correlation_id: UUID):
+    def request_instrument(self, symbol: Symbol, correlation_id: UUID) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def request_instruments(self, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_quote_ticks(
@@ -341,27 +357,27 @@ class MockDataClient(DataClient):
         to_datetime: datetime,
         limit: int,
         correlation_id: UUID,
-    ):
+    ) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_trade_ticks(
-            self,
-            symbol: Symbol,
-            from_datetime: datetime,
-            to_datetime: datetime,
-            limit: int,
-            correlation_id: UUID,
-    ):
+        self,
+        symbol: Symbol,
+        from_datetime: datetime,
+        to_datetime: datetime,
+        limit: int,
+        correlation_id: UUID,
+    ) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_bars(
-            self,
-            bar_type: BarType,
-            from_datetime: datetime,
-            to_datetime: datetime,
-            limit: int,
-            correlation_id: UUID,
-    ):
+        self,
+        bar_type: BarType,
+        from_datetime: datetime,
+        to_datetime: datetime,
+        limit: int,
+        correlation_id: UUID,
+    ) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 
@@ -370,7 +386,6 @@ class MockExecutionClient(ExecutionClient):
     Provides a mock execution client for testing.
 
     The client will append all method calls to the calls list.
-    The client will append all received commands to the commands list.
     """
 
     def __init__(
@@ -409,39 +424,39 @@ class MockExecutionClient(ExecutionClient):
         self.calls = []
         self.commands = []
 
-    def connect(self):
+    def connect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected()
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected(False)
 
-    def dispose(self):
+    def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def reset(self):
+    def reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    def account_inquiry(self, command):
+    def account_inquiry(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def submit_order(self, command):
+    def submit_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def submit_bracket_order(self, command):
+    def submit_bracket_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def amend_order(self, command):
+    def amend_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def cancel_order(self, command):
+    def cancel_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
@@ -470,52 +485,52 @@ class MockExecutionDatabase(ExecutionDatabase):
         self.orders = {}
         self.positions = {}
 
-    def flush(self):
+    def flush(self) -> None:
         self.accounts = {}
         self.orders = {}
         self.positions = {}
 
-    def load_accounts(self):
+    def load_accounts(self) -> dict:
         return self.accounts.copy()
 
-    def load_orders(self):
+    def load_orders(self) -> dict:
         return self.orders.copy()
 
-    def load_positions(self):
+    def load_positions(self) -> dict:
         return self.positions.copy()
 
-    def load_account(self, account_id: AccountId):
+    def load_account(self, account_id: AccountId) -> Account:
         return self.accounts.get(account_id)
 
-    def load_order(self, cl_ord_id: ClientOrderId):
+    def load_order(self, cl_ord_id: ClientOrderId) -> Order:
         return self.orders.get(cl_ord_id)
 
-    def load_position(self, position_id: PositionId):
+    def load_position(self, position_id: PositionId) -> Position:
         return self.positions.get(position_id)
 
-    def load_strategy(self, strategy_id: StrategyId):
+    def load_strategy(self, strategy_id: StrategyId) -> dict:
         return {}
 
-    def delete_strategy(self, strategy_id: StrategyId):
+    def delete_strategy(self, strategy_id: StrategyId) -> None:
         pass
 
-    def add_account(self, account: Account):
+    def add_account(self, account: Account) -> None:
         self.accounts[account.id] = account
 
-    def add_order(self, order: Order):
+    def add_order(self, order: Order) -> None:
         self.orders[order.cl_ord_id] = order
 
-    def add_position(self, position: Position):
+    def add_position(self, position: Position) -> None:
         self.positions[position.id] = position
 
-    def update_account(self, event: Account):
+    def update_account(self, event: Account) -> None:
         pass  # Would persist the event
 
-    def update_order(self, order: Order):
+    def update_order(self, order: Order) -> None:
         pass  # Would persist the event
 
-    def update_position(self, position: Position):
+    def update_position(self, position: Position) -> None:
         pass  # Would persist the event
 
-    def update_strategy(self, strategy: TradingStrategy):
+    def update_strategy(self, strategy: TradingStrategy) -> None:
         pass  # Would persist the user state dict
