@@ -627,7 +627,7 @@ cdef class ExecutionEngine(Component):
             # Set the correct ClientOrderId for the event
             event.cl_ord_id = cl_ord_id
             self._log.info(f"{repr(cl_ord_id)} was found in cache and "
-                              f"applying event to order with {repr(order.id)}.", LogColor.GREEN)
+                           f"applying event to order with {repr(order.id)}.", LogColor.GREEN)
 
         if isinstance(event, OrderFilled):
             # The StrategyId needs to be confirmed prior to the PositionId.

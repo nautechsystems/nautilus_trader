@@ -31,7 +31,6 @@ from nautilus_trader.common.logging import TestLogger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.base import DataType
-from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine

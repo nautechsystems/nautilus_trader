@@ -932,13 +932,6 @@ class PositionTests(unittest.TestCase):
         position = Position(fill)
 
         # Act
-        pnl = position.calculate_pnl(
-            Price("375.95"),
-            Price("365.50"),
-            Quantity(100000),
-            # xrate=Decimal("0.0294337")  # Currently not handling quanto settlement
-        )
-
         # Assert
         self.assertEqual(Money(1582.66, USD), position.unrealized_pnl(Price("370.00")))
         self.assertEqual(Money(100000.00, USD), position.notional_value(Price("370.00")))
