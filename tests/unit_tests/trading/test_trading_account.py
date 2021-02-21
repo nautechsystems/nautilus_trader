@@ -376,30 +376,6 @@ class AccountTests(unittest.TestCase):
         # Assert
         self.assertEqual(Money("10.00000000", BTC), result)
 
-    def test_equity_with_multi_asset_account_returns_expected_money(self):
-        # Arrange
-        event = AccountState(
-            AccountId("SIM", "001"),
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("10.00000000", BTC), Money("20.00000000", ETH)],
-            [Money("0.00000000", BTC), Money("0.00000000", ETH)],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            event_timestamp=UNIX_EPOCH,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result = account.equity(BTC)
-
-        # Assert
-        self.assertEqual(Money("10.00000000", BTC), result)
-
     def test_margin_available_for_single_asset_account(self):
         # Arrange
         event = AccountState(

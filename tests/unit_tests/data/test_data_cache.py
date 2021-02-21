@@ -16,7 +16,6 @@
 from decimal import Decimal
 import unittest
 
-import numpy as np
 from parameterized import parameterized
 
 from nautilus_trader.common.clock import TestClock
